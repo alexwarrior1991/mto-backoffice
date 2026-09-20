@@ -1,0 +1,18 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+app:
+  keycloak:
+    # Sin valores por defecto: un despliegue sin realm o sin secreto no debe arrancar.
+    issuer-uri: ${KEYCLOAK_ISSUER_URI}
+    client-id: ${KEYCLOAK_CLIENT_ID:mto-backoffice}
+    client-secret: ${KEYCLOAK_CLIENT_SECRET}
+  gateway:
+    base-url: ${MTO_GATEWAY_URL}
+
+logging:
+  level:
+    root: ${LOGGING_LEVEL_ROOT:INFO}
+    com.alejandro.mtobackoffice: ${LOGGING_LEVEL_APP:INFO}

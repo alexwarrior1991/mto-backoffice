@@ -32,3 +32,14 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Vaadin (lo genera el plugin en cada build) ###
+src/main/frontend/generated/
+src/main/frontend/index.html
+src/main/bundles/
+vite.generated.ts
+tsconfig.json
+types.d.ts
+package.json
+package-lock.json
+.vaadin/

@@ -12,25 +12,30 @@
     <artifactId>mto-backoffice</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>mto-backoffice</name>
-    <description>mto-backoffice</description>
-    <url/>
-    <licenses>
-        <license/>
-    </licenses>
-    <developers>
-        <developer/>
-    </developers>
-    <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
-    </scm>
+    <description>Backoffice web del dominio MTO (Vaadin Flow) sobre las APIs publicadas por mto-gateway</description>
+
     <properties>
         <java.version>25</java.version>
+        <!-- Vaadin 25.2 se construye contra Spring Boot 4.1; 25.1 apuntaba a 4.0. La linea de Boot va
+             con la de Vaadin, no con la de mto-configuration (4.0.1): son procesos distintos que solo
+             se hablan por HTTP. -->
         <vaadin.version>25.2.8</vaadin.version>
+        <!-- Pruebas de vistas en la JVM sin navegador. Apache 2.0; exige Vaadin 25+. TestBench (el
+             equivalente de Vaadin) es de pago y no entra. -->
+        <karibu-testing.version>2.7.3</karibu-testing.version>
     </properties>
+
     <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!-- Cliente OIDC: login con Authorization Code contra Keycloak y refresco del token para las
+             llamadas al gateway. Esta aplicacion NO es un resource server: no recibe tokens. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-restclient</artifactId>
@@ -47,20 +52,25 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
+        <!-- Herramientas de desarrollo de Vaadin (servidor de desarrollo, Copilot). Optional: no
+             entra en el jar, y sin ella en el classpath la aplicacion corre en modo produccion. -->
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-dev</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- Trae vaadin-core-internal: solo los componentes Apache 2.0. Charts, Maps, Dashboard,
+             CRUD, GridPro y TestBench no estan en el arbol y MtoBackofficeApplicationTests lo
+             comprueba. -->
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-spring-boot-starter</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -74,25 +84,23 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-validation-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-testcontainers</artifactId>
+            <groupId>com.github.mvysny.kaributesting</groupId>
+            <artifactId>karibu-testing-v24</artifactId>
+            <version>${karibu-testing.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <groupId>com.github.mvysny.kaributesting</groupId>
+            <artifactId>karibu-testing-v10-spring</artifactId>
+            <version>${karibu-testing.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
+
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -107,6 +115,9 @@
 
     <build>
         <plugins>
+            <!-- build-frontend va ligado a prepare-package: 'mvn package' (y por tanto 'verify') ES el
+                 build de produccion en Vaadin 25, sin perfil 'production'. El plugin usa un node
+                 global compatible o descarga el suyo en ~/.vaadin. -->
             <plugin>
                 <groupId>com.vaadin</groupId>
                 <artifactId>vaadin-maven-plugin</artifactId>
@@ -123,42 +134,6 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>default-compile</id>
-                        <phase>compile</phase>
-                        <goals>
-                            <goal>compile</goal>
-                        </goals>
-                        <configuration>
-                            <annotationProcessorPaths>
-                                <path>
-                                    <groupId>org.projectlombok</groupId>
-                                    <artifactId>lombok</artifactId>
-                                </path>
-                            </annotationProcessorPaths>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>default-testCompile</id>
-                        <phase>test-compile</phase>
-                        <goals>
-                            <goal>testCompile</goal>
-                        </goals>
-                        <configuration>
-                            <annotationProcessorPaths>
-                                <path>
-                                    <groupId>org.projectlombok</groupId>
-                                    <artifactId>lombok</artifactId>
-                                </path>
-                            </annotationProcessorPaths>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>

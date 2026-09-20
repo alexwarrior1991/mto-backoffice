@@ -1,0 +1,41 @@
+# Solo la aplicacion. Keycloak, el gateway y el resto de la infraestructura los levanta mto-platform:
+# el backoffice no persiste nada y no tiene infraestructura propia.
+#
+#   cd ../mto-platform && docker compose --profile all up -d && ./keycloak/apply-partials.sh
+#   docker compose up -d --build      # este repositorio, contra esa infraestructura
+#
+# Lo habitual en desarrollo es no usar este fichero: './mvnw spring-boot:run' con el perfil dev
+# arranca en el 8085 con el servidor de desarrollo de Vaadin. Este sirve para probar la imagen de
+# produccion (frontend compilado) contra la plataforma.
+services:
+  app:
+    build:
+      context: .
+    image: mto-backoffice:${APP_IMAGE_TAG:-latest}
+    container_name: mto-backoffice
+    ports:
+      # 8085 en el host: 8080 stock, 8081 configuration, 8082 Keycloak, 8083 maintenance,
+      # 8084 users y 8090 gateway ya estan ocupados. El redirect URI del cliente en el realm es
+      # http://localhost:8085/login/oauth2/code/keycloak, asi que el puerto publicado no es libre.
+      - '${APP_PORT:-8085}:8080'
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SERVER_PORT: 8080
+      KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://auth.mto.local:8082/realms/mto}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-mto-backoffice}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET must be set}
+      # El gateway publicado por mto-platform en el host.
+      MTO_GATEWAY_URL: ${MTO_GATEWAY_URL:-http://host.docker.internal:8090}
+      JAVA_OPTS: ${JAVA_OPTS:-}
+    # El 'iss' de los tokens es http://auth.mto.local:8082 y el navegador tambien va a ese nombre:
+    # la aplicacion tiene que resolverlo igual que el host.
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+      - 'auth.mto.local:host-gateway'
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8080/actuator/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped

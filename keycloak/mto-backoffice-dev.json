@@ -1,0 +1,8 @@
+{
+  "clients": [
+    {
+      "clientId": "mto-backoffice",
+      "secret": "mto-backoffice-secret"
+    }
+  ]
+}

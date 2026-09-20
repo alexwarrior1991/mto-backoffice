@@ -1,0 +1,21 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+
+app:
+  keycloak:
+    # Nadie escucha aqui: los tests no llaman a Keycloak (el registro OIDC se construye sin
+    # descubrimiento y el JWK Set solo se pide al entrar).
+    issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8082/realms/mto}
+    client-secret: ${KEYCLOAK_CLIENT_SECRET:test-secret}
+  gateway:
+    base-url: ${MTO_GATEWAY_URL:http://localhost:8090}
+
+vaadin:
+  launch-browser: false
+
+logging:
+  level:
+    root: ${LOGGING_LEVEL_ROOT:WARN}
+    com.alejandro.mtobackoffice: ${LOGGING_LEVEL_APP:INFO}

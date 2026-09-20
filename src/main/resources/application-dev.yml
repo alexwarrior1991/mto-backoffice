@@ -1,0 +1,22 @@
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+vaadin:
+  launch-browser: true
+
+app:
+  keycloak:
+    # El secreto que fija mto-backoffice-dev.json para el cliente en el realm local.
+    client-secret: ${KEYCLOAK_CLIENT_SECRET:mto-backoffice-secret}
+
+management:
+  endpoint:
+    health:
+      show-details: ${MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS:always}
+
+logging:
+  level:
+    root: ${LOGGING_LEVEL_ROOT:INFO}
+    com.alejandro.mtobackoffice: ${LOGGING_LEVEL_APP:DEBUG}
