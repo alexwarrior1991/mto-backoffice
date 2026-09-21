@@ -5,6 +5,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -19,13 +20,22 @@ import java.util.stream.Stream;
  * la misma razon existe aqui: {@code oauth2Login} construye las autoridades desde el ID token, y
  * Keycloak pone {@code resource_access} solo en el access token. Sin esto ninguna vista veria un
  * rol.</p>
+ *
+ * <p>Se leen los roles de <b>varios</b> clientes ({@code app.keycloak.roles-client-ids}): los de
+ * {@code mto-configuration-api} para las pantallas de configuracion y los de {@code mto-users-api}
+ * para el modulo de usuarios. Cada rol sale dos veces: como {@code ROLE_<ROL>}, que es lo que
+ * comprueban las vistas, y como {@code ROLE_CLIENT_<CLIENTE>_<ROL>}, cualificado por su cliente.
+ * Que un {@code users-read} de un cliente no se confunda con uno de otro depende de que los
+ * clientes leidos no compartan nombres de rol ({@code config-*} y {@code lov-manage} frente a
+ * {@code users-*}); {@code SecurityLayerTest} lo comprueba. Los clientes del token que no esten en
+ * la lista no aportan nada.</p>
  */
 public final class KeycloakRoleMapper {
 
-    private final String rolesClientId;
+    private final List<String> rolesClientIds;
 
-    public KeycloakRoleMapper(String rolesClientId) {
-        this.rolesClientId = rolesClientId;
+    public KeycloakRoleMapper(List<String> rolesClientIds) {
+        this.rolesClientIds = List.copyOf(rolesClientIds);
     }
 
     public Set<GrantedAuthority> authorities(Map<String, Object> claims) {
@@ -55,10 +65,10 @@ public final class KeycloakRoleMapper {
      * la misma autoridad: quien tuviera el de realm pasaria una comprobacion pensada para el de
      * cliente. Y como quien administra el realm no es necesariamente quien escribe el codigo,
      * bastaria con crear alli un rol llamado igual que un permiso para concederselo a cualquiera.
-     * Los perfiles de negocio ({@code mto-editor}, {@code mto-admin}...) son roles de realm
-     * compuestos que Keycloak expande al emitir el token, asi que sus permisos ya llegan dentro de
-     * {@code resource_access}; comprobar un perfil sigue siendo posible nombrandolo:
-     * {@code hasRole("REALM_MTO_ADMIN")}.</p>
+     * Los perfiles de negocio ({@code mto-editor}, {@code mto-admin}, {@code mto-users-manager}...)
+     * son roles de realm compuestos que Keycloak expande al emitir el token, asi que sus permisos
+     * ya llegan dentro de {@code resource_access}; comprobar un perfil sigue siendo posible
+     * nombrandolo: {@code hasRole("REALM_MTO_ADMIN")}.</p>
      */
     private Collection<GrantedAuthority> extractRealmRoles(Map<String, Object> claims) {
         if (!(claims.get(JwtClaimNames.REALM_ACCESS) instanceof Map<?, ?> realmAccess)) {
@@ -71,16 +81,21 @@ public final class KeycloakRoleMapper {
     }
 
     private Collection<GrantedAuthority> extractClientRoles(Map<String, Object> claims) {
-        if (!(claims.get(JwtClaimNames.RESOURCE_ACCESS) instanceof Map<?, ?> resourceAccess)
-                || !(resourceAccess.get(rolesClientId) instanceof Map<?, ?> clientAccess)) {
+        if (!(claims.get(JwtClaimNames.RESOURCE_ACCESS) instanceof Map<?, ?> resourceAccess)) {
             return Set.of();
         }
-        return extractRoles(clientAccess).stream()
-                .flatMap(role -> Stream.of(
-                        SecurityAuthorityPrefixes.ROLE_PREFIX + normalize(role),
-                        SecurityAuthorityPrefixes.CLIENT_ROLE_PREFIX + normalize(role)))
-                .map(SimpleGrantedAuthority::new)
-                .collect(Collectors.toUnmodifiableSet());
+        Set<GrantedAuthority> authorities = new HashSet<>();
+        for (String clientId : rolesClientIds) {
+            if (!(resourceAccess.get(clientId) instanceof Map<?, ?> clientAccess)) {
+                continue;
+            }
+            String qualified = SecurityAuthorityPrefixes.CLIENT_ROLE_PREFIX + normalize(clientId) + "_";
+            for (String role : extractRoles(clientAccess)) {
+                authorities.add(new SimpleGrantedAuthority(SecurityAuthorityPrefixes.ROLE_PREFIX + normalize(role)));
+                authorities.add(new SimpleGrantedAuthority(qualified + normalize(role)));
+            }
+        }
+        return authorities;
     }
 
     private static Set<String> extractRoles(Map<?, ?> accessMap) {
@@ -95,9 +110,10 @@ public final class KeycloakRoleMapper {
     }
 
     /**
-     * {@code config-read} se convierte en {@code CONFIG_READ}, listo para {@code hasRole("CONFIG_READ")}.
-     * La conversion no es inyectiva ({@code config-read} y {@code config_read} coinciden), motivo para
-     * no crear en el mismo cliente dos roles que solo se diferencien en el separador.
+     * {@code config-read} se convierte en {@code CONFIG_READ}, listo para {@code hasRole("CONFIG_READ")};
+     * {@code mto-users-api} en {@code MTO_USERS_API}. La conversion no es inyectiva
+     * ({@code config-read} y {@code config_read} coinciden), motivo para no crear en el mismo
+     * cliente dos roles que solo se diferencien en el separador.
      */
     static String normalize(String value) {
         return value.trim().replace('-', '_').replace(' ', '_').toUpperCase();

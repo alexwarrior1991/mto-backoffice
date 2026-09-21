@@ -3,6 +3,7 @@ package com.alejandro.mtobackoffice.ui;
 import com.alejandro.mtobackoffice.client.configuration.LovResource;
 import com.alejandro.mtobackoffice.ui.lov.LovCrudView;
 import com.alejandro.mtobackoffice.ui.master.MasterView;
+import com.alejandro.mtobackoffice.ui.users.UsersView;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.applayout.DrawerToggle;
@@ -22,7 +23,9 @@ import com.vaadin.flow.spring.security.AuthenticationContext;
 import com.vaadin.flow.theme.lumo.LumoUtility;
 import jakarta.annotation.security.PermitAll;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Marco de todas las pantallas: barra con la persona y «Salir», y menu lateral con las vistas
@@ -68,28 +71,49 @@ public class MainLayout extends AppLayout {
         return header;
     }
 
+    /** Un grupo del menu: las vistas cuya ruta empieza por su prefijo cuelgan de el. */
+    private record MenuGroup(String label, String icon) {
+    }
+
+    /** Prefijo de ruta (primer segmento) → grupo. La lista de usuarios es a la vez su propio grupo. */
+    private static final Map<String, MenuGroup> GROUPS = Map.of(
+            MasterView.ROUTE_PREFIX, new MenuGroup("Infraestructura", "train"),
+            UsersView.ROUTE_PREFIX, new MenuGroup("Usuarios", "users"));
+
     private Component menu() {
         SideNav nav = new SideNav();
-        // Los maestros de infraestructura cuelgan de un grupo: son seis vistas con @Menu cuya ruta
-        // empieza por el mismo prefijo, y asi el menu no se hace una lista plana.
-        SideNavItem infrastructure = null;
-        for (MenuEntry entry : visibleMenuEntries()) {
-            SideNavItem item = new SideNavItem(entry.title(), entry.path());
-            if (entry.icon() != null && entry.icon().contains(":")) {
-                String[] icon = entry.icon().split(":", 2);
-                item.setPrefixComponent(new Icon(icon[0], icon[1]));
+        // Las vistas con @Menu cuya ruta empieza por un prefijo conocido cuelgan de su grupo, y asi
+        // el menu no se hace una lista plana. Una entrada cuya ruta ES el prefijo (la lista de
+        // usuarios, en "usuarios") es el propio nodo del grupo: se navega a ella y de ella cuelgan
+        // las demas; si no hay tal entrada, el nodo es solo una etiqueta (Infraestructura).
+        List<MenuEntry> entries = visibleMenuEntries();
+        Map<String, SideNavItem> groups = new LinkedHashMap<>();
+        for (MenuEntry entry : entries) {
+            String path = pathOf(entry);
+            if (GROUPS.containsKey(path)) {
+                groups.put(path, navItem(entry));
             }
-            String path = entry.path().startsWith("/") ? entry.path().substring(1) : entry.path();
-            if (path.startsWith(MasterView.ROUTE_PREFIX + "/")) {
-                if (infrastructure == null) {
-                    infrastructure = new SideNavItem("Infraestructura");
-                    infrastructure.setPrefixComponent(new Icon("vaadin", "train"));
-                    infrastructure.setExpanded(true);
-                    nav.addItem(infrastructure);
-                }
-                infrastructure.addItem(item);
-            } else {
-                nav.addItem(item);
+        }
+        for (MenuEntry entry : entries) {
+            String path = pathOf(entry);
+            String prefix = path.contains("/") ? path.substring(0, path.indexOf('/')) : path;
+            MenuGroup definition = GROUPS.get(prefix);
+            if (definition == null) {
+                nav.addItem(navItem(entry));
+                continue;
+            }
+            SideNavItem group = groups.get(prefix);
+            if (group == null) {
+                group = new SideNavItem(definition.label());
+                group.setPrefixComponent(new Icon("vaadin", definition.icon()));
+                groups.put(prefix, group);
+            }
+            if (group.getParent().isEmpty()) {
+                group.setExpanded(true);
+                nav.addItem(group);
+            }
+            if (!path.equals(prefix)) {
+                group.addItem(navItem(entry));
             }
         }
         // Los catalogos son una sola vista con el recurso en la ruta, asi que no pueden anotarse
@@ -103,6 +127,19 @@ public class MainLayout extends AppLayout {
             nav.addItem(catalogues);
         }
         return nav;
+    }
+
+    private static SideNavItem navItem(MenuEntry entry) {
+        SideNavItem item = new SideNavItem(entry.title(), entry.path());
+        if (entry.icon() != null && entry.icon().contains(":")) {
+            String[] icon = entry.icon().split(":", 2);
+            item.setPrefixComponent(new Icon(icon[0], icon[1]));
+        }
+        return item;
+    }
+
+    private static String pathOf(MenuEntry entry) {
+        return entry.path().startsWith("/") ? entry.path().substring(1) : entry.path();
     }
 
     /** Las entradas de menu registradas por Vaadin, filtradas por lo que esta persona puede abrir. */

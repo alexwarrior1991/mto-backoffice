@@ -20,7 +20,7 @@ Séptimo repositorio del dominio, hermano e independiente de
 [`mto-maintenance`](../mto-maintenance), [`mto-users`](../mto-users) y
 [`mto-gateway`](../mto-gateway); la infraestructura local es de [`mto-platform`](../mto-platform).
 
-## Estado: fase 4
+## Estado: fase 5
 
 - **Fase 0**: circuito completo con lo mínimo. Cliente `mto-backoffice` en el realm, login OIDC,
   marco con menú filtrado por roles y la pantalla de inicio con el diagnóstico del token.
@@ -76,6 +76,44 @@ Séptimo repositorio del dominio, hermano e independiente de
   castellano y sin diálogo de sesión caducada: tras un reinicio la pantalla recarga sola y vuelve
   por el SSO (ver «Límites», más abajo).
 
+- **Fase 5**: el módulo **Usuarios** sobre `mto-users`, que administra usuarios, roles
+  de cliente y perfiles del realm por la Admin API de Keycloak. U0 deja la base: los roles de
+  `mto-users-api` se leen del access token junto a los de `mto-configuration-api`
+  (`KEYCLOAK_ROLES_CLIENT_IDS`), `ApiErrorDecoder` entiende el `problem+json` de `mto-users`,
+  `UsersClient` cubre la API entera (`/api/users/**`) y el menú agrupa por prefijo de ruta. U1
+  trae la **lista de usuarios** (`usuarios`), paginada en el servidor al estilo de Keycloak (el
+  grid pide cada tramo con `first`/`max`, nunca más de 200 por petición, y el recuento es el
+  `total` de la búsqueda), con búsqueda por texto, filtro por atributo `clave:valor` y por estado;
+  la búsqueda y el atributo se **excluyen** (el servicio los rechaza juntos, `SEARCH-400`): escribir
+  en uno deshabilita el otro. El alta pide usuario, datos, contraseña temporal (mínimo ocho) y las
+  acciones requeridas al entrar; la modificación enseña el usuario en solo lectura y manda **solo
+  lo que cambió** (`null` es «no tocar» para el servicio; vaciar un campo viaja como cadena vacía);
+  los atributos se editan como texto, una línea `clave=valor` por valor. Activar y desactivar van
+  sin confirmación (son reversibles y no cierran sesiones: eso es de la ficha); borrar confirma. U2
+  trae la **ficha** (`usuarios/{id}`): cabecera con estado, email, acciones pendientes y
+  atributos, botonera con modificar, activar/desactivar, contraseña temporal, correo de acciones
+  y borrar (cada botón con su permiso), y una pestaña por cosa que Keycloak guarda aparte, que
+  pide sus datos la primera vez que se abre: **Perfiles** (asignar uno de los que faltan y quitar;
+  se pinta la lista que devuelve el servicio) y **Roles de cliente** (elegir cliente, luego los
+  roles que aún no tiene; quitar es el `DELETE` con cuerpo). La contraseña temporal lo es por
+  defecto (la fija otra persona) y la política del realm cae sobre el campo; el correo de acciones
+  necesita SMTP en el realm y, sin él, la notificación enseña el detalle del 502. U3 añade a la
+  ficha las pestañas **Sesiones** (las normales y las offline, cada una con su lista y su «cerrar
+  todas» confirmado; una sola se cierra sin preguntar, y una que ya no exista o no sea de ese
+  usuario, `SES-404`, se avisa y se recarga) y **Credenciales** (tipo, etiqueta y fecha, sin
+  secretos; quitar confirma y, si es la contraseña, avisa de que la persona no podrá entrar
+  hasta que se le fije una temporal), y el botón **«Sacar a la persona»**: las tres llamadas que
+  el README de `mto-users` deja al cliente, en su orden (desactivar, cerrar las sesiones, revocar
+  las offline), parando en el primer fallo y diciendo qué paso falló y qué quedó hecho. Pide
+  `users-write` y `users-sessions-write` a la vez. U4 cierra el módulo con dos catálogos de solo
+  lectura bajo el mismo grupo del menú: **Perfiles de usuario** (`usuarios/perfiles`: la lista con
+  filtro local y, para el elegido, lo que concede —roles por cliente y de realm— y sus miembros)
+  y **Roles de cliente** (`usuarios/roles`: los roles del cliente elegido, sin los clientes
+  protegidos que `mto-users` no lista, y quién tiene cada uno). Los miembros llegan del servicio
+  como lista plana y sin total, así que se pasean con «anteriores/siguientes» y una página llena
+  es la única señal de que hay más; son asignaciones directas (quien tiene un rol por un perfil
+  aparece en el perfil, no en el rol), y una fila abre la ficha.
+
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|
 | Exportar perfiles, consultar, descargar | `config-read` |
@@ -96,6 +134,20 @@ Los botones siguen los permisos que aplica el servicio a cada catálogo:
 | Nuevo, modificar | `config-write` + `lov-manage` |
 | Borrar | `config-delete` + `lov-manage` |
 | Alta múltiple, activar/desactivar seleccionados | `config-import` + `lov-manage` |
+
+Las pantallas de usuarios (fase 5) siguen los permisos de `mto-users-api`, y ninguno implica otro:
+
+| Acción sobre un usuario | Roles de cliente de `mto-users-api` |
+|---|---|
+| Ver la lista, la ficha, perfiles, roles, sesiones, credenciales y catálogos | `users-read` |
+| Nuevo, modificar, activar/desactivar, enviar acciones por correo | `users-write` |
+| Borrar | `users-delete` |
+| Asignar y quitar roles de cliente | `users-roles-write` |
+| Asignar y quitar perfiles | `users-profiles-write` |
+| Contraseña temporal | `users-password-reset` |
+| Cerrar sesiones (normales y offline) | `users-sessions-write` |
+| Quitar una credencial | `users-credentials-write` |
+| «Sacar a la persona» (desactivar, cerrar sesiones, revocar offline) | `users-write` **y** `users-sessions-write` |
 
 Esconder un botón es cortesía: la guarda real es `@RolesAllowed` en la vista y el 403 del servicio.
 Con los usuarios de desarrollo, `config.responsable` (`mto-admin`) lo ve todo; `config.editor`
@@ -120,10 +172,13 @@ cd ../mto-backoffice
 
 | usuario | perfil | lo que ve |
 |---|---|---|
-| `config.responsable` | `mto-admin` | todo |
+| `config.responsable` | `mto-admin` | todo lo de configuración; los `config.*` no llevan `users-*`, así que no ven «Usuarios» |
 | `config.editor` | `mto-editor` | lectura; escritura de infraestructura pero no de catálogos (sin `lov-manage`) |
 | `config.lector` | `mto-viewer` | solo lectura |
 | `almacen.lector` | `mto-warehouse-viewer` | nada de configuración: el menú no ofrece las pantallas y la URL directa se deniega |
+| `usuarios.responsable` | `mto-users-admin` | el módulo Usuarios entero (fase 5); nada de configuración |
+| `usuarios.gestor` | `mto-users-manager` | Usuarios, todo menos borrar |
+| `usuarios.lector` | `mto-users-viewer` | Usuarios en solo lectura |
 
 La pantalla **Inicio** muestra el principal, las autoridades y las cinco audiencias del access token
 (`mto-configuration-api`, `mto-stock-api`, `mto-maintenance-api`, `mto-users-api`, `mto-gateway-api`):
@@ -138,7 +193,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 | `KEYCLOAK_ISSUER_URI` | Realm que emite los tokens | `http://auth.mto.local:8082/realms/mto` |
 | `KEYCLOAK_CLIENT_ID` | Cliente confidencial de esta aplicación | `mto-backoffice` |
 | `KEYCLOAK_CLIENT_SECRET` | Su secreto | vacío (`dev`: el local; `prod`: obligatorio) |
-| `KEYCLOAK_ROLES_CLIENT_ID` | Cliente cuyos roles del access token son los permisos | `mto-configuration-api` |
+| `KEYCLOAK_ROLES_CLIENT_IDS` | Clientes cuyos roles del access token son los permisos (lista por comas) | `mto-configuration-api,mto-users-api` |
 | `MTO_GATEWAY_URL` | El gateway | `http://localhost:8090` |
 | `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP | `2s` / `15s` |
 
@@ -150,11 +205,16 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 - Cliente **confidencial** `mto-backoffice` (Authorization Code con secreto) declarado en
   `keycloak/mto-backoffice-partial-import.json`, con los mismos cinco audience mapper que
   `mto-frontend`, que queda intacto y reservado a una futura SPA. Detalle en `keycloak/README.md`.
-- Los permisos son los roles de cliente de `mto-configuration-api` (`config-read`, `config-write`,
-  `config-delete`, `config-import`, `lov-manage`, `config-audit`), que llegan como
-  `ROLE_CONFIG_READ`... y se comprueban con `@RolesAllowed` en cada vista. Los roles de realm
-  (`mto-admin`, `mto-editor`...) llegan solo como `ROLE_REALM_*`: un perfil nunca se confunde con
-  un permiso.
+- Los permisos son roles de **cliente** de dos clientes: `mto-configuration-api` (`config-read`,
+  `config-write`, `config-delete`, `config-import`, `lov-manage`, `config-audit`) para las
+  pantallas de configuración y `mto-users-api` (`users-read`, `users-write`, `users-delete`,
+  `users-roles-write`, `users-password-reset`, `users-profiles-write`, `users-sessions-write`,
+  `users-credentials-write`) para el módulo de usuarios. Llegan como `ROLE_CONFIG_READ`,
+  `ROLE_USERS_READ`... y se comprueban con `@RolesAllowed` en cada vista; cada uno sale además
+  cualificado por su cliente (`ROLE_CLIENT_MTO_USERS_API_USERS_READ`). Que un rol de un cliente no
+  se confunda con uno del otro depende de que sus nombres no se solapen, cosa que
+  `SecurityLayerTest` comprueba. Los roles de realm (`mto-admin`, `mto-users-manager`...) llegan
+  solo como `ROLE_REALM_*`: un perfil nunca se confunde con un permiso.
 - Keycloak pone los roles en el **access token**, no en el ID token; por eso `BackofficeOidcUserService`
   verifica el access token y saca de él las autoridades. Sin eso, ninguna vista vería un rol.
 - Los access token duran cinco minutos. `UserTokenProvider` los refresca desde cualquier hilo
@@ -186,20 +246,23 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 
 ## Cómo se habla con la API
 
-- Un `RestClient` hacia el gateway (`/api/configuration/**` → `/api/v1/configuration/**`) con el
-  Bearer de la persona y un `X-Correlation-Id` nuevo por llamada, que el gateway acepta y propaga:
-  el mismo id sale en el log del gateway, en el de `mto-configuration` y en la notificación de
-  error que ve la persona.
+- Un `RestClient` hacia el gateway (`/api/configuration/**` → `/api/v1/configuration/**`,
+  `/api/users/**` → `/api/v1/users/**`) con el Bearer de la persona y un `X-Correlation-Id` nuevo
+  por llamada, que el gateway acepta y propaga: el mismo id sale en el log del gateway, en el del
+  servicio y en la notificación de error que ve la persona.
 - Interfaces declarativas `@HttpExchange` escritas a mano, pantalla a pantalla (`client/`). Nada de
   `openapi-generator`: los `/v3/api-docs` no pasan por el gateway y no se van a hacer pantallas
   para los 300 endpoints.
-- Los DTO son un **subconjunto**: solo las claves que usa la UI. La paginación es la forma DTO
-  `{content, page:{size,number,totalElements,totalPages}}`, que `mto-configuration` fija con
-  `spring.data.web.pageable.serialization-mode: via_dto`.
+- Los DTO son un **subconjunto**: solo las claves que usa la UI. La paginación de
+  `mto-configuration` es la forma DTO `{content, page:{size,number,totalElements,totalPages}}`,
+  fijada allí con `spring.data.web.pageable.serialization-mode: via_dto`. La de `mto-users` es la
+  de Keycloak: `first`/`max` (`max` ≤ 200) y una página `{content, first, max, total}` solo en la
+  búsqueda; las listas de miembros de un perfil o de un rol van planas, sin total.
 - Errores: `ApiErrorDecoder` entiende el `application/problem+json` de `mto-configuration` (`code`,
-  `traceId`, `retryable`, `errors[{field,code,message}]`), el 401/403 del gateway (solo
-  `correlationId`) y el 503 de su circuit breaker (`Retry-After`, `service`), y los convierte en
-  `NotFoundApiException`, `ValidationApiException`, `ForbiddenApiException`,
+  `traceId`, `retryable`, `errors[{field,code,message}]`), el de `mto-users` (`errorCode`,
+  `correlationId`, `validationErrors[{field,message}]`, `Retry-After` en su 503), el 401/403 del
+  gateway (solo `correlationId`) y el 503 de su circuit breaker (`Retry-After`, `service`), y los
+  convierte en `NotFoundApiException`, `ValidationApiException`, `ForbiddenApiException`,
   `SessionExpiredApiException`, `ConflictApiException` o `ServiceUnavailableApiException`.
 
 ## Pruebas

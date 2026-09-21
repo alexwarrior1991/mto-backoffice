@@ -49,9 +49,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `oauth2LoginPage("/oauth2/authorization/keycloak")`; sondas de salud abiertas),
   `KeycloakClientRegistrations` (el registro OIDC **construido a mano** desde `app.keycloak.*`),
   `BackofficeOidcUserService` (los roles se leen del **access token**), `KeycloakRoleMapper`
-  (claims → `ROLE_*`), `BackofficeUser` (el usuario con las audiencias del access token),
+  (claims → `ROLE_*` para los clientes de `app.keycloak.roles-client-ids`, más el sinónimo
+  `ROLE_CLIENT_<CLIENTE>_*`), `BackofficeUser` (el usuario con las audiencias del access token),
   `CurrentPrincipal` (nombre del principal desde cualquier hilo), `PrincipalSessionRecorder`,
-  `SecurityRoles`, `SecurityAuthorityPrefixes`, `JwtClaimNames`, `KeycloakProperties`.
+  `SecurityRoles` y `UserRoles` (los permisos de `mto-configuration-api` y de `mto-users-api`),
+  `SecurityAuthorityPrefixes`, `JwtClaimNames`, `KeycloakProperties`.
 - `configuration/client` — `GatewayClientConfiguration` (un `RestClient` hacia el gateway con dos
   interceptores, `BearerTokenInterceptor` y `CorrelationIdInterceptor`, y `ApiErrorDecoder` como
   manejador de estado; `HttpServiceProxyFactory` para las interfaces `@HttpExchange`),
@@ -65,7 +67,12 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   contra la subinterfaz), `BusinessEntityClient` (solo lectura), `MasterFilters` (cuerpo y orden
   del `/filter`) y `JobsClient` (los trabajos en segundo plano: importaciones multipart con
   `@RequestPart Resource`, exportación, republicado, la lista de todas las familias (`GET /jobs`,
-  paginada y filtrable por tipo y estado), estado y fichero por familia, `JobFamily`). Los DTO
+  paginada y filtrable por tipo y estado), estado y fichero por familia, `JobFamily`);
+  `client/users/UsersClient` (toda la API de `mto-users` bajo `/api/users`: búsqueda paginada
+  `first`/`max`, alta, modificación parcial, activar, borrado, contraseña temporal, correo de
+  acciones, sesiones normales y offline, credenciales, roles de cliente —quitar es un `DELETE`
+  con cuerpo—, perfiles y sus miembros; sus DTO son records en `client/dto/users`, con
+  `UsersPage` para `{content, first, max, total}`). Los DTO
   (`client/dto`): `LovDto` es un record con solo las claves que usa la UI y
   `@JsonInclude(NON_NULL)`; los maestros (`client/dto/master`) son **clases mutables** que heredan
   de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo y los hijos
@@ -76,8 +83,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   errores en `client/error` (`ApiProblem`, `ApiErrorDecoder` y la jerarquía
   `BackofficeApiException`, con `TooManyRequestsApiException` llevando el cuerpo del 429).
 - `ui` — `MainLayout` (AppLayout; el menú lo dan las vistas anotadas con `@Menu`, filtradas por
-  `AccessAnnotationChecker`; las de `infraestructura/*` se agrupan bajo «Infraestructura» y los
-  catálogos se listan a mano porque su vista lleva el recurso en la ruta), `ui/views/HomeView`,
+  `AccessAnnotationChecker`; las rutas con prefijo conocido (`infraestructura/*`, `usuarios/*`) se
+  agrupan por prefijo (`MainLayout.GROUPS`), una entrada cuya ruta es el propio prefijo es el
+  nodo del grupo, y los catálogos se listan a mano porque su vista lleva el recurso en la ruta),
+  `ui/views/HomeView`,
   `ui/lov` (`LovCrudView` en `catalogos/:resource`, `LovEditorDialog` con `Binder` sobre el modelo
   mutable `LovForm`, `LovBulkCreateDialog` con su parser de líneas), `ui/master` (`MasterView<D>`,
   la lista paginada en el servidor con `grid.setItems(fetch, count)` sobre `POST /filter`;
@@ -88,8 +97,22 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `SwitchDialog`), `ui/jobs` (`JobsView` en `trabajos`: los lanzadores y la lista del servicio,
   paginada y filtrada; `JobLog`, lo que solo sabe la sesión de sus trabajos —la etiqueta y el
   último estado— en la `VaadinSession`; `JobPolling`, el hilo compartido que vuelve a pedir la
-  página mientras hay algo en curso; `JobErrorsDialog`), `ui/support` (`UiErrors`: excepción →
-  `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`).
+  página mientras hay algo en curso; `JobErrorsDialog`), `ui/users` (`UsersView` en `usuarios`:
+  la lista paginada en el servidor con `grid.setItems(fetch, count)` sobre `GET /api/users` y
+  `first`/`max`; `UserEditorDialog`, el `Binder` sobre el modelo mutable `UserForm`, cuyas
+  propiedades se llaman como los campos del servicio para `ServerValidation`; `UserAttributes`,
+  los atributos como texto `clave=valor` por línea; `UserDetailView` en `usuarios/:userId`, la
+  ficha con su cabecera, su botonera por permiso y un `TabSheet` de paneles `LazyPanel`, que
+  piden sus datos la primera vez que se abren: `UserProfilesPanel`, `UserRolesPanel`,
+  `UserSessionsPanel` (normales y offline) y `UserCredentialsPanel`; `ResetPasswordDialog` y
+  `ExecuteActionsEmailDialog`, cada uno con su `Binder` sobre un `Form` con los nombres del
+  servicio; `TakeOut`, las tres llamadas de «sacar a la persona» en su orden, parando en el
+  primer fallo; `UserProfilesView` en `usuarios/perfiles` y `ClientRolesView` en `usuarios/roles`,
+  los dos catálogos de solo lectura con filtro local, y `MembersPanel`, los miembros de un perfil
+  o de un rol paseados sin total), `ui/support` (`UiErrors`: excepción →
+  `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`;
+  `OffsetPager`: anteriores/siguientes para una lista `first`/`max` sin total, donde una página
+  llena es la única señal de que hay más).
 - `configuration/vaadin` — `BackofficeSystemMessages`, los mensajes de sistema de Vaadin en
   castellano y con el aviso de sesión caducada apagado (recarga → login → SSO).
 
@@ -104,9 +127,12 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (firma y emisor) y aplica `KeycloakRoleMapper`. Un `GrantedAuthoritiesMapper` no sirve: no ve el
   access token.
 - **Los roles de realm se emiten solo como `ROLE_REALM_*`, nunca como `ROLE_*`.** Los permisos que
-  comprueban las vistas (`@RolesAllowed("CONFIG_READ")`) son roles de **cliente** de
-  `mto-configuration-api`. Si un rol de realm se emitiera con `ROLE_`, quien administre el realm
-  podría crear un rol llamado como un permiso y concederlo a cualquiera (`SecurityLayerTest`).
+  comprueban las vistas (`@RolesAllowed("CONFIG_READ")`, `@RolesAllowed("USERS_READ")`) son roles
+  de **cliente** de `mto-configuration-api` y de `mto-users-api` (`app.keycloak.roles-client-ids`).
+  Si un rol de realm se emitiera con `ROLE_`, quien administre el realm podría crear un rol llamado
+  como un permiso y concederlo a cualquiera (`SecurityLayerTest`). El mapeo emite `ROLE_X` para
+  los dos clientes, así que sus nombres de rol no pueden solaparse (`config-*` y `lov-manage`
+  frente a `users-*`; `SecurityLayerTest` lo comprueba), y además `ROLE_CLIENT_<CLIENTE>_X`.
 - **Sin descubrimiento OIDC en el arranque.** `KeycloakClientRegistrations` deriva los endpoints del
   issuer y añade `end_session_endpoint` a los metadatos; con `issuer-uri` en YAML la aplicación no
   arrancaría sin Keycloak, y con él tampoco arrancarían los tests de contexto. El JWK Set se pide al
@@ -122,12 +148,34 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 - **Los DTO son un subconjunto**: solo las claves que la UI usa. Un campo nuevo en el servicio no
   rompe nada aquí; lo desconocido se ignora.
 - **Los errores se tipan en la capa de cliente**, no en las vistas. `ApiErrorDecoder` tolera los
-  tres formatos que llegan (el `problem+json` de `mto-configuration` con `code`/`traceId`/`errors`,
-  el 401/403 del gateway solo con `correlationId`, y el 503 del fallback del gateway con
-  `Retry-After` y `service`) y las vistas solo conocen `BackofficeApiException` y sus subclases.
+  cuatro formatos que llegan (el `problem+json` de `mto-configuration` con `code`/`traceId`/`errors`,
+  el de `mto-users` con `errorCode`/`validationErrors[{field,message}]` —alias en `ApiProblem`, sin
+  código por campo—, el 401/403 del gateway solo con `correlationId`, y el 503 del fallback del
+  gateway con `Retry-After` y `service`) y las vistas solo conocen `BackofficeApiException` y sus
+  subclases. Un 502 no es transitorio y su notificación lleva el detalle.
 - **La paginación es la forma DTO** `{content, page:{size,number,totalElements,totalPages}}`, fijada
   en `mto-configuration` con `spring.data.web.pageable.serialization-mode: via_dto` y pinada allí
-  por test. `PageResponse<T>` la lee (y tolera `first`/`last` de stock y maintenance).
+  por test. `PageResponse<T>` la lee (y tolera `first`/`last` de stock y maintenance). La API de
+  usuarios pagina al estilo de Keycloak (`first`/`max` con `max` ≤ 200, `UsersPage<T>`), y las
+  listas de miembros de un perfil o de un rol no traen total.
+- **Un usuario se modifica con lo que cambió, y la lista se pide como la pide Keycloak.** El
+  `PUT /api/users/{id}` de `mto-users` es parcial: `null` es «no tocar» y la cadena vacía, «vaciar»,
+  así que `UserForm.toUpdateRequest(original)` compara con lo leído y solo manda lo distinto; el
+  nombre de usuario no viaja nunca. La lista pide cada tramo con `first`/`max` en trozos de como
+  mucho 200 (`UsersView.MAX_PAGE`, el tope del servicio) y no ordena porque la API no ordena. La
+  búsqueda por texto y el filtro por atributo se excluyen en la pantalla porque el servicio los
+  rechaza juntos (`SEARCH-400`): lo deshabilitado no viaja. Nada de esto se arregla aquí con
+  lógica propia: si la lista necesita orden u otro filtro, se pide en `mto-users`. En la ficha,
+  asignar y quitar perfiles o roles **pintan lo que devuelve el servicio** (la lista actualizada),
+  sin releer; y las rutas estáticas del módulo (`usuarios/perfiles`, `usuarios/roles`) ganan a
+  `usuarios/:userId` porque Vaadin resuelve antes los segmentos literales.
+- **«Sacar a la persona» son tres llamadas en ese orden, y no se funden en una.** Desactivar
+  solo bloquea el siguiente login, cerrar las sesiones no toca las offline y un token offline
+  sobrevive a las dos cosas hasta que se revoca: es lo que el README de `mto-users` deja
+  explícitamente en manos del cliente. `TakeOut.run` hace `PATCH /enabled {false}`,
+  `DELETE /sessions` y `DELETE /offline-sessions`, para en el primer `BackofficeApiException` y
+  devuelve lo hecho y el paso que falló; el botón pide `users-write` **y** `users-sessions-write`
+  (`hasAllRoles`). No es una regla nueva de negocio: es la orquestación documentada allí.
 - **El menú no es una guarda.** `MainLayout` esconde lo que la persona no puede abrir; quien manda
   es `@RolesAllowed` en la vista y el 403 del servicio. Dentro de una vista pasa lo mismo: los
   botones de `LovCrudView` siguen los permisos del servicio (`config-write`+`lov-manage` para crear
@@ -196,9 +244,15 @@ maestros: resolución del genérico, parámetros de página y orden del `/filter
 `null` en un `PUT`, referencias a catálogo como `{id, code}`, las ménsulas tipadas con su brazo y
 el seccionador 1:1 en un `PUT`; los trabajos: la importación como parte multipart con `dryRun` en
 la query, el 429 con el trabajo rechazado y el `Retry-After`, la lista paginada con sus filtros,
-el estado por familia y el fichero con sus cabeceras, qué es descargable),
-`SecurityLayerTest` (mapeo de roles, registro OIDC sin descubrimiento, roles desde el access token,
-`CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
+el estado por familia y el fichero con sus cabeceras, qué es descargable; los usuarios: la
+búsqueda `first/max` con su total, atributos repetidos, alta 201 sin la contraseña en el `toString`,
+`PUT` parcial y `PATCH` de activo, el `DELETE` con cuerpo de los roles, perfiles, sesiones,
+credenciales, contraseña y correo, miembros sin total, catálogos, y el `problem+json` de
+`mto-users` por alias),
+`SecurityLayerTest` (mapeo de roles de los dos clientes con el sinónimo cualificado, un cliente no
+listado no aporta nada, un rol de realm `users-read` nunca abre el módulo, `SecurityRoles` y
+`UserRoles` coinciden con el realm y son disjuntos, registro OIDC sin descubrimiento, roles desde
+el access token, `CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
 de la ruta y su filtro local, menú por roles, controles de escritura ocultos sin permiso, alta por
 diálogo, errores del servicio campo a campo, borrado con confirmación, lote sobre la selección,
 parser del alta múltiple, notificación de error, diagnóstico de audiencias; los maestros: lista
@@ -210,6 +264,19 @@ el perfil legible en la lista de seccionadores, los mensajes de sistema; los tra
 lanzar una importación, el progreso llegando por `pollOnce()` + `UI.access()` hasta el enlace de
 descarga y el botón de errores (que pide el detalle), el 429 apuntado como rechazado con su aviso,
 un trabajo propio fuera de la página seguido por su familia, la lista paginada y filtrada en el
-servicio, los lanzadores según permisos) y
+servicio, los lanzadores según permisos; los usuarios: el grupo «Usuarios» del menú y su ausencia
+sin `users-read`, un rol de realm que no abre la vista, la lista paginada con `first`/`max` y
+filtrada en el servicio, la exclusión entre búsqueda y atributo, los controles según permisos,
+alta con contraseña temporal y acciones, errores del servicio campo a campo, modificación con
+solo lo cambiado, activar/desactivar sin confirmación, borrado confirmado, el parser de
+atributos; la ficha: cabecera y pestañas cargadas al abrirse, usuario desconocido de vuelta a la
+lista, cada botón y cada panel tras su permiso, perfiles y roles asignados y quitados pintando la
+respuesta, contraseña temporal por defecto y la política del realm sobre el campo, el correo de
+acciones con su 502 detallado y sin email, modificar y desactivar repintando la cabecera, borrar
+de vuelta a la lista; sesiones normales y offline listadas y cerradas una a una o todas con
+confirmación, la sesión ajena avisada y recargada, credenciales quitadas con su aviso, y «sacar
+a la persona» con sus tres llamadas en orden y parando en el primer fallo; los catálogos: las
+rutas estáticas ganan a `:userId`, el catálogo de perfiles con lo que concede y sus miembros
+paseados sin total, el de roles por cliente con quién los tiene, y la fila que abre la ficha) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
 sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.

@@ -24,6 +24,36 @@ import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
 import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
 import com.alejandro.mtobackoffice.client.dto.master.StationDto;
 import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
+import com.alejandro.mtobackoffice.client.dto.users.ClientDto;
+import com.alejandro.mtobackoffice.client.dto.users.ClientRoleAssignmentDto;
+import com.alejandro.mtobackoffice.client.dto.users.ClientRoleDto;
+import com.alejandro.mtobackoffice.client.dto.users.CreateUserRequest;
+import com.alejandro.mtobackoffice.client.dto.users.ExecuteActionsEmailRequest;
+import com.alejandro.mtobackoffice.client.dto.users.RealmProfileSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.users.ResetPasswordRequest;
+import com.alejandro.mtobackoffice.client.dto.users.RoleNamesRequest;
+import com.alejandro.mtobackoffice.client.dto.users.UserCredentialDto;
+import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
+import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
+import com.alejandro.mtobackoffice.ui.users.TakeOut;
+import org.mockito.InOrder;
+import com.alejandro.mtobackoffice.client.dto.users.RealmProfileDto;
+import com.alejandro.mtobackoffice.ui.users.ClientRolesView;
+import com.alejandro.mtobackoffice.ui.users.UserDetailView;
+import com.alejandro.mtobackoffice.ui.users.UserProfilesView;
+import com.vaadin.flow.component.tabs.TabSheet;
+import com.alejandro.mtobackoffice.client.dto.users.RequiredAction;
+import com.alejandro.mtobackoffice.client.dto.users.UpdateUserRequest;
+import com.alejandro.mtobackoffice.client.dto.users.UserDto;
+import com.alejandro.mtobackoffice.client.dto.users.UserEnabledRequest;
+import com.alejandro.mtobackoffice.client.dto.users.UsersPage;
+import com.alejandro.mtobackoffice.client.users.UsersClient;
+import com.alejandro.mtobackoffice.ui.users.UserAttributes;
+import com.alejandro.mtobackoffice.ui.users.UsersView;
+import com.vaadin.flow.component.combobox.MultiSelectComboBox;
+import com.vaadin.flow.component.textfield.PasswordField;
+import com.vaadin.flow.component.textfield.TextArea;
+import java.util.Set;
 import com.alejandro.mtobackoffice.client.error.ApiFieldError;
 import com.alejandro.mtobackoffice.client.error.ApiProblem;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
@@ -57,6 +87,7 @@ import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.data.provider.SortDirection;
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.H4;
 import com.vaadin.flow.component.html.ListItem;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.notification.Notification;
@@ -103,6 +134,9 @@ import com.vaadin.flow.server.VaadinService;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -115,6 +149,8 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.intThat;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -155,6 +191,8 @@ class ViewLayerTest {
     private BusinessEntityClient businessEntityClient;
     @MockitoBean
     private JobsClient jobsClient;
+    @MockitoBean
+    private UsersClient usersClient;
 
     @BeforeEach
     void setUp() {
@@ -209,6 +247,7 @@ class ViewLayerTest {
         assertFalse(labels.contains("Infraestructura"), labels.toString());
         assertFalse(labels.contains("Vias"), labels.toString());
         assertFalse(labels.contains("Trabajos"), labels.toString());
+        assertFalse(labels.contains("Usuarios"), labels.toString());
     }
 
     @Test
@@ -223,6 +262,7 @@ class ViewLayerTest {
             assertTrue(labels.contains(resource.title()), "falta " + resource.title() + " en " + labels);
         }
         assertTrue(labels.contains("Trabajos"), labels.toString());
+        assertFalse(labels.contains("Usuarios"), "sin users-read no hay modulo de usuarios: " + labels);
     }
 
     @Test
@@ -470,6 +510,7 @@ class ViewLayerTest {
         when(disconnectorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<DisconnectorDto>of(), 0, 50));
         when(sectionInsulatorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<SectionInsulatorDto>of(), 0, 50));
         when(jobsClient.list(anyInt(), anyInt(), any(), any())).thenReturn(page(List.<JobDto>of(), 0, 20));
+        stubUsers(List.of());
     }
 
     private static ExecutionPackageDto executionPackage(Long id, String name) {
@@ -1073,5 +1114,1044 @@ class ViewLayerTest {
         LocatorJ._get(Button.class, spec -> spec.withId("import-profiles"));
         LocatorJ._get(Button.class, spec -> spec.withId("republish"));
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("import-lovs")).isEmpty());
+    }
+
+    // --- Usuarios (mto-users) ---------------------------------------------------------------------
+
+    private static final String USERS_ROUTE = UsersView.ROUTE;
+    private static final String ANA_ID = "0d5f1d1a-1111-4e43-9a5b-000000000001";
+    private static final String BRUNO_ID = "0d5f1d1a-1111-4e43-9a5b-000000000002";
+    private static final String CARLA_ID = "0d5f1d1a-1111-4e43-9a5b-000000000003";
+
+    private static UserDto user(String id, String username, String firstName, String lastName, String email, boolean enabled,
+                                Map<String, List<String>> attributes) {
+        return new UserDto(id, username, firstName, lastName, email, email != null, enabled,
+                Instant.parse("2026-09-01T08:30:00Z"), attributes, List.of());
+    }
+
+    private static List<UserDto> threeUsers() {
+        return List.of(
+                user(ANA_ID, "ana", "Ana", "Alvarez", "ana@mto.local", true, Map.of("dept", List.of("taller"))),
+                user(BRUNO_ID, "bruno", "Bruno", "Blanco", "bruno@mto.local", true, Map.of()),
+                user(CARLA_ID, "carla", "Carla", null, null, false, Map.of("dept", List.of("oficina"))));
+    }
+
+    /**
+     * El servicio simulado: filtra por texto, atributo y estado, y pagina con {@code first}/{@code max}
+     * como hace el de verdad (y como el de verdad, rechaza {@code search} junto a {@code attribute}).
+     */
+    private void stubUsers(List<UserDto> all) {
+        when(usersClient.search(any(), any(), any(), any(), any(), any(), anyInt(), anyInt())).thenAnswer(call -> {
+            String search = call.getArgument(0);
+            Boolean enabled = call.getArgument(3);
+            List<String> attributes = call.getArgument(5);
+            int first = call.getArgument(6);
+            int max = call.getArgument(7);
+            if (search != null && attributes != null) {
+                throw new IllegalStateException("search y attribute no viajan juntos");
+            }
+            if (max > 200) {
+                throw new IllegalStateException("max supera el tope del servicio: " + max);
+            }
+            String text = search == null ? "" : search.toLowerCase(Locale.ROOT);
+            List<UserDto> matching = all.stream()
+                    .filter(dto -> text.isEmpty() || dto.username().contains(text) || dto.fullName().toLowerCase(Locale.ROOT).contains(text))
+                    .filter(dto -> enabled == null || enabled.equals(dto.enabled()))
+                    .filter(dto -> attributes == null || attributes.stream().allMatch(pair -> hasAttribute(dto, pair)))
+                    .toList();
+            int from = Math.min(first, matching.size());
+            int to = Math.min(from + max, matching.size());
+            return new UsersPage<>(matching.subList(from, to), first, max, matching.size());
+        });
+    }
+
+    private static boolean hasAttribute(UserDto dto, String pair) {
+        int separator = pair.indexOf(':');
+        List<String> values = dto.attributes() == null ? null : dto.attributes().get(pair.substring(0, separator));
+        return values != null && values.contains(pair.substring(separator + 1));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Grid<UserDto> userGrid() {
+        return LocatorJ._get(Grid.class);
+    }
+
+    private static Button userAction(String id) {
+        return LocatorJ._get(GridKt._getCellComponent(userGrid(), 0, "actions"), Button.class, spec -> spec.withId(id));
+    }
+
+    @Test
+    void theMenuGroupsTheUsersScreensUnderUsers() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        List<String> labels = menuLabels();
+        assertTrue(labels.contains("Usuarios"), labels.toString());
+        assertFalse(labels.contains("Infraestructura"), "sin config-read no hay infraestructura: " + labels);
+        assertFalse(labels.contains("Catalogos"), labels.toString());
+        SideNavItem users = LocatorJ._get(SideNavItem.class, spec -> spec.withLabel("Usuarios"));
+        assertEquals(USERS_ROUTE, users.getPath().replaceFirst("^/", ""), "la lista es a la vez el nodo del grupo");
+        assertEquals(List.of("Perfiles de usuario", "Roles de cliente"), users.getItems().stream().map(SideNavItem::getLabel).toList(),
+                "los catalogos del modulo cuelgan del nodo");
+    }
+
+    @Test
+    void theUsersViewIsNotReachableWithARealmRoleOnly() {
+        loginAs("usuarios.impostor", "ROLE_REALM_USERS_READ", "ROLE_REALM_MTO_USERS_ADMIN");
+
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(USERS_ROUTE));
+
+        assertTrue(LocatorJ._find(UsersView.class).isEmpty());
+        verify(usersClient, never()).search(any(), any(), any(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void theUsersListIsPagedWithFirstAndMaxAndFilteredInTheServer() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        List<UserDto> many = new ArrayList<>();
+        for (int i = 0; i < 120; i++) {
+            many.add(user(UUID.randomUUID().toString(), String.format("user%03d", i), "Nombre", "Apellido " + i,
+                    "user" + i + "@mto.local", i % 3 != 0, Map.of("dept", List.of(i % 2 == 0 ? "taller" : "oficina"))));
+        }
+        stubUsers(many);
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        Grid<UserDto> grid = userGrid();
+
+        assertEquals(120, GridKt._size(grid));
+        LocatorJ._get(Span.class, spec -> spec.withText("120 usuarios"));
+        assertEquals("user000", GridKt._get(grid, 0).username());
+        assertEquals("user077", GridKt._get(grid, 77).username(), "la segunda pagina se pide con su first");
+        verify(usersClient, atLeastOnce()).search(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(0), anyInt());
+        verify(usersClient, atLeastOnce()).search(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), intThat(first -> first > 0), anyInt());
+        assertTrue(grid.getColumns().stream().noneMatch(Grid.Column::isSortable), "la API no ordena y las columnas tampoco");
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("users-search")), "user01");
+        assertEquals(10, GridKt._size(grid));
+        verify(usersClient, atLeastOnce()).search(eq("user01"), isNull(), isNull(), isNull(), isNull(), isNull(), eq(0), anyInt());
+
+        @SuppressWarnings("unchecked")
+        Select<EnabledFilter> state = LocatorJ._get(Select.class, spec -> spec.withLabel("Estado"));
+        LocatorJ._setValue(state, EnabledFilter.DISABLED);
+        assertEquals(3, GridKt._size(grid), "user012, user015 y user018 estan desactivados");
+        verify(usersClient, atLeastOnce()).search(eq("user01"), isNull(), isNull(), eq(false), isNull(), isNull(), eq(0), anyInt());
+        LocatorJ._get(Span.class, spec -> spec.withText("3 usuarios"));
+    }
+
+    @Test
+    void theSearchTextAndTheAttributeFilterExcludeEachOther() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        stubUsers(threeUsers());
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        TextField search = LocatorJ._get(TextField.class, spec -> spec.withId("users-search"));
+        TextField attribute = LocatorJ._get(TextField.class, spec -> spec.withId("users-attribute"));
+
+        LocatorJ._setValue(attribute, "dept:taller");
+        assertFalse(search.isEnabled(), "con un atributo la busqueda se deshabilita");
+        assertEquals(1, GridKt._size(userGrid()));
+        assertEquals("ana", GridKt._get(userGrid(), 0).username());
+        verify(usersClient, atLeastOnce()).search(isNull(), isNull(), isNull(), isNull(), isNull(), eq(List.of("dept:taller")), eq(0), anyInt());
+
+        clearInvocations(usersClient);
+        LocatorJ._setValue(attribute, "sin separador");
+        assertTrue(attribute.isInvalid(), "clave:valor o nada");
+        verify(usersClient, never()).search(any(), any(), any(), any(), any(), any(), anyInt(), anyInt());
+
+        LocatorJ._setValue(attribute, "");
+        assertTrue(search.isEnabled());
+        LocatorJ._setValue(search, "bru");
+        assertFalse(attribute.isEnabled(), "con texto de busqueda el atributo se deshabilita");
+        assertEquals(1, GridKt._size(userGrid()));
+        assertEquals("bruno", GridKt._get(userGrid(), 0).username());
+        verify(usersClient, never()).search(any(), any(), any(), any(), any(), argThat(attributes -> attributes != null), anyInt(), anyInt());
+    }
+
+    @Test
+    void aReadOnlyPersonSeesTheUsersWithoutAnyWriteControl() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        stubUsers(threeUsers());
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+
+        assertEquals(3, GridKt._size(userGrid()));
+        List<String> firstRow = GridKt._getFormattedRow(userGrid(), 0);
+        assertTrue(firstRow.contains("ana") && firstRow.contains("Ana Alvarez") && firstRow.contains("ana@mto.local"), firstRow.toString());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("user-create")).isEmpty());
+        Component actions = GridKt._getCellComponent(userGrid(), 0, "actions");
+        LocatorJ._get(actions, Button.class, spec -> spec.withId("open-" + ANA_ID));
+        assertTrue(LocatorJ._find(actions, Button.class, spec -> spec.withId("edit-" + ANA_ID)).isEmpty());
+        assertTrue(LocatorJ._find(actions, Button.class, spec -> spec.withId("toggle-" + ANA_ID)).isEmpty());
+        assertTrue(LocatorJ._find(actions, Button.class, spec -> spec.withId("delete-" + ANA_ID)).isEmpty());
+    }
+
+    @Test
+    void aManagerWithoutDeleteSeesEverythingButTheTrash() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUsers(threeUsers());
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+
+        LocatorJ._get(Button.class, spec -> spec.withId("user-create"));
+        Component actions = GridKt._getCellComponent(userGrid(), 0, "actions");
+        LocatorJ._get(actions, Button.class, spec -> spec.withId("edit-" + ANA_ID));
+        LocatorJ._get(actions, Button.class, spec -> spec.withId("toggle-" + ANA_ID));
+        assertTrue(LocatorJ._find(actions, Button.class, spec -> spec.withId("delete-" + ANA_ID)).isEmpty());
+    }
+
+    @Test
+    void creatingAUserPostsTheFormAndTheTemporaryPassword() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUsers(threeUsers());
+        when(usersClient.create(any())).thenAnswer(call -> {
+            CreateUserRequest request = call.getArgument(0);
+            return user(UUID.randomUUID().toString(), request.username(), request.firstName(), request.lastName(), request.email(), true, request.attributes());
+        });
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("user-create")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
+        TextField username = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Usuario"));
+        assertTrue(username.isInvalid(), "el usuario es obligatorio");
+        verify(usersClient, never()).create(any());
+
+        LocatorJ._setValue(username, "dario.diaz");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Nombre")), "Dario");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Email")), "dario@mto.local");
+        PasswordField password = LocatorJ._get(dialog, PasswordField.class, spec -> spec.withLabel("Contrasena temporal"));
+        LocatorJ._setValue(password, "corta");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
+        assertTrue(password.isInvalid(), "menos de ocho caracteres no viaja");
+        verify(usersClient, never()).create(any());
+
+        LocatorJ._setValue(password, "Temporal-2026");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RequiredAction> actions = LocatorJ._get(dialog, MultiSelectComboBox.class, spec -> spec.withLabel("Acciones requeridas al entrar"));
+        LocatorJ._setValue(actions, Set.of(RequiredAction.UPDATE_PASSWORD));
+        LocatorJ._setValue(LocatorJ._get(dialog, TextArea.class, spec -> spec.withLabel("Atributos (clave=valor por linea)")), "dept=taller\ndept=noche");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
+
+        verify(usersClient).create(argThat(request -> "dario.diaz".equals(request.username())
+                && "Dario".equals(request.firstName())
+                && request.lastName() == null
+                && "dario@mto.local".equals(request.email())
+                && Boolean.TRUE.equals(request.enabled())
+                && "Temporal-2026".equals(request.temporaryPassword())
+                && List.of(RequiredAction.UPDATE_PASSWORD).equals(request.requiredActions())
+                && Map.of("dept", List.of("taller", "noche")).equals(request.attributes())));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
+        NotificationsKt.expectNotifications("Guardado dario.diaz");
+    }
+
+    @Test
+    void serverValidationErrorsLandOnTheUserFieldsAndTheDialogStaysOpen() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUsers(threeUsers());
+        ApiProblem problem = new ApiProblem("about:blank", "Bad Request", 400, "La peticion no es valida", null,
+                "REQ-VALIDATION", null, null, null, false,
+                List.of(new ApiFieldError("email", null, "must be a well-formed email address"),
+                        new ApiFieldError("temporaryPassword", null, "la politica pide un digito")), null);
+        when(usersClient.create(any())).thenThrow(
+                BackofficeApiException.of(HttpStatus.BAD_REQUEST, problem, "corr-u2", null, "POST /api/users"));
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("user-create")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Usuario")), "elena");
+        TextField email = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Email"));
+        LocatorJ._setValue(email, "elena@mto.local");
+        PasswordField password = LocatorJ._get(dialog, PasswordField.class, spec -> spec.withLabel("Contrasena temporal"));
+        LocatorJ._setValue(password, "sinDigitos");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
+
+        assertTrue(email.isInvalid());
+        assertEquals("must be a well-formed email address", email.getErrorMessage());
+        assertTrue(password.isInvalid());
+        assertEquals("la politica pide un digito", password.getErrorMessage());
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto para corregir");
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "todo cayo en un campo: nada que notificar");
+    }
+
+    @Test
+    void editingAUserSendsOnlyWhatChangedAndKeepsTheUsername() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUsers(threeUsers());
+        when(usersClient.update(eq(ANA_ID), any())).thenAnswer(call -> threeUsers().getFirst());
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        LocatorJ._click(userAction("edit-" + ANA_ID));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        TextField username = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Usuario"));
+        assertEquals("ana", username.getValue());
+        assertTrue(username.isReadOnly(), "el nombre de usuario no se cambia");
+        assertTrue(LocatorJ._find(dialog, PasswordField.class).isEmpty(), "la contrasena tiene su propio dialogo en la ficha");
+        TextArea attributes = LocatorJ._get(dialog, TextArea.class, spec -> spec.withLabel("Atributos (clave=valor por linea)"));
+        assertEquals("dept=taller", attributes.getValue());
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Apellidos")), "Alvarez Arias");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Email")), "");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
+
+        verify(usersClient).update(eq(ANA_ID), argThat(request -> request.firstName() == null
+                && "Alvarez Arias".equals(request.lastName())
+                && "".equals(request.email())
+                && request.emailVerified() == null
+                && request.attributes() == null));
+        verify(usersClient, never()).create(any());
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
+    }
+
+    @Test
+    void enablingAndDisablingPatchTheFlagWithoutConfirmation() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUsers(threeUsers());
+        when(usersClient.setEnabled(eq(ANA_ID), any())).thenAnswer(call -> {
+            UserEnabledRequest request = call.getArgument(1);
+            return user(ANA_ID, "ana", "Ana", "Alvarez", "ana@mto.local", request.enabled(), Map.of());
+        });
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        LocatorJ._click(userAction("toggle-" + ANA_ID));
+
+        assertTrue(LocatorJ._find(ConfirmDialog.class).isEmpty(), "activar y desactivar son reversibles: sin confirmacion");
+        verify(usersClient).setEnabled(ANA_ID, new UserEnabledRequest(false));
+        NotificationsKt.expectNotifications("Desactivado ana");
+    }
+
+    @Test
+    void deletingAUserAsksForConfirmationThenCallsTheService() {
+        loginAs("usuarios.responsable", "ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_DELETE");
+        stubUsers(threeUsers());
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        LocatorJ._click(userAction("delete-" + ANA_ID));
+
+        verify(usersClient, never()).delete(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+
+        verify(usersClient).delete(ANA_ID);
+        NotificationsKt.expectNotifications("Borrado ana");
+    }
+
+    @Test
+    void attributesAreParsedOneKeyValuePerLineAndRejectWhatCannotBeRead() {
+        assertEquals(Map.of("dept", List.of("taller", "noche"), "turno", List.of("")),
+                UserAttributes.parse(" dept = taller \n\ndept=noche\nturno=\n"));
+        assertEquals(Map.of("url", List.of("http://x/a=b")), UserAttributes.parse("url=http://x/a=b"), "solo parte el primer =");
+        assertTrue(UserAttributes.parse(null).isEmpty());
+        assertTrue(UserAttributes.parse("  \n ").isEmpty());
+
+        IllegalArgumentException noSeparator = assertThrows(IllegalArgumentException.class, () -> UserAttributes.parse("dept=taller\nsin separador"));
+        assertTrue(noSeparator.getMessage().startsWith("Linea 2"), noSeparator.getMessage());
+        IllegalArgumentException noKey = assertThrows(IllegalArgumentException.class, () -> UserAttributes.parse("=valor"));
+        assertTrue(noKey.getMessage().startsWith("Linea 1"), noKey.getMessage());
+
+        assertEquals("dept=noche\ndept=taller\nturno=", UserAttributes.format(Map.of("turno", List.of(""), "dept", List.of("noche", "taller"))));
+        assertEquals("", UserAttributes.format(null));
+        assertEquals("dept=noche\ndept=taller\nturno=", UserAttributes.format(UserAttributes.parse(UserAttributes.format(
+                Map.of("turno", List.of(""), "dept", List.of("noche", "taller"))))), "ida y vuelta estable");
+    }
+
+    // --- La ficha del usuario -----------------------------------------------------------------------
+
+    private static final String ANA_ROUTE = UsersView.ROUTE_PREFIX + "/" + ANA_ID;
+    private static final RealmProfileSummaryDto VIEWER = new RealmProfileSummaryDto("mto-users-viewer", "Solo lectura de usuarios");
+    private static final RealmProfileSummaryDto MANAGER = new RealmProfileSummaryDto("mto-users-manager", "Gestion de usuarios");
+    private static final RealmProfileSummaryDto ADMIN = new RealmProfileSummaryDto("mto-users-admin", null);
+    private static final ClientDto USERS_API = new ClientDto("mto-users-api", "MTO Users API", null);
+    private static final ClientDto CONFIGURATION_API = new ClientDto("mto-configuration-api", null, null);
+    private static final List<String> ANA_REALM_ROLES = List.of("mto-users-viewer", "default-roles-mto");
+
+    private static UserDto ana() {
+        return threeUsers().getFirst();
+    }
+
+    private static UserRolesDto anaRoles(String... usersApiRoles) {
+        return new UserRolesDto(ANA_REALM_ROLES, List.of(new ClientRoleAssignmentDto("mto-users-api", List.of(usersApiRoles))));
+    }
+
+    /** El servicio simulado detras de la ficha: el usuario, sus perfiles y roles, y los catalogos. */
+    private void stubUserDetail(UserDto dto) {
+        when(usersClient.get(dto.id())).thenReturn(dto);
+        when(usersClient.userProfiles(dto.id())).thenReturn(List.of(VIEWER));
+        when(usersClient.userRoles(dto.id())).thenReturn(anaRoles("users-read"));
+        when(usersClient.profiles()).thenReturn(List.of(VIEWER, MANAGER, ADMIN));
+        when(usersClient.clients()).thenReturn(List.of(USERS_API, CONFIGURATION_API));
+        when(usersClient.clientRoles("mto-users-api")).thenReturn(List.of(
+                new ClientRoleDto("users-read", null, false), new ClientRoleDto("users-write", null, false), new ClientRoleDto("users-delete", null, false)));
+        when(usersClient.sessions(dto.id())).thenReturn(List.of(
+                new UserSessionDto("s1", dto.username(), "10.0.0.7", Instant.parse("2026-09-21T07:00:00Z"), Instant.parse("2026-09-21T07:45:00Z"), List.of("mto-backoffice")),
+                new UserSessionDto("s2", dto.username(), "10.0.0.8", Instant.parse("2026-09-21T08:00:00Z"), null, List.of("mto-frontend", "mto-gateway"))));
+        when(usersClient.offlineSessions(dto.id())).thenReturn(List.of(
+                new UserSessionDto("o1", dto.username(), null, Instant.parse("2026-09-01T09:00:00Z"), Instant.parse("2026-09-20T09:00:00Z"), List.of("mto-frontend"))));
+        when(usersClient.credentials(dto.id())).thenReturn(List.of(
+                new UserCredentialDto("c1", "password", null, Instant.parse("2026-09-01T08:30:00Z")),
+                new UserCredentialDto("c2", "otp", "Movil", Instant.parse("2026-09-02T08:30:00Z"))));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Grid<Object> gridWithId(String id) {
+        return LocatorJ._get(Grid.class, spec -> spec.withId(id));
+    }
+
+    private static Button detailButton(String id) {
+        return LocatorJ._get(Button.class, spec -> spec.withId(id));
+    }
+
+    private static void selectTab(int index) {
+        LocatorJ._get(TabSheet.class).setSelectedIndex(index);
+    }
+
+    @Test
+    void theListOpensTheDetailWithItsButton() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        stubUsers(threeUsers());
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        LocatorJ._click(userAction("open-" + ANA_ID));
+
+        LocatorJ._get(UserDetailView.class);
+        LocatorJ._get(H2.class, spec -> spec.withText("ana"));
+        assertTrue(LocatorJ._find(UsersView.class).isEmpty());
+    }
+
+    @Test
+    void theUserDetailShowsTheHeaderAndLoadsEachTabWhenSelected() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        UserDto ana = new UserDto(ANA_ID, "ana", "Ana", "Alvarez", "ana@mto.local", true, true,
+                Instant.parse("2026-09-01T08:30:00Z"), Map.of("dept", List.of("taller", "noche")), List.of("UPDATE_PASSWORD", "CUSTOM_ACTION"));
+        stubUserDetail(ana);
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+
+        LocatorJ._get(H2.class, spec -> spec.withText("ana"));
+        LocatorJ._get(Span.class, spec -> spec.withText("Activo"));
+        LocatorJ._get(Span.class, spec -> spec.withText("Email verificado"));
+        assertTrue(LocatorJ._find(Span.class).stream().anyMatch(span -> span.getText().startsWith("Ana Alvarez · ana@mto.local · creado el ")),
+                "nombre, email y fecha en la cabecera");
+        LocatorJ._get(Span.class, spec -> spec.withText("Acciones pendientes al entrar: Cambiar la contrasena, CUSTOM_ACTION"));
+        LocatorJ._get(Span.class, spec -> spec.withText("Atributos: dept=taller|noche"));
+
+        verify(usersClient).userProfiles(ANA_ID);
+        verify(usersClient, never()).userRoles(any());
+        Grid<Object> profiles = gridWithId("profiles-grid");
+        assertEquals(1, GridKt._size(profiles));
+        assertTrue(GridKt._getFormattedRow(profiles, 0).contains("mto-users-viewer"));
+
+        selectTab(1);
+        verify(usersClient).userRoles(ANA_ID);
+        Grid<Object> roles = gridWithId("roles-grid");
+        assertEquals(1, GridKt._size(roles));
+        List<String> row = GridKt._getFormattedRow(roles, 0);
+        assertTrue(row.contains("mto-users-api") && row.contains("users-read"), row.toString());
+        LocatorJ._get(Span.class, spec -> spec.withText("Roles de realm (los perfiles estan entre ellos): mto-users-viewer, default-roles-mto"));
+
+        selectTab(0);
+        selectTab(1);
+        verify(usersClient, times(1)).userRoles(ANA_ID);
+        verify(usersClient, times(1)).userProfiles(ANA_ID);
+    }
+
+    @Test
+    void anUnknownUserGoesBackToTheListWithANotification() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        ApiProblem problem = new ApiProblem("about:blank", "Not Found", 404, "User nope not found", null,
+                "USR-404", null, null, null, false, null, null);
+        when(usersClient.get("nope")).thenThrow(BackofficeApiException.of(HttpStatus.NOT_FOUND, problem, "corr-u4", null, "GET /api/users/nope"));
+
+        UI.getCurrent().navigate(UsersView.ROUTE_PREFIX + "/nope");
+
+        LocatorJ._get(UsersView.class);
+        assertTrue(LocatorJ._find(UserDetailView.class).isEmpty());
+        NotificationsKt.expectNotifications("No existe el usuario nope");
+    }
+
+    @Test
+    void aReadOnlyPersonSeesTheDetailWithoutAnyAction() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+
+        for (String id : List.of("user-edit", "user-toggle", "user-reset-password", "user-actions-email", "user-delete")) {
+            assertTrue(LocatorJ._find(Button.class, spec -> spec.withId(id)).isEmpty(), id + " no se ofrece sin su permiso");
+        }
+        LocatorJ._get(Button.class, spec -> spec.withText("Volver a la lista"));
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("profile-assign")).isEmpty());
+        assertNull(gridWithId("profiles-grid").getColumnByKey("actions"));
+        selectTab(1);
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("role-client")).isEmpty());
+        assertNull(gridWithId("roles-grid").getColumnByKey("actions"));
+        verify(usersClient, never()).profiles();
+        verify(usersClient, never()).clients();
+    }
+
+    @Test
+    void eachDetailActionNeedsItsOwnPermission() {
+        loginAs("usuarios.mixto", "ROLE_USERS_READ", "ROLE_USERS_PASSWORD_RESET", "ROLE_USERS_PROFILES_WRITE", "ROLE_USERS_DELETE");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+
+        detailButton("user-reset-password");
+        detailButton("user-delete");
+        for (String id : List.of("user-edit", "user-toggle", "user-actions-email")) {
+            assertTrue(LocatorJ._find(Button.class, spec -> spec.withId(id)).isEmpty(), id + " pide users-write");
+        }
+        LocatorJ._get(ComboBox.class, spec -> spec.withId("profile-assign"));
+        selectTab(1);
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("role-client")).isEmpty(), "los roles piden users-roles-write");
+    }
+
+    @Test
+    void assigningAndRemovingAProfileCallTheServiceAndPaintWhatItReturns() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_PROFILES_WRITE");
+        stubUserDetail(ana());
+        when(usersClient.assignProfile(ANA_ID, "mto-users-manager")).thenReturn(List.of(VIEWER, MANAGER));
+        when(usersClient.removeProfile(ANA_ID, "mto-users-viewer")).thenReturn(List.of(MANAGER));
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        @SuppressWarnings("unchecked")
+        ComboBox<RealmProfileSummaryDto> picker = LocatorJ._get(ComboBox.class, spec -> spec.withId("profile-assign"));
+        Button assign = detailButton("profile-assign-button");
+        assertEquals(List.of(MANAGER, ADMIN), picker.getListDataView().getItems().toList(), "solo lo que falta por asignar");
+        assertFalse(assign.isEnabled());
+
+        LocatorJ._setValue(picker, MANAGER);
+        LocatorJ._click(assign);
+
+        verify(usersClient).assignProfile(ANA_ID, "mto-users-manager");
+        Grid<Object> profiles = gridWithId("profiles-grid");
+        assertEquals(2, GridKt._size(profiles), "se pinta lo que devuelve el servicio");
+        assertEquals(List.of(ADMIN), picker.getListDataView().getItems().toList());
+        NotificationsKt.expectNotifications("Perfil mto-users-manager asignado");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(profiles, 0, "actions"), Button.class, spec -> spec.withId("remove-profile-mto-users-viewer")));
+
+        verify(usersClient).removeProfile(ANA_ID, "mto-users-viewer");
+        assertEquals(1, GridKt._size(profiles));
+        assertTrue(GridKt._getFormattedRow(profiles, 0).contains("mto-users-manager"));
+        verify(usersClient, times(1)).userProfiles(ANA_ID);
+    }
+
+    @Test
+    void clientRolesAreAddedWithAPutAndRemovedWithADeleteBody() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_ROLES_WRITE");
+        stubUserDetail(ana());
+        when(usersClient.addClientRoles(eq(ANA_ID), eq("mto-users-api"), any())).thenReturn(anaRoles("users-read", "users-write"));
+        when(usersClient.removeClientRoles(eq(ANA_ID), eq("mto-users-api"), any())).thenReturn(anaRoles("users-write"));
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(1);
+        @SuppressWarnings("unchecked")
+        ComboBox<ClientDto> clientPicker = LocatorJ._get(ComboBox.class, spec -> spec.withId("role-client"));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<String> rolePicker = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("role-names"));
+        Button assign = detailButton("role-assign");
+        assertEquals(List.of(USERS_API, CONFIGURATION_API), clientPicker.getListDataView().getItems().toList());
+        assertFalse(rolePicker.isEnabled(), "primero el cliente");
+
+        LocatorJ._setValue(clientPicker, USERS_API);
+        verify(usersClient).clientRoles("mto-users-api");
+        assertEquals(List.of("users-write", "users-delete"), rolePicker.getListDataView().getItems().toList(), "sin los que ya tiene");
+        assertFalse(assign.isEnabled());
+        LocatorJ._setValue(rolePicker, Set.of("users-write"));
+        LocatorJ._click(assign);
+
+        verify(usersClient).addClientRoles(ANA_ID, "mto-users-api", new RoleNamesRequest(List.of("users-write")));
+        Grid<Object> roles = gridWithId("roles-grid");
+        assertEquals(2, GridKt._size(roles));
+        NotificationsKt.expectNotifications("Rol users-write asignado");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(roles, 0, "actions"), Button.class, spec -> spec.withId("remove-role-mto-users-api-users-read")));
+
+        verify(usersClient).removeClientRoles(ANA_ID, "mto-users-api", new RoleNamesRequest(List.of("users-read")));
+        assertEquals(1, GridKt._size(roles));
+        assertTrue(GridKt._getFormattedRow(roles, 0).contains("users-write"));
+        verify(usersClient, times(1)).userRoles(ANA_ID);
+    }
+
+    @Test
+    void theTemporaryPasswordDialogDefaultsToTemporaryAndNeverSendsAShortOne() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_PASSWORD_RESET");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        LocatorJ._click(detailButton("user-reset-password"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        Checkbox temporary = LocatorJ._get(dialog, Checkbox.class);
+        PasswordField password = LocatorJ._get(dialog, PasswordField.class);
+        Button save = LocatorJ._get(dialog, Button.class, spec -> spec.withId("reset-password-save"));
+        assertTrue(temporary.getValue(), "temporal por defecto: la fija otra persona");
+
+        LocatorJ._click(save);
+        assertTrue(password.isInvalid(), "obligatoria");
+        LocatorJ._setValue(password, "corta");
+        LocatorJ._click(save);
+        assertTrue(password.isInvalid(), "menos de ocho no viaja");
+        verify(usersClient, never()).resetPassword(any(), any());
+
+        LocatorJ._setValue(password, "Temporal-2026");
+        LocatorJ._click(save);
+
+        verify(usersClient).resetPassword(ANA_ID, new ResetPasswordRequest("Temporal-2026", true));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra");
+        NotificationsKt.expectNotifications("Contrasena fijada para ana (temporal)");
+    }
+
+    @Test
+    void thePasswordPolicyOfTheRealmLandsOnThePasswordField() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_PASSWORD_RESET");
+        stubUserDetail(ana());
+        ApiProblem problem = new ApiProblem("about:blank", "Bad Request", 400, "Keycloak rejected the request", null,
+                "KC-400", null, null, null, false, List.of(new ApiFieldError("password", null, "invalidPasswordMinDigitsMessage")), null);
+        doThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, problem, "corr-u5", null, "POST /api/users/" + ANA_ID + "/reset-password"))
+                .when(usersClient).resetPassword(eq(ANA_ID), any());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        LocatorJ._click(detailButton("user-reset-password"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        PasswordField password = LocatorJ._get(dialog, PasswordField.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, Checkbox.class), false);
+        LocatorJ._setValue(password, "sinDigitosAqui");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("reset-password-save")));
+
+        verify(usersClient).resetPassword(ANA_ID, new ResetPasswordRequest("sinDigitosAqui", false));
+        assertTrue(password.isInvalid());
+        assertEquals("invalidPasswordMinDigitsMessage", password.getErrorMessage());
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto para corregir");
+    }
+
+    @Test
+    void theActionsEmailDialogSendsTheSelectedActionsAndReportsA502WithItsDetail() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUserDetail(ana());
+        ApiProblem problem = new ApiProblem("about:blank", "Bad Gateway", 502, "Keycloak no ha podido enviar el correo: SMTP no configurado en el realm", null,
+                "KC-502", null, null, null, false, null, null);
+        doThrow(BackofficeApiException.of(HttpStatus.BAD_GATEWAY, problem, "corr-u6", null, "POST /api/users/" + ANA_ID + "/execute-actions-email"))
+                .when(usersClient).executeActionsEmail(eq(ANA_ID), any());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        LocatorJ._click(detailButton("user-actions-email"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RequiredAction> actions = LocatorJ._get(dialog, MultiSelectComboBox.class);
+        IntegerField lifespan = LocatorJ._get(dialog, IntegerField.class);
+        Button send = LocatorJ._get(dialog, Button.class, spec -> spec.withId("actions-email-send"));
+
+        LocatorJ._click(send);
+        assertTrue(actions.isInvalid(), "al menos una accion");
+        LocatorJ._setValue(actions, Set.of(RequiredAction.UPDATE_PASSWORD));
+        LocatorJ._setValue(lifespan, 30);
+        LocatorJ._click(send);
+        assertTrue(lifespan.isInvalid(), "un enlace de 30 segundos no sirve a nadie");
+        verify(usersClient, never()).executeActionsEmail(any(), any());
+
+        LocatorJ._setValue(lifespan, 3600);
+        LocatorJ._click(send);
+
+        ExecuteActionsEmailRequest expected = new ExecuteActionsEmailRequest(List.of(RequiredAction.UPDATE_PASSWORD), 3600, null, null);
+        verify(usersClient).executeActionsEmail(ANA_ID, expected);
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size());
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText(
+                "El servicio no ha podido completar la operacion. Keycloak no ha podido enviar el correo: SMTP no configurado en el realm"));
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "sin SMTP el dialogo sigue abierto: no hay nada que corregir aqui, pero tampoco se pierde");
+        NotificationsKt.clearNotifications();
+
+        doNothing().when(usersClient).executeActionsEmail(eq(ANA_ID), any());
+        LocatorJ._click(send);
+
+        verify(usersClient, times(2)).executeActionsEmail(ANA_ID, expected);
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+        NotificationsKt.expectNotifications("Correo enviado a ana@mto.local");
+    }
+
+    @Test
+    void theActionsEmailCannotBeSentToSomebodyWithoutEmail() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        UserDto carla = threeUsers().get(2);
+        stubUserDetail(carla);
+
+        UI.getCurrent().navigate(UsersView.ROUTE_PREFIX + "/" + CARLA_ID);
+        LocatorJ._click(detailButton("user-actions-email"));
+
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        assertFalse(LocatorJ._get(dialog, Button.class, spec -> spec.withId("actions-email-send")).isEnabled());
+    }
+
+    @Test
+    void editingFromTheDetailReloadsTheHeader() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        UserDto renamed = user(ANA_ID, "ana", "Ana", "Alvarez Arias", "ana@mto.local", true, Map.of("dept", List.of("taller")));
+        stubUserDetail(ana());
+        when(usersClient.get(ANA_ID)).thenReturn(ana(), renamed);
+        when(usersClient.update(eq(ANA_ID), any())).thenReturn(renamed);
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        LocatorJ._click(detailButton("user-edit"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Apellidos")), "Alvarez Arias");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
+
+        verify(usersClient).update(eq(ANA_ID), argThat(request -> "Alvarez Arias".equals(request.lastName()) && request.firstName() == null));
+        verify(usersClient, times(2)).get(ANA_ID);
+        assertTrue(LocatorJ._find(Span.class).stream().anyMatch(span -> span.getText().startsWith("Ana Alvarez Arias · ana@mto.local")),
+                "la cabecera se repinta con lo releido");
+    }
+
+    @Test
+    void disablingFromTheDetailRepaintsTheBadgeWithoutConfirmation() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUserDetail(ana());
+        when(usersClient.setEnabled(ANA_ID, new UserEnabledRequest(false)))
+                .thenReturn(user(ANA_ID, "ana", "Ana", "Alvarez", "ana@mto.local", false, Map.of()));
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        Button toggle = detailButton("user-toggle");
+        assertEquals("Desactivar", toggle.getText());
+        LocatorJ._click(toggle);
+
+        assertTrue(LocatorJ._find(ConfirmDialog.class).isEmpty());
+        verify(usersClient).setEnabled(ANA_ID, new UserEnabledRequest(false));
+        LocatorJ._get(Span.class, spec -> spec.withText("Desactivado"));
+        assertEquals("Activar", toggle.getText());
+        NotificationsKt.expectNotifications("Desactivado ana");
+    }
+
+    @Test
+    void deletingFromTheDetailConfirmsAndGoesBackToTheList() {
+        loginAs("usuarios.responsable", "ROLE_USERS_READ", "ROLE_USERS_DELETE");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        LocatorJ._click(detailButton("user-delete"));
+
+        verify(usersClient, never()).delete(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+
+        verify(usersClient).delete(ANA_ID);
+        LocatorJ._get(UsersView.class);
+        assertTrue(LocatorJ._find(UserDetailView.class).isEmpty());
+        NotificationsKt.expectNotifications("Borrado ana");
+    }
+
+    // --- Sesiones, credenciales y «sacar a la persona» ----------------------------------------------
+
+    @Test
+    void theSessionsTabListsBothKindsAndClosingThemNeedsThePermission() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        verify(usersClient, never()).sessions(any());
+        selectTab(2);
+
+        verify(usersClient).sessions(ANA_ID);
+        verify(usersClient).offlineSessions(ANA_ID);
+        Grid<Object> sessions = gridWithId("sessions-grid");
+        Grid<Object> offline = gridWithId("offline-sessions-grid");
+        assertEquals(2, GridKt._size(sessions));
+        assertEquals(1, GridKt._size(offline));
+        List<String> first = GridKt._getFormattedRow(sessions, 0);
+        assertTrue(first.contains("10.0.0.7") && first.contains("mto-backoffice"), first.toString());
+        assertTrue(GridKt._getFormattedRow(sessions, 1).contains("mto-frontend, mto-gateway"));
+        LocatorJ._get(Span.class, spec -> spec.withText("2 sesiones"));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 sesion offline"));
+        assertNull(sessions.getColumnByKey("actions"));
+        assertNull(offline.getColumnByKey("actions"));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("sessions-revoke-all")).isEmpty());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("offline-sessions-revoke-all")).isEmpty());
+    }
+
+    @Test
+    void closingOneSessionIsDirectAndClosingAllConfirmsForBothKinds() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_SESSIONS_WRITE");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(2);
+        Grid<Object> sessions = gridWithId("sessions-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(sessions, 0, "actions"), Button.class, spec -> spec.withId("revoke-s1")));
+
+        assertTrue(LocatorJ._find(ConfirmDialog.class).isEmpty(), "una sesion se cierra sin preguntar");
+        verify(usersClient).revokeSession(ANA_ID, "s1");
+        verify(usersClient, times(2)).sessions(ANA_ID);
+        verify(usersClient, times(2)).offlineSessions(ANA_ID);
+        NotificationsKt.expectNotifications("Sesion cerrada");
+
+        LocatorJ._click(detailButton("sessions-revoke-all"));
+        verify(usersClient, never()).revokeAllSessions(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(usersClient).revokeAllSessions(ANA_ID);
+        verify(usersClient, never()).revokeAllOfflineSessions(any());
+        NotificationsKt.expectNotifications("Sesiones cerradas");
+
+        Grid<Object> offline = gridWithId("offline-sessions-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(offline, 0, "actions"), Button.class, spec -> spec.withId("revoke-offline-o1")));
+        verify(usersClient).revokeOfflineSession(ANA_ID, "o1");
+        NotificationsKt.expectNotifications("Sesion offline revocada");
+
+        LocatorJ._click(detailButton("offline-sessions-revoke-all"));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(usersClient).revokeAllOfflineSessions(ANA_ID);
+        verify(usersClient, never()).setEnabled(any(), any());
+    }
+
+    @Test
+    void aSessionThatIsNotOfThisUserIsReportedAndTheListsReloaded() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_SESSIONS_WRITE");
+        stubUserDetail(ana());
+        ApiProblem problem = new ApiProblem("about:blank", "Not Found", 404, "Session s1 does not belong to user", null,
+                "SES-404", null, null, null, false, null, null);
+        doThrow(BackofficeApiException.of(HttpStatus.NOT_FOUND, problem, "corr-u7", null, "DELETE /api/users/" + ANA_ID + "/sessions/s1"))
+                .when(usersClient).revokeSession(ANA_ID, "s1");
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(2);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("sessions-grid"), 0, "actions"), Button.class, spec -> spec.withId("revoke-s1")));
+
+        NotificationsKt.expectNotifications("Esa sesion ya no existe o no es de este usuario.");
+        verify(usersClient, times(2)).sessions(ANA_ID);
+    }
+
+    @Test
+    void removingACredentialWarnsAndCallsTheService() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_CREDENTIALS_WRITE");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(3);
+        Grid<Object> credentials = gridWithId("credentials-grid");
+        assertEquals(2, GridKt._size(credentials));
+        assertTrue(GridKt._getFormattedRow(credentials, 0).contains("Contrasena"));
+        List<String> otp = GridKt._getFormattedRow(credentials, 1);
+        assertTrue(otp.contains("Segundo factor (OTP)") && otp.contains("Movil"), otp.toString());
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(credentials, 0, "actions"), Button.class, spec -> spec.withId("remove-credential-c1")));
+        ConfirmDialog confirm = LocatorJ._get(ConfirmDialog.class);
+        assertTrue(confirm.getElement().getProperty("message").contains("no podra entrar"), "quitar la contrasena avisa de lo que supone");
+        verify(usersClient, never()).deleteCredential(any(), any());
+        ConfirmDialogKt._fireConfirm(confirm);
+
+        verify(usersClient).deleteCredential(ANA_ID, "c1");
+        verify(usersClient, times(2)).credentials(ANA_ID);
+        NotificationsKt.expectNotifications("Credencial quitada: Contrasena");
+    }
+
+    @Test
+    void aReaderSeesTheCredentialsWithoutTheTrash() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(3);
+
+        Grid<Object> credentials = gridWithId("credentials-grid");
+        assertEquals(2, GridKt._size(credentials));
+        assertNull(credentials.getColumnByKey("actions"));
+    }
+
+    @Test
+    void theTakeOutButtonNeedsWriteAndSessionsTogether() {
+        loginAs("usuarios.mixto", "ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_DELETE", "ROLE_USERS_PASSWORD_RESET");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+
+        detailButton("user-edit");
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("user-take-out")).isEmpty(), "sin users-sessions-write no hay tercer paso");
+    }
+
+    @Test
+    void takingSomebodyOutMakesTheThreeCallsInOrder() {
+        loginAs("usuarios.responsable", "ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_SESSIONS_WRITE");
+        UserDto disabled = user(ANA_ID, "ana", "Ana", "Alvarez", "ana@mto.local", false, Map.of());
+        stubUserDetail(ana());
+        when(usersClient.get(ANA_ID)).thenReturn(ana(), disabled);
+        when(usersClient.setEnabled(ANA_ID, new UserEnabledRequest(false))).thenReturn(disabled);
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(2);
+        LocatorJ._click(detailButton("user-take-out"));
+        verify(usersClient, never()).setEnabled(any(), any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+
+        InOrder order = inOrder(usersClient);
+        order.verify(usersClient).setEnabled(ANA_ID, new UserEnabledRequest(false));
+        order.verify(usersClient).revokeAllSessions(ANA_ID);
+        order.verify(usersClient).revokeAllOfflineSessions(ANA_ID);
+        LocatorJ._get(Span.class, spec -> spec.withText("Desactivado"));
+        verify(usersClient, times(2)).sessions(ANA_ID);
+        NotificationsKt.expectNotifications("ana fuera: desactivado, sesiones cerradas y sesiones offline revocadas");
+    }
+
+    @Test
+    void takingSomebodyOutStopsAtTheFirstFailureAndSaysWhichStepFailed() {
+        loginAs("usuarios.responsable", "ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_SESSIONS_WRITE");
+        UserDto disabled = user(ANA_ID, "ana", "Ana", "Alvarez", "ana@mto.local", false, Map.of());
+        stubUserDetail(ana());
+        when(usersClient.setEnabled(ANA_ID, new UserEnabledRequest(false))).thenReturn(disabled);
+        ApiProblem problem = new ApiProblem("about:blank", "Service Unavailable", 503, "Keycloak no responde", null,
+                "KC-503", null, null, null, true, null, null);
+        doThrow(BackofficeApiException.of(HttpStatus.SERVICE_UNAVAILABLE, problem, "corr-u8", null, "DELETE /api/users/" + ANA_ID + "/sessions"))
+                .when(usersClient).revokeAllSessions(ANA_ID);
+
+        TakeOut.Result result = TakeOut.run(usersClient, ANA_ID);
+        assertFalse(result.isComplete());
+        assertEquals(List.of(TakeOut.Step.DISABLE), result.done());
+        assertEquals(TakeOut.Step.SESSIONS, result.failed());
+        verify(usersClient, never()).revokeAllOfflineSessions(any());
+        clearInvocations(usersClient);
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        LocatorJ._click(detailButton("user-take-out"));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+
+        verify(usersClient).setEnabled(ANA_ID, new UserEnabledRequest(false));
+        verify(usersClient).revokeAllSessions(ANA_ID);
+        verify(usersClient, never()).revokeAllOfflineSessions(any());
+        NotificationsKt.expectNotifications("No se ha podido sacar a ana: fallo al cerrar las sesiones (hecho: desactivar). "
+                + "El servicio no esta disponible ahora mismo. Intentalo mas tarde.");
+    }
+
+    // --- Catalogos de perfiles y roles de cliente ---------------------------------------------------
+
+    @Test
+    void aStaticUsersRouteWinsOverTheUserIdParameter() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        when(usersClient.profiles()).thenReturn(List.of(VIEWER));
+        when(usersClient.clients()).thenReturn(List.of(USERS_API));
+
+        UI.getCurrent().navigate(UserProfilesView.ROUTE);
+        LocatorJ._get(UserProfilesView.class);
+        UI.getCurrent().navigate(ClientRolesView.ROUTE);
+        LocatorJ._get(ClientRolesView.class);
+
+        assertTrue(LocatorJ._find(UserDetailView.class).isEmpty());
+        verify(usersClient, never()).get(any());
+    }
+
+    @Test
+    void theProfilesCatalogueShowsWhatAProfileGrantsAndPagesItsMembersWithoutATotal() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        List<UserDto> admins = new ArrayList<>();
+        for (int i = 0; i < 53; i++) {
+            admins.add(user(UUID.randomUUID().toString(), String.format("admin%02d", i), "Admin", String.valueOf(i), null, true, Map.of()));
+        }
+        when(usersClient.profiles()).thenReturn(List.of(VIEWER, MANAGER, ADMIN));
+        when(usersClient.profile("mto-users-admin")).thenReturn(new RealmProfileDto("mto-users-admin", "Todo sobre usuarios",
+                List.of(new ClientRoleAssignmentDto("mto-users-api", List.of("users-read", "users-write", "users-delete"))), List.of("default-roles-mto")));
+        when(usersClient.profileMembers(eq("mto-users-admin"), anyInt(), anyInt())).thenAnswer(call -> {
+            int first = call.getArgument(1);
+            int max = call.getArgument(2);
+            return admins.subList(Math.min(first, admins.size()), Math.min(first + max, admins.size()));
+        });
+
+        UI.getCurrent().navigate(UserProfilesView.ROUTE);
+        Grid<Object> catalogue = gridWithId("profiles-catalogue");
+        assertEquals(3, GridKt._size(catalogue));
+        LocatorJ._get(Span.class, spec -> spec.withText("3 perfiles"));
+        verify(usersClient, never()).profile(any());
+
+        catalogue.select(GridKt._get(catalogue, 2));
+
+        verify(usersClient).profile("mto-users-admin");
+        Grid<Object> grants = gridWithId("grants-grid");
+        assertEquals(3, GridKt._size(grants));
+        List<String> grant = GridKt._getFormattedRow(grants, 0);
+        assertTrue(grant.contains("mto-users-api") && grant.contains("users-read"), grant.toString());
+        LocatorJ._get(Span.class, spec -> spec.withText("Roles de realm: default-roles-mto"));
+        Grid<Object> members = gridWithId("members-grid");
+        assertEquals(50, GridKt._size(members));
+        verify(usersClient).profileMembers("mto-users-admin", 0, 50);
+        Button next = detailButton("members-next");
+        Button previous = detailButton("members-previous");
+        assertTrue(next.isEnabled(), "una pagina llena es la unica senal de que hay mas");
+        assertFalse(previous.isEnabled());
+        LocatorJ._get(Span.class, spec -> spec.withText("Pagina 1"));
+
+        LocatorJ._click(next);
+        verify(usersClient).profileMembers("mto-users-admin", 50, 50);
+        assertEquals(3, GridKt._size(members));
+        assertEquals("admin50", ((UserDto) GridKt._get(members, 0)).username());
+        assertFalse(next.isEnabled(), "una pagina corta es la ultima");
+        assertTrue(previous.isEnabled());
+        LocatorJ._get(Span.class, spec -> spec.withText("Pagina 2"));
+
+        LocatorJ._click(previous);
+        verify(usersClient, times(2)).profileMembers("mto-users-admin", 0, 50);
+        assertEquals(50, GridKt._size(members));
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("profile-filter")), "gestion");
+        assertEquals(1, GridKt._size(catalogue), "el filtro es local: el servicio devuelve el catalogo entero");
+        assertEquals("mto-users-manager", ((RealmProfileSummaryDto) GridKt._get(catalogue, 0)).name());
+        LocatorJ._get(Span.class, spec -> spec.withText("1 de 3 perfiles"));
+        assertFalse(members.getParent().orElseThrow().isVisible(), "al filtrar se deselecciona y el detalle se esconde");
+        verify(usersClient, times(1)).profiles();
+    }
+
+    @Test
+    void theClientRolesCatalogueListsRolesPerClientAndWhoHoldsThem() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        when(usersClient.clients()).thenReturn(List.of(USERS_API, CONFIGURATION_API));
+        when(usersClient.clientRoles("mto-users-api")).thenReturn(List.of(
+                new ClientRoleDto("users-read", "Leer usuarios", false), new ClientRoleDto("users-write", "Escribir usuarios", false),
+                new ClientRoleDto("users-delete", null, false)));
+        when(usersClient.clientRoleMembers("mto-users-api", "users-read", 0, 50)).thenReturn(List.of(ana(), threeUsers().get(1)));
+
+        UI.getCurrent().navigate(ClientRolesView.ROUTE);
+        @SuppressWarnings("unchecked")
+        ComboBox<ClientDto> picker = LocatorJ._get(ComboBox.class, spec -> spec.withId("roles-client"));
+        Grid<Object> catalogue = gridWithId("roles-catalogue");
+        assertEquals(List.of(USERS_API, CONFIGURATION_API), picker.getListDataView().getItems().toList());
+        assertEquals(0, GridKt._size(catalogue));
+
+        LocatorJ._setValue(picker, USERS_API);
+        verify(usersClient).clientRoles("mto-users-api");
+        assertEquals(3, GridKt._size(catalogue));
+        LocatorJ._get(Span.class, spec -> spec.withText("3 roles"));
+        List<String> row = GridKt._getFormattedRow(catalogue, 0);
+        assertTrue(row.contains("users-read") && row.contains("Leer usuarios") && row.contains("No"), row.toString());
+
+        TextField filter = LocatorJ._get(TextField.class, spec -> spec.withId("roles-filter"));
+        LocatorJ._setValue(filter, "write");
+        assertEquals(1, GridKt._size(catalogue));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 de 3 roles"));
+        LocatorJ._setValue(filter, "");
+        assertEquals(3, GridKt._size(catalogue));
+
+        catalogue.select(GridKt._get(catalogue, 0));
+        verify(usersClient).clientRoleMembers("mto-users-api", "users-read", 0, 50);
+        Grid<Object> members = gridWithId("role-members-grid");
+        assertEquals(2, GridKt._size(members));
+        assertTrue(GridKt._getFormattedRow(members, 0).contains("ana"));
+        LocatorJ._get(H4.class, spec -> spec.withText("Miembros de mto-users-api / users-read"));
+        assertFalse(detailButton("role-members-next").isEnabled());
+        assertFalse(detailButton("role-members-previous").isEnabled());
+        verify(usersClient, times(1)).clients();
+    }
+
+    @Test
+    void aMemberRowOpensTheUserDetail() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        when(usersClient.clients()).thenReturn(List.of(USERS_API));
+        when(usersClient.clientRoles("mto-users-api")).thenReturn(List.of(new ClientRoleDto("users-read", null, false)));
+        when(usersClient.clientRoleMembers("mto-users-api", "users-read", 0, 50)).thenReturn(List.of(ana()));
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ClientRolesView.ROUTE);
+        @SuppressWarnings("unchecked")
+        ComboBox<ClientDto> picker = LocatorJ._get(ComboBox.class, spec -> spec.withId("roles-client"));
+        LocatorJ._setValue(picker, USERS_API);
+        Grid<Object> catalogue = gridWithId("roles-catalogue");
+        catalogue.select(GridKt._get(catalogue, 0));
+        GridKt._clickItem(gridWithId("role-members-grid"), 0, 1, false, false, false, false);
+
+        LocatorJ._get(UserDetailView.class);
+        LocatorJ._get(H2.class, spec -> spec.withText("ana"));
+        assertTrue(LocatorJ._find(ClientRolesView.class).isEmpty());
     }
 }
