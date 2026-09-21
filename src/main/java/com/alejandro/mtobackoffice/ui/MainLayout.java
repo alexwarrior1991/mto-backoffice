@@ -3,6 +3,7 @@ package com.alejandro.mtobackoffice.ui;
 import com.alejandro.mtobackoffice.client.configuration.LovResource;
 import com.alejandro.mtobackoffice.ui.lov.LovCrudView;
 import com.alejandro.mtobackoffice.ui.master.MasterView;
+import com.alejandro.mtobackoffice.ui.users.UsersView;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.applayout.DrawerToggle;
@@ -75,10 +76,9 @@ public class MainLayout extends AppLayout {
     }
 
     /** Prefijo de ruta (primer segmento) → grupo. La lista de usuarios es a la vez su propio grupo. */
-    static final String USERS_ROUTE_PREFIX = "usuarios";
     private static final Map<String, MenuGroup> GROUPS = Map.of(
             MasterView.ROUTE_PREFIX, new MenuGroup("Infraestructura", "train"),
-            USERS_ROUTE_PREFIX, new MenuGroup("Usuarios", "users"));
+            UsersView.ROUTE_PREFIX, new MenuGroup("Usuarios", "users"));
 
     private Component menu() {
         SideNav nav = new SideNav();

@@ -97,7 +97,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `SwitchDialog`), `ui/jobs` (`JobsView` en `trabajos`: los lanzadores y la lista del servicio,
   paginada y filtrada; `JobLog`, lo que solo sabe la sesión de sus trabajos —la etiqueta y el
   último estado— en la `VaadinSession`; `JobPolling`, el hilo compartido que vuelve a pedir la
-  página mientras hay algo en curso; `JobErrorsDialog`), `ui/support` (`UiErrors`: excepción →
+  página mientras hay algo en curso; `JobErrorsDialog`), `ui/users` (`UsersView` en `usuarios`:
+  la lista paginada en el servidor con `grid.setItems(fetch, count)` sobre `GET /api/users` y
+  `first`/`max`; `UserEditorDialog`, el `Binder` sobre el modelo mutable `UserForm`, cuyas
+  propiedades se llaman como los campos del servicio para `ServerValidation`; `UserAttributes`,
+  los atributos como texto `clave=valor` por línea), `ui/support` (`UiErrors`: excepción →
   `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`).
 - `configuration/vaadin` — `BackofficeSystemMessages`, los mensajes de sistema de Vaadin en
   castellano y con el aviso de sesión caducada apagado (recarga → login → SSO).
@@ -144,6 +148,14 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   por test. `PageResponse<T>` la lee (y tolera `first`/`last` de stock y maintenance). La API de
   usuarios pagina al estilo de Keycloak (`first`/`max` con `max` ≤ 200, `UsersPage<T>`), y las
   listas de miembros de un perfil o de un rol no traen total.
+- **Un usuario se modifica con lo que cambió, y la lista se pide como la pide Keycloak.** El
+  `PUT /api/users/{id}` de `mto-users` es parcial: `null` es «no tocar» y la cadena vacía, «vaciar»,
+  así que `UserForm.toUpdateRequest(original)` compara con lo leído y solo manda lo distinto; el
+  nombre de usuario no viaja nunca. La lista pide cada tramo con `first`/`max` en trozos de como
+  mucho 200 (`UsersView.MAX_PAGE`, el tope del servicio) y no ordena porque la API no ordena. La
+  búsqueda por texto y el filtro por atributo se excluyen en la pantalla porque el servicio los
+  rechaza juntos (`SEARCH-400`): lo deshabilitado no viaja. Nada de esto se arregla aquí con
+  lógica propia: si la lista necesita orden u otro filtro, se pide en `mto-users`.
 - **El menú no es una guarda.** `MainLayout` esconde lo que la persona no puede abrir; quien manda
   es `@RolesAllowed` en la vista y el 403 del servicio. Dentro de una vista pasa lo mismo: los
   botones de `LovCrudView` siguen los permisos del servicio (`config-write`+`lov-manage` para crear
@@ -232,6 +244,11 @@ el perfil legible en la lista de seccionadores, los mensajes de sistema; los tra
 lanzar una importación, el progreso llegando por `pollOnce()` + `UI.access()` hasta el enlace de
 descarga y el botón de errores (que pide el detalle), el 429 apuntado como rechazado con su aviso,
 un trabajo propio fuera de la página seguido por su familia, la lista paginada y filtrada en el
-servicio, los lanzadores según permisos) y
+servicio, los lanzadores según permisos; los usuarios: el grupo «Usuarios» del menú y su ausencia
+sin `users-read`, un rol de realm que no abre la vista, la lista paginada con `first`/`max` y
+filtrada en el servicio, la exclusión entre búsqueda y atributo, los controles según permisos,
+alta con contraseña temporal y acciones, errores del servicio campo a campo, modificación con
+solo lo cambiado, activar/desactivar sin confirmación, borrado confirmado, el parser de
+atributos) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
 sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.

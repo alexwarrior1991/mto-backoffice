@@ -24,6 +24,19 @@ import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
 import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
 import com.alejandro.mtobackoffice.client.dto.master.StationDto;
 import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
+import com.alejandro.mtobackoffice.client.dto.users.CreateUserRequest;
+import com.alejandro.mtobackoffice.client.dto.users.RequiredAction;
+import com.alejandro.mtobackoffice.client.dto.users.UpdateUserRequest;
+import com.alejandro.mtobackoffice.client.dto.users.UserDto;
+import com.alejandro.mtobackoffice.client.dto.users.UserEnabledRequest;
+import com.alejandro.mtobackoffice.client.dto.users.UsersPage;
+import com.alejandro.mtobackoffice.client.users.UsersClient;
+import com.alejandro.mtobackoffice.ui.users.UserAttributes;
+import com.alejandro.mtobackoffice.ui.users.UsersView;
+import com.vaadin.flow.component.combobox.MultiSelectComboBox;
+import com.vaadin.flow.component.textfield.PasswordField;
+import com.vaadin.flow.component.textfield.TextArea;
+import java.util.Set;
 import com.alejandro.mtobackoffice.client.error.ApiFieldError;
 import com.alejandro.mtobackoffice.client.error.ApiProblem;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
@@ -115,6 +128,8 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.intThat;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -155,6 +170,8 @@ class ViewLayerTest {
     private BusinessEntityClient businessEntityClient;
     @MockitoBean
     private JobsClient jobsClient;
+    @MockitoBean
+    private UsersClient usersClient;
 
     @BeforeEach
     void setUp() {
@@ -209,6 +226,7 @@ class ViewLayerTest {
         assertFalse(labels.contains("Infraestructura"), labels.toString());
         assertFalse(labels.contains("Vias"), labels.toString());
         assertFalse(labels.contains("Trabajos"), labels.toString());
+        assertFalse(labels.contains("Usuarios"), labels.toString());
     }
 
     @Test
@@ -223,6 +241,7 @@ class ViewLayerTest {
             assertTrue(labels.contains(resource.title()), "falta " + resource.title() + " en " + labels);
         }
         assertTrue(labels.contains("Trabajos"), labels.toString());
+        assertFalse(labels.contains("Usuarios"), "sin users-read no hay modulo de usuarios: " + labels);
     }
 
     @Test
@@ -470,6 +489,7 @@ class ViewLayerTest {
         when(disconnectorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<DisconnectorDto>of(), 0, 50));
         when(sectionInsulatorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<SectionInsulatorDto>of(), 0, 50));
         when(jobsClient.list(anyInt(), anyInt(), any(), any())).thenReturn(page(List.<JobDto>of(), 0, 20));
+        stubUsers(List.of());
     }
 
     private static ExecutionPackageDto executionPackage(Long id, String name) {
@@ -1073,5 +1093,336 @@ class ViewLayerTest {
         LocatorJ._get(Button.class, spec -> spec.withId("import-profiles"));
         LocatorJ._get(Button.class, spec -> spec.withId("republish"));
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("import-lovs")).isEmpty());
+    }
+
+    // --- Usuarios (mto-users) ---------------------------------------------------------------------
+
+    private static final String USERS_ROUTE = UsersView.ROUTE;
+    private static final String ANA_ID = "0d5f1d1a-1111-4e43-9a5b-000000000001";
+    private static final String BRUNO_ID = "0d5f1d1a-1111-4e43-9a5b-000000000002";
+    private static final String CARLA_ID = "0d5f1d1a-1111-4e43-9a5b-000000000003";
+
+    private static UserDto user(String id, String username, String firstName, String lastName, String email, boolean enabled,
+                                Map<String, List<String>> attributes) {
+        return new UserDto(id, username, firstName, lastName, email, email != null, enabled,
+                Instant.parse("2026-09-01T08:30:00Z"), attributes, List.of());
+    }
+
+    private static List<UserDto> threeUsers() {
+        return List.of(
+                user(ANA_ID, "ana", "Ana", "Alvarez", "ana@mto.local", true, Map.of("dept", List.of("taller"))),
+                user(BRUNO_ID, "bruno", "Bruno", "Blanco", "bruno@mto.local", true, Map.of()),
+                user(CARLA_ID, "carla", "Carla", null, null, false, Map.of("dept", List.of("oficina"))));
+    }
+
+    /**
+     * El servicio simulado: filtra por texto, atributo y estado, y pagina con {@code first}/{@code max}
+     * como hace el de verdad (y como el de verdad, rechaza {@code search} junto a {@code attribute}).
+     */
+    private void stubUsers(List<UserDto> all) {
+        when(usersClient.search(any(), any(), any(), any(), any(), any(), anyInt(), anyInt())).thenAnswer(call -> {
+            String search = call.getArgument(0);
+            Boolean enabled = call.getArgument(3);
+            List<String> attributes = call.getArgument(5);
+            int first = call.getArgument(6);
+            int max = call.getArgument(7);
+            if (search != null && attributes != null) {
+                throw new IllegalStateException("search y attribute no viajan juntos");
+            }
+            if (max > 200) {
+                throw new IllegalStateException("max supera el tope del servicio: " + max);
+            }
+            String text = search == null ? "" : search.toLowerCase(Locale.ROOT);
+            List<UserDto> matching = all.stream()
+                    .filter(dto -> text.isEmpty() || dto.username().contains(text) || dto.fullName().toLowerCase(Locale.ROOT).contains(text))
+                    .filter(dto -> enabled == null || enabled.equals(dto.enabled()))
+                    .filter(dto -> attributes == null || attributes.stream().allMatch(pair -> hasAttribute(dto, pair)))
+                    .toList();
+            int from = Math.min(first, matching.size());
+            int to = Math.min(from + max, matching.size());
+            return new UsersPage<>(matching.subList(from, to), first, max, matching.size());
+        });
+    }
+
+    private static boolean hasAttribute(UserDto dto, String pair) {
+        int separator = pair.indexOf(':');
+        List<String> values = dto.attributes() == null ? null : dto.attributes().get(pair.substring(0, separator));
+        return values != null && values.contains(pair.substring(separator + 1));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Grid<UserDto> userGrid() {
+        return LocatorJ._get(Grid.class);
+    }
+
+    private static Button userAction(String id) {
+        return LocatorJ._get(GridKt._getCellComponent(userGrid(), 0, "actions"), Button.class, spec -> spec.withId(id));
+    }
+
+    @Test
+    void theMenuGroupsTheUsersScreensUnderUsers() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        List<String> labels = menuLabels();
+        assertTrue(labels.contains("Usuarios"), labels.toString());
+        assertFalse(labels.contains("Infraestructura"), "sin config-read no hay infraestructura: " + labels);
+        assertFalse(labels.contains("Catalogos"), labels.toString());
+        SideNavItem users = LocatorJ._get(SideNavItem.class, spec -> spec.withLabel("Usuarios"));
+        assertEquals(USERS_ROUTE, users.getPath().replaceFirst("^/", ""), "la lista es a la vez el nodo del grupo");
+    }
+
+    @Test
+    void theUsersViewIsNotReachableWithARealmRoleOnly() {
+        loginAs("usuarios.impostor", "ROLE_REALM_USERS_READ", "ROLE_REALM_MTO_USERS_ADMIN");
+
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(USERS_ROUTE));
+
+        assertTrue(LocatorJ._find(UsersView.class).isEmpty());
+        verify(usersClient, never()).search(any(), any(), any(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void theUsersListIsPagedWithFirstAndMaxAndFilteredInTheServer() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        List<UserDto> many = new ArrayList<>();
+        for (int i = 0; i < 120; i++) {
+            many.add(user(UUID.randomUUID().toString(), String.format("user%03d", i), "Nombre", "Apellido " + i,
+                    "user" + i + "@mto.local", i % 3 != 0, Map.of("dept", List.of(i % 2 == 0 ? "taller" : "oficina"))));
+        }
+        stubUsers(many);
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        Grid<UserDto> grid = userGrid();
+
+        assertEquals(120, GridKt._size(grid));
+        LocatorJ._get(Span.class, spec -> spec.withText("120 usuarios"));
+        assertEquals("user000", GridKt._get(grid, 0).username());
+        assertEquals("user077", GridKt._get(grid, 77).username(), "la segunda pagina se pide con su first");
+        verify(usersClient, atLeastOnce()).search(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(0), anyInt());
+        verify(usersClient, atLeastOnce()).search(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), intThat(first -> first > 0), anyInt());
+        assertTrue(grid.getColumns().stream().noneMatch(Grid.Column::isSortable), "la API no ordena y las columnas tampoco");
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("users-search")), "user01");
+        assertEquals(10, GridKt._size(grid));
+        verify(usersClient, atLeastOnce()).search(eq("user01"), isNull(), isNull(), isNull(), isNull(), isNull(), eq(0), anyInt());
+
+        @SuppressWarnings("unchecked")
+        Select<EnabledFilter> state = LocatorJ._get(Select.class, spec -> spec.withLabel("Estado"));
+        LocatorJ._setValue(state, EnabledFilter.DISABLED);
+        assertEquals(3, GridKt._size(grid), "user012, user015 y user018 estan desactivados");
+        verify(usersClient, atLeastOnce()).search(eq("user01"), isNull(), isNull(), eq(false), isNull(), isNull(), eq(0), anyInt());
+        LocatorJ._get(Span.class, spec -> spec.withText("3 usuarios"));
+    }
+
+    @Test
+    void theSearchTextAndTheAttributeFilterExcludeEachOther() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        stubUsers(threeUsers());
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        TextField search = LocatorJ._get(TextField.class, spec -> spec.withId("users-search"));
+        TextField attribute = LocatorJ._get(TextField.class, spec -> spec.withId("users-attribute"));
+
+        LocatorJ._setValue(attribute, "dept:taller");
+        assertFalse(search.isEnabled(), "con un atributo la busqueda se deshabilita");
+        assertEquals(1, GridKt._size(userGrid()));
+        assertEquals("ana", GridKt._get(userGrid(), 0).username());
+        verify(usersClient, atLeastOnce()).search(isNull(), isNull(), isNull(), isNull(), isNull(), eq(List.of("dept:taller")), eq(0), anyInt());
+
+        clearInvocations(usersClient);
+        LocatorJ._setValue(attribute, "sin separador");
+        assertTrue(attribute.isInvalid(), "clave:valor o nada");
+        verify(usersClient, never()).search(any(), any(), any(), any(), any(), any(), anyInt(), anyInt());
+
+        LocatorJ._setValue(attribute, "");
+        assertTrue(search.isEnabled());
+        LocatorJ._setValue(search, "bru");
+        assertFalse(attribute.isEnabled(), "con texto de busqueda el atributo se deshabilita");
+        assertEquals(1, GridKt._size(userGrid()));
+        assertEquals("bruno", GridKt._get(userGrid(), 0).username());
+        verify(usersClient, never()).search(any(), any(), any(), any(), any(), argThat(attributes -> attributes != null), anyInt(), anyInt());
+    }
+
+    @Test
+    void aReadOnlyPersonSeesTheUsersWithoutAnyWriteControl() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        stubUsers(threeUsers());
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+
+        assertEquals(3, GridKt._size(userGrid()));
+        List<String> firstRow = GridKt._getFormattedRow(userGrid(), 0);
+        assertTrue(firstRow.contains("ana") && firstRow.contains("Ana Alvarez") && firstRow.contains("ana@mto.local"), firstRow.toString());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("user-create")).isEmpty());
+        assertNull(userGrid().getColumnByKey("actions"));
+    }
+
+    @Test
+    void aManagerWithoutDeleteSeesEverythingButTheTrash() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUsers(threeUsers());
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+
+        LocatorJ._get(Button.class, spec -> spec.withId("user-create"));
+        Component actions = GridKt._getCellComponent(userGrid(), 0, "actions");
+        LocatorJ._get(actions, Button.class, spec -> spec.withId("edit-" + ANA_ID));
+        LocatorJ._get(actions, Button.class, spec -> spec.withId("toggle-" + ANA_ID));
+        assertTrue(LocatorJ._find(actions, Button.class, spec -> spec.withId("delete-" + ANA_ID)).isEmpty());
+    }
+
+    @Test
+    void creatingAUserPostsTheFormAndTheTemporaryPassword() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUsers(threeUsers());
+        when(usersClient.create(any())).thenAnswer(call -> {
+            CreateUserRequest request = call.getArgument(0);
+            return user(UUID.randomUUID().toString(), request.username(), request.firstName(), request.lastName(), request.email(), true, request.attributes());
+        });
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("user-create")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
+        TextField username = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Usuario"));
+        assertTrue(username.isInvalid(), "el usuario es obligatorio");
+        verify(usersClient, never()).create(any());
+
+        LocatorJ._setValue(username, "dario.diaz");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Nombre")), "Dario");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Email")), "dario@mto.local");
+        PasswordField password = LocatorJ._get(dialog, PasswordField.class, spec -> spec.withLabel("Contrasena temporal"));
+        LocatorJ._setValue(password, "corta");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
+        assertTrue(password.isInvalid(), "menos de ocho caracteres no viaja");
+        verify(usersClient, never()).create(any());
+
+        LocatorJ._setValue(password, "Temporal-2026");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RequiredAction> actions = LocatorJ._get(dialog, MultiSelectComboBox.class, spec -> spec.withLabel("Acciones requeridas al entrar"));
+        LocatorJ._setValue(actions, Set.of(RequiredAction.UPDATE_PASSWORD));
+        LocatorJ._setValue(LocatorJ._get(dialog, TextArea.class, spec -> spec.withLabel("Atributos (clave=valor por linea)")), "dept=taller\ndept=noche");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
+
+        verify(usersClient).create(argThat(request -> "dario.diaz".equals(request.username())
+                && "Dario".equals(request.firstName())
+                && request.lastName() == null
+                && "dario@mto.local".equals(request.email())
+                && Boolean.TRUE.equals(request.enabled())
+                && "Temporal-2026".equals(request.temporaryPassword())
+                && List.of(RequiredAction.UPDATE_PASSWORD).equals(request.requiredActions())
+                && Map.of("dept", List.of("taller", "noche")).equals(request.attributes())));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
+        NotificationsKt.expectNotifications("Guardado dario.diaz");
+    }
+
+    @Test
+    void serverValidationErrorsLandOnTheUserFieldsAndTheDialogStaysOpen() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUsers(threeUsers());
+        ApiProblem problem = new ApiProblem("about:blank", "Bad Request", 400, "La peticion no es valida", null,
+                "REQ-VALIDATION", null, null, null, false,
+                List.of(new ApiFieldError("email", null, "must be a well-formed email address"),
+                        new ApiFieldError("temporaryPassword", null, "la politica pide un digito")), null);
+        when(usersClient.create(any())).thenThrow(
+                BackofficeApiException.of(HttpStatus.BAD_REQUEST, problem, "corr-u2", null, "POST /api/users"));
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("user-create")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Usuario")), "elena");
+        TextField email = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Email"));
+        LocatorJ._setValue(email, "elena@mto.local");
+        PasswordField password = LocatorJ._get(dialog, PasswordField.class, spec -> spec.withLabel("Contrasena temporal"));
+        LocatorJ._setValue(password, "sinDigitos");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
+
+        assertTrue(email.isInvalid());
+        assertEquals("must be a well-formed email address", email.getErrorMessage());
+        assertTrue(password.isInvalid());
+        assertEquals("la politica pide un digito", password.getErrorMessage());
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto para corregir");
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "todo cayo en un campo: nada que notificar");
+    }
+
+    @Test
+    void editingAUserSendsOnlyWhatChangedAndKeepsTheUsername() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUsers(threeUsers());
+        when(usersClient.update(eq(ANA_ID), any())).thenAnswer(call -> threeUsers().getFirst());
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        LocatorJ._click(userAction("edit-" + ANA_ID));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        TextField username = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Usuario"));
+        assertEquals("ana", username.getValue());
+        assertTrue(username.isReadOnly(), "el nombre de usuario no se cambia");
+        assertTrue(LocatorJ._find(dialog, PasswordField.class).isEmpty(), "la contrasena tiene su propio dialogo en la ficha");
+        TextArea attributes = LocatorJ._get(dialog, TextArea.class, spec -> spec.withLabel("Atributos (clave=valor por linea)"));
+        assertEquals("dept=taller", attributes.getValue());
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Apellidos")), "Alvarez Arias");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Email")), "");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
+
+        verify(usersClient).update(eq(ANA_ID), argThat(request -> request.firstName() == null
+                && "Alvarez Arias".equals(request.lastName())
+                && "".equals(request.email())
+                && request.emailVerified() == null
+                && request.attributes() == null));
+        verify(usersClient, never()).create(any());
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
+    }
+
+    @Test
+    void enablingAndDisablingPatchTheFlagWithoutConfirmation() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUsers(threeUsers());
+        when(usersClient.setEnabled(eq(ANA_ID), any())).thenAnswer(call -> {
+            UserEnabledRequest request = call.getArgument(1);
+            return user(ANA_ID, "ana", "Ana", "Alvarez", "ana@mto.local", request.enabled(), Map.of());
+        });
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        LocatorJ._click(userAction("toggle-" + ANA_ID));
+
+        assertTrue(LocatorJ._find(ConfirmDialog.class).isEmpty(), "activar y desactivar son reversibles: sin confirmacion");
+        verify(usersClient).setEnabled(ANA_ID, new UserEnabledRequest(false));
+        NotificationsKt.expectNotifications("Desactivado ana");
+    }
+
+    @Test
+    void deletingAUserAsksForConfirmationThenCallsTheService() {
+        loginAs("usuarios.responsable", "ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_DELETE");
+        stubUsers(threeUsers());
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        LocatorJ._click(userAction("delete-" + ANA_ID));
+
+        verify(usersClient, never()).delete(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+
+        verify(usersClient).delete(ANA_ID);
+        NotificationsKt.expectNotifications("Borrado ana");
+    }
+
+    @Test
+    void attributesAreParsedOneKeyValuePerLineAndRejectWhatCannotBeRead() {
+        assertEquals(Map.of("dept", List.of("taller", "noche"), "turno", List.of("")),
+                UserAttributes.parse(" dept = taller \n\ndept=noche\nturno=\n"));
+        assertEquals(Map.of("url", List.of("http://x/a=b")), UserAttributes.parse("url=http://x/a=b"), "solo parte el primer =");
+        assertTrue(UserAttributes.parse(null).isEmpty());
+        assertTrue(UserAttributes.parse("  \n ").isEmpty());
+
+        IllegalArgumentException noSeparator = assertThrows(IllegalArgumentException.class, () -> UserAttributes.parse("dept=taller\nsin separador"));
+        assertTrue(noSeparator.getMessage().startsWith("Linea 2"), noSeparator.getMessage());
+        IllegalArgumentException noKey = assertThrows(IllegalArgumentException.class, () -> UserAttributes.parse("=valor"));
+        assertTrue(noKey.getMessage().startsWith("Linea 1"), noKey.getMessage());
+
+        assertEquals("dept=noche\ndept=taller\nturno=", UserAttributes.format(Map.of("turno", List.of(""), "dept", List.of("noche", "taller"))));
+        assertEquals("", UserAttributes.format(null));
+        assertEquals("dept=noche\ndept=taller\nturno=", UserAttributes.format(UserAttributes.parse(UserAttributes.format(
+                Map.of("turno", List.of(""), "dept", List.of("noche", "taller"))))), "ida y vuelta estable");
     }
 }

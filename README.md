@@ -80,10 +80,19 @@ Séptimo repositorio del dominio, hermano e independiente de
   de cliente y perfiles del realm por la Admin API de Keycloak. U0 deja la base: los roles de
   `mto-users-api` se leen del access token junto a los de `mto-configuration-api`
   (`KEYCLOAK_ROLES_CLIENT_IDS`), `ApiErrorDecoder` entiende el `problem+json` de `mto-users`,
-  `UsersClient` cubre la API entera (`/api/users/**`) y el menú agrupa por prefijo de ruta. Las
-  pantallas llegan en las fases siguientes: lista y editor (U1), ficha con perfiles, roles,
-  contraseña temporal y correo de acciones (U2), sesiones, credenciales y «sacar a la persona»
-  (U3), catálogos de perfiles y roles con sus miembros (U4).
+  `UsersClient` cubre la API entera (`/api/users/**`) y el menú agrupa por prefijo de ruta. U1
+  trae la **lista de usuarios** (`usuarios`), paginada en el servidor al estilo de Keycloak (el
+  grid pide cada tramo con `first`/`max`, nunca más de 200 por petición, y el recuento es el
+  `total` de la búsqueda), con búsqueda por texto, filtro por atributo `clave:valor` y por estado;
+  la búsqueda y el atributo se **excluyen** (el servicio los rechaza juntos, `SEARCH-400`): escribir
+  en uno deshabilita el otro. El alta pide usuario, datos, contraseña temporal (mínimo ocho) y las
+  acciones requeridas al entrar; la modificación enseña el usuario en solo lectura y manda **solo
+  lo que cambió** (`null` es «no tocar» para el servicio; vaciar un campo viaja como cadena vacía);
+  los atributos se editan como texto, una línea `clave=valor` por valor. Activar y desactivar van
+  sin confirmación (son reversibles y no cierran sesiones: eso es de la ficha); borrar confirma. Las
+  pantallas que faltan: ficha con perfiles, roles, contraseña temporal y correo de acciones (U2),
+  sesiones, credenciales y «sacar a la persona» (U3), catálogos de perfiles y roles con sus
+  miembros (U4).
 
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|
