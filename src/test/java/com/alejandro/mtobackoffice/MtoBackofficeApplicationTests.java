@@ -63,7 +63,7 @@ class MtoBackofficeApplicationTests {
 
     @Test
     void anonymousRequestsAreSentToTheKeycloakLogin() throws Exception {
-        mockMvc.perform(get("/estados-de-perfil"))
+        mockMvc.perform(get("/catalogos/pole-types"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("/oauth2/authorization/keycloak"));
     }

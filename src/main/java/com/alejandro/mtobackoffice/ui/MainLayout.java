@@ -1,5 +1,7 @@
 package com.alejandro.mtobackoffice.ui;
 
+import com.alejandro.mtobackoffice.client.configuration.LovResource;
+import com.alejandro.mtobackoffice.ui.lov.LovCrudView;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.applayout.DrawerToggle;
@@ -74,6 +76,16 @@ public class MainLayout extends AppLayout {
                 item.setPrefixComponent(new Icon(icon[0], icon[1]));
             }
             nav.addItem(item);
+        }
+        // Los catalogos son una sola vista con el recurso en la ruta, asi que no pueden anotarse
+        // con @Menu: se listan a mano, y solo si la persona puede abrir la vista.
+        if (accessChecker.hasAccess(LovCrudView.class)) {
+            SideNavItem catalogues = new SideNavItem("Catalogos");
+            catalogues.setPrefixComponent(new Icon("vaadin", "list"));
+            for (LovResource resource : LovResource.values()) {
+                catalogues.addItem(new SideNavItem(resource.title(), LovCrudView.pathOf(resource)));
+            }
+            nav.addItem(catalogues);
         }
         return nav;
     }

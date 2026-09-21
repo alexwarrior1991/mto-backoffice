@@ -20,12 +20,34 @@ Séptimo repositorio del dominio, hermano e independiente de
 [`mto-maintenance`](../mto-maintenance), [`mto-users`](../mto-users) y
 [`mto-gateway`](../mto-gateway); la infraestructura local es de [`mto-platform`](../mto-platform).
 
-## Estado: fase 0
+## Estado: fase 1
 
-Circuito completo con lo mínimo: cliente `mto-backoffice` en el realm, login OIDC, marco con menú
-filtrado por roles y una pantalla que lee del gateway (los estados de perfil, que una base de datos
-recién migrada ya trae). Las fases siguientes son los 17 catálogos con una sola vista, los maestros
-de infraestructura con paginación de servidor y las importaciones Excel con trabajos asíncronos.
+- **Fase 0**: circuito completo con lo mínimo. Cliente `mto-backoffice` en el realm, login OIDC,
+  marco con menú filtrado por roles y la pantalla de inicio con el diagnóstico del token.
+- **Fase 1**: los 17 catálogos (listas de valores) con **una sola vista**, `LovCrudView`, que recibe
+  el recurso en la ruta (`/catalogos/pole-types`, `/catalogos/profile-statuses`...). Los 17
+  controladores de `mto-configuration` heredan los mismos ocho endpoints y el mismo DTO, así que
+  una pantalla cubre 136 endpoints: listar (con filtro local: el servicio devuelve la lista entera),
+  alta y modificación en un diálogo, borrado con confirmación (lógico en el servicio), alta múltiple
+  pegando `CODIGO;Descripción` por línea (`POST /bulk`) y activar o desactivar la selección
+  (`PUT /bulk`). Los errores del servicio se enseñan en su campo: `errors[{field, code, message}]`
+  se vuelca sobre el formulario y lo que no se puede atribuir va a una notificación.
+
+Fases siguientes: los maestros de infraestructura con paginación de servidor y las importaciones
+Excel con trabajos asíncronos.
+
+Los botones siguen los permisos que aplica el servicio a cada catálogo:
+
+| Acción | Roles de cliente de `mto-configuration-api` |
+|---|---|
+| Ver el catálogo | `config-read` |
+| Nuevo, modificar | `config-write` + `lov-manage` |
+| Borrar | `config-delete` + `lov-manage` |
+| Alta múltiple, activar/desactivar seleccionados | `config-import` + `lov-manage` |
+
+Esconder un botón es cortesía: la guarda real es `@RolesAllowed` en la vista y el 403 del servicio.
+Con los usuarios de desarrollo, `config.responsable` (`mto-admin`) lo ve todo; `config.editor`
+(`mto-editor`) ve los catálogos pero no puede tocarlos: le falta `lov-manage`, a propósito.
 
 ## Requisitos
 
@@ -47,7 +69,7 @@ cd ../mto-backoffice
 | usuario | perfil | lo que ve |
 |---|---|---|
 | `config.responsable` | `mto-admin` | todo |
-| `config.editor` | `mto-editor` | lectura y escritura, sin catálogos |
+| `config.editor` | `mto-editor` | lectura; escritura de infraestructura pero no de catálogos (sin `lov-manage`) |
 | `config.lector` | `mto-viewer` | solo lectura |
 | `almacen.lector` | `mto-warehouse-viewer` | nada de configuración: el menú no ofrece las pantallas y la URL directa se deniega |
 

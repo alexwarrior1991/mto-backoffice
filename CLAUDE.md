@@ -26,7 +26,7 @@ ni de offline.
 ./mvnw compile
 ./mvnw test                                        # todo en JVM: ni Docker, ni Keycloak, ni gateway
 ./mvnw test -Dtest=ClientLayerTest                 # una clase
-./mvnw test -Dtest='ViewLayerTest#profileStatusesViewShowsTheRowsFromTheClient'
+./mvnw test -Dtest='ViewLayerTest#theCatalogueOfTheRouteIsListedAndTheFilterIsLocal'
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev   # http://localhost:8085, abre el navegador
 ./mvnw -B verify                                   # incluye el build de producción del frontend
 ```
@@ -57,13 +57,18 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   manejador de estado; `HttpServiceProxyFactory` para las interfaces `@HttpExchange`),
   `UserTokenProvider` (`AuthorizedClientServiceOAuth2AuthorizedClientManager` con `refreshToken()`),
   `GatewayProperties`, `CorrelationProperties`.
-- `client` — las interfaces `@HttpExchange` por servicio (`client/configuration/LovClient`,
-  `LovResource`), los DTO (`client/dto`: solo las claves que usa la UI, `PageResponse<T>` con la
-  forma `{content, page}`) y los errores (`client/error`: `ApiProblem`, `ApiErrorDecoder` y la
-  jerarquía `BackofficeApiException`).
+- `client` — las interfaces `@HttpExchange` por servicio (`client/configuration/LovClient`, los
+  ocho endpoints de `AbstractLovController` parametrizados por recurso; `LovResource`, los 17
+  catálogos con su ruta y su título), los DTO (`client/dto`: solo las claves que usa la UI,
+  `@JsonInclude(NON_NULL)` para no enviar lo que no se rellena, `PageResponse<T>` con la forma
+  `{content, page}`) y los errores (`client/error`: `ApiProblem`, `ApiErrorDecoder` y la jerarquía
+  `BackofficeApiException`).
 - `ui` — `MainLayout` (AppLayout; el menú lo dan las vistas anotadas con `@Menu`, filtradas por
-  `AccessAnnotationChecker`), `ui/views` (`HomeView`, `ProfileStatusesView`), `ui/support/UiErrors`
-  (excepción → `Notification`).
+  `AccessAnnotationChecker`, más el grupo «Catalogos» construido a mano porque la vista de catálogos
+  lleva el recurso en la ruta), `ui/views/HomeView`, `ui/lov` (`LovCrudView` en
+  `catalogos/:resource`, `LovEditorDialog` con `Binder` sobre el modelo mutable `LovForm`,
+  `LovBulkCreateDialog` con su parser de líneas), `ui/support` (`UiErrors`: excepción →
+  `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`).
 
 ### Reglas que no se rompen
 
@@ -101,7 +106,17 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   en `mto-configuration` con `spring.data.web.pageable.serialization-mode: via_dto` y pinada allí
   por test. `PageResponse<T>` la lee (y tolera `first`/`last` de stock y maintenance).
 - **El menú no es una guarda.** `MainLayout` esconde lo que la persona no puede abrir; quien manda
-  es `@RolesAllowed` en la vista y el 403 del servicio.
+  es `@RolesAllowed` en la vista y el 403 del servicio. Dentro de una vista pasa lo mismo: los
+  botones de `LovCrudView` siguen los permisos del servicio (`config-write`+`lov-manage` para crear
+  y modificar, `config-delete`+`lov-manage` para borrar, `config-import`+`lov-manage` para los
+  lotes) con `AuthenticationContext.hasAllRoles`, y un 403 igualmente se traduce a notificación.
+- **Una vista por familia de endpoints, no por recurso.** Los 17 catálogos comparten controlador
+  base y DTO en `mto-configuration`; aquí son una `LovCrudView` con el recurso en la ruta. Un
+  catálogo nuevo allí es una constante más en `LovResource`, nada más.
+- **La validación de negocio vive en el servicio.** El formulario solo exige lo evidente (código y
+  descripción obligatorios, longitud de columna) y vuelca `errors[{field, code, message}]` campo a
+  campo con `ServerValidation`. Un `code` repetido llega como 409 y un cuerpo sin `code` como 400
+  desde que `RestExceptionHandler` los mapea (antes eran 500).
 - **Nada de componentes de pago.** `vaadin-spring-boot-starter` trae solo `vaadin-core-internal`.
 
 ### Tests
@@ -110,7 +125,9 @@ Una clase por capa; se añaden métodos, no clases: `ClientLayerTest` (interface
 `RestClient` reales contra `MockRestServiceServer`: prefijo del gateway, Bearer y correlación, forma
 de página, `problem+json` de configuration, 401/403 y 503 del gateway, cuerpo no JSON),
 `SecurityLayerTest` (mapeo de roles, registro OIDC sin descubrimiento, roles desde el access token,
-`CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: filas del
-grid, menú por roles, vista protegida, notificación de error, diagnóstico de audiencias) y
+`CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
+de la ruta y su filtro local, menú por roles, controles de escritura ocultos sin permiso, alta por
+diálogo, errores del servicio campo a campo, borrado con confirmación, lote sobre la selección,
+parser del alta múltiple, notificación de error, diagnóstico de audiencias) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
 sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.

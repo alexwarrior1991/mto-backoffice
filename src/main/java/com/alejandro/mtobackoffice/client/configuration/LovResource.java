@@ -1,5 +1,8 @@
 package com.alejandro.mtobackoffice.client.configuration;
 
+import java.util.Arrays;
+import java.util.Optional;
+
 /**
  * Los 17 catalogos (listas de valores) de mto-configuration. Todos comparten los mismos ocho
  * endpoints y el mismo DTO, asi que una sola vista parametrizada por este enum los sirve todos.
@@ -39,5 +42,10 @@ public enum LovResource {
 
     public String title() {
         return title;
+    }
+
+    /** El catalogo cuyo ultimo segmento de ruta es {@code path}, si existe. */
+    public static Optional<LovResource> byPath(String path) {
+        return Arrays.stream(values()).filter(resource -> resource.path.equals(path)).findFirst();
     }
 }

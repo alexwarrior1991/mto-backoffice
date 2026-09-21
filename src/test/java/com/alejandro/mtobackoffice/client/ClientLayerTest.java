@@ -28,6 +28,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -38,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -88,13 +90,95 @@ class ClientLayerTest {
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("""
                         [{"id":1,"code":"DRAFT","description":"Borrador","type":"ProfileStatus","enabled":true,
-                          "createDate":"2026-08-01T10:15:30","versionNumber":0,"unknownTomorrow":{"x":1}}]
+                          "createDate":"2026-08-01T10:15:30","versionDate":"2026-08-02T11:00:00","versionUser":"config.responsable",
+                          "versionNumber":0,"unknownTomorrow":{"x":1}}]
                         """, MediaType.APPLICATION_JSON));
 
         List<LovDto> statuses = asUser(() -> lovClient.findAll(LovResource.PROFILE_STATUSES));
 
         assertEquals(1, statuses.size());
-        assertEquals(new LovDto(1L, "DRAFT", "Borrador", "ProfileStatus", true), statuses.getFirst());
+        assertEquals(new LovDto(1L, "DRAFT", "Borrador", true, LocalDateTime.parse("2026-08-02T11:00:00"), "config.responsable"),
+                statuses.getFirst());
+        server.verify();
+    }
+
+    @Test
+    void createPostsOnlyTheFilledFieldsAndReadsThe201Body() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/pole-types"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE))
+                .andExpect(jsonPath("$.code").value("PT9"))
+                .andExpect(jsonPath("$.description").value("Poste tipo 9"))
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.id").doesNotExist())
+                .andExpect(jsonPath("$.versionDate").doesNotExist())
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                        .body("""
+                                {"id":42,"code":"PT9","description":"Poste tipo 9","enabled":true,"versionNumber":0}
+                                """));
+
+        LovDto created = asUser(() -> lovClient.create("pole-types", LovDto.forCreate("PT9", "Poste tipo 9", true)));
+
+        assertEquals(42L, created.id());
+        assertTrue(created.isEnabled());
+    }
+
+    @Test
+    void updatePutsToTheIdPathAndDeleteIsA204() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/pole-types/42"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.id").value(42))
+                .andExpect(jsonPath("$.enabled").value(false))
+                .andRespond(withSuccess("""
+                        {"id":42,"code":"PT9","description":"Poste tipo 9 (baja)","enabled":false}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/pole-types/42"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        LovDto existing = new LovDto(42L, "PT9", "Poste tipo 9", true, null, null);
+        LovDto updated = asUser(() -> lovClient.update("pole-types", 42L, existing.withValues("PT9", "Poste tipo 9 (baja)", false)));
+        assertFalse(updated.isEnabled());
+
+        asUser(() -> {
+            lovClient.delete("pole-types", 42L);
+            return null;
+        });
+        server.verify();
+    }
+
+    @Test
+    void bulkCreateAndBulkUpdateUseTheBulkPath() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/pole-types/bulk"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[1].code").value("PT2"))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                        .body("[{\"id\":1,\"code\":\"PT1\",\"enabled\":true},{\"id\":2,\"code\":\"PT2\",\"enabled\":true}]"));
+        server.expect(requestTo(GATEWAY + "/api/configuration/pole-types/bulk"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$[0].id").value(1))
+                .andExpect(jsonPath("$[0].enabled").value(false))
+                .andRespond(withSuccess("[{\"id\":1,\"code\":\"PT1\",\"enabled\":false}]", MediaType.APPLICATION_JSON));
+
+        List<LovDto> created = asUser(() -> lovClient.bulkCreate("pole-types",
+                List.of(LovDto.forCreate("PT1", "Uno", true), LovDto.forCreate("PT2", "Dos", true))));
+        assertEquals(2, created.size());
+
+        List<LovDto> updated = asUser(() -> lovClient.bulkUpdate("pole-types", List.of(created.getFirst().withEnabled(false))));
+        assertFalse(updated.getFirst().isEnabled());
+        server.verify();
+    }
+
+    @Test
+    void findByIdAndFindByCodeHaveTheirOwnPaths() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/pole-types/7"))
+                .andRespond(withSuccess("{\"id\":7,\"code\":\"PT7\",\"enabled\":true}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/pole-types/code/PT7"))
+                .andRespond(withSuccess("{\"id\":7,\"code\":\"PT7\",\"enabled\":true}", MediaType.APPLICATION_JSON));
+
+        assertEquals("PT7", asUser(() -> lovClient.findById("pole-types", 7L)).code());
+        assertEquals(7L, asUser(() -> lovClient.findByCode("pole-types", "PT7")).id());
         server.verify();
     }
 
