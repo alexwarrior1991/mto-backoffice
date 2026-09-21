@@ -3,6 +3,7 @@ package com.alejandro.mtobackoffice.ui;
 import com.alejandro.mtobackoffice.client.configuration.BusinessEntityClient;
 import com.alejandro.mtobackoffice.client.configuration.DisconnectorClient;
 import com.alejandro.mtobackoffice.client.configuration.ExecutionPackageClient;
+import com.alejandro.mtobackoffice.client.configuration.JobsClient;
 import com.alejandro.mtobackoffice.client.configuration.LovClient;
 import com.alejandro.mtobackoffice.client.configuration.MasterResource;
 import com.alejandro.mtobackoffice.client.configuration.ProfileClient;
@@ -12,6 +13,10 @@ import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.configuration.LovResource;
 import com.alejandro.mtobackoffice.client.dto.LovDto;
 import com.alejandro.mtobackoffice.client.dto.PageMetadata;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobDto;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobItemError;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobStatus;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobType;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.master.ExecutionPackageDto;
 import com.alejandro.mtobackoffice.client.dto.master.LovRef;
@@ -24,6 +29,8 @@ import com.alejandro.mtobackoffice.client.error.ApiProblem;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.BackofficeUser;
 import com.alejandro.mtobackoffice.configuration.security.JwtClaimNames;
+import com.alejandro.mtobackoffice.ui.jobs.JobLog;
+import com.alejandro.mtobackoffice.ui.jobs.JobsView;
 import com.alejandro.mtobackoffice.ui.lov.LovBulkCreateDialog;
 import com.alejandro.mtobackoffice.ui.lov.LovCrudView;
 import com.alejandro.mtobackoffice.ui.master.EnabledFilter;
@@ -36,6 +43,7 @@ import com.github.mvysny.kaributesting.v10.LocatorJ;
 import com.github.mvysny.kaributesting.v10.MockVaadin;
 import com.github.mvysny.kaributesting.v10.NotificationsKt;
 import com.github.mvysny.kaributesting.v10.Routes;
+import com.github.mvysny.kaributesting.v10.UploadKt;
 import com.github.mvysny.kaributesting.v10.spring.MockSpringSecurity;
 import com.github.mvysny.kaributesting.v10.spring.MockSpringServlet;
 import com.vaadin.flow.component.Component;
@@ -48,12 +56,14 @@ import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridSortOrder;
 import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.data.provider.SortDirection;
+import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.ListItem;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.sidenav.SideNavItem;
 import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.component.upload.Upload;
 import kotlin.jvm.functions.Function0;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -76,6 +86,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -127,6 +138,8 @@ class ViewLayerTest {
     private SectionInsulatorClient sectionInsulatorClient;
     @MockitoBean
     private BusinessEntityClient businessEntityClient;
+    @MockitoBean
+    private JobsClient jobsClient;
 
     @BeforeEach
     void setUp() {
@@ -180,6 +193,7 @@ class ViewLayerTest {
         assertFalse(labels.contains("Estados de perfil"), labels.toString());
         assertFalse(labels.contains("Infraestructura"), labels.toString());
         assertFalse(labels.contains("Vias"), labels.toString());
+        assertFalse(labels.contains("Trabajos"), labels.toString());
     }
 
     @Test
@@ -193,6 +207,7 @@ class ViewLayerTest {
         for (MasterResource resource : MasterResource.values()) {
             assertTrue(labels.contains(resource.title()), "falta " + resource.title() + " en " + labels);
         }
+        assertTrue(labels.contains("Trabajos"), labels.toString());
     }
 
     @Test
@@ -651,5 +666,111 @@ class ViewLayerTest {
 
         assertTrue(kp.isInvalid());
         verify(profileClient, never()).create(any());
+    }
+
+    // --- Trabajos en segundo plano ---------------------------------------------------------------
+
+    private static final UUID JOB_ID = UUID.fromString("6f1c0000-0000-4000-8000-000000000001");
+
+    private static JobDto job(JobType type, JobStatus status, Integer total, int processed, int ok, int failed, List<JobItemError> errors) {
+        return new JobDto(JOB_ID, type, status, Instant.parse("2026-08-27T09:12:03Z"), null, null, 3L, null,
+                total, processed, ok, failed, null, null, errors);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Grid<JobLog.Entry> jobsGrid() {
+        return LocatorJ._get(Grid.class);
+    }
+
+    /** Subir, lanzar, y ver el progreso llegar por @Push sin que el navegador pregunte. */
+    @Test
+    void launchingAnImportTracksTheJobAndPushesItsProgressUntilItEnds() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_IMPORT", "ROLE_LOV_MANAGE");
+        when(jobsClient.importProfiles(any(), eq(false))).thenReturn(job(JobType.PROFILE_IMPORT, JobStatus.PENDING, null, 0, 0, 0, null));
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        Button start = LocatorJ._get(Button.class, spec -> spec.withId("import-profiles"));
+        assertFalse(start.isEnabled(), "sin fichero no hay nada que importar");
+        UploadKt._upload(LocatorJ._get(Upload.class, spec -> spec.withId("import-profiles-upload")),
+                "profile-master.xlsx", JobsView.XLSX, "PK-xlsx".getBytes());
+        MockVaadin.clientRoundtrip();
+        assertTrue(start.isEnabled());
+        LocatorJ._click(start);
+
+        verify(jobsClient).importProfiles(argThat(resource -> "profile-master.xlsx".equals(resource.getFilename())), eq(false));
+        Grid<JobLog.Entry> grid = jobsGrid();
+        assertEquals(1, GridKt._size(grid));
+        assertEquals(JobStatus.PENDING, GridKt._get(grid, 0).job().status());
+        assertFalse(start.isEnabled(), "el fichero ya se ha enviado");
+
+        JobsView view = LocatorJ._get(JobsView.class);
+        when(jobsClient.profileJob(JOB_ID)).thenReturn(job(JobType.PROFILE_IMPORT, JobStatus.RUNNING, 100, 50, 50, 0, null));
+        view.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertEquals(JobStatus.RUNNING, GridKt._get(grid, 0).job().status());
+        LocatorJ._get(GridKt._getCellComponent(grid, 0, "progress"), Span.class, spec -> spec.withText("50 / 100"));
+        assertTrue(LocatorJ._find(Anchor.class, spec -> spec.withId("download-" + JOB_ID)).isEmpty(), "sin fichero hasta terminar");
+
+        when(jobsClient.profileJob(JOB_ID)).thenReturn(job(JobType.PROFILE_IMPORT, JobStatus.COMPLETED_WITH_ERRORS, 100, 100, 98, 2,
+                List.of(new JobItemError(118, "create", "ValidationException", "kp obligatorio [kp]"))));
+        view.pollOnce();
+        MockVaadin.clientRoundtrip();
+        Component actions = GridKt._getCellComponent(grid, 0, "actions");
+        LocatorJ._get(actions, Anchor.class, spec -> spec.withId("download-" + JOB_ID));
+        LocatorJ._get(actions, Button.class, spec -> spec.withText("Errores"));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 en la lista, 0 en curso"));
+
+        view.pollOnce();
+        verify(jobsClient, times(2)).profileJob(JOB_ID);
+    }
+
+    /** README_ASYNC_JOBS §4: el 429 trae el trabajo rechazado; se apunta como tal y se dice cuando reintentar. */
+    @Test
+    void aRejectedLaunchIsListedAsRejectedAndSaysWhenToRetry() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        String body = """
+                {"id":"6f1c0000-0000-4000-8000-000000000001","type":"PROFILE_EXPORT","status":"REJECTED",
+                 "createdAt":"2026-08-27T09:12:03Z","trackId":3,"mapperType":"basic","processedItems":0,"successfulItems":0,"failedItems":0}
+                """;
+        when(jobsClient.exportProfiles(3L, "basic")).thenThrow(BackofficeApiException.of(HttpStatus.TOO_MANY_REQUESTS, ApiProblem.empty(),
+                "corr-9", Duration.ofSeconds(30), "POST /api/configuration/profiles/jobs/export", body));
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> track = LocatorJ._get(ComboBox.class, spec -> spec.withId("export-track"));
+        LocatorJ._setValue(track, new RefItem(3L, "TRACK 1 (EP4)"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("export-profiles")));
+
+        Grid<JobLog.Entry> grid = jobsGrid();
+        assertEquals(1, GridKt._size(grid));
+        assertEquals(JobStatus.REJECTED, GridKt._get(grid, 0).job().status());
+        NotificationsKt.expectNotifications("Sin hueco para Exportacion de TRACK 1 (EP4): el servicio lo ha rechazado. Intentalo en 30 s.");
+        LocatorJ._get(JobsView.class).pollOnce();
+        verify(jobsClient, never()).profileJob(any());
+    }
+
+    @Test
+    void aReaderCanOnlyExport() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+
+        LocatorJ._get(Button.class, spec -> spec.withId("export-profiles"));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("import-profiles")).isEmpty());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("import-lovs")).isEmpty());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("republish")).isEmpty());
+    }
+
+    @Test
+    void theLovCatalogueImportAlsoNeedsLovManage() {
+        loginAs("config.editor", "ROLE_CONFIG_READ", "ROLE_CONFIG_IMPORT");
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+
+        LocatorJ._get(Button.class, spec -> spec.withId("import-profiles"));
+        LocatorJ._get(Button.class, spec -> spec.withId("republish"));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("import-lovs")).isEmpty());
     }
 }

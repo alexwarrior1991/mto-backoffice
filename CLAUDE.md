@@ -62,12 +62,15 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   catálogos con su ruta y su título), `MasterClient<D>` (lo que comparten los maestros de
   `CRUDController`: `POST /filter` paginado, `GET/POST/PUT/DELETE`) con seis subinterfaces vacías
   que solo ponen la ruta y el tipo (`StationClient`, `TrackClient`...; Spring resuelve el genérico
-  contra la subinterfaz), `BusinessEntityClient` (solo lectura) y `MasterFilters` (cuerpo y orden
-  del `/filter`). Los DTO (`client/dto`): `LovDto` es un record con solo las claves que usa la UI y
+  contra la subinterfaz), `BusinessEntityClient` (solo lectura), `MasterFilters` (cuerpo y orden
+  del `/filter`) y `JobsClient` (los trabajos en segundo plano: importaciones multipart con
+  `@RequestPart Resource`, exportación, republicado, estado y fichero por familia, `JobFamily`). Los DTO (`client/dto`): `LovDto` es un record con solo las claves que usa la UI y
   `@JsonInclude(NON_NULL)`; los maestros (`client/dto/master`) son **clases mutables** que heredan
   de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo;
-  `PageResponse<T>` con la forma `{content, page}`. Los errores en `client/error` (`ApiProblem`,
-  `ApiErrorDecoder` y la jerarquía `BackofficeApiException`).
+  `PageResponse<T>` con la forma `{content, page}`; los trabajos (`client/dto/jobs`: `JobDto`,
+  la unión de las tres respuestas del servicio, `JobStatus`, `JobType`, `UploadedFile`). Los
+  errores en `client/error` (`ApiProblem`, `ApiErrorDecoder` y la jerarquía
+  `BackofficeApiException`, con `TooManyRequestsApiException` llevando el cuerpo del 429).
 - `ui` — `MainLayout` (AppLayout; el menú lo dan las vistas anotadas con `@Menu`, filtradas por
   `AccessAnnotationChecker`; las de `infraestructura/*` se agrupan bajo «Infraestructura» y los
   catálogos se listan a mano porque su vista lleva el recurso en la ruta), `ui/views/HomeView`,
@@ -77,8 +80,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `MasterEditorDialog<D>`, el `Binder` sobre el DTO leído; una vista y un editor por maestro;
   `ReferenceCatalog` y `LovCatalog`, los nombres y las entradas de catálogo cargados una vez por
   pantalla; `Pickers`, desplegables y conversores; `EnabledFilter`, el filtro de tres estados),
-  `ui/support` (`UiErrors`: excepción → `Notification`; `ServerValidation`: `errors[]` del
-  servicio → campos del `Binder`).
+  `ui/jobs` (`JobsView` en `trabajos`: los lanzadores y la lista; `JobLog`, los trabajos de la
+  sesión en la `VaadinSession`; `JobPolling`, el hilo compartido que consulta los trabajos vivos;
+  `JobErrorsDialog`), `ui/support` (`UiErrors`: excepción → `Notification`; `ServerValidation`:
+  `errors[]` del servicio → campos del `Binder`).
 
 ### Reglas que no se rompen
 
@@ -143,6 +148,19 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `totalElements`. Nada de `findAll` en memoria como en los catálogos: los perfiles son miles.
   Las filas de paquetes, estaciones y vías llegan sin hijos y los filtros booleanos solo filtran
   si vienen; las dos cosas se arreglaron en `mto-configuration` para esta fase, no aquí.
+- **Un trabajo se lanza y se sigue; no se espera.** Lanzar responde 202 con el trabajo, o 429 con
+  el trabajo ya rechazado y un `Retry-After` (`TooManyRequestsApiException` trae ese cuerpo, y
+  `JobsView` lo apunta como rechazado en vez de tratarlo como un fallo). El progreso lo trae
+  `@Push`: `JobPolling` consulta desde un hilo propio, con el principal fijado por
+  `CurrentPrincipal.callAs`, y `JobsView` lo lleva a la pantalla con `UI.access()`; sin pantalla
+  abierta no se consulta nada. La lista vive en la sesión (`JobLog`) porque el servicio no tiene
+  listado de trabajos, solo consulta por id. El `downloadUrl` del servicio no se usa: es su ruta
+  interna, y la descarga se pide por familia e id a través del gateway.
+- **El fichero de un trabajo se descarga a través de esta aplicación.** `DownloadHandler` pide el
+  fichero al servicio con el token de la persona y lo sirve en la misma respuesta; un `Anchor` al
+  gateway no serviría porque el navegador no tiene token (primera regla). Una exportación solo se
+  descarga `COMPLETED`; una importación también `COMPLETED_WITH_ERRORS`, porque su fichero es el
+  informe de esos errores (`JobDto.isDownloadable`).
 - **Nada de componentes de pago.** `vaadin-spring-boot-starter` trae solo `vaadin-core-internal`.
 
 ### Tests
@@ -151,7 +169,9 @@ Una clase por capa; se añaden métodos, no clases: `ClientLayerTest` (interface
 `RestClient` reales contra `MockRestServiceServer`: prefijo del gateway, Bearer y correlación, forma
 de página, `problem+json` de configuration, 401/403 y 503 del gateway, cuerpo no JSON; los
 maestros: resolución del genérico, parámetros de página y orden del `/filter`, `extras` e hijos a
-`null` en un `PUT`, referencias a catálogo como `{id, code}`),
+`null` en un `PUT`, referencias a catálogo como `{id, code}`; los trabajos: la importación como
+parte multipart con `dryRun` en la query, el 429 con el trabajo rechazado y el `Retry-After`, el
+estado por familia y el fichero con sus cabeceras, qué es descargable),
 `SecurityLayerTest` (mapeo de roles, registro OIDC sin descubrimiento, roles desde el access token,
 `CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
 de la ruta y su filtro local, menú por roles, controles de escritura ocultos sin permiso, alta por
@@ -159,6 +179,9 @@ diálogo, errores del servicio campo a campo, borrado con confirmación, lote so
 parser del alta múltiple, notificación de error, diagnóstico de audiencias; los maestros: lista
 paginada, ordenada y filtrada contra el cliente simulado, nombres de referencias en las columnas,
 edición sobre una copia que vuelve con `extras` e hijos a `null`, errores del servicio sobre un
-desplegable, borrado confirmado, alta de un perfil con sus referencias, KP no válido) y
+desplegable, borrado confirmado, alta de un perfil con sus referencias, KP no válido; los
+trabajos: subir y lanzar una importación, el progreso llegando por `pollOnce()` + `UI.access()`
+hasta el enlace de descarga y el botón de errores, el 429 apuntado como rechazado con su aviso,
+los lanzadores según permisos) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
 sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.

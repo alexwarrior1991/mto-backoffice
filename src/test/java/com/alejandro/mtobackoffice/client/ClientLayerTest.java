@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.client;
 
 import com.alejandro.mtobackoffice.client.configuration.BusinessEntityClient;
+import com.alejandro.mtobackoffice.client.configuration.JobsClient;
 import com.alejandro.mtobackoffice.client.configuration.LovClient;
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
 import com.alejandro.mtobackoffice.client.configuration.ProfileClient;
@@ -9,6 +10,11 @@ import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.configuration.LovResource;
 import com.alejandro.mtobackoffice.client.dto.LovDto;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobDto;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobFamily;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobStatus;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobType;
+import com.alejandro.mtobackoffice.client.dto.jobs.UploadedFile;
 import com.alejandro.mtobackoffice.client.dto.master.BusinessEntityDto;
 import com.alejandro.mtobackoffice.client.dto.master.LovRef;
 import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
@@ -21,6 +27,7 @@ import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.client.error.ServiceUnavailableApiException;
 import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
+import com.alejandro.mtobackoffice.client.error.TooManyRequestsApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.configuration.client.GatewayClientConfiguration;
 import com.alejandro.mtobackoffice.configuration.client.UserTokenProvider;
@@ -33,18 +40,22 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Supplier;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesRegex;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -52,6 +63,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
@@ -77,6 +89,7 @@ class ClientLayerTest {
     private TrackClient trackClient;
     private ProfileClient profileClient;
     private BusinessEntityClient businessEntityClient;
+    private JobsClient jobsClient;
 
     @BeforeEach
     void setUp() {
@@ -95,6 +108,7 @@ class ClientLayerTest {
         trackClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(TrackClient.class);
         profileClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ProfileClient.class);
         businessEntityClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(BusinessEntityClient.class);
+        jobsClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(JobsClient.class);
     }
 
     @AfterEach
@@ -457,5 +471,98 @@ class ClientLayerTest {
         List<BusinessEntityDto> companies = asUser(() -> businessEntityClient.findAll());
 
         assertEquals("Constructora Norte (A12345678)", companies.getFirst().label());
+    }
+
+    // --- Trabajos en segundo plano ---------------------------------------------------------------
+
+    private static final UUID JOB_ID = UUID.fromString("6f1c0000-0000-4000-8000-000000000001");
+
+    @Test
+    void importPostsTheFileAsAMultipartPartWithDryRunInTheQuery() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/profiles/jobs/import?dryRun=true"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(content().string(containsString("name=\"file\"; filename=\"profile-master.xlsx\"")))
+                .andExpect(content().string(containsString("PK-xlsx-bytes")))
+                .andRespond(withStatus(HttpStatus.ACCEPTED).contentType(MediaType.APPLICATION_JSON).body("""
+                        {"id":"6f1c0000-0000-4000-8000-000000000001","type":"PROFILE_IMPORT","status":"PENDING",
+                         "createdAt":"2026-08-27T09:12:03Z","processedItems":0,"successfulItems":0,"failedItems":0}
+                        """));
+
+        UploadedFile file = new UploadedFile("profile-master.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "PK-xlsx-bytes".getBytes(StandardCharsets.UTF_8));
+        JobDto job = asUser(() -> jobsClient.importProfiles(file.asResource(), true));
+
+        assertEquals(JOB_ID, job.id());
+        assertEquals(JobType.PROFILE_IMPORT, job.type());
+        assertEquals(JobStatus.PENDING, job.status());
+        assertEquals(JobFamily.PROFILE_JOBS, job.family());
+        assertTrue(job.itemErrors().isEmpty(), "lo omitido llega vacio, no nulo");
+        assertFalse(job.isDownloadable());
+        server.verify();
+    }
+
+    /** README_ASYNC_JOBS §4: sin cupo el servicio responde 429, y el trabajo rechazado viaja en el cuerpo. */
+    @Test
+    void a429CarriesTheRejectedJobAndTheRetryAfter() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/profiles/jobs/export?trackId=3&mapperType=basic"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header(HttpHeaders.RETRY_AFTER, "30")
+                        .header("X-Correlation-Id", "corr-7")
+                        .body("""
+                                {"id":"6f1c0000-0000-4000-8000-000000000001","type":"PROFILE_EXPORT","status":"REJECTED",
+                                 "createdAt":"2026-08-27T09:12:03Z","trackId":3,"mapperType":"basic",
+                                 "processedItems":0,"successfulItems":0,"failedItems":0}
+                                """));
+
+        TooManyRequestsApiException rejected = assertThrows(TooManyRequestsApiException.class,
+                () -> asUser(() -> jobsClient.exportProfiles(3L, "basic")));
+
+        assertEquals(Duration.ofSeconds(30), rejected.getRetryAfter().orElseThrow());
+        assertEquals("corr-7", rejected.getCorrelationId());
+        JobDto job = new JsonMapper().readValue(rejected.getBody(), JobDto.class);
+        assertEquals(JobStatus.REJECTED, job.status());
+        assertEquals(3L, job.trackId());
+        server.verify();
+    }
+
+    @Test
+    void statusIsAskedUnderTheFamilyPrefixAndAFileComesBackWithItsHeaders() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/master-data/republish/" + JOB_ID))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"id":"6f1c0000-0000-4000-8000-000000000001","type":"MASTER_DATA_REPUBLISH","status":"RUNNING",
+                         "createdAt":"2026-08-27T09:12:03Z","startedAt":"2026-08-27T09:12:04Z","totalItems":11715,
+                         "processedItems":500,"successfulItems":500,"failedItems":0}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/lovs/jobs/" + JOB_ID + "/file"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"dryRun\":true}", MediaType.APPLICATION_JSON)
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"lov-import-report.json\""));
+
+        JobDto running = asUser(() -> jobsClient.status(JobFamily.REPUBLISH, JOB_ID));
+        assertEquals(11715, running.totalItems());
+        assertFalse(running.isTerminal());
+        assertFalse(running.isDownloadable(), "un republicado no produce fichero");
+
+        ResponseEntity<byte[]> file = asUser(() -> jobsClient.file(JobFamily.LOV_JOBS, JOB_ID));
+        assertEquals("{\"dryRun\":true}", new String(file.getBody(), StandardCharsets.UTF_8));
+        assertEquals("lov-import-report.json", file.getHeaders().getContentDisposition().getFilename());
+        assertThrows(IllegalArgumentException.class, () -> jobsClient.file(JobFamily.REPUBLISH, JOB_ID));
+        server.verify();
+    }
+
+    @Test
+    void whatIsDownloadableDependsOnTheTypeAndTheStatus() {
+        JobDto export = new JobDto(JOB_ID, JobType.PROFILE_EXPORT, JobStatus.COMPLETED, null, null, null, 3L, "basic", 10, 10, 10, 0, null, null, null);
+        JobDto importWithErrors = new JobDto(JOB_ID, JobType.PROFILE_IMPORT, JobStatus.COMPLETED_WITH_ERRORS, null, null, null, null, null, 10, 10, 8, 2, null, null, null);
+        JobDto exportWithErrors = new JobDto(JOB_ID, JobType.PROFILE_EXPORT, JobStatus.COMPLETED_WITH_ERRORS, null, null, null, 3L, null, 10, 10, 8, 2, null, null, null);
+
+        assertTrue(export.isDownloadable());
+        assertEquals("perfiles-via-3.csv", export.suggestedFileName());
+        assertTrue(importWithErrors.isDownloadable(), "el fichero de una importacion es el informe de sus errores");
+        assertFalse(exportWithErrors.isDownloadable(), "un CSV a medias no es un CSV");
     }
 }

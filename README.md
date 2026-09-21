@@ -20,7 +20,7 @@ Séptimo repositorio del dominio, hermano e independiente de
 [`mto-maintenance`](../mto-maintenance), [`mto-users`](../mto-users) y
 [`mto-gateway`](../mto-gateway); la infraestructura local es de [`mto-platform`](../mto-platform).
 
-## Estado: fase 2
+## Estado: fase 3
 
 - **Fase 0**: circuito completo con lo mínimo. Cliente `mto-backoffice` en el realm, login OIDC,
   marco con menú filtrado por roles y la pantalla de inicio con el diagnóstico del token.
@@ -48,7 +48,24 @@ Séptimo repositorio del dominio, hermano e independiente de
   cambió con la fase: las listas de paquetes, estaciones y vías van sin hijos, los filtros
   booleanos solo filtran si vienen y las empresas se pueden leer (`GET /business-entities`).
 
-Fase siguiente: las importaciones Excel con trabajos asíncronos.
+- **Fase 3**: los trabajos en segundo plano de `mto-configuration` (`README_ASYNC_JOBS.md`) en
+  `trabajos`: exportar los perfiles de una vía a CSV, importar el maestro de perfiles
+  (`profile-master.xlsx`) y el catálogo de LOV (`lov-master.xlsx`) con simulación (`dryRun`), y
+  republicar los datos maestros. Lanzar es una llamada que responde 202 con el trabajo, o **429 con
+  el trabajo ya rechazado** y un `Retry-After` cuando no hay cupo: se apunta igual, como rechazado,
+  y se dice cuándo reintentar. Seguirlos es lo que hace `@Push`: mientras la pantalla está abierta,
+  un hilo compartido consulta cada dos segundos los trabajos de la sesión que aún no han terminado y
+  lleva el progreso al navegador con `UI.access()`. El fichero de un trabajo (el CSV, o el informe
+  JSON de una importación, disponible también cuando terminó con errores) se descarga **a través de
+  esta aplicación**, con el token de la persona: el navegador nunca habla con el gateway. La lista
+  de trabajos es la de la sesión: el servicio solo permite consultar un trabajo por id, así que
+  cerrar la sesión pierde la lista, no los trabajos.
+
+| Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
+|---|---|
+| Exportar perfiles, consultar, descargar | `config-read` |
+| Importar el maestro de perfiles, republicar | `config-import` |
+| Importar el catálogo de LOV | `config-import` + `lov-manage` |
 
 | Acción sobre un maestro | Roles de cliente de `mto-configuration-api` |
 |---|---|

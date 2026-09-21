@@ -28,6 +28,15 @@ public class BackofficeApiException extends RuntimeException {
     /** Traduce una respuesta de error a la excepcion que las vistas saben tratar. */
     public static BackofficeApiException of(HttpStatusCode status, ApiProblem problem, String correlationId,
                                             Duration retryAfter, String operation) {
+        return of(status, problem, correlationId, retryAfter, operation, null);
+    }
+
+    /**
+     * Igual, con el cuerpo tal cual llego: un 429 de los trabajos en segundo plano trae en el
+     * cuerpo el trabajo rechazado, que no es un problema y no cabe en {@link ApiProblem}.
+     */
+    public static BackofficeApiException of(HttpStatusCode status, ApiProblem problem, String correlationId,
+                                            Duration retryAfter, String operation, String body) {
         String message = describe(status, problem, operation);
         return switch (status.value()) {
             case 400, 422 -> new ValidationApiException(message, status, problem, correlationId, operation);
@@ -35,6 +44,7 @@ public class BackofficeApiException extends RuntimeException {
             case 403 -> new ForbiddenApiException(message, status, problem, correlationId, operation);
             case 404 -> new NotFoundApiException(message, status, problem, correlationId, operation);
             case 409 -> new ConflictApiException(message, status, problem, correlationId, operation);
+            case 429 -> new TooManyRequestsApiException(message, status, problem, correlationId, operation, retryAfter, body);
             case 502, 503, 504 -> new ServiceUnavailableApiException(message, status, problem, correlationId, operation, retryAfter);
             default -> new BackofficeApiException(message, status, problem, correlationId, operation, null);
         };

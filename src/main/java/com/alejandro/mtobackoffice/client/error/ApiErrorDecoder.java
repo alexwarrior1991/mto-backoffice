@@ -44,7 +44,7 @@ public class ApiErrorDecoder implements RestClient.ResponseSpec.ErrorHandler {
         String operation = request.getMethod() + " " + request.getURI().getPath();
 
         BackofficeApiException exception = BackofficeApiException.of(status, problem, correlationId,
-                retryAfter(response.getHeaders()), operation);
+                retryAfter(response.getHeaders()), operation, new String(body, StandardCharsets.UTF_8));
         LOGGER.warn("{} (reference={})", exception.getMessage(), exception.getReference());
         throw exception;
     }

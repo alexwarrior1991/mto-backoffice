@@ -3,6 +3,7 @@ package com.alejandro.mtobackoffice.configuration.client;
 import com.alejandro.mtobackoffice.client.configuration.BusinessEntityClient;
 import com.alejandro.mtobackoffice.client.configuration.DisconnectorClient;
 import com.alejandro.mtobackoffice.client.configuration.ExecutionPackageClient;
+import com.alejandro.mtobackoffice.client.configuration.JobsClient;
 import com.alejandro.mtobackoffice.client.configuration.LovClient;
 import com.alejandro.mtobackoffice.client.configuration.ProfileClient;
 import com.alejandro.mtobackoffice.client.configuration.SectionInsulatorClient;
@@ -119,6 +120,11 @@ public class GatewayClientConfiguration {
     @Bean
     public BusinessEntityClient businessEntityClient(RestClient gatewayRestClient) {
         return proxyFactory(gatewayRestClient).createClient(BusinessEntityClient.class);
+    }
+
+    @Bean
+    public JobsClient jobsClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(JobsClient.class);
     }
 
     public static HttpServiceProxyFactory proxyFactory(RestClient restClient) {
