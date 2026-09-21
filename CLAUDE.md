@@ -101,7 +101,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   la lista paginada en el servidor con `grid.setItems(fetch, count)` sobre `GET /api/users` y
   `first`/`max`; `UserEditorDialog`, el `Binder` sobre el modelo mutable `UserForm`, cuyas
   propiedades se llaman como los campos del servicio para `ServerValidation`; `UserAttributes`,
-  los atributos como texto `clave=valor` por línea), `ui/support` (`UiErrors`: excepción →
+  los atributos como texto `clave=valor` por línea; `UserDetailView` en `usuarios/:userId`, la
+  ficha con su cabecera, su botonera por permiso y un `TabSheet` de paneles `LazyPanel`, que
+  piden sus datos la primera vez que se abren: `UserProfilesPanel` y `UserRolesPanel`;
+  `ResetPasswordDialog` y `ExecuteActionsEmailDialog`, cada uno con su `Binder` sobre un `Form`
+  con los nombres del servicio), `ui/support` (`UiErrors`: excepción →
   `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`).
 - `configuration/vaadin` — `BackofficeSystemMessages`, los mensajes de sistema de Vaadin en
   castellano y con el aviso de sesión caducada apagado (recarga → login → SSO).
@@ -155,7 +159,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   mucho 200 (`UsersView.MAX_PAGE`, el tope del servicio) y no ordena porque la API no ordena. La
   búsqueda por texto y el filtro por atributo se excluyen en la pantalla porque el servicio los
   rechaza juntos (`SEARCH-400`): lo deshabilitado no viaja. Nada de esto se arregla aquí con
-  lógica propia: si la lista necesita orden u otro filtro, se pide en `mto-users`.
+  lógica propia: si la lista necesita orden u otro filtro, se pide en `mto-users`. En la ficha,
+  asignar y quitar perfiles o roles **pintan lo que devuelve el servicio** (la lista actualizada),
+  sin releer; y las rutas estáticas del módulo (`usuarios/perfiles`, `usuarios/roles`) ganan a
+  `usuarios/:userId` porque Vaadin resuelve antes los segmentos literales.
 - **El menú no es una guarda.** `MainLayout` esconde lo que la persona no puede abrir; quien manda
   es `@RolesAllowed` en la vista y el 403 del servicio. Dentro de una vista pasa lo mismo: los
   botones de `LovCrudView` siguen los permisos del servicio (`config-write`+`lov-manage` para crear
@@ -249,6 +256,10 @@ sin `users-read`, un rol de realm que no abre la vista, la lista paginada con `f
 filtrada en el servicio, la exclusión entre búsqueda y atributo, los controles según permisos,
 alta con contraseña temporal y acciones, errores del servicio campo a campo, modificación con
 solo lo cambiado, activar/desactivar sin confirmación, borrado confirmado, el parser de
-atributos) y
+atributos; la ficha: cabecera y pestañas cargadas al abrirse, usuario desconocido de vuelta a la
+lista, cada botón y cada panel tras su permiso, perfiles y roles asignados y quitados pintando la
+respuesta, contraseña temporal por defecto y la política del realm sobre el campo, el correo de
+acciones con su 502 detallado y sin email, modificar y desactivar repintando la cabecera, borrar
+de vuelta a la lista) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
 sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.

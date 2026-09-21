@@ -89,10 +89,17 @@ Séptimo repositorio del dominio, hermano e independiente de
   acciones requeridas al entrar; la modificación enseña el usuario en solo lectura y manda **solo
   lo que cambió** (`null` es «no tocar» para el servicio; vaciar un campo viaja como cadena vacía);
   los atributos se editan como texto, una línea `clave=valor` por valor. Activar y desactivar van
-  sin confirmación (son reversibles y no cierran sesiones: eso es de la ficha); borrar confirma. Las
-  pantallas que faltan: ficha con perfiles, roles, contraseña temporal y correo de acciones (U2),
-  sesiones, credenciales y «sacar a la persona» (U3), catálogos de perfiles y roles con sus
-  miembros (U4).
+  sin confirmación (son reversibles y no cierran sesiones: eso es de la ficha); borrar confirma. U2
+  trae la **ficha** (`usuarios/{id}`): cabecera con estado, email, acciones pendientes y
+  atributos, botonera con modificar, activar/desactivar, contraseña temporal, correo de acciones
+  y borrar (cada botón con su permiso), y una pestaña por cosa que Keycloak guarda aparte, que
+  pide sus datos la primera vez que se abre: **Perfiles** (asignar uno de los que faltan y quitar;
+  se pinta la lista que devuelve el servicio) y **Roles de cliente** (elegir cliente, luego los
+  roles que aún no tiene; quitar es el `DELETE` con cuerpo). La contraseña temporal lo es por
+  defecto (la fija otra persona) y la política del realm cae sobre el campo; el correo de acciones
+  necesita SMTP en el realm y, sin él, la notificación enseña el detalle del 502. Las pantallas
+  que faltan: sesiones, credenciales y «sacar a la persona» (U3), catálogos de perfiles y roles
+  con sus miembros (U4).
 
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|

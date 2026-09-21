@@ -10,6 +10,7 @@ import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.master.EnabledFilter;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
@@ -50,8 +51,8 @@ import java.util.stream.Stream;
  * tampoco.</p>
  *
  * <p>Los botones siguen los permisos del servicio: nuevo, modificar y activar/desactivar piden
- * {@code users-write}; borrar, {@code users-delete}. Esconderlos es cortesia: la guarda real esta
- * en el servicio.</p>
+ * {@code users-write}; borrar, {@code users-delete}; abrir la ficha, solo leer. Esconderlos es
+ * cortesia: la guarda real esta en el servicio.</p>
  */
 @Route(value = UsersView.ROUTE, layout = MainLayout.class)
 @PageTitle("Usuarios")
@@ -136,12 +137,8 @@ public class UsersView extends VerticalLayout {
         grid.addColumn(dto -> yesNo(dto.emailVerified())).setHeader("Verificado").setKey("emailVerified").setAutoWidth(true);
         grid.addColumn(dto -> yesNo(dto.enabled())).setHeader("Activo").setKey("enabled").setAutoWidth(true);
         grid.addColumn(dto -> dto.createdAt() == null ? "" : DATE_TIME.format(dto.createdAt())).setHeader("Creado").setKey("createdAt").setAutoWidth(true);
-        if (canWrite || canDelete) {
-            grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey(ACTIONS_COLUMN).setAutoWidth(true).setFlexGrow(0);
-        }
-        if (canWrite) {
-            grid.addItemDoubleClickListener(event -> openEditor(event.getItem()));
-        }
+        grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey(ACTIONS_COLUMN).setAutoWidth(true).setFlexGrow(0);
+        grid.addItemDoubleClickListener(event -> open(event.getItem()));
         grid.setPageSize(PAGE_SIZE);
         grid.setSizeFull();
         grid.setItems(this::fetch, this::count);
@@ -151,6 +148,11 @@ public class UsersView extends VerticalLayout {
     private Component rowActions(UserDto user) {
         HorizontalLayout actions = new HorizontalLayout();
         actions.setSpacing(false);
+        Button open = new Button(VaadinIcon.USER_CARD.create(), click -> open(user));
+        open.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
+        open.setTooltipText("Abrir la ficha");
+        open.setId("open-" + user.id());
+        actions.add(open);
         if (canWrite) {
             Button edit = new Button(VaadinIcon.EDIT.create(), click -> openEditor(user));
             edit.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
@@ -230,6 +232,10 @@ public class UsersView extends VerticalLayout {
     public void refresh() {
         grid.deselectAll();
         grid.getDataProvider().refreshAll();
+    }
+
+    private void open(UserDto user) {
+        UI.getCurrent().navigate(UserDetailView.class, UserDetailView.parametersOf(user.id()));
     }
 
     private void openEditor(UserDto existing) {
