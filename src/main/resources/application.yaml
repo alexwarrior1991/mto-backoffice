@@ -1,5 +1,80 @@
-vaadin:
-  launch-browser: true
+# Backoffice web del dominio MTO. Es un CLIENTE de las APIs: no tiene base de datos, ni broker, ni
+# recibe tokens. Entra con OIDC (Authorization Code) en Keycloak y llama al gateway con el token de
+# la persona, servidor a servidor. El navegador solo habla el protocolo de Vaadin con esta aplicacion.
 spring:
   application:
     name: mto-backoffice
+
+  # Timeouts del RestClient que habla con el gateway. Claves en plural de Boot 4.1. El read-timeout
+  # iguala al del gateway hacia los servicios (15 s): esperar mas aqui no aporta nada.
+  http:
+    clients:
+      connect-timeout: ${MTO_GATEWAY_CONNECT_TIMEOUT:2s}
+      read-timeout: ${MTO_GATEWAY_READ_TIMEOUT:15s}
+
+  # Sesion de servidor de Vaadin. Coincide con el idle de la sesion SSO del realm (30 min): un
+  # refresh token que ya no vale y una sesion que sigue viva se traducirian en un "vuelve a entrar"
+  # con la pantalla todavia abierta.
+  session:
+    timeout: ${SERVER_SESSION_TIMEOUT:30m}
+
+# El registro OIDC 'keycloak' se construye en KeycloakClientRegistrations a partir de app.keycloak.*
+# en lugar de declararlo aqui con issuer-uri: el descubrimiento por issuer es una llamada HTTP
+# durante la creacion del bean, y con ella la aplicacion no arrancaria si Keycloak no esta listo
+# todavia (mismo criterio que mto-configuration y mto-maintenance).
+
+server:
+  # 8080 stock, 8081 configuration, 8082 Keycloak, 8083 maintenance, 8084 users, 8090 gateway.
+  port: ${SERVER_PORT:8085}
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+
+vaadin:
+  # Solo se escanean las vistas de esta aplicacion: acorta el arranque y evita sorpresas de addons.
+  allowed-packages: com.alejandro.mtobackoffice
+  launch-browser: false
+
+app:
+  keycloak:
+    # Realm que emite los tokens. El 'iss' lleva este nombre y hay que resolverlo igual desde el IDE
+    # y desde compose (entrada auth.mto.local en /etc/hosts, ver mto-platform).
+    issuer-uri: ${KEYCLOAK_ISSUER_URI:http://auth.mto.local:8082/realms/mto}
+    # Cliente confidencial de esta aplicacion en el realm (mto-backoffice/keycloak/). No es
+    # mto-frontend, que esta reservado a una futura SPA.
+    client-id: ${KEYCLOAK_CLIENT_ID:mto-backoffice}
+    # Sin valor por defecto: cada perfil lo fija (dev trae el secreto local, prod lo exige).
+    client-secret: ${KEYCLOAK_CLIENT_SECRET:}
+    # Cliente cuyos roles se leen del access token (resource_access) para las autoridades ROLE_*.
+    # Los permisos de las pantallas son los de mto-configuration-api: config-read, config-write...
+    roles-client-id: ${KEYCLOAK_ROLES_CLIENT_ID:mto-configuration-api}
+  gateway:
+    # Toda llamada sale hacia el gateway, nunca directamente a un servicio: /api/configuration/**
+    # es la ruta publica que el gateway reescribe a /api/v1/configuration/**.
+    base-url: ${MTO_GATEWAY_URL:http://localhost:8090}
+  correlation:
+    # Cabecera con la que cada llamada saliente se identifica. El gateway la acepta si es valida y
+    # la propaga al servicio, de modo que el mismo id aparece en su log y en el del servicio.
+    header-name: X-Correlation-Id
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+      probes:
+        enabled: true
+
+logging:
+  pattern:
+    # [aplicacion,correlationId]: el correlationId es el de la llamada saliente en curso (lo pone el
+    # interceptor del RestClient en el MDC) y permite seguirla en el gateway y en el servicio.
+    correlation: "[${spring.application.name:},%X{correlationId:-}] "
+  level:
+    root: ${LOGGING_LEVEL_ROOT:INFO}
+    com.alejandro.mtobackoffice: ${LOGGING_LEVEL_APP:INFO}

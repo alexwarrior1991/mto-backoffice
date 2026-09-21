@@ -1,0 +1,1077 @@
+package com.alejandro.mtobackoffice.ui;
+
+import com.alejandro.mtobackoffice.client.configuration.BusinessEntityClient;
+import com.alejandro.mtobackoffice.client.configuration.DisconnectorClient;
+import com.alejandro.mtobackoffice.client.configuration.ExecutionPackageClient;
+import com.alejandro.mtobackoffice.client.configuration.JobsClient;
+import com.alejandro.mtobackoffice.client.configuration.LovClient;
+import com.alejandro.mtobackoffice.client.configuration.MasterResource;
+import com.alejandro.mtobackoffice.client.configuration.ProfileClient;
+import com.alejandro.mtobackoffice.client.configuration.SectionInsulatorClient;
+import com.alejandro.mtobackoffice.client.configuration.StationClient;
+import com.alejandro.mtobackoffice.client.configuration.TrackClient;
+import com.alejandro.mtobackoffice.client.configuration.LovResource;
+import com.alejandro.mtobackoffice.client.dto.LovDto;
+import com.alejandro.mtobackoffice.client.dto.PageMetadata;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobDto;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobItemError;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobStatus;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobType;
+import com.alejandro.mtobackoffice.client.dto.PageResponse;
+import com.alejandro.mtobackoffice.client.dto.master.ExecutionPackageDto;
+import com.alejandro.mtobackoffice.client.dto.master.LovRef;
+import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
+import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
+import com.alejandro.mtobackoffice.client.dto.master.StationDto;
+import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
+import com.alejandro.mtobackoffice.client.error.ApiFieldError;
+import com.alejandro.mtobackoffice.client.error.ApiProblem;
+import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.configuration.security.BackofficeUser;
+import com.alejandro.mtobackoffice.configuration.security.JwtClaimNames;
+import com.alejandro.mtobackoffice.ui.jobs.JobsView;
+import com.alejandro.mtobackoffice.ui.lov.LovBulkCreateDialog;
+import com.alejandro.mtobackoffice.ui.lov.LovCrudView;
+import com.alejandro.mtobackoffice.ui.master.EnabledFilter;
+import com.alejandro.mtobackoffice.ui.master.RefItem;
+import com.alejandro.mtobackoffice.ui.master.TracksView;
+import com.alejandro.mtobackoffice.ui.views.HomeView;
+import com.github.mvysny.kaributesting.v10.pro.ConfirmDialogKt;
+import com.github.mvysny.kaributesting.v10.GridKt;
+import com.github.mvysny.kaributesting.v10.LocatorJ;
+import com.github.mvysny.kaributesting.v10.MockVaadin;
+import com.github.mvysny.kaributesting.v10.NotificationsKt;
+import com.github.mvysny.kaributesting.v10.Routes;
+import com.github.mvysny.kaributesting.v10.UploadKt;
+import com.github.mvysny.kaributesting.v10.spring.MockSpringSecurity;
+import com.github.mvysny.kaributesting.v10.spring.MockSpringServlet;
+import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.UI;
+import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.combobox.ComboBox;
+import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
+import com.vaadin.flow.component.dialog.Dialog;
+import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.grid.GridSortOrder;
+import com.vaadin.flow.component.select.Select;
+import com.vaadin.flow.data.provider.SortDirection;
+import com.vaadin.flow.component.html.Anchor;
+import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.ListItem;
+import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.sidenav.SideNavItem;
+import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.component.upload.Upload;
+import kotlin.jvm.functions.Function0;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.security.oauth2.core.oidc.OidcIdToken;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+
+import com.alejandro.mtobackoffice.client.dto.master.CantileverDto;
+import com.alejandro.mtobackoffice.client.dto.master.DisconnectorDto;
+import com.alejandro.mtobackoffice.client.dto.master.SectionInsulatorDto;
+import com.alejandro.mtobackoffice.client.dto.master.SectionInsulatorInstallationType;
+import com.alejandro.mtobackoffice.client.dto.master.SectionInsulatorSwitchDto;
+import com.alejandro.mtobackoffice.client.dto.master.SteadyArmDto;
+import com.alejandro.mtobackoffice.ui.master.CantileverDialog;
+import com.alejandro.mtobackoffice.ui.master.SwitchDialog;
+import com.vaadin.flow.component.checkbox.Checkbox;
+import com.vaadin.flow.component.textfield.BigDecimalField;
+import com.vaadin.flow.component.textfield.IntegerField;
+import com.vaadin.flow.server.SystemMessages;
+import com.vaadin.flow.server.VaadinService;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import static org.mockito.Mockito.clearInvocations;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * Las vistas en la JVM, sin navegador (Karibu-Testing sobre el contexto de Spring real, con el
+ * cliente del gateway sustituido). La persona se finge en el {@code SecurityContextHolder}, que es
+ * de donde Vaadin lee principal y roles con {@link MockSpringSecurity}.
+ */
+@SpringBootTest
+@ActiveProfiles("test")
+class ViewLayerTest {
+
+    private static final Routes ROUTES = new Routes().autoDiscoverViews("com.alejandro.mtobackoffice.ui");
+    private static final String PROFILE_STATUSES = "profile-statuses";
+    private static final String CATALOGUE_ROUTE = "catalogos/" + PROFILE_STATUSES;
+
+    @Autowired
+    private ApplicationContext context;
+
+    @MockitoBean
+    private LovClient lovClient;
+    @MockitoBean
+    private ExecutionPackageClient executionPackageClient;
+    @MockitoBean
+    private StationClient stationClient;
+    @MockitoBean
+    private TrackClient trackClient;
+    @MockitoBean
+    private ProfileClient profileClient;
+    @MockitoBean
+    private DisconnectorClient disconnectorClient;
+    @MockitoBean
+    private SectionInsulatorClient sectionInsulatorClient;
+    @MockitoBean
+    private BusinessEntityClient businessEntityClient;
+    @MockitoBean
+    private JobsClient jobsClient;
+
+    @BeforeEach
+    void setUp() {
+        stubEmptyMasters();
+        MockSpringSecurity.mock();
+        Function0<UI> uiFactory = UI::new;
+        MockVaadin.setup(uiFactory, new MockSpringServlet(ROUTES, context, uiFactory));
+    }
+
+    @AfterEach
+    void tearDown() {
+        MockVaadin.tearDown();
+        SecurityContextHolder.clearContext();
+    }
+
+    private static void loginAs(String name, String... authorities) {
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(name, "n/a", authorities));
+    }
+
+    private static List<String> menuLabels() {
+        return LocatorJ._find(SideNavItem.class).stream().map(SideNavItem::getLabel).toList();
+    }
+
+    private static List<LovDto> threeStatuses() {
+        return List.of(
+                new LovDto(1L, "DRAFT", "Borrador", true, LocalDateTime.of(2026, 8, 1, 10, 15), "config.responsable"),
+                new LovDto(2L, "PROVISIONAL", "Provisional", true, null, null),
+                new LovDto(3L, "DEFINITIVE", "Definitivo", false, null, null));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Grid<LovDto> grid() {
+        return LocatorJ._get(Grid.class);
+    }
+
+    private static Button button(String text) {
+        return LocatorJ._get(Button.class, spec -> spec.withText(text));
+    }
+
+    // --- Menu y permisos -------------------------------------------------------------------------
+
+    @Test
+    void theMenuHidesWhatThePersonCannotOpen() {
+        loginAs("almacen.lector", "ROLE_STOCK_READ", "ROLE_REALM_MTO_WAREHOUSE_VIEWER");
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        List<String> labels = menuLabels();
+        assertTrue(labels.contains("Inicio"), labels.toString());
+        assertFalse(labels.contains("Catalogos"), labels.toString());
+        assertFalse(labels.contains("Estados de perfil"), labels.toString());
+        assertFalse(labels.contains("Infraestructura"), labels.toString());
+        assertFalse(labels.contains("Vias"), labels.toString());
+        assertFalse(labels.contains("Trabajos"), labels.toString());
+    }
+
+    @Test
+    void theMenuGroupsTheSixMastersUnderInfrastructure() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        List<String> labels = menuLabels();
+        assertTrue(labels.contains("Infraestructura"), labels.toString());
+        for (MasterResource resource : MasterResource.values()) {
+            assertTrue(labels.contains(resource.title()), "falta " + resource.title() + " en " + labels);
+        }
+        assertTrue(labels.contains("Trabajos"), labels.toString());
+    }
+
+    @Test
+    void theMenuOffersTheSeventeenCataloguesToWhoCanRead() {
+        loginAs("config.lector", "ROLE_CONFIG_READ", "ROLE_REALM_MTO_VIEWER");
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        List<String> labels = menuLabels();
+        assertTrue(labels.contains("Catalogos"), labels.toString());
+        for (LovResource resource : LovResource.values()) {
+            assertTrue(labels.contains(resource.title()), "falta " + resource.title() + " en " + labels);
+        }
+    }
+
+    /** Un rol de realm con el mismo nombre que el permiso no abre la pantalla: solo el rol de cliente. */
+    @Test
+    void aProtectedViewIsNotReachableWithARealmRoleOnly() {
+        loginAs("config.impostor", "ROLE_REALM_CONFIG_READ");
+
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(CATALOGUE_ROUTE));
+
+        assertTrue(LocatorJ._find(LovCrudView.class).isEmpty());
+    }
+
+    @Test
+    void aReadOnlyPersonSeesTheCatalogueWithoutAnyWriteControl() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+
+        assertEquals(3, GridKt._size(grid()));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withText("Nuevo")).isEmpty());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withText("Alta multiple")).isEmpty());
+        assertNull(grid().getColumnByKey("actions"));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("delete-1")).isEmpty());
+    }
+
+    // --- La vista de catalogos --------------------------------------------------------------------
+
+    @Test
+    void theCatalogueOfTheRouteIsListedAndTheFilterIsLocal() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+
+        LocatorJ._get(H2.class, spec -> spec.withText("Estados de perfil"));
+        Grid<LovDto> grid = grid();
+        assertEquals(3, GridKt._size(grid));
+        assertEquals("DRAFT", GridKt._get(grid, 0).code());
+        LocatorJ._get(Span.class, spec -> spec.withText("3 entradas"));
+
+        TextField filter = LocatorJ._get(TextField.class, spec -> spec.withPlaceholder("Filtrar por codigo o descripcion"));
+        LocatorJ._setValue(filter, "prov");
+        assertEquals(1, GridKt._size(grid));
+        assertEquals("PROVISIONAL", GridKt._get(grid, 0).code());
+        LocatorJ._get(Span.class, spec -> spec.withText("1 de 3 entradas"));
+
+        verify(lovClient, times(1)).findAll(PROFILE_STATUSES);
+    }
+
+    @Test
+    void anUnknownCatalogueIsNotFoundInsteadOfCrashing() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+
+        try {
+            UI.getCurrent().navigate("catalogos/no-existe");
+        } catch (Throwable notFoundByKaribu) {
+            // Karibu convierte la pagina de error de Vaadin en una excepcion; tambien vale.
+        }
+
+        assertTrue(LocatorJ._find(LovCrudView.class).isEmpty());
+    }
+
+    @Test
+    void anApiErrorBecomesANotificationWithItsReference() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        ApiProblem problem = new ApiProblem("about:blank", "Service Unavailable", 503,
+                "El servicio mto-configuration no esta disponible en este momento.", null,
+                null, null, "corr-5", null, null, null, "mto-configuration");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenThrow(BackofficeApiException.of(
+                HttpStatus.SERVICE_UNAVAILABLE, problem, "corr-5", Duration.ofSeconds(30), "GET /api/configuration/profile-statuses"));
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size());
+        LocatorJ._get(notifications.getFirst(), Span.class,
+                spec -> spec.withText("El servicio no esta disponible ahora mismo. Intentalo en 30 s."));
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("Referencia: corr-5"));
+        assertEquals(0, GridKt._size(grid()));
+    }
+
+    @Test
+    void creatingAnEntryPostsItAndReloadsTheCatalogue() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_LOV_MANAGE");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
+        LovDto expected = LovDto.forCreate("ARCHIVED", "Archivado", true);
+        when(lovClient.create(PROFILE_STATUSES, expected)).thenReturn(new LovDto(4L, "ARCHIVED", "Archivado", true, null, null));
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withLabel("Codigo")), " ARCHIVED ");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withLabel("Descripcion")), "Archivado");
+        LocatorJ._click(button("Guardar"));
+
+        verify(lovClient).create(PROFILE_STATUSES, expected);
+        verify(lovClient, times(2)).findAll(PROFILE_STATUSES);
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
+    }
+
+    @Test
+    void serverValidationErrorsLandOnTheirFieldsAndTheDialogStaysOpen() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_LOV_MANAGE");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
+        ApiProblem problem = new ApiProblem("https://api.mto-configuration/errors/val-000", "Peticion invalida", 400,
+                "Validation failed", null, "VAL-000", "t-1", null, null, false,
+                List.of(new ApiFieldError("code", "VAL-002", "El codigo ya existe"),
+                        new ApiFieldError("somethingElse", "VAL-001", "Otro problema")), null);
+        when(lovClient.create(eq(PROFILE_STATUSES), any())).thenThrow(
+                BackofficeApiException.of(HttpStatus.BAD_REQUEST, problem, "corr-2", null, "POST /api/configuration/profile-statuses"));
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        TextField code = LocatorJ._get(TextField.class, spec -> spec.withLabel("Codigo"));
+        LocatorJ._setValue(code, "DRAFT");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withLabel("Descripcion")), "Duplicado");
+        LocatorJ._click(button("Guardar"));
+
+        assertTrue(code.isInvalid());
+        assertEquals("El codigo ya existe", code.getErrorMessage());
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto para corregir");
+        assertEquals(1, NotificationsKt.getNotifications().size(), "lo no atribuible a un campo se notifica");
+    }
+
+    @Test
+    void anEmptyFormNeverReachesTheService() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_LOV_MANAGE");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        LocatorJ._click(button("Guardar"));
+
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withLabel("Codigo")).isInvalid());
+        verify(lovClient, times(0)).create(any(), any());
+    }
+
+    @Test
+    void deletingAsksForConfirmationThenCallsTheService() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_DELETE", "ROLE_LOV_MANAGE");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        Component actions = GridKt._getCellComponent(grid(), 0, "actions");
+        LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withId("delete-1")));
+
+        verify(lovClient, times(0)).delete(any(), any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+
+        verify(lovClient).delete(PROFILE_STATUSES, 1L);
+        verify(lovClient, times(2)).findAll(PROFILE_STATUSES);
+    }
+
+    @Test
+    void bulkDisablingUsesTheBulkEndpointForTheSelection() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_IMPORT", "ROLE_LOV_MANAGE");
+        List<LovDto> statuses = threeStatuses();
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(statuses);
+        when(lovClient.bulkUpdate(eq(PROFILE_STATUSES), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        Button disable = button("Desactivar seleccionados");
+        assertFalse(disable.isEnabled(), "sin seleccion no hay lote");
+        grid().select(statuses.get(0));
+        grid().select(statuses.get(1));
+        assertTrue(disable.isEnabled());
+        LocatorJ._click(disable);
+
+        verify(lovClient).bulkUpdate(eq(PROFILE_STATUSES), argThat(changes ->
+                changes.size() == 2 && changes.stream().noneMatch(LovDto::isEnabled)));
+        verify(lovClient, times(2)).findAll(PROFILE_STATUSES);
+    }
+
+    @Test
+    void bulkCreateParsesOneEntryPerLineAndRejectsWhatItCannotRead() {
+        List<LovDto> entries = LovBulkCreateDialog.parse("PT1;Poste tipo 1\n\nPT2\tPoste tipo 2\nPT3 - Poste tipo 3\n");
+
+        assertEquals(3, entries.size());
+        assertEquals(LovDto.forCreate("PT1", "Poste tipo 1", true), entries.get(0));
+        assertEquals(LovDto.forCreate("PT2", "Poste tipo 2", true), entries.get(1));
+        assertEquals(LovDto.forCreate("PT3", "Poste tipo 3", true), entries.get(2));
+
+        IllegalArgumentException invalid = assertThrows(IllegalArgumentException.class,
+                () -> LovBulkCreateDialog.parse("PT1;Poste tipo 1\nSIN-DESCRIPCION\n"));
+        assertTrue(invalid.getMessage().contains("linea 2"));
+        assertThrows(IllegalArgumentException.class, () -> LovBulkCreateDialog.parse("  \n"));
+    }
+
+    // --- Inicio ----------------------------------------------------------------------------------
+
+    @Test
+    void homeShowsThePrincipalAndTheAudiencesOfTheAccessToken() {
+        Instant now = Instant.now();
+        OidcIdToken idToken = OidcIdToken.withTokenValue("id").issuedAt(now).expiresAt(now.plusSeconds(300))
+                .claim("sub", "u-1").claim(JwtClaimNames.PREFERRED_USERNAME, "config.responsable").build();
+        BackofficeUser user = new BackofficeUser(AuthorityUtils.createAuthorityList("ROLE_CONFIG_READ", "ROLE_REALM_MTO_ADMIN"),
+                idToken, null, JwtClaimNames.PREFERRED_USERNAME,
+                List.of("mto-configuration-api", "mto-stock-api", "mto-maintenance-api", "mto-users-api"));
+        SecurityContextHolder.getContext().setAuthentication(
+                new OAuth2AuthenticationToken(user, user.getAuthorities(), "keycloak"));
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        List<ListItem> audiences = LocatorJ._find(ListItem.class).stream()
+                .filter(item -> item.getElement().hasAttribute("data-audience")).toList();
+        assertEquals(5, audiences.size());
+        long present = audiences.stream().filter(item -> "true".equals(item.getElement().getAttribute("data-present"))).count();
+        assertEquals(4, present);
+        assertTrue(audiences.stream().anyMatch(item -> "mto-gateway-api".equals(item.getElement().getAttribute("data-audience"))
+                && "false".equals(item.getElement().getAttribute("data-present"))));
+        LocatorJ._get(ListItem.class, spec -> spec.withText("ROLE_REALM_MTO_ADMIN"));
+    }
+
+    // --- Maestros de infraestructura -------------------------------------------------------------
+
+    private static final String TRACKS_ROUTE = "infraestructura/vias";
+    private static final String PROFILES_ROUTE = "infraestructura/perfiles";
+
+    private static <T> PageResponse<T> page(List<T> all, int page, int size) {
+        int from = Math.min(page * size, all.size());
+        int to = Math.min(from + size, all.size());
+        return new PageResponse<>(all.subList(from, to), new PageMetadata(page, size, all.size(), (all.size() + size - 1) / size));
+    }
+
+    private void stubEmptyMasters() {
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<ExecutionPackageDto>of(), 0, 50));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<StationDto>of(), 0, 50));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<TrackDto>of(), 0, 50));
+        when(profileClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<ProfileDto>of(), 0, 50));
+        when(businessEntityClient.findAll()).thenReturn(List.of());
+        when(disconnectorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<DisconnectorDto>of(), 0, 50));
+        when(sectionInsulatorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<SectionInsulatorDto>of(), 0, 50));
+        when(jobsClient.list(anyInt(), anyInt(), any(), any())).thenReturn(page(List.<JobDto>of(), 0, 20));
+    }
+
+    private static ExecutionPackageDto executionPackage(Long id, String name) {
+        ExecutionPackageDto dto = new ExecutionPackageDto();
+        dto.setId(id);
+        dto.setName(name);
+        return dto;
+    }
+
+    private static StationDto station(Long id, String name, Long packageId) {
+        StationDto dto = new StationDto();
+        dto.setId(id);
+        dto.setName(name);
+        dto.setExecutionPackageId(packageId);
+        return dto;
+    }
+
+    private static TrackDto track(Long id, String name, boolean enabled, Long packageId, List<Long> stationIds) {
+        TrackDto dto = new TrackDto();
+        dto.setId(id);
+        dto.setName(name);
+        dto.setEnabled(enabled);
+        dto.setExecutionPackageId(packageId);
+        dto.setStationIds(stationIds);
+        dto.setProfiles(null);
+        dto.setVersionNumber(7);
+        dto.putExtra("fieldOfTomorrow", 1);
+        return dto;
+    }
+
+    /** El servicio simulado: pagina, filtra por texto y por estado, como hace el de verdad. */
+    private void stubTracks(List<TrackDto> all) {
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenAnswer(call -> {
+            Map<String, Object> body = call.getArgument(3);
+            String text = String.valueOf(body.getOrDefault("searchText", "")).toLowerCase(Locale.ROOT);
+            Object enabled = body.get("enabled");
+            List<TrackDto> matching = all.stream()
+                    .filter(dto -> text.isEmpty() || dto.getName().toLowerCase(Locale.ROOT).contains(text))
+                    .filter(dto -> enabled == null || enabled.equals(dto.getEnabled()))
+                    .toList();
+            return page(matching, call.getArgument(0), call.getArgument(1));
+        });
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(executionPackage(100L, "EP4")), 0, 50));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(station(12L, "ATOCHA", 100L), station(13L, "CHAMARTIN", 100L)), 0, 50));
+    }
+
+    private static List<TrackDto> threeTracks() {
+        return List.of(
+                track(3L, "VIA 1", true, 100L, List.of(12L, 13L)),
+                track(4L, "VIA 2", true, 100L, List.of()),
+                track(5L, "VIA MUERTA", false, 100L, List.of(12L)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Grid<TrackDto> trackGrid() {
+        return LocatorJ._get(Grid.class);
+    }
+
+    @Test
+    void aMasterListIsPagedSortedAndFilteredInTheServer() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubTracks(threeTracks());
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+
+        Grid<TrackDto> grid = trackGrid();
+        assertEquals(3, GridKt._size(grid));
+        assertEquals("VIA 1", GridKt._get(grid, 0).getName());
+        List<String> firstRow = GridKt._getFormattedRow(grid, 0);
+        assertTrue(firstRow.contains("EP4"), "el paquete se ensena por su nombre: " + firstRow);
+        assertTrue(firstRow.contains("ATOCHA (EP4), CHAMARTIN (EP4)"), "las estaciones por su nombre: " + firstRow);
+        LocatorJ._get(Span.class, spec -> spec.withText("3 vias"));
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withPlaceholder("Buscar")), "muerta");
+        assertEquals(1, GridKt._size(grid));
+        assertEquals("VIA MUERTA", GridKt._get(grid, 0).getName());
+        verify(trackClient, atLeastOnce()).filter(anyInt(), anyInt(), anyList(), eq(Map.of("searchText", "muerta")));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 via"));
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withPlaceholder("Buscar")), "");
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withLabel("Estado")), EnabledFilter.ENABLED);
+        assertEquals(2, GridKt._size(grid));
+        verify(trackClient, atLeastOnce()).filter(anyInt(), anyInt(), anyList(), eq(Map.of("enabled", true)));
+
+        grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("name"), SortDirection.DESCENDING)));
+        GridKt._get(grid, 0);
+        verify(trackClient, atLeastOnce()).filter(anyInt(), anyInt(), eq(List.of("name,desc")), anyMap());
+    }
+
+    @Test
+    void aReadOnlyPersonSeesTheMastersWithoutAnyWriteControl() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubTracks(threeTracks());
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withText("Nuevo")).isEmpty());
+        assertNull(trackGrid().getColumnByKey("actions"));
+    }
+
+    /** README_API §4 desde la pantalla: la fila vuelve entera, con lo que la UI no conoce, y los hijos a null. */
+    @Test
+    void editingARowSendsItBackWithItsUnknownFieldsAndItsChildrenLeftAlone() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        stubTracks(threeTracks());
+        when(trackClient.update(eq(3L), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        Component actions = GridKt._getCellComponent(trackGrid(), 0, "actions");
+        LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withId("edit-3")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Nombre")), "VIA PRINCIPAL");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        verify(trackClient).update(eq(3L), argThat(dto -> "VIA PRINCIPAL".equals(dto.getName())
+                && dto.getProfiles() == null
+                && Integer.valueOf(1).equals(dto.extras().get("fieldOfTomorrow"))
+                && List.of(12L, 13L).equals(dto.getStationIds())
+                && Long.valueOf(100L).equals(dto.getExecutionPackageId())
+                && Integer.valueOf(7).equals(dto.getVersionNumber())));
+        verify(trackClient, never()).create(any());
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
+        assertEquals("VIA 1", GridKt._get(trackGrid(), 0).getName(), "se edito una copia: la fila del Grid no cambia hasta recargar");
+    }
+
+    @Test
+    void serverValidationErrorsLandOnTheMasterFields() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        stubTracks(threeTracks());
+        ApiProblem problem = new ApiProblem("https://api.mto-configuration/errors/val-000", "Peticion invalida", 400,
+                "La peticion tiene 1 errores de validacion", null, "VAL-000", "t-2", null, null, false,
+                List.of(new ApiFieldError("executionPackageId", "VAL-001", "El paquete no existe")), null);
+        when(trackClient.update(eq(3L), any())).thenThrow(
+                BackofficeApiException.of(HttpStatus.BAD_REQUEST, problem, "corr-3", null, "PUT /api/configuration/tracks/3"));
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(trackGrid(), 0, "actions"), Button.class, spec -> spec.withId("edit-3")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> executionPackage = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Paquete de ejecucion"));
+        assertTrue(executionPackage.isInvalid());
+        assertEquals("El paquete no existe", executionPackage.getErrorMessage());
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto para corregir");
+    }
+
+    @Test
+    void deletingAMasterAsksForConfirmationThenCallsTheService() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_DELETE");
+        stubTracks(threeTracks());
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(trackGrid(), 0, "actions"), Button.class, spec -> spec.withId("delete-3")));
+
+        verify(trackClient, never()).delete(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+
+        verify(trackClient).delete(3L);
+    }
+
+    @Test
+    void creatingAProfileSendsItsCatalogueReferencesAndItsTrack() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null)));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(executionPackage(100L, "EP4")), 0, 50));
+        when(profileClient.create(any())).thenAnswer(call -> {
+            ProfileDto created = call.getArgument(0);
+            created.setId(99L);
+            return created;
+        });
+
+        UI.getCurrent().navigate(PROFILES_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Identificador")), "P-9");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("KP")), "10.500");
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> track = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via"));
+        LocatorJ._setValue(track, new RefItem(3L, "TRACK 1 (EP4)"));
+        @SuppressWarnings("unchecked")
+        ComboBox<LovRef> status = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Estado"));
+        LocatorJ._setValue(status, new LovRef(5L, "PT1", "Poste tipo 1"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        verify(profileClient).create(argThat(dto -> "P-9".equals(dto.getProfileId())
+                && "10.500".equals(dto.getKp())
+                && Long.valueOf(3L).equals(dto.getTrackId())
+                && "PT1".equals(dto.getProfileStatus().code())
+                && dto.getCantilevers() == null
+                && dto.getSectionings().isEmpty()));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
+    }
+
+    @Test
+    void aKpWithLettersNeverReachesTheService() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of());
+
+        UI.getCurrent().navigate(PROFILES_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Identificador")), "P-9");
+        TextField kp = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("KP"));
+        LocatorJ._setValue(kp, "10,5 km");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        assertTrue(kp.isInvalid());
+        verify(profileClient, never()).create(any());
+    }
+
+    private static final String DISCONNECTORS_ROUTE = "infraestructura/seccionadores";
+    private static final String SECTION_INSULATORS_ROUTE = "infraestructura/aisladores";
+
+    private static ProfileDto profileWithOneCantilever() {
+        ProfileDto dto = new ProfileDto();
+        dto.setId(7L);
+        dto.setProfileId("P-007");
+        dto.setKp("12.345");
+        dto.setTrackId(3L);
+        dto.setVersionNumber(2);
+        dto.setProfileStatus(new LovRef(5L, "PT1", "Poste tipo 1"));
+        CantileverDto cantilever = new CantileverDto();
+        cantilever.setId(21L);
+        cantilever.setCantileverType(new LovRef(5L, "PT1", "Poste tipo 1"));
+        cantilever.setCwHeight(new BigDecimal("5300"));
+        SteadyArmDto arm = new SteadyArmDto();
+        arm.setId(31L);
+        arm.setLength(1200L);
+        arm.setSteadyArmType(new LovRef(5L, "PT1", "Poste tipo 1"));
+        cantilever.setSteadyArm(arm);
+        dto.setCantilevers(new ArrayList<>(List.of(cantilever)));
+        return dto;
+    }
+
+    /** README_API.md §4: sin tocar las mensulas van a null; tocadas, va la lista entera, con el brazo 1:1 de cada una. */
+    @Test
+    void theCantileversOfAProfileGoAsNullUntouchedAndWholeWhenEdited() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null)));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        when(profileClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(profileWithOneCantilever()), 0, 50));
+        when(profileClient.update(eq(7L), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(PROFILES_ROUTE);
+        @SuppressWarnings("unchecked")
+        Grid<ProfileDto> profiles = LocatorJ._get(Grid.class);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(profiles, 0, "actions"), Button.class, spec -> spec.withId("edit-7")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        Grid<CantileverDto> cantilevers = LocatorJ._get(dialog, Grid.class, spec -> spec.withId("cantilevers-grid"));
+        assertEquals(1, GridKt._size(cantilevers));
+        assertTrue(GridKt._getFormattedRow(cantilevers, 0).stream().anyMatch(cell -> cell.endsWith("1200 mm")),
+                "el brazo se ensena con su tipo y su longitud: " + GridKt._getFormattedRow(cantilevers, 0));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        verify(profileClient).update(eq(7L), argThat(dto -> dto.getCantilevers() == null && dto.getDisconnector() == null));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(profiles, 0, "actions"), Button.class, spec -> spec.withId("edit-7")));
+        dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("cantilevers-add")));
+        CantileverDialog cantilever = LocatorJ._get(CantileverDialog.class);
+        @SuppressWarnings("unchecked")
+        ComboBox<LovRef> type = LocatorJ._get(cantilever, ComboBox.class, spec -> spec.withLabel("Tipo de mensula"));
+        LocatorJ._setValue(type, new LovRef(5L, "PT1", "Poste tipo 1"));
+        LocatorJ._setValue(LocatorJ._get(cantilever, BigDecimalField.class, spec -> spec.withLabel("Descentramiento (mm)")), new BigDecimal("-200"));
+        LocatorJ._setValue(LocatorJ._get(cantilever, Checkbox.class, spec -> spec.withId("cantilever-with-arm")), true);
+        @SuppressWarnings("unchecked")
+        ComboBox<LovRef> armType = LocatorJ._get(cantilever, ComboBox.class, spec -> spec.withLabel("Tipo de brazo"));
+        LocatorJ._setValue(armType, new LovRef(5L, "PT1", "Poste tipo 1"));
+        LocatorJ._setValue(LocatorJ._get(cantilever, IntegerField.class, spec -> spec.withLabel("Longitud del brazo (mm)")), 900);
+        LocatorJ._click(LocatorJ._get(cantilever, Button.class, spec -> spec.withId("cantilever-accept")));
+        @SuppressWarnings("unchecked")
+        Grid<CantileverDto> edited = LocatorJ._get(dialog, Grid.class, spec -> spec.withId("cantilevers-grid"));
+        assertEquals(2, GridKt._size(edited));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        verify(profileClient).update(eq(7L), argThat(dto -> dto.getCantilevers() != null && dto.getCantilevers().size() == 2
+                && Long.valueOf(21L).equals(dto.getCantilevers().get(0).getId())
+                && Long.valueOf(1200L).equals(dto.getCantilevers().get(0).getSteadyArm().getLength())
+                && dto.getCantilevers().get(1).getId() == null
+                && new BigDecimal("-200").equals(dto.getCantilevers().get(1).getStagger())
+                && "PT1".equals(dto.getCantilevers().get(1).getCantileverType().code())
+                && Long.valueOf(900L).equals(dto.getCantilevers().get(1).getSteadyArm().getLength())));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
+    }
+
+    /** README_API.md §4 quater: las agujas son una coleccion de hijos; el codigo tiene forma fija. */
+    @Test
+    void theSwitchesOfASectionInsulatorAreEditedInTheirOwnDialogAndSentWhole() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of()), track(4L, "TRACK 2", true, 100L, List.of())), 0, 50));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(station(12L, "ATOCHA", 100L)), 0, 50));
+        SectionInsulatorDto insulator = new SectionInsulatorDto();
+        insulator.setId(9L);
+        insulator.setName("B7");
+        insulator.setStationId(12L);
+        insulator.setInstallationType(SectionInsulatorInstallationType.TRACK_CONNECTION);
+        insulator.setTrackId(3L);
+        insulator.setConnectedTrackId(4L);
+        insulator.setVersionNumber(1);
+        SectionInsulatorSwitchDto w31 = new SectionInsulatorSwitchDto();
+        w31.setId(41L);
+        w31.setCode("W31");
+        w31.setKp(new BigDecimal("110176.000"));
+        w31.setTurnoutDenominator(9);
+        w31.setTrackId(3L);
+        w31.setEnabled(true);
+        insulator.setSwitches(new ArrayList<>(List.of(w31)));
+        when(sectionInsulatorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(insulator), 0, 50));
+        when(sectionInsulatorClient.update(eq(9L), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(SECTION_INSULATORS_ROUTE);
+        @SuppressWarnings("unchecked")
+        Grid<SectionInsulatorDto> insulators = LocatorJ._get(Grid.class);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(insulators, 0, "actions"), Button.class, spec -> spec.withId("edit-9")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        Grid<SectionInsulatorSwitchDto> switches = LocatorJ._get(dialog, Grid.class, spec -> spec.withId("switches-grid"));
+        assertEquals(1, GridKt._size(switches));
+        assertTrue(GridKt._getFormattedRow(switches, 0).contains("1:9"), "la tangente se ensena como en el plano");
+
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("switches-add")));
+        SwitchDialog aguja = LocatorJ._get(SwitchDialog.class);
+        TextField code = LocatorJ._get(aguja, TextField.class, spec -> spec.withLabel("Codigo"));
+        LocatorJ._setValue(code, "X1");
+        LocatorJ._click(LocatorJ._get(aguja, Button.class, spec -> spec.withId("switch-accept")));
+        assertTrue(code.isInvalid(), "W y hasta cuatro cifras");
+        LocatorJ._setValue(code, "W41");
+        LocatorJ._setValue(LocatorJ._get(aguja, BigDecimalField.class, spec -> spec.withLabel("KP (m)")), new BigDecimal("110249"));
+        LocatorJ._setValue(LocatorJ._get(aguja, IntegerField.class, spec -> spec.withLabel("Denominador de la tangente (1:n)")), 12);
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> track = LocatorJ._get(aguja, ComboBox.class, spec -> spec.withLabel("Via"));
+        LocatorJ._setValue(track, new RefItem(4L, "TRACK 2 (EP4)"));
+        LocatorJ._click(LocatorJ._get(aguja, Button.class, spec -> spec.withId("switch-accept")));
+        assertEquals(2, GridKt._size(switches));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        verify(sectionInsulatorClient).update(eq(9L), argThat(dto -> dto.getSwitches() != null && dto.getSwitches().size() == 2
+                && "W31".equals(dto.getSwitches().get(0).getCode())
+                && Long.valueOf(41L).equals(dto.getSwitches().get(0).getId())
+                && "W41".equals(dto.getSwitches().get(1).getCode())
+                && Integer.valueOf(12).equals(dto.getSwitches().get(1).getTurnoutDenominator())
+                && Long.valueOf(4L).equals(dto.getSwitches().get(1).getTrackId())
+                && Boolean.TRUE.equals(dto.getSwitches().get(1).getEnabled())));
+    }
+
+    /** El servicio manda profileCode y profileKp con cada seccionador: la lista no va perfil por perfil. */
+    @Test
+    void theDisconnectorListShowsTheProfileByItsCodeAndKp() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        when(lovClient.findAll(anyString())).thenReturn(List.of());
+        DisconnectorDto known = new DisconnectorDto();
+        known.setId(5L);
+        known.setName("SEC-1");
+        known.setStationId(12L);
+        known.setProfileId(7L);
+        known.setProfileCode("P-007");
+        known.setProfileKp("12.345");
+        known.setDisconnectorFunction(new LovRef(9L, "Disc", "Seccionador"));
+        DisconnectorDto bare = new DisconnectorDto();
+        bare.setId(6L);
+        bare.setName("SEC-2");
+        bare.setProfileId(8L);
+        when(disconnectorClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenAnswer(call -> page(List.of(known, bare), call.getArgument(0), call.getArgument(1)));
+
+        UI.getCurrent().navigate(DISCONNECTORS_ROUTE);
+
+        @SuppressWarnings("unchecked")
+        Grid<DisconnectorDto> grid = LocatorJ._get(Grid.class);
+        assertEquals(2, GridKt._size(grid));
+        assertTrue(GridKt._getFormattedRow(grid, 0).contains("P-007 (kp 12.345)"), GridKt._getFormattedRow(grid, 0).toString());
+        assertTrue(GridKt._getFormattedRow(grid, 1).contains("#8"), "sin identificador, el id sigue siendo mejor que nada");
+    }
+
+    /** Tras un reinicio no queda un dialogo muerto: la pantalla recarga y la cadena de seguridad reentra por el SSO. */
+    @Test
+    void theExpiredSessionReloadsInsteadOfLeavingADeadDialog() {
+        SystemMessages messages = VaadinService.getCurrent().getSystemMessages(Locale.getDefault(), null);
+
+        assertEquals("Error interno", messages.getInternalErrorCaption(), "los mensajes son los de esta aplicacion");
+        assertFalse(messages.isSessionExpiredNotificationEnabled(), "sin aviso: Vaadin recarga en cuanto la sesion no esta");
+        assertNull(messages.getSessionExpiredURL(), "sin URL: recarga la misma pantalla");
+        assertNull(messages.getSessionExpiredCaption(), "Vaadin retiene el texto mientras el aviso esta apagado");
+    }
+
+    // --- Trabajos en segundo plano ---------------------------------------------------------------
+
+    private static final UUID JOB_ID = UUID.fromString("6f1c0000-0000-4000-8000-000000000001");
+
+    private static JobDto job(JobType type, JobStatus status, Integer total, int processed, int ok, int failed, List<JobItemError> errors) {
+        return new JobDto(JOB_ID, type, status, Instant.parse("2026-08-27T09:12:03Z"), null, null, 3L, null,
+                total, processed, ok, failed, null, null, errors);
+    }
+
+    private static JobDto job(UUID id, JobType type, JobStatus status, Instant createdAt) {
+        return new JobDto(id, type, status, createdAt, null, null, null, null, null, 0, 0, 0, null, null, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Grid<JobDto> jobsGrid() {
+        return LocatorJ._get(Grid.class);
+    }
+
+    /** El servicio simulado: GET /jobs devuelve lo que haya en la lista, paginado y filtrado por tipo y estado. */
+    private void stubJobHistory(List<JobDto> history) {
+        when(jobsClient.list(anyInt(), anyInt(), any(), any())).thenAnswer(call -> {
+            JobType type = call.getArgument(2);
+            JobStatus status = call.getArgument(3);
+            List<JobDto> matching = history.stream()
+                    .filter(job -> type == null || job.type() == type)
+                    .filter(job -> status == null || job.status() == status)
+                    .toList();
+            return page(matching, call.getArgument(0), call.getArgument(1));
+        });
+    }
+
+    /** Subir, lanzar, y ver el progreso llegar por @Push sin que el navegador pregunte. */
+    @Test
+    void launchingAnImportTracksTheJobAndPushesItsProgressUntilItEnds() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_IMPORT", "ROLE_LOV_MANAGE");
+        List<JobDto> history = new ArrayList<>();
+        stubJobHistory(history);
+        when(jobsClient.importProfiles(any(), eq(false))).thenAnswer(call -> {
+            JobDto accepted = job(JobType.PROFILE_IMPORT, JobStatus.PENDING, null, 0, 0, 0, null);
+            history.addFirst(accepted);
+            return accepted;
+        });
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        Grid<JobDto> grid = jobsGrid();
+        assertEquals(0, GridKt._size(grid));
+        Button start = LocatorJ._get(Button.class, spec -> spec.withId("import-profiles"));
+        assertFalse(start.isEnabled(), "sin fichero no hay nada que importar");
+        UploadKt._upload(LocatorJ._get(Upload.class, spec -> spec.withId("import-profiles-upload")),
+                "profile-master.xlsx", JobsView.XLSX, "PK-xlsx".getBytes());
+        MockVaadin.clientRoundtrip();
+        assertTrue(start.isEnabled());
+        LocatorJ._click(start);
+
+        verify(jobsClient).importProfiles(argThat(resource -> "profile-master.xlsx".equals(resource.getFilename())), eq(false));
+        assertEquals(1, GridKt._size(grid));
+        assertEquals(JobStatus.PENDING, GridKt._get(grid, 0).status());
+        assertEquals("Importacion del maestro de perfiles (profile-master.xlsx)", GridKt._getFormattedRow(grid, 0).getFirst(),
+                "la etiqueta es la de esta sesion");
+        assertFalse(start.isEnabled(), "el fichero ya se ha enviado");
+
+        JobsView view = LocatorJ._get(JobsView.class);
+        history.set(0, job(JobType.PROFILE_IMPORT, JobStatus.RUNNING, 100, 50, 50, 0, null));
+        view.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertEquals(JobStatus.RUNNING, GridKt._get(grid, 0).status());
+        LocatorJ._get(GridKt._getCellComponent(grid, 0, "progress"), Span.class, spec -> spec.withText("50 / 100"));
+        assertTrue(LocatorJ._find(Anchor.class, spec -> spec.withId("download-" + JOB_ID)).isEmpty(), "sin fichero hasta terminar");
+
+        history.set(0, job(JobType.PROFILE_IMPORT, JobStatus.COMPLETED_WITH_ERRORS, 100, 100, 98, 2, null));
+        view.pollOnce();
+        MockVaadin.clientRoundtrip();
+        Component actions = GridKt._getCellComponent(grid, 0, "actions");
+        LocatorJ._get(actions, Anchor.class, spec -> spec.withId("download-" + JOB_ID));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 en el servicio, 0 en curso"));
+
+        // La fila no trae los errores por elemento: el boton los pide al detalle de la familia.
+        when(jobsClient.profileJob(JOB_ID)).thenReturn(job(JobType.PROFILE_IMPORT, JobStatus.COMPLETED_WITH_ERRORS, 100, 100, 98, 2,
+                List.of(new JobItemError(118, "create", "ValidationException", "kp obligatorio [kp]"))));
+        LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withText("Errores")));
+        Dialog errors = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        Grid<JobItemError> errorRows = LocatorJ._get(errors, Grid.class);
+        assertEquals(1, GridKt._size(errorRows));
+        assertEquals("kp obligatorio [kp]", GridKt._get(errorRows, 0).message());
+        errors.close();
+
+        // Terminado todo, la pantalla deja de preguntar.
+        clearInvocations(jobsClient);
+        view.pollOnce();
+        verify(jobsClient, never()).list(anyInt(), anyInt(), any(), any());
+        verify(jobsClient, never()).profileJob(any());
+    }
+
+    /** README_ASYNC_JOBS §4: el 429 trae el trabajo rechazado; el servicio lo persiste y se dice cuando reintentar. */
+    @Test
+    void aRejectedLaunchIsListedAsRejectedAndSaysWhenToRetry() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        List<JobDto> history = new ArrayList<>();
+        stubJobHistory(history);
+        String body = """
+                {"id":"6f1c0000-0000-4000-8000-000000000001","type":"PROFILE_EXPORT","status":"REJECTED",
+                 "createdAt":"2026-08-27T09:12:03Z","trackId":3,"mapperType":"basic","processedItems":0,"successfulItems":0,"failedItems":0}
+                """;
+        when(jobsClient.exportProfiles(3L, "basic")).thenAnswer(call -> {
+            history.addFirst(job(JobType.PROFILE_EXPORT, JobStatus.REJECTED, null, 0, 0, 0, null));
+            throw BackofficeApiException.of(HttpStatus.TOO_MANY_REQUESTS, ApiProblem.empty(),
+                    "corr-9", Duration.ofSeconds(30), "POST /api/configuration/profiles/jobs/export", body);
+        });
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> track = LocatorJ._get(ComboBox.class, spec -> spec.withId("export-track"));
+        LocatorJ._setValue(track, new RefItem(3L, "TRACK 1 (EP4)"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("export-profiles")));
+
+        Grid<JobDto> grid = jobsGrid();
+        assertEquals(1, GridKt._size(grid));
+        assertEquals(JobStatus.REJECTED, GridKt._get(grid, 0).status());
+        assertEquals("Exportacion de TRACK 1 (EP4)", GridKt._getFormattedRow(grid, 0).getFirst());
+        NotificationsKt.expectNotifications("Sin hueco para Exportacion de TRACK 1 (EP4): el servicio lo ha rechazado. Intentalo en 30 s.");
+        clearInvocations(jobsClient);
+        LocatorJ._get(JobsView.class).pollOnce();
+        verify(jobsClient, never()).list(anyInt(), anyInt(), any(), any());
+        verify(jobsClient, never()).profileJob(any());
+    }
+
+    /** Un trabajo lanzado desde aqui que no esta en la pagina se sigue por su familia, y se avisa al terminar. */
+    @Test
+    void aJobLaunchedHereButOffThePageIsStillFollowedByItsFamily() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_IMPORT");
+        stubJobHistory(List.of());
+        when(jobsClient.importProfiles(any(), eq(false))).thenReturn(job(JobType.PROFILE_IMPORT, JobStatus.PENDING, null, 0, 0, 0, null));
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        UploadKt._upload(LocatorJ._get(Upload.class, spec -> spec.withId("import-profiles-upload")),
+                "profile-master.xlsx", JobsView.XLSX, "PK-xlsx".getBytes());
+        MockVaadin.clientRoundtrip();
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("import-profiles")));
+
+        JobsView view = LocatorJ._get(JobsView.class);
+        when(jobsClient.profileJob(JOB_ID)).thenReturn(job(JobType.PROFILE_IMPORT, JobStatus.COMPLETED, 10, 10, 10, 0, null));
+        view.pollOnce();
+        MockVaadin.clientRoundtrip();
+
+        verify(jobsClient).profileJob(JOB_ID);
+        NotificationsKt.expectNotifications("Trabajo encolado: Importacion del maestro de perfiles (profile-master.xlsx)",
+                "Importacion del maestro de perfiles (profile-master.xlsx): Terminado");
+        clearInvocations(jobsClient);
+        view.pollOnce();
+        verify(jobsClient, never()).profileJob(any());
+    }
+
+    /** La lista es la del servicio: se ve lo lanzado desde cualquier sesion, paginado y filtrado alli. */
+    @Test
+    void theJobHistoryComesFromTheServicePagedAndFilteredByTypeAndStatus() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        List<JobDto> history = new ArrayList<>();
+        for (int i = 0; i < 25; i++) {
+            history.add(job(UUID.randomUUID(), i % 2 == 0 ? JobType.LOV_IMPORT : JobType.MASTER_DATA_REPUBLISH, JobStatus.COMPLETED,
+                    Instant.parse("2026-08-27T09:12:03Z").minusSeconds(i)));
+        }
+        stubJobHistory(history);
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        Grid<JobDto> grid = jobsGrid();
+        assertEquals(20, GridKt._size(grid));
+        assertEquals("Importacion del catalogo de LOV", GridKt._getFormattedRow(grid, 0).getFirst(), "lanzado desde otra parte: se describe por su tipo");
+        LocatorJ._get(Span.class, spec -> spec.withText("25 en el servicio, 0 en curso"));
+        LocatorJ._get(Span.class, spec -> spec.withText("Pagina 1 de 2"));
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("jobs-next")));
+        assertEquals(5, GridKt._size(grid));
+        LocatorJ._get(Span.class, spec -> spec.withText("Pagina 2 de 2"));
+
+        @SuppressWarnings("unchecked")
+        ComboBox<JobType> type = LocatorJ._get(ComboBox.class, spec -> spec.withId("jobs-type"));
+        LocatorJ._setValue(type, JobType.MASTER_DATA_REPUBLISH);
+        assertEquals(12, GridKt._size(grid));
+        LocatorJ._get(Span.class, spec -> spec.withText("Pagina 1 de 1"));
+        verify(jobsClient, atLeastOnce()).list(0, 20, JobType.MASTER_DATA_REPUBLISH, null);
+
+        clearInvocations(jobsClient);
+        LocatorJ._get(JobsView.class).pollOnce();
+        verify(jobsClient, never()).list(anyInt(), anyInt(), any(), any());
+    }
+
+    @Test
+    void aReaderCanOnlyExport() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+
+        LocatorJ._get(Button.class, spec -> spec.withId("export-profiles"));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("import-profiles")).isEmpty());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("import-lovs")).isEmpty());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("republish")).isEmpty());
+    }
+
+    @Test
+    void theLovCatalogueImportAlsoNeedsLovManage() {
+        loginAs("config.editor", "ROLE_CONFIG_READ", "ROLE_CONFIG_IMPORT");
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+
+        LocatorJ._get(Button.class, spec -> spec.withId("import-profiles"));
+        LocatorJ._get(Button.class, spec -> spec.withId("republish"));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("import-lovs")).isEmpty());
+    }
+}

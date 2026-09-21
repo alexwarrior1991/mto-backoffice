@@ -1,0 +1,76 @@
+{
+  "clients": [
+    {
+      "clientId": "mto-backoffice",
+      "name": "Backoffice web MTO",
+      "description": "Aplicacion web de gestion (Vaadin). Authorization Code con secreto: el token vive en la sesion de servidor del backoffice, nunca en el navegador. Sus audience mapper nombran a los cinco API para que un solo token valga en todos.",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "rootUrl": "http://localhost:8085",
+      "baseUrl": "/",
+      "redirectUris": [
+        "http://localhost:8085/login/oauth2/code/keycloak"
+      ],
+      "webOrigins": [],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:8085/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audiencia-mto-configuration-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "mto-configuration-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "audiencia-mto-stock-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "mto-stock-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "audiencia-mto-maintenance-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "mto-maintenance-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "audiencia-mto-gateway-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "mto-gateway-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "audiencia-mto-users-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "mto-users-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ]
+}
