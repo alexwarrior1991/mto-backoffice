@@ -11,6 +11,7 @@ import com.vaadin.flow.router.Route;
 import com.vaadin.flow.spring.security.AuthenticationContext;
 import jakarta.annotation.security.RolesAllowed;
 
+import com.alejandro.mtobackoffice.client.dto.stock.StockLabels;
 import java.util.UUID;
 
 @Route(value = StockRoutes.SUPPLIERS, layout = MainLayout.class)
@@ -43,5 +44,15 @@ public class SuppliersView extends StockCatalogueView<SupplierDto> {
         CatalogueEditorDialog.Snapshot snapshot = existing == null ? null
                 : new CatalogueEditorDialog.Snapshot(existing.id(), existing.code(), existing.name(), existing.isEnabled());
         new CatalogueEditorDialog("Proveedor", snapshot, client, this::refresh).open();
+    }
+
+    @Override
+    protected String labelOf(SupplierDto row) {
+        return StockLabels.codeAndName(row.code(), row.name());
+    }
+
+    @Override
+    protected String describe(SupplierDto row) {
+        return labelOf(row) + " · " + state(row.active());
     }
 }

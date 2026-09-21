@@ -136,7 +136,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `almacen/conjuntos`, un catálogo más cuyo editor (`AssemblyEditorDialog`) lleva la lista de
   materiales entera en `BomEditor` y cuya fila ofrece, también a quien solo lee,
   `AssemblyAvailabilityDialog`, la disponibilidad por almacén que calcula el servicio;
-  `StockClients` y `StockFormats`; el resto llega por fases), `ui/support` (`UiErrors`: excepción →
+  `RevisionsDialog<D>`, el historial de cualquier fila de almacén (paginado, la más reciente
+  primero; el 404 es «sin historial»), abierto desde el botón de historial que cada catálogo y
+  cada reserva ofrecen a quien puede leer; `StockClients` y `StockFormats`), `ui/support` (`UiErrors`: excepción →
   `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`;
   `OffsetPager`: anteriores/siguientes para una lista `first`/`max` sin total, donde una página
   llena es la única señal de que hay más).
@@ -226,7 +228,15 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   sustituye su cantidad. Cuántos se pueden montar en un almacén y qué componente limita es
   `GET /assemblies/{id}/availability?warehouseId` (el almacén es obligatorio porque el stock es
   por almacén): aquí no se divide nada. La disponibilidad es una consulta, así que la fila la
-  ofrece con `stock-read` (`readersHaveActions()` de `StockCatalogueView`).
+  ofrece con `stock-read`.
+- **El historial de almacén es el de Envers en `mto-stock`.** `GET /{recurso}/{id}/revisions`
+  (materiales, almacenes, proveedores, proyectos, conjuntos y reservas), paginado y la más reciente
+  primero, con `source` (`HTTP`, `MESSAGING`, `SYSTEM` o `BASELINE`, la foto inicial) y
+  `correlationId` tal cual; `entity.audit` viene vacío a propósito y no se enseña. Sin revisiones
+  el servicio responde 404 y `RevisionsDialog` lo dice como «sin historial todavía», no como error.
+  Que un proyecto cambiado por un evento de datos maestros no deje revisión es del servicio (allí
+  es SQL nativo), y se enseña lo que hay. La columna de acciones existe siempre: el historial es
+  lectura, como la lista.
 - **«Sacar a la persona» son tres llamadas en ese orden, y no se funden en una.** Desactivar
   solo bloquea el siguiente login, cerrar las sesiones no toca las offline y un token offline
   sobrevive a las dos cosas hasta que se revoca: es lo que el README de `mto-users` deja
@@ -354,6 +364,8 @@ obligatorio, la modificación sin tocar el material, liberar, cancelar y consumi
 `reservationId`; los conjuntos: la lista con sus líneas y la disponibilidad ofrecida a quien solo
 lee, la disponibilidad por almacén con el componente que limita, el alta con sus líneas (la lista
 vacía rechazada antes de llamar, la línea sin material ni cantidad, el material repetido
-sustituido) y la modificación con la lista entera y `active`) y
+sustituido) y la modificación con la lista entera y `active`; el historial: paginado y la más
+reciente primero con cómo quedó la fila, el 404 como «sin historial» sin notificación, y el de
+una reserva desde cualquier fila) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
 sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.

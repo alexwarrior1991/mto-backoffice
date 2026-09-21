@@ -11,6 +11,7 @@ import com.vaadin.flow.router.Route;
 import com.vaadin.flow.spring.security.AuthenticationContext;
 import jakarta.annotation.security.RolesAllowed;
 
+import com.alejandro.mtobackoffice.client.dto.stock.StockLabels;
 import java.util.UUID;
 
 /**
@@ -60,5 +61,15 @@ public class ProjectsView extends StockCatalogueView<ProjectDto> {
         CatalogueEditorDialog.Snapshot snapshot = existing == null ? null
                 : new CatalogueEditorDialog.Snapshot(existing.id(), existing.code(), existing.name(), existing.isEnabled());
         new CatalogueEditorDialog("Proyecto", snapshot, client, this::refresh).open();
+    }
+
+    @Override
+    protected String labelOf(ProjectDto row) {
+        return StockLabels.codeAndName(row.code(), row.name());
+    }
+
+    @Override
+    protected String describe(ProjectDto row) {
+        return labelOf(row) + (row.isSynchronized() ? " · sincronizado de " + row.sourceService() : "") + " · " + state(row.active());
     }
 }

@@ -50,7 +50,7 @@ import java.util.stream.Stream;
  * reserva activa cambia: se modifica, se libera (vuelve al disponible sin movimiento), se consume
  * (baja el fisico) o se cancela (pide {@code stock-delete}); tambien se consume con una salida,
  * que ademas lleva referencia y notas. Nada de eso lo decide la pantalla: si la reserva ya no esta
- * activa, el servicio responde 422 {@code RES-001}.
+ * activa, el servicio responde 422 {@code RES-001}. Cualquier fila tiene su historial.
  */
 @Route(value = StockRoutes.RESERVATIONS, layout = MainLayout.class)
 @PageTitle("Reservas")
@@ -115,9 +115,7 @@ public class ReservationsView extends VerticalLayout {
         grid.addColumn(dto -> dto.status() == null ? "" : dto.status().label()).setHeader("Estado").setKey("status").setSortProperty("status").setSortable(true).setAutoWidth(true);
         grid.addColumn(dto -> StockFormats.dateTime(dto.releasedAt())).setHeader("Cerrada").setKey("releasedAt").setAutoWidth(true);
         grid.addColumn(dto -> dto.audit() == null || dto.audit().createdBy() == null ? "" : dto.audit().createdBy()).setHeader("Por").setKey("createdBy").setAutoWidth(true);
-        if (canWrite || canCancel) {
-            grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey(ACTIONS_COLUMN).setAutoWidth(true).setFlexGrow(0);
-        }
+        grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey(ACTIONS_COLUMN).setAutoWidth(true).setFlexGrow(0);
         grid.setPageSize(PAGE_SIZE);
         grid.setMultiSort(false);
         grid.setSizeFull();
@@ -125,11 +123,12 @@ public class ReservationsView extends VerticalLayout {
         return grid;
     }
 
-    /** Solo una reserva activa tiene acciones: las demas son historia. */
+    /** Solo una reserva activa cambia; el historial lo tiene cualquiera, y es lectura. */
     private Component rowActions(ReservationDto reservation) {
         HorizontalLayout actions = new HorizontalLayout();
         actions.setSpacing(false);
         if (!reservation.isActive()) {
+            actions.add(historyButton(reservation));
             return actions;
         }
         if (canWrite) {
@@ -149,7 +148,27 @@ public class ReservationsView extends VerticalLayout {
             cancel.addThemeVariants(ButtonVariant.LUMO_ERROR);
             actions.add(cancel);
         }
+        actions.add(historyButton(reservation));
         return actions;
+    }
+
+    private Button historyButton(ReservationDto reservation) {
+        return action("history-", reservation, VaadinIcon.CLOCK, "Historial", click -> new RevisionsDialog<>(
+                "la reserva de " + reservation.material().code() + " para " + reservation.project().code(),
+                (page, size) -> clients.reservations().revisions(reservation.id(), page, size), ReservationsView::describe).open());
+    }
+
+    /** Una linea con la reserva tal como esta, o como quedo en una revision. */
+    static String describe(ReservationDto reservation) {
+        String unit = reservation.material() == null || reservation.material().unitOfMeasure() == null ? "" : " " + reservation.material().unitOfMeasure();
+        return StockFormats.quantity(reservation.quantity()) + unit + " de " + code(reservation.material() == null ? null : reservation.material().code())
+                + " en " + code(reservation.warehouse() == null ? null : reservation.warehouse().code())
+                + " para " + code(reservation.project() == null ? null : reservation.project().code())
+                + " · " + (reservation.status() == null ? "" : reservation.status().label());
+    }
+
+    private static String code(String value) {
+        return value == null ? "?" : value;
     }
 
     private static Button action(String prefix, ReservationDto reservation, VaadinIcon icon, String tooltip,

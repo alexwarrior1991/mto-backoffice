@@ -15,6 +15,8 @@ import com.vaadin.flow.router.Route;
 import com.vaadin.flow.spring.security.AuthenticationContext;
 import jakarta.annotation.security.RolesAllowed;
 
+import com.alejandro.mtobackoffice.client.dto.stock.StockLabels;
+import java.util.stream.Collectors;
 import java.util.UUID;
 
 /**
@@ -58,13 +60,22 @@ public class AssembliesView extends StockCatalogueView<AssemblyDto> {
     }
 
     @Override
-    protected boolean readersHaveActions() {
-        return true;
-    }
-
-    @Override
     protected void addRowActions(AssemblyDto row, HorizontalLayout actions) {
         actions.add(rowButton("availability-" + row.id(), VaadinIcon.CALC, "Disponibilidad por almacen",
                 click -> new AssemblyAvailabilityDialog(row, client, warehouses).open()));
+    }
+
+    @Override
+    protected String labelOf(AssemblyDto row) {
+        return StockLabels.codeAndName(row.code(), row.name());
+    }
+
+    @Override
+    protected String describe(AssemblyDto row) {
+        int lines = row.components().size();
+        String bom = row.components().stream()
+                .map(line -> line.material().code() + " x" + StockFormats.quantity(line.quantity()))
+                .collect(Collectors.joining(", "));
+        return labelOf(row) + " · " + (lines == 1 ? "1 linea" : lines + " lineas") + " (" + bom + ") · " + state(row.active());
     }
 }

@@ -37,7 +37,7 @@ import java.util.stream.Stream;
  * {@code size} y {@code sort=campo,asc} (solo atributos de la entidad del servicio), y el recuento
  * es el {@code totalElements} de la pagina. No hay borrado: un catalogo se retira desde el editor
  * con {@code active=false}. «Nuevo» y modificar piden {@code stock-write}; esconderlos es
- * cortesia, la guarda es el servicio.
+ * cortesia, la guarda es el servicio. Cada fila ofrece su historial a quien puede leer.
  *
  * @param <D> la fila
  */
@@ -104,9 +104,7 @@ public abstract class StockCatalogueView<D> extends VerticalLayout {
 
     private Component buildGrid() {
         configureColumns(grid);
-        if (canWrite || readersHaveActions()) {
-            grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey(ACTIONS_COLUMN).setAutoWidth(true).setFlexGrow(0);
-        }
+        grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey(ACTIONS_COLUMN).setAutoWidth(true).setFlexGrow(0);
         if (canWrite) {
             grid.addItemDoubleClickListener(event -> {
                 if (isEditable(event.getItem())) {
@@ -128,16 +126,28 @@ public abstract class StockCatalogueView<D> extends VerticalLayout {
             actions.add(rowButton("edit-" + idOf(row), VaadinIcon.EDIT, "Modificar", click -> openEditor(row)));
         }
         addRowActions(row, actions);
+        actions.add(rowButton("history-" + idOf(row), VaadinIcon.CLOCK, "Historial", click -> openHistory(row)));
         return actions;
     }
 
-    /** Acciones de la fila ademas de modificar (la disponibilidad de un conjunto); nada por defecto. */
+    /** Acciones de la fila entre modificar y el historial (la disponibilidad de un conjunto); nada por defecto. */
     protected void addRowActions(D row, HorizontalLayout actions) {
     }
 
-    /** Si {@link #addRowActions} ofrece algo a quien solo lee, la columna de acciones existe tambien sin {@code stock-write}. */
-    protected boolean readersHaveActions() {
-        return false;
+    /** El historial de la fila: las revisiones que guarda el servicio, la mas reciente primero; lectura, como la lista. */
+    protected void openHistory(D row) {
+        UUID id = idOf(row);
+        new RevisionsDialog<>(labelOf(row), (page, size) -> client.revisions(id, page, size), this::describe).open();
+    }
+
+    /** Como se llama la fila («MAT-001 - Hilo de contacto»). */
+    protected abstract String labelOf(D row);
+
+    /** Una linea con la fila tal como esta, o como quedo en una revision del historial. */
+    protected abstract String describe(D row);
+
+    protected static String state(Boolean active) {
+        return Boolean.TRUE.equals(active) ? "activo" : "retirado";
     }
 
     protected static Button rowButton(String id, VaadinIcon icon, String tooltip, ComponentEventListener<ClickEvent<Button>> listener) {

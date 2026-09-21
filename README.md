@@ -20,7 +20,7 @@ Séptimo repositorio del dominio, hermano e independiente de
 [`mto-maintenance`](../mto-maintenance), [`mto-users`](../mto-users) y
 [`mto-gateway`](../mto-gateway); la infraestructura local es de [`mto-platform`](../mto-platform).
 
-## Estado: fase 6 (en curso)
+## Estado: fase 6
 
 - **Fase 0**: circuito completo con lo mínimo. Cliente `mto-backoffice` en el realm, login OIDC,
   marco con menú filtrado por roles y la pantalla de inicio con el diagnóstico del token.
@@ -114,7 +114,7 @@ Séptimo repositorio del dominio, hermano e independiente de
   es la única señal de que hay más; son asignaciones directas (quien tiene un rol por un perfil
   aparece en el perfil, no en el rol), y una fila abre la ficha.
 
-- **Fase 6** (en curso): el módulo **Almacén** sobre `mto-stock`, el inventario de la nave de
+- **Fase 6**: el módulo **Almacén** sobre `mto-stock`, el inventario de la nave de
   catenaria: catálogos (almacenes, proveedores, proyectos, materiales), existencias y movimientos
   (entradas, salidas, transferencias, ajustes), reservas, conjuntos con su lista de materiales y su
   disponibilidad, e historial de revisiones. S0 deja la base: los roles de `mto-stock-api` se leen
@@ -153,7 +153,13 @@ Séptimo repositorio del dominio, hermano e independiente de
   conjunto; repetir un material sustituye su cantidad, y no puede ir vacía) y cada fila ofrece,
   también a quien solo lee, la **disponibilidad** por almacén: cuántos se podrían montar ahora y
   qué componente lo limita, tal como lo calcula el servicio
-  (`GET /assemblies/{id}/availability?warehouseId`). Lo que falta: historial (S5).
+  (`GET /assemblies/{id}/availability?warehouseId`). S5 cierra la fase con el **historial**: cada
+  fila de un catálogo (materiales, almacenes, proveedores, proyectos, conjuntos) y de las reservas
+  tiene su botón de historial, para quien puede leer: las revisiones que guarda el servicio
+  (`GET /{recurso}/{id}/revisions`, paginadas, la más reciente primero) con quién, cuándo, la
+  operación, el origen (`HTTP`, `MESSAGING`, `SYSTEM` o `BASELINE`, la foto inicial de lo que ya
+  existía), la referencia de correlación y una línea con cómo quedó la fila. Sin revisiones el
+  servicio responde 404 y la pantalla dice «sin historial todavía», no un error.
 
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|

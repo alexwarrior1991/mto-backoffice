@@ -11,6 +11,7 @@ import com.vaadin.flow.router.Route;
 import com.vaadin.flow.spring.security.AuthenticationContext;
 import jakarta.annotation.security.RolesAllowed;
 
+import com.alejandro.mtobackoffice.client.dto.stock.StockLabels;
 import java.util.UUID;
 
 @Route(value = StockRoutes.MATERIALS, layout = MainLayout.class)
@@ -44,5 +45,16 @@ public class MaterialsView extends StockCatalogueView<MaterialDto> {
     @Override
     protected void openEditor(MaterialDto existing) {
         new MaterialEditorDialog(existing, client, this::refresh).open();
+    }
+
+    @Override
+    protected String labelOf(MaterialDto row) {
+        return StockLabels.codeAndName(row.code(), row.name());
+    }
+
+    @Override
+    protected String describe(MaterialDto row) {
+        return labelOf(row) + " · " + (row.unitOfMeasure() == null ? "" : row.unitOfMeasure()) + " · minimo "
+                + StockFormats.quantity(row.minimumStockLevel()) + " · " + state(row.active());
     }
 }

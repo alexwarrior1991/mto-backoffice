@@ -90,6 +90,9 @@ import com.alejandro.mtobackoffice.client.dto.stock.ReservationDto;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationRequest;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationStatus;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.RevisionDto;
+import com.alejandro.mtobackoffice.client.dto.stock.RevisionMetadataDto;
+import com.alejandro.mtobackoffice.client.dto.stock.RevisionOperation;
 import com.alejandro.mtobackoffice.ui.stock.ReservationsView;
 import com.alejandro.mtobackoffice.ui.stock.StockCatalogueView;
 import com.alejandro.mtobackoffice.ui.stock.StockFormats;
@@ -2367,7 +2370,7 @@ class ViewLayerTest {
         List<String> row = GridKt._getFormattedRow(grid, 0);
         assertTrue(row.contains("MAT-001") && row.contains("m") && row.contains("100"), row.toString());
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("stock-create")).isEmpty());
-        assertNull(grid.getColumnByKey("actions"));
+        assertEquals(List.of("history-" + MAT1), actionIds(grid, 0), "solo el historial, que es lectura");
     }
 
     @Test
@@ -2716,7 +2719,7 @@ class ViewLayerTest {
         rowAction(grid, 0, "release-" + RES1);
         assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, ReservationsView.ACTIONS_COLUMN), Button.class, spec -> spec.withId("cancel-" + RES1)).isEmpty(),
                 "cancelar pide stock-delete");
-        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 1, ReservationsView.ACTIONS_COLUMN), Button.class).isEmpty(),
+        assertEquals(List.of("history-" + consumed), actionIds(grid, 1),
                 "una reserva consumida es historia: el servicio rechazaria cualquier cambio con RES-001");
 
         ViewLayerTest.<ReservationStatus>combo("reservations-status").clear();
@@ -2741,7 +2744,7 @@ class ViewLayerTest {
 
         assertEquals(1, GridKt._size(grid));
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("reservation-create")).isEmpty());
-        assertNull(grid.getColumnByKey(ReservationsView.ACTIONS_COLUMN), "sin stock-write ni stock-delete no hay columna de acciones");
+        assertEquals(List.of("history-" + RES1), actionIds(grid, 0), "sin stock-write ni stock-delete solo queda el historial");
     }
 
     @Test
@@ -2971,5 +2974,78 @@ class ViewLayerTest {
                 List.of(new AssemblyComponentRequest(MAT1, new BigDecimal("2")))));
         assertTrue(LocatorJ._find(Dialog.class).isEmpty());
         NotificationsKt.expectNotifications("Guardado ASM-001");
+    }
+
+    // --- Almacen (mto-stock): historial ------------------------------------------------------------
+
+    private static <T> RevisionDto<T> revision(long number, RevisionOperation operation, String author, String source, T entity) {
+        return new RevisionDto<>(new RevisionMetadataDto(number, Instant.parse("2026-09-01T10:00:00Z").plusSeconds(number * 86_400L), operation,
+                author, source, "corr-" + number), entity);
+    }
+
+    private static List<String> actionIds(Grid<Object> grid, int row) {
+        return LocatorJ._find(GridKt._getCellComponent(grid, row, StockCatalogueView.ACTIONS_COLUMN), Button.class).stream()
+                .map(button -> button.getId().orElse("")).toList();
+    }
+
+    @Test
+    void theHistoryOfACatalogueRowIsPagedNewestFirstAndDescribesHowItWas() {
+        loginAs("almacen.lector", "ROLE_STOCK_READ");
+        stubCatalogue(assemblyClient, List.of(mensula()), AssemblyDto::code, AssemblyDto::name, AssemblyDto::active);
+        AssemblyDto before = new AssemblyDto(ASM1, "ASM-001", "Mensula", true,
+                List.of(new AssemblyComponentDto(UUID.randomUUID(), HILO, new BigDecimal("2"))), null);
+        List<RevisionDto<AssemblyDto>> history = List.of(
+                revision(2, RevisionOperation.UPDATED, "almacen.operario", "HTTP", mensula()),
+                revision(1, RevisionOperation.CREATED, null, "BASELINE", before));
+        when(assemblyClient.revisions(eq(ASM1), anyInt(), anyInt())).thenAnswer(call -> page(history, call.getArgument(1), call.getArgument(2)));
+
+        UI.getCurrent().navigate(StockRoutes.ASSEMBLIES);
+        LocatorJ._click(assemblyAction("history-" + ASM1));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        Grid<Object> grid = gridWithId("revisions-grid");
+
+        assertEquals(2, GridKt._size(grid));
+        LocatorJ._get(dialog, Span.class, spec -> spec.withText("2 revisiones, la mas reciente primero"));
+        List<String> newest = GridKt._getFormattedRow(grid, 0);
+        assertTrue(newest.containsAll(List.of("2", "Modificacion", "almacen.operario", "HTTP", "corr-2",
+                "ASM-001 - Mensula · 2 lineas (MAT-001 x2, MAT-002 x4) · activo")), newest.toString());
+        List<String> first = GridKt._getFormattedRow(grid, 1);
+        assertTrue(first.containsAll(List.of("1", "Alta", "BASELINE", "ASM-001 - Mensula · 1 linea (MAT-001 x2) · activo")), first.toString());
+        verify(assemblyClient, atLeastOnce()).revisions(eq(ASM1), eq(0), anyInt());
+    }
+
+    @Test
+    void aRowWithoutHistoryYetSaysSoInsteadOfFailing() {
+        loginAs("almacen.lector", "ROLE_STOCK_READ");
+        stubCatalogue(warehouseClient, List.of(warehouse(WH1, "WH-000", "Central", true)), WarehouseDto::code, WarehouseDto::name, WarehouseDto::active);
+        when(warehouseClient.revisions(eq(WH1), anyInt(), anyInt())).thenThrow(stockError(404, "WH-404", "No revisions found for warehouse " + WH1));
+
+        UI.getCurrent().navigate(StockRoutes.WAREHOUSES);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(stockGrid(), 0, StockCatalogueView.ACTIONS_COLUMN), Button.class, spec -> spec.withId("history-" + WH1)));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+
+        LocatorJ._get(dialog, Span.class, spec -> spec.withId("revisions-empty"));
+        assertTrue(LocatorJ._find(dialog, Grid.class).isEmpty(), "sin revisiones no hay tabla: el grid pide su pagina al abrirse y se esconde");
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "un 404 aqui es «sin historial», no un error");
+    }
+
+    @Test
+    void theHistoryOfAReservationIsReachableFromAnyRowAndDescribesTheReservation() {
+        loginAs("almacen.lector", "ROLE_STOCK_READ");
+        UUID consumed = UUID.randomUUID();
+        stubReservations(reservation(RES1, ReservationStatus.ACTIVE, "5"), reservation(consumed, ReservationStatus.CONSUMED, "2"));
+        List<RevisionDto<ReservationDto>> history = List.of(
+                revision(2, RevisionOperation.UPDATED, "almacen.operario", "HTTP", reservation(consumed, ReservationStatus.CONSUMED, "2")),
+                revision(1, RevisionOperation.CREATED, "almacen.operario", "HTTP", reservation(consumed, ReservationStatus.ACTIVE, "2")));
+        when(reservationClient.revisions(eq(consumed), anyInt(), anyInt())).thenAnswer(call -> page(history, call.getArgument(1), call.getArgument(2)));
+
+        UI.getCurrent().navigate(StockRoutes.RESERVATIONS);
+        LocatorJ._click(rowAction(gridWithId("reservations-grid"), 1, "history-" + consumed));
+        Grid<Object> grid = gridWithId("revisions-grid");
+
+        assertEquals(2, GridKt._size(grid));
+        assertTrue(GridKt._getFormattedRow(grid, 0).contains("2 m de MAT-001 en WH-000 para PRJ-001 · Consumida"), GridKt._getFormattedRow(grid, 0).toString());
+        assertTrue(GridKt._getFormattedRow(grid, 1).contains("2 m de MAT-001 en WH-000 para PRJ-001 · Activa"), GridKt._getFormattedRow(grid, 1).toString());
+        assertTrue(LocatorJ._find(Dialog.class).size() == 1);
     }
 }
