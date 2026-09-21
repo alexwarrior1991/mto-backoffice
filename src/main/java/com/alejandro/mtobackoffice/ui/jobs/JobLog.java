@@ -8,14 +8,18 @@ import java.io.Serializable;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Los trabajos lanzados desde esta sesion, del mas reciente al mas antiguo. Vive en la
- * {@link VaadinSession}, no en la vista: navegar a otra pantalla y volver no pierde la lista, y
- * un trabajo sigue corriendo en el servicio aunque nadie lo mire.
+ * {@link VaadinSession}, no en la vista: navegar a otra pantalla y volver no la pierde, y un
+ * trabajo sigue corriendo en el servicio aunque nadie lo mire.
  *
- * <p>El servicio no tiene endpoint de listado de trabajos: solo se puede consultar uno por id. Por
- * eso el historial es el de la sesion; al cerrarla se pierde la lista, no los trabajos.</p>
+ * <p>No es el historial: ese lo da el servicio ({@code GET /jobs}) y es el que ensena la lista.
+ * Esto guarda lo que solo esta sesion sabe de sus trabajos: la etiqueta con la que se lanzaron
+ * ("Exportacion de TRACK 1") y su ultimo estado conocido, que es lo que permite avisar en cuanto
+ * uno de ellos termina.</p>
  */
 public final class JobLog implements Serializable {
 
@@ -58,6 +62,15 @@ public final class JobLog implements Serializable {
 
     public synchronized List<Entry> entries() {
         return List.copyOf(entries);
+    }
+
+    public synchronized Optional<Entry> find(UUID id) {
+        return entries.stream().filter(entry -> entry.job().id().equals(id)).findFirst();
+    }
+
+    /** La etiqueta con la que se lanzo desde aqui, si fue desde aqui. */
+    public synchronized Optional<String> labelOf(UUID id) {
+        return find(id).map(Entry::label);
     }
 
     /** Los que todavia pueden cambiar de estado: los unicos que merece la pena consultar. */

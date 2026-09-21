@@ -20,7 +20,7 @@ Séptimo repositorio del dominio, hermano e independiente de
 [`mto-maintenance`](../mto-maintenance), [`mto-users`](../mto-users) y
 [`mto-gateway`](../mto-gateway); la infraestructura local es de [`mto-platform`](../mto-platform).
 
-## Estado: fase 3
+## Estado: fase 4
 
 - **Fase 0**: circuito completo con lo mínimo. Cliente `mto-backoffice` en el realm, login OIDC,
   marco con menú filtrado por roles y la pantalla de inicio con el diagnóstico del token.
@@ -43,8 +43,8 @@ Séptimo repositorio del dominio, hermano e independiente de
   entradas de catálogo como desplegables. La edición sigue la regla de `README_API.md` §4 del
   servicio: **se edita sobre la fila leída y se devuelve entera**. Lo que la pantalla no conoce
   vuelve tal cual (`extras`), y las colecciones de hijos que no se editan aquí (vías y estaciones
-  de un paquete, perfiles de una vía, ménsulas de un perfil, agujas de un aislador) van a `null`,
-  que para el servicio es «de esta colección no digo nada». Para que eso fuera posible el backend
+  de un paquete, perfiles de una vía) van a `null`, que para el servicio es «de esta colección no
+  digo nada». Para que eso fuera posible el backend
   cambió con la fase: las listas de paquetes, estaciones y vías van sin hijos, los filtros
   booleanos solo filtran si vienen y las empresas se pueden leer (`GET /business-entities`).
 
@@ -53,13 +53,28 @@ Séptimo repositorio del dominio, hermano e independiente de
   (`profile-master.xlsx`) y el catálogo de LOV (`lov-master.xlsx`) con simulación (`dryRun`), y
   republicar los datos maestros. Lanzar es una llamada que responde 202 con el trabajo, o **429 con
   el trabajo ya rechazado** y un `Retry-After` cuando no hay cupo: se apunta igual, como rechazado,
-  y se dice cuándo reintentar. Seguirlos es lo que hace `@Push`: mientras la pantalla está abierta,
-  un hilo compartido consulta cada dos segundos los trabajos de la sesión que aún no han terminado y
-  lleva el progreso al navegador con `UI.access()`. El fichero de un trabajo (el CSV, o el informe
-  JSON de una importación, disponible también cuando terminó con errores) se descarga **a través de
-  esta aplicación**, con el token de la persona: el navegador nunca habla con el gateway. La lista
-  de trabajos es la de la sesión: el servicio solo permite consultar un trabajo por id, así que
-  cerrar la sesión pierde la lista, no los trabajos.
+  y se dice cuándo reintentar. Seguirlos es lo que hace `@Push`: mientras la pantalla está abierta
+  y hay algo en curso, un hilo compartido vuelve a pedir la página cada dos segundos y lleva el
+  progreso al navegador con `UI.access()`. El fichero de un trabajo (el CSV, o el informe JSON de
+  una importación, disponible también cuando terminó con errores) se descarga **a través de esta
+  aplicación**, con el token de la persona: el navegador nunca habla con el gateway. La lista es
+  la del servicio (`GET /jobs`, añadido en `mto-configuration` para esto): todas las familias, del
+  más reciente al más antiguo, paginada y filtrable por tipo y estado, así que se ven también los
+  trabajos lanzados desde otra sesión o antes de un reinicio; lo que solo sabe esta sesión (con
+  qué etiqueta lanzó cada trabajo) se pinta encima, y los errores por elemento se piden al detalle
+  al abrirlos.
+
+- **Fase 4**: lo que los editores no tocaban. Las **ménsulas** de un perfil (hasta tres, cada una
+  con su brazo de atirantado 1:1) y las **agujas** de un aislador de sección se editan dentro del
+  editor del padre, en su propia tabla con alta, modificación y baja; al guardar, si nadie las
+  tocó van a `null` y si alguien las tocó va la lista entera, que para el servicio es el estado
+  final (`README_API.md` §4: la que no mandas se borra). El **seccionador** de un perfil (1:1) se
+  vincula o desvincula desde el editor del perfil: se manda el objeto entero para vincularlo y
+  `null` para desvincularlo, que no lo borra. En la lista de seccionadores el perfil se muestra
+  por su identificador y su KP, que el servicio manda ahora con cada fila (`profileCode`,
+  `profileKp`) para no ir perfil por perfil. Y los mensajes de sistema de Vaadin quedan fijados en
+  castellano y sin diálogo de sesión caducada: tras un reinicio la pantalla recarga sola y vuelve
+  por el SSO (ver «Límites», más abajo).
 
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|
@@ -150,6 +165,24 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   credenciales.
 - Un cambio de roles en Keycloak se aplica en el siguiente login: las autoridades se calculan al
   entrar.
+
+### Límites
+
+- **Todo vive en memoria: la sesión y los tokens.** El cliente autorizado (access y refresh token)
+  está en un `InMemoryOAuth2AuthorizedClientService` y la sesión de Vaadin en la JVM. Un reinicio
+  los pierde. Lo que pasa entonces es lo menos malo posible: Vaadin detecta que la sesión ya no
+  está y **recarga la pantalla** (el aviso de «sesión caducada» está apagado a propósito en
+  `BackofficeSystemMessages`), la cadena de seguridad manda al login de Keycloak y, con la sesión
+  SSO de Keycloak aún viva, la persona vuelve a la misma pantalla sin escribir nada. Lo que era de
+  la sesión (las etiquetas de los trabajos lanzados, los catálogos cargados) se vuelve a cargar; el
+  historial de trabajos no se pierde porque es del servicio. No se persisten las sesiones: la
+  serialización de una sesión de Vaadin es frágil y el almacén de tokens se perdería igual.
+- **Un login por persona.** El almacén guarda un cliente autorizado por nombre de principal: entrar
+  desde un segundo navegador sustituye los tokens, y las dos pestañas siguen funcionando con los
+  nuevos. Salir en una cierra la sesión de Keycloak, y la otra deja de poder renovar el token: en
+  su siguiente llamada se le dice que vuelva a entrar.
+- **Una instancia.** Sin sesiones compartidas ni almacén de tokens externo, dos réplicas detrás de
+  un balanceador necesitarían afinidad de sesión. No es el caso de uso.
 
 ## Cómo se habla con la API
 

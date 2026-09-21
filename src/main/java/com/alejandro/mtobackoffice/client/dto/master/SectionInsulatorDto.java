@@ -16,7 +16,7 @@ public class SectionInsulatorDto extends MasterDto {
     private SectionInsulatorInstallationType installationType;
     private Long trackId;
     private Long connectedTrackId;
-    private List<Object> switches;
+    private List<SectionInsulatorSwitchDto> switches;
 
     public String getName() {
         return name;
@@ -74,11 +74,11 @@ public class SectionInsulatorDto extends MasterDto {
         this.connectedTrackId = connectedTrackId;
     }
 
-    public List<Object> getSwitches() {
+    public List<SectionInsulatorSwitchDto> getSwitches() {
         return switches;
     }
 
-    public void setSwitches(List<Object> switches) {
+    public void setSwitches(List<SectionInsulatorSwitchDto> switches) {
         this.switches = switches;
     }
 

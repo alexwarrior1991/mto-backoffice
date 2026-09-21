@@ -1,6 +1,9 @@
 package com.alejandro.mtobackoffice.client.configuration;
 
+import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobDto;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobStatus;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobType;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobFamily;
 import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
@@ -39,6 +42,16 @@ public interface JobsClient {
     JobDto republish(@RequestParam("entity") String entity,
                      @RequestParam(value = "trackId", required = false) Long trackId,
                      @RequestParam(value = "stationId", required = false) Long stationId);
+
+    /**
+     * Los trabajos de todas las familias, del mas reciente al mas antiguo ({@code GET /jobs}). Un
+     * filtro ausente no filtra. Las filas no traen los errores por elemento ni la ruta de descarga:
+     * las dos cosas se piden al detalle de la familia.
+     */
+    @GetExchange("/jobs")
+    PageResponse<JobDto> list(@RequestParam("page") int page, @RequestParam("size") int size,
+                              @RequestParam(value = "type", required = false) JobType type,
+                              @RequestParam(value = "status", required = false) JobStatus status);
 
     @GetExchange("/profiles/jobs/{jobId}")
     JobDto profileJob(@PathVariable("jobId") UUID jobId);

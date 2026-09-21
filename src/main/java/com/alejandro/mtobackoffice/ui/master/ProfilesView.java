@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.ui.master;
 
 import com.alejandro.mtobackoffice.client.configuration.BusinessEntityClient;
+import com.alejandro.mtobackoffice.client.configuration.DisconnectorClient;
 import com.alejandro.mtobackoffice.client.configuration.ExecutionPackageClient;
 import com.alejandro.mtobackoffice.client.configuration.LovClient;
 import com.alejandro.mtobackoffice.client.configuration.LovResource;
@@ -37,14 +38,17 @@ public class ProfilesView extends MasterView<ProfileDto> {
 
     private final ReferenceCatalog catalog;
     private final LovCatalog lovs;
+    private final DisconnectorClient disconnectors;
     private final ComboBox<RefItem> track = new ComboBox<>("Via");
     private final ComboBox<LovRef> status = new ComboBox<>("Estado");
 
     public ProfilesView(ProfileClient client, TrackClient tracks, ExecutionPackageClient packages, StationClient stations,
-                        BusinessEntityClient companies, LovClient lovClient, AuthenticationContext authentication, ObjectMapper objectMapper) {
+                        BusinessEntityClient companies, LovClient lovClient, DisconnectorClient disconnectors,
+                        AuthenticationContext authentication, ObjectMapper objectMapper) {
         super(MasterResource.PROFILES, ProfileDto.class, client, authentication, objectMapper);
         this.catalog = new ReferenceCatalog(packages, stations, tracks, companies);
         this.lovs = new LovCatalog(lovClient);
+        this.disconnectors = disconnectors;
         track.setItems(catalog.tracks());
         track.setItemLabelGenerator(RefItem::label);
         track.setClearButtonVisible(true);
@@ -92,7 +96,7 @@ public class ProfilesView extends MasterView<ProfileDto> {
 
     @Override
     protected MasterEditorDialog<ProfileDto> editor(ProfileDto dto) {
-        return new ProfileEditor(dto, catalog, lovs, this::save, this::onSaved);
+        return new ProfileEditor(dto, catalog, lovs, disconnectors, this::save, this::onSaved);
     }
 
     @Override

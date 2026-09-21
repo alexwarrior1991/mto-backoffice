@@ -73,12 +73,21 @@ public abstract class MasterEditorDialog<D extends MasterDto> extends Dialog {
         form.setColspan(component, 2);
     }
 
+    /**
+     * Despues de {@link MasterDto#forgetChildren()} y antes de mandar: aqui el editor que si
+     * gestiona una coleccion de hijos la pone entera en el DTO (README_API.md §4), y resuelve lo
+     * que necesite del servicio. Una excepcion de la API se ensena como cualquier otra.
+     */
+    protected void prepare(D dto) {
+    }
+
     private void save() {
         if (!binder.writeBeanIfValid(dto)) {
             return;
         }
         dto.forgetChildren();
         try {
+            prepare(dto);
             D saved = saver.apply(dto);
             close();
             Notification.show("Guardado", 3000, Notification.Position.BOTTOM_START)

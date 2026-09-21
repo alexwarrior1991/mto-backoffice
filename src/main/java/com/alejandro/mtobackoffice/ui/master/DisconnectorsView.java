@@ -65,7 +65,7 @@ public class DisconnectorsView extends MasterView<DisconnectorDto> {
         grid.addColumn(dto -> catalog.stationName(dto.getStationId())).setHeader("Estacion").setKey("station").setSortProperty("station.name").setSortable(true).setAutoWidth(true);
         grid.addColumn(dto -> dto.getDisconnectorFunction() == null ? "" : dto.getDisconnectorFunction().label()).setHeader("Funcion").setKey("function")
                 .setSortProperty("disconnectorFunction.code").setSortable(true).setAutoWidth(true);
-        grid.addColumn(dto -> dto.getProfileId() == null ? "" : "#" + dto.getProfileId()).setHeader("Perfil").setKey("profile").setAutoWidth(true);
+        grid.addColumn(DisconnectorDto::profileLabel).setHeader("Perfil").setKey("profile").setSortProperty("profile.profileId").setSortable(true).setAutoWidth(true);
         grid.addColumn(dto -> yesNo(dto.getOnLoad())).setHeader("En carga").setKey("onLoad").setSortProperty("onLoad").setSortable(true).setAutoWidth(true);
     }
 

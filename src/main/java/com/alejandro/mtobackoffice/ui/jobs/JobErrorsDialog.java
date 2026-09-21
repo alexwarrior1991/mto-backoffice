@@ -13,9 +13,8 @@ import com.vaadin.flow.component.html.Paragraph;
  */
 public class JobErrorsDialog extends Dialog {
 
-    public JobErrorsDialog(JobLog.Entry entry) {
-        JobDto job = entry.job();
-        setHeaderTitle("Errores de " + entry.label());
+    public JobErrorsDialog(String label, JobDto job) {
+        setHeaderTitle("Errores de " + label);
         setWidth("min(60rem, 96vw)");
 
         if (job.error() != null && !job.error().isBlank()) {

@@ -55,6 +55,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
 
+import com.alejandro.mtobackoffice.client.dto.master.CantileverDto;
+import java.util.ArrayList;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesRegex;
 import static org.hamcrest.Matchers.nullValue;
@@ -564,5 +566,75 @@ class ClientLayerTest {
         assertEquals("perfiles-via-3.csv", export.suggestedFileName());
         assertTrue(importWithErrors.isDownloadable(), "el fichero de una importacion es el informe de sus errores");
         assertFalse(exportWithErrors.isDownloadable(), "un CSV a medias no es un CSV");
+    }
+
+    @Test
+    void theJobHistoryIsReadPagedWithOptionalTypeAndStatus() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/jobs?page=0&size=20&type=PROFILE_EXPORT&status=COMPLETED"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"content":[{"id":"6f1c0000-0000-4000-8000-000000000001","type":"PROFILE_EXPORT","status":"COMPLETED",
+                          "createdAt":"2026-08-27T09:12:03Z","finishedAt":"2026-08-27T09:12:09Z","trackId":3,"mapperType":"basic",
+                          "totalItems":10,"processedItems":10,"successfulItems":10,"failedItems":0}],
+                         "page":{"size":20,"number":0,"totalElements":41,"totalPages":3}}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/jobs?page=2&size=20"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"content":[],"page":{"size":20,"number":2,"totalElements":41,"totalPages":3}}
+                        """, MediaType.APPLICATION_JSON));
+
+        PageResponse<JobDto> page = asUser(() -> jobsClient.list(0, 20, JobType.PROFILE_EXPORT, JobStatus.COMPLETED));
+        assertEquals(41, page.page().totalElements());
+        JobDto job = page.content().getFirst();
+        assertEquals(JOB_ID, job.id());
+        assertTrue(job.isDownloadable(), "la fila basta para saber si hay fichero");
+        assertTrue(job.itemErrors().isEmpty(), "la fila no trae los errores por elemento");
+
+        PageResponse<JobDto> last = asUser(() -> jobsClient.list(2, 20, null, null));
+        assertTrue(last.content().isEmpty());
+        server.verify();
+    }
+
+    /** README_API.md §4: la coleccion de hijos que se manda es el estado final; el 1:1 se manda entero para mantenerlo. */
+    @Test
+    void aProfileTravelsWithItsTypedCantileversTheirSteadyArmAndItsDisconnector() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/profiles/7"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"id":7,"profileId":"P-007","kp":"12.345","trackId":3,"versionNumber":2,
+                         "disconnector":{"id":5,"name":"SEC-1","onLoad":true,"stationId":12,"profileId":7,
+                                         "profileCode":"P-007","profileKp":"12.345","disconnectorFunction":{"id":9,"code":"Disc"}},
+                         "cantilevers":[{"id":21,"cwHeight":5300,"stagger":200,"cantileverType":{"id":4,"code":"CT1"},"profileId":7,
+                                         "steadyArm":{"id":31,"length":1200,"steadyArmType":{"id":6,"code":"SA1"},"cantileverId":21,"armFieldOfTomorrow":true}}]}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/profiles/7"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.cantilevers.length()").value(2))
+                .andExpect(jsonPath("$.cantilevers[0].id").value(21))
+                .andExpect(jsonPath("$.cantilevers[0].cantileverType.code").value("CT1"))
+                .andExpect(jsonPath("$.cantilevers[0].steadyArm.length").value(1200))
+                .andExpect(jsonPath("$.cantilevers[0].steadyArm.armFieldOfTomorrow").value(true))
+                .andExpect(jsonPath("$.cantilevers[1].id").value(nullValue()))
+                .andExpect(jsonPath("$.cantilevers[1].cantileverType.code").value("CT2"))
+                .andExpect(jsonPath("$.cantilevers[1].steadyArm").value(nullValue()))
+                .andExpect(jsonPath("$.disconnector.id").value(5))
+                .andExpect(jsonPath("$.disconnector.name").value("SEC-1"))
+                .andRespond(withSuccess("{\"id\":7,\"versionNumber\":3}", MediaType.APPLICATION_JSON));
+
+        ProfileDto profile = asUser(() -> profileClient.findById(7L));
+        assertEquals("SEC-1", profile.getDisconnector().getName());
+        assertEquals("P-007 (kp 12.345)", profile.getDisconnector().profileLabel());
+        assertEquals(1200L, profile.getCantilevers().getFirst().getSteadyArm().getLength());
+
+        CantileverDto added = new CantileverDto();
+        added.setCantileverType(new LovRef(8L, "CT2", null));
+        List<CantileverDto> cantilevers = new ArrayList<>(profile.getCantilevers());
+        cantilevers.add(added);
+        profile.setCantilevers(cantilevers);
+        ProfileDto saved = asUser(() -> profileClient.update(7L, profile));
+
+        assertEquals(3, saved.getVersionNumber());
+        server.verify();
     }
 }

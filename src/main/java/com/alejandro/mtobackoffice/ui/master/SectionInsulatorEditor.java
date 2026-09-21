@@ -3,6 +3,7 @@ package com.alejandro.mtobackoffice.ui.master;
 import com.alejandro.mtobackoffice.client.configuration.MasterResource;
 import com.alejandro.mtobackoffice.client.dto.master.SectionInsulatorDto;
 import com.alejandro.mtobackoffice.client.dto.master.SectionInsulatorInstallationType;
+import com.alejandro.mtobackoffice.client.dto.master.SectionInsulatorSwitchDto;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.textfield.BigDecimalField;
@@ -12,12 +13,17 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
- * Alta o modificacion de un aislador de seccion. La via conectada solo tiene sentido en una
- * conexion de vias; en un aislador en medio de una via se deshabilita y se vacia.
+ * Alta o modificacion de un aislador de seccion y de sus agujas. La via conectada solo tiene
+ * sentido en una conexion de vias; en un aislador en medio de una via se deshabilita y se vacia.
+ * Las agujas son una coleccion de hijos (README_API.md §4 quater): si nadie las toca van a
+ * {@code null} y se quedan como estan; si alguien las toca, va la lista entera y la que no va se
+ * borra.
  */
 public class SectionInsulatorEditor extends MasterEditorDialog<SectionInsulatorDto> {
 
     static final int NAME_MAX_LENGTH = 200;
+
+    private final ChildrenEditor<SectionInsulatorSwitchDto> switches;
 
     public SectionInsulatorEditor(SectionInsulatorDto dto, ReferenceCatalog catalog,
                                   Function<SectionInsulatorDto, SectionInsulatorDto> saver, Consumer<SectionInsulatorDto> onSaved) {
@@ -53,10 +59,25 @@ public class SectionInsulatorEditor extends MasterEditorDialog<SectionInsulatorD
         binder.forField(connectedTrack).withConverter(Pickers.refToId(catalog::trackRef)).bind("connectedTrackId");
         binder.forField(enabled).bind("enabled");
 
-        form.add(name, station, kp, installationType, track, connectedTrack, enabled);
+        switches = new ChildrenEditor<>("Agujas", "switches", dto.getSwitches(), Integer.MAX_VALUE, SectionInsulatorSwitchDto::new,
+                (child, accepted) -> new SwitchDialog(child, catalog, accepted).open(), grid -> {
+                    grid.addColumn(SectionInsulatorSwitchDto::getCode).setHeader("Codigo").setAutoWidth(true);
+                    grid.addColumn(SectionInsulatorSwitchDto::getKp).setHeader("KP (m)").setAutoWidth(true);
+                    grid.addColumn(SectionInsulatorSwitchDto::turnoutLabel).setHeader("Tangente").setAutoWidth(true);
+                    grid.addColumn(child -> child.getTrackId() == null ? "" : catalog.trackName(child.getTrackId())).setHeader("Via").setAutoWidth(true).setFlexGrow(1);
+                    grid.addColumn(child -> Boolean.FALSE.equals(child.getEnabled()) ? "No" : "Si").setHeader("Activa").setAutoWidth(true);
+                });
+
+        form.add(name, station, kp, installationType, track, connectedTrack, enabled, switches);
+        wide(switches);
         if (dto.getEnabled() == null) {
             dto.setEnabled(Boolean.TRUE);
         }
         ready();
+    }
+
+    @Override
+    protected void prepare(SectionInsulatorDto dto) {
+        switches.edited().ifPresent(dto::setSwitches);
     }
 }

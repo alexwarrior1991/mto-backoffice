@@ -5,8 +5,11 @@ import com.alejandro.mtobackoffice.client.configuration.ExecutionPackageClient;
 import com.alejandro.mtobackoffice.client.configuration.JobsClient;
 import com.alejandro.mtobackoffice.client.configuration.StationClient;
 import com.alejandro.mtobackoffice.client.configuration.TrackClient;
+import com.alejandro.mtobackoffice.client.dto.PageMetadata;
+import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobDto;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobStatus;
+import com.alejandro.mtobackoffice.client.dto.jobs.JobType;
 import com.alejandro.mtobackoffice.client.dto.jobs.UploadedFile;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.TooManyRequestsApiException;
@@ -58,24 +61,31 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.io.ByteArrayInputStream;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
  * Los trabajos en segundo plano de mto-configuration: lanzarlos y seguirlos.
  *
  * <p>Lanzar es una llamada que responde 202 con el trabajo (o 429 con el trabajo ya rechazado y un
- * {@code Retry-After}); a partir de ahi el servicio trabaja solo. Seguirlos es lo que hace
- * {@code @Push}: mientras esta pantalla esta abierta, un hilo compartido ({@link JobPolling})
- * consulta cada pocos segundos los trabajos de la sesion que aun no han terminado y lleva el
- * progreso a la pantalla con {@code UI.access()}, sin que el navegador pregunte.</p>
+ * {@code Retry-After}); a partir de ahi el servicio trabaja solo. La lista es la del servicio
+ * ({@code GET /jobs}, todas las familias, del mas reciente al mas antiguo, paginada y filtrable por
+ * tipo y estado), asi que se ven tambien los trabajos lanzados desde otra sesion o antes de un
+ * reinicio; lo que solo sabe esta sesion —con que etiqueta lanzo cada uno— lo guarda {@link JobLog}
+ * y se pinta encima. Seguirlos es lo que hace {@code @Push}: mientras esta pantalla esta abierta y
+ * hay algo en curso, un hilo compartido ({@link JobPolling}) vuelve a pedir la pagina cada pocos
+ * segundos y lleva lo que cambio a la pantalla con {@code UI.access()}, sin que el navegador
+ * pregunte; un trabajo de esta sesion que no este en la pagina se consulta por su familia.</p>
  *
  * <p>El fichero de un trabajo se descarga a traves de esta aplicacion ({@link DownloadHandler}): el
  * token nunca llega al navegador, asi que el navegador no puede pedirlo al gateway. Los permisos
@@ -90,6 +100,7 @@ public class JobsView extends VerticalLayout {
 
     public static final String ROUTE = "trabajos";
     static final Duration POLL_PERIOD = Duration.ofSeconds(2);
+    static final int PAGE_SIZE = 20;
     static final int MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
     public static final String XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     static final List<String> MAPPER_TYPES = List.of("basic", "default", "technical");
@@ -99,6 +110,10 @@ public class JobsView extends VerticalLayout {
     private static final Logger LOGGER = LoggerFactory.getLogger(JobsView.class);
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("dd/MM HH:mm:ss").withZone(ZoneId.systemDefault());
 
+    /** Lo ultimo que se pidio al servicio: pagina y filtros. Lo lee tambien el hilo de consulta. */
+    private record Query(int page, JobType type, JobStatus status) {
+    }
+
     private final JobsClient client;
     private final ObjectMapper objectMapper;
     private final JobPolling polling;
@@ -107,11 +122,19 @@ public class JobsView extends VerticalLayout {
     private final boolean canImport;
     private final boolean canManageLovs;
 
-    private final Grid<JobLog.Entry> grid = new Grid<>();
+    private final Grid<JobDto> grid = new Grid<>();
     private final Span count = new Span();
+    private final Span pageInfo = new Span();
+    private final Button previous = new Button("Anteriores", VaadinIcon.ANGLE_LEFT.create());
+    private final Button next = new Button("Siguientes", VaadinIcon.ANGLE_RIGHT.create());
+    private final ComboBox<JobType> typeFilter = new ComboBox<>("Tipo");
+    private final ComboBox<JobStatus> statusFilter = new ComboBox<>("Estado");
     private JobLog log;
     private String principal;
     private ScheduledFuture<?> ticker;
+    private int currentPage;
+    private volatile Query lastQuery = new Query(0, null, null);
+    private volatile List<JobDto> rows = List.of();
 
     private UploadedFile profileMaster;
     private UploadedFile lovMaster;
@@ -143,9 +166,7 @@ public class JobsView extends VerticalLayout {
         launchers.setFlexWrap(FlexLayout.FlexWrap.WRAP);
         launchers.addClassNames(LumoUtility.Gap.MEDIUM);
 
-        HorizontalLayout listHeader = new HorizontalLayout(new H3("Trabajos de esta sesion"), count);
-        listHeader.setAlignItems(FlexComponent.Alignment.BASELINE);
-        add(new H2("Trabajos"), launchers, listHeader, buildGrid());
+        add(new H2("Trabajos"), launchers, listHeader(), buildGrid());
         expand(grid);
     }
 
@@ -155,7 +176,7 @@ public class JobsView extends VerticalLayout {
         log = JobLog.of(attachEvent.getSession());
         principal = authentication.getPrincipalName().orElse(null);
         UI ui = attachEvent.getUI();
-        refreshGrid();
+        load();
         ticker = polling.every(POLL_PERIOD, () -> poll(ui));
     }
 
@@ -198,7 +219,7 @@ public class JobsView extends VerticalLayout {
     }
 
     private Component importCard(String title, String hint, String buttonId,
-                                 java.util.function.Consumer<UploadedFile> keep, Supplier<UploadedFile> loaded, ImportCall call) {
+                                 Consumer<UploadedFile> keep, Supplier<UploadedFile> loaded, ImportCall call) {
         Button start = new Button("Importar", VaadinIcon.UPLOAD.create());
         start.setId(buttonId);
         start.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
@@ -256,7 +277,7 @@ public class JobsView extends VerticalLayout {
             String entity = target.getValue();
             Long trackId = track.getValue() == null ? null : track.getValue().id();
             Long stationId = station.getValue() == null ? null : station.getValue().id();
-            launch("Republicado de " + REPUBLISH_TARGETS.get(entity).toLowerCase(java.util.Locale.ROOT),
+            launch("Republicado de " + REPUBLISH_TARGETS.get(entity).toLowerCase(Locale.ROOT),
                     () -> client.republish(entity, trackId, stationId));
         });
         return card("Republicar datos maestros", "Vuelve a emitir los eventos de lo que ya existia antes de que hubiera consumidores",
@@ -278,9 +299,9 @@ public class JobsView extends VerticalLayout {
     }
 
     /**
-     * Lanza el trabajo y lo apunta en la lista. Un 429 tambien se apunta: el servicio persiste el
-     * trabajo como rechazado y lo devuelve en el cuerpo, y la persona tiene que saber que no va a
-     * correr y cuando volver a intentarlo.
+     * Lanza el trabajo, lo apunta con su etiqueta y vuelve a la primera pagina, donde ya esta. Un
+     * 429 tambien se apunta: el servicio persiste el trabajo como rechazado y lo devuelve en el
+     * cuerpo, y la persona tiene que saber que no va a correr y cuando volver a intentarlo.
      *
      * @return {@code true} si el servicio acepto el trabajo
      */
@@ -288,13 +309,13 @@ public class JobsView extends VerticalLayout {
         try {
             JobDto job = call.get();
             log.track(label, job);
-            refreshGrid();
+            firstPage();
             Notification.show("Trabajo encolado: " + label, 4000, Notification.Position.BOTTOM_START)
                     .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
             return true;
         } catch (TooManyRequestsApiException tooMany) {
             rejectedJob(tooMany).ifPresent(job -> log.track(label, job));
-            refreshGrid();
+            firstPage();
             String when = tooMany.getRetryAfter().map(retry -> " Intentalo en " + retry.toSeconds() + " s.").orElse(" Intentalo mas tarde.");
             Notification.show("Sin hueco para " + label + ": el servicio lo ha rechazado." + when, 8000, Notification.Position.BOTTOM_START)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
@@ -315,42 +336,120 @@ public class JobsView extends VerticalLayout {
         }
     }
 
+    // --- La lista -------------------------------------------------------------------------------
+
+    private Component listHeader() {
+        typeFilter.setId("jobs-type");
+        typeFilter.setItems(JobType.values());
+        typeFilter.setItemLabelGenerator(JobType::label);
+        typeFilter.setClearButtonVisible(true);
+        typeFilter.addValueChangeListener(change -> firstPage());
+        statusFilter.setId("jobs-status");
+        statusFilter.setItems(JobStatus.values());
+        statusFilter.setItemLabelGenerator(JobStatus::label);
+        statusFilter.setClearButtonVisible(true);
+        statusFilter.addValueChangeListener(change -> firstPage());
+        Button reload = new Button("Recargar", VaadinIcon.REFRESH.create(), click -> load());
+        previous.setId("jobs-previous");
+        previous.addClickListener(click -> {
+            if (currentPage > 0) {
+                currentPage--;
+                load();
+            }
+        });
+        next.setId("jobs-next");
+        next.addClickListener(click -> {
+            currentPage++;
+            load();
+        });
+        pageInfo.addClassNames(LumoUtility.FontSize.SMALL, LumoUtility.TextColor.SECONDARY);
+        HorizontalLayout header = new HorizontalLayout(new H3("Historial"), count, typeFilter, statusFilter, reload, previous, pageInfo, next);
+        header.setAlignItems(FlexComponent.Alignment.BASELINE);
+        header.setWidthFull();
+        header.expand(count);
+        return header;
+    }
+
+    private void firstPage() {
+        currentPage = 0;
+        load();
+    }
+
+    /** Pide al servicio la pagina actual con los filtros de la pantalla. En el hilo de la UI. */
+    void load() {
+        Query query = new Query(currentPage, typeFilter.getValue(), statusFilter.getValue());
+        lastQuery = query;
+        try {
+            show(query, client.list(query.page(), PAGE_SIZE, query.type(), query.status()));
+        } catch (BackofficeApiException failure) {
+            UiErrors.show(failure);
+            show(query, new PageResponse<>(List.of(), new PageMetadata(query.page(), PAGE_SIZE, 0, 0)));
+        }
+    }
+
+    private void show(Query query, PageResponse<JobDto> page) {
+        rows = page.content();
+        grid.setItems(rows);
+        long total = page.page() == null ? rows.size() : page.page().totalElements();
+        int pages = page.page() == null ? 1 : Math.max(1, page.page().totalPages());
+        long running = rows.stream().filter(job -> !job.isTerminal()).count();
+        count.setText(total == 0 ? "Ninguno todavia" : total + " en el servicio, " + running + " en curso");
+        pageInfo.setText("Pagina " + (query.page() + 1) + " de " + pages);
+        previous.setEnabled(query.page() > 0);
+        next.setEnabled(query.page() + 1 < pages);
+    }
+
     // --- Seguimiento ------------------------------------------------------------------------------
 
     /**
-     * Una pasada de consulta: pregunta por los trabajos vivos fuera del bloqueo de la sesion y
-     * lleva lo que cambio a la pantalla con {@code UI.access()}. La llama el hilo de
-     * {@link JobPolling}; los tests la llaman directamente.
+     * Una pasada de consulta, en el hilo de {@link JobPolling} (los tests la llaman directamente):
+     * si hay algo en curso —en la pagina o lanzado desde aqui— vuelve a pedir la pagina fuera del
+     * bloqueo de la sesion, pregunta por su familia a los trabajos de esta sesion que no esten en
+     * ella, y lleva lo que cambio a la pantalla con {@code UI.access()}.
      */
     void poll(UI ui) {
         if (log == null) {
             return;
         }
-        List<JobLog.Entry> active = log.active();
-        if (active.isEmpty()) {
+        List<JobLog.Entry> own = log.active();
+        if (own.isEmpty() && rows.stream().allMatch(JobDto::isTerminal)) {
             return;
         }
+        Query query = lastQuery;
+        PageResponse<JobDto> page;
+        try {
+            page = CurrentPrincipal.callAs(principal, () -> client.list(query.page(), PAGE_SIZE, query.type(), query.status()));
+        } catch (BackofficeApiException failure) {
+            LOGGER.warn("No se ha podido consultar la lista de trabajos: {}", failure.getMessage());
+            return;
+        }
+        Map<UUID, JobDto> onPage = new HashMap<>();
+        page.content().forEach(job -> onPage.put(job.id(), job));
         List<JobDto> updates = new ArrayList<>();
-        for (JobLog.Entry entry : active) {
-            try {
-                updates.add(CurrentPrincipal.callAs(principal, () -> statusOf(entry.job())));
-            } catch (BackofficeApiException failure) {
-                LOGGER.warn("No se ha podido consultar el trabajo {}: {}", entry.job().id(), failure.getMessage());
+        for (JobLog.Entry entry : own) {
+            JobDto update = onPage.get(entry.job().id());
+            if (update == null) {
+                try {
+                    update = CurrentPrincipal.callAs(principal, () -> statusOf(entry.job()));
+                } catch (BackofficeApiException failure) {
+                    LOGGER.warn("No se ha podido consultar el trabajo {}: {}", entry.job().id(), failure.getMessage());
+                    continue;
+                }
             }
-        }
-        if (updates.isEmpty()) {
-            return;
+            updates.add(update);
         }
         ui.access(() -> {
             for (JobDto update : updates) {
-                boolean finishedNow = update.isTerminal() && active.stream()
-                        .anyMatch(entry -> entry.job().id().equals(update.id()) && !entry.job().isTerminal());
+                boolean finishedNow = update.isTerminal()
+                        && log.find(update.id()).map(entry -> !entry.job().isTerminal()).orElse(false);
                 log.update(update);
                 if (finishedNow) {
                     announce(update);
                 }
             }
-            refreshGrid();
+            if (query.equals(lastQuery)) {
+                show(query, page);
+            }
         });
     }
 
@@ -380,35 +479,47 @@ public class JobsView extends VerticalLayout {
     }
 
     private void announce(JobDto job) {
-        String label = log.entries().stream().filter(entry -> entry.job().id().equals(job.id()))
-                .map(JobLog.Entry::label).findFirst().orElse(job.type().label());
+        String label = labelOf(job);
         boolean ok = job.status() == JobStatus.COMPLETED;
         Notification notification = Notification.show(label + ": " + job.status().label(), ok ? 5000 : 10000, Notification.Position.BOTTOM_START);
         notification.addThemeVariants(ok ? NotificationVariant.LUMO_SUCCESS : NotificationVariant.LUMO_ERROR);
     }
 
-    private void whenAttached(java.util.function.Consumer<UI> action) {
+    private void whenAttached(Consumer<UI> action) {
         getUI().ifPresent(action);
     }
 
-    // --- La lista -------------------------------------------------------------------------------
+    /** La etiqueta con la que se lanzo desde esta sesion; si vino de otra parte, se describe. */
+    String labelOf(JobDto job) {
+        Optional<String> own = log == null ? Optional.empty() : log.labelOf(job.id());
+        return own.orElseGet(() -> describe(job));
+    }
+
+    private String describe(JobDto job) {
+        if (job.type() == null) {
+            return "Trabajo";
+        }
+        if (job.type() == JobType.PROFILE_EXPORT && job.trackId() != null) {
+            String format = job.mapperType() == null ? "" : ", " + job.mapperType();
+            return "Exportacion de " + catalog.trackName(job.trackId()) + " (" + format.replaceFirst("^, ", "") + ")";
+        }
+        return job.type().label();
+    }
 
     private Component buildGrid() {
-        grid.addColumn(JobLog.Entry::label).setHeader("Trabajo").setKey("label").setFlexGrow(1);
-        grid.addColumn(entry -> entry.job().type() == null ? "" : entry.job().type().label()).setHeader("Tipo").setKey("type").setAutoWidth(true);
-        grid.addColumn(entry -> entry.job().status() == null ? "" : entry.job().status().label()).setHeader("Estado").setKey("status").setAutoWidth(true);
-        grid.addColumn(entry -> TIME.format(entry.job().createdAt() == null ? entry.launchedAt() : entry.job().createdAt()))
-                .setHeader("Lanzado").setKey("createdAt").setAutoWidth(true);
+        grid.addColumn(this::labelOf).setHeader("Trabajo").setKey("label").setFlexGrow(1);
+        grid.addColumn(job -> job.type() == null ? "" : job.type().label()).setHeader("Tipo").setKey("type").setAutoWidth(true);
+        grid.addColumn(job -> job.status() == null ? "" : job.status().label()).setHeader("Estado").setKey("status").setAutoWidth(true);
+        grid.addColumn(job -> job.createdAt() == null ? "" : TIME.format(job.createdAt())).setHeader("Lanzado").setKey("createdAt").setAutoWidth(true);
         grid.addColumn(new ComponentRenderer<>(JobsView::progress)).setHeader("Progreso").setKey("progress").setAutoWidth(true);
-        grid.addColumn(entry -> String.valueOf(entry.job().successfulItems())).setHeader("Correctos").setKey("successful").setAutoWidth(true);
-        grid.addColumn(entry -> String.valueOf(entry.job().failedItems())).setHeader("Fallidos").setKey("failed").setAutoWidth(true);
+        grid.addColumn(job -> String.valueOf(job.successfulItems())).setHeader("Correctos").setKey("successful").setAutoWidth(true);
+        grid.addColumn(job -> String.valueOf(job.failedItems())).setHeader("Fallidos").setKey("failed").setAutoWidth(true);
         grid.addColumn(new ComponentRenderer<>(this::actions)).setHeader("").setKey("actions").setAutoWidth(true).setFlexGrow(0);
         grid.setSizeFull();
         return grid;
     }
 
-    private static Component progress(JobLog.Entry entry) {
-        JobDto job = entry.job();
+    private static Component progress(JobDto job) {
         Integer total = job.totalItems();
         if (total == null || total <= 0) {
             return new Span(job.status() == JobStatus.RUNNING || job.status() == JobStatus.PENDING ? "..." : String.valueOf(job.processedItems()));
@@ -423,20 +534,33 @@ public class JobsView extends VerticalLayout {
         return layout;
     }
 
-    private Component actions(JobLog.Entry entry) {
+    private Component actions(JobDto job) {
         HorizontalLayout actions = new HorizontalLayout();
         actions.setSpacing(false);
-        JobDto job = entry.job();
         if (job.isDownloadable()) {
             actions.add(downloadLink(job));
         }
         if (job.failedItems() > 0 || (job.error() != null && !job.error().isBlank())) {
-            Button errors = new Button("Errores", click -> new JobErrorsDialog(entry).open());
+            Button errors = new Button("Errores", click -> showErrors(job));
             errors.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
             errors.setId("errors-" + job.id());
             actions.add(errors);
         }
         return actions;
+    }
+
+    /** La fila de la lista no trae los errores por elemento: se piden al detalle de la familia. */
+    private void showErrors(JobDto job) {
+        JobDto detail = job;
+        if (job.itemErrors().isEmpty() && job.failedItems() > 0) {
+            try {
+                detail = statusOf(job);
+            } catch (BackofficeApiException failure) {
+                UiErrors.show(failure);
+                return;
+            }
+        }
+        new JobErrorsDialog(labelOf(job), detail).open();
     }
 
     /**
@@ -462,16 +586,5 @@ public class JobsView extends VerticalLayout {
             LOGGER.warn("No se ha podido descargar el fichero del trabajo {}: {}", job.id(), failure.getMessage());
             return DownloadResponse.error(failure.getStatus().value());
         }
-    }
-
-    void refreshGrid() {
-        List<JobLog.Entry> entries = log == null ? List.of() : log.entries();
-        grid.setItems(entries);
-        long running = entries.stream().filter(entry -> !entry.job().isTerminal()).count();
-        count.setText(entries.isEmpty() ? "Ninguno todavia" : entries.size() + " en la lista, " + running + " en curso");
-    }
-
-    static Instant now() {
-        return Instant.now();
     }
 }

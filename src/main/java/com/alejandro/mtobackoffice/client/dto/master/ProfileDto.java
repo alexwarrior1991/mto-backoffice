@@ -20,8 +20,8 @@ public class ProfileDto extends MasterDto {
     private BigDecimal poleGaugeLocation;
     private BigDecimal railPoleDistance;
     private Long trackId;
-    private Object disconnector;
-    private List<Object> cantilevers;
+    private DisconnectorDto disconnector;
+    private List<CantileverDto> cantilevers;
     private LovRef profileStatus;
     private LovRef poleType;
     private LovRef foundation;
@@ -98,19 +98,19 @@ public class ProfileDto extends MasterDto {
         this.trackId = trackId;
     }
 
-    public Object getDisconnector() {
+    public DisconnectorDto getDisconnector() {
         return disconnector;
     }
 
-    public void setDisconnector(Object disconnector) {
+    public void setDisconnector(DisconnectorDto disconnector) {
         this.disconnector = disconnector;
     }
 
-    public List<Object> getCantilevers() {
+    public List<CantileverDto> getCantilevers() {
         return cantilevers;
     }
 
-    public void setCantilevers(List<Object> cantilevers) {
+    public void setCantilevers(List<CantileverDto> cantilevers) {
         this.cantilevers = cantilevers;
     }
 
