@@ -17,7 +17,6 @@ import com.vaadin.flow.component.textfield.BigDecimalField;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.binder.Binder;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -104,9 +103,5 @@ public class MaterialEditorDialog extends Dialog {
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }
-    }
-
-    static String quantity(BigDecimal value) {
-        return value == null ? "" : value.stripTrailingZeros().toPlainString();
     }
 }

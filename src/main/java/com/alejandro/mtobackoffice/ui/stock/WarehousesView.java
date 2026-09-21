@@ -15,7 +15,7 @@ import java.util.UUID;
 
 @Route(value = StockRoutes.WAREHOUSES, layout = MainLayout.class)
 @PageTitle("Almacenes")
-@Menu(title = "Almacenes", order = 51, icon = "vaadin:archive")
+@Menu(title = "Almacenes", order = 52, icon = "vaadin:archive")
 @RolesAllowed(StockRoles.STOCK_READ)
 public class WarehousesView extends StockCatalogueView<WarehouseDto> {
 

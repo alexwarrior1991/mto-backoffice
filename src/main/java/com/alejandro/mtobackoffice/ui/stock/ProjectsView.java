@@ -20,7 +20,7 @@ import java.util.UUID;
  */
 @Route(value = StockRoutes.PROJECTS, layout = MainLayout.class)
 @PageTitle("Proyectos")
-@Menu(title = "Proyectos", order = 53, icon = "vaadin:clipboard-text")
+@Menu(title = "Proyectos", order = 54, icon = "vaadin:clipboard-text")
 @RolesAllowed(StockRoles.STOCK_READ)
 public class ProjectsView extends StockCatalogueView<ProjectDto> {
 

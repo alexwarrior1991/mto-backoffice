@@ -15,7 +15,7 @@ import java.util.UUID;
 
 @Route(value = StockRoutes.MATERIALS, layout = MainLayout.class)
 @PageTitle("Materiales")
-@Menu(title = "Materiales", order = 50, icon = "vaadin:cubes")
+@Menu(title = "Materiales", order = 51, icon = "vaadin:cubes")
 @RolesAllowed(StockRoles.STOCK_READ)
 public class MaterialsView extends StockCatalogueView<MaterialDto> {
 
@@ -31,7 +31,7 @@ public class MaterialsView extends StockCatalogueView<MaterialDto> {
         grid.addColumn(MaterialDto::code).setHeader("Codigo").setKey("code").setSortProperty("code").setSortable(true).setAutoWidth(true);
         grid.addColumn(MaterialDto::name).setHeader("Nombre").setKey("name").setSortProperty("name").setSortable(true).setFlexGrow(1);
         grid.addColumn(MaterialDto::unitOfMeasure).setHeader("Unidad").setKey("unitOfMeasure").setAutoWidth(true);
-        grid.addColumn(dto -> MaterialEditorDialog.quantity(dto.minimumStockLevel())).setHeader("Stock minimo").setKey("minimumStockLevel")
+        grid.addColumn(dto -> StockFormats.quantity(dto.minimumStockLevel())).setHeader("Stock minimo").setKey("minimumStockLevel")
                 .setSortProperty("minimumStockLevel").setSortable(true).setAutoWidth(true);
         grid.addColumn(dto -> yesNo(dto.active())).setHeader("Activo").setKey("active").setSortProperty("active").setSortable(true).setAutoWidth(true);
     }

@@ -123,7 +123,14 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `StockCatalogueClient.search` con búsqueda, estado y orden de columna, con `MaterialsView`,
   `WarehousesView`, `SuppliersView` y `ProjectsView` poniendo columnas y editor;
   `CatalogueEditorDialog` con `Binder` sobre `CatalogueForm` para almacenes, proveedores y
-  proyectos, y `MaterialEditorDialog` sobre `MaterialForm`; el resto llega por fases), `ui/support` (`UiErrors`: excepción →
+  proyectos, y `MaterialEditorDialog` sobre `MaterialForm`; `StockView` en `almacen`, la entrada
+  «Almacén» del menú y a la vez el nodo del grupo: las cifras de un material en un almacén
+  (`GET /materials/{id}/stock`), su libro y los materiales bajo mínimo; `MovementsView` en
+  `almacen/movimientos`, el libro entero con filtros; `MovementDialog` (un `Kind` por operación:
+  entrada, salida, transferencia, ajuste) con `Binder` sobre `MovementForm`, cuyas propiedades se
+  llaman como los campos de la petición aunque guarden el resumen elegido; `StockOperations`, los
+  botones por permiso; `StockPickers`, los desplegables que buscan en el servidor; `MovementGrid`,
+  las columnas del libro; `StockClients` y `StockFormats`; el resto llega por fases), `ui/support` (`UiErrors`: excepción →
   `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`;
   `OffsetPager`: anteriores/siguientes para una lista `first`/`max` sin total, donde una página
   llena es la única señal de que hay más).
@@ -195,6 +202,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `synchronizedFromMasterData` es de `mto-configuration`: la vista enseña su origen y no ofrece
   modificarlo, porque el servicio lo rechaza con 422 `PRJ-001`; no se reimplementa esa regla aquí,
   solo se evita ofrecer lo que va a fallar.
+- **Las cifras del almacén son del servicio.** Físico, reservado, disponible y «bajo mínimo» vienen
+  de `GET /materials/{id}/stock`; la pantalla no suma movimientos ni resta reservas. Un movimiento
+  se registra y el servicio decide: sin disponible es 409 `STK-001`, un material o almacén
+  retirado es 400/422, y la notificación lo dice. Lo único que el diálogo exige es lo evidente
+  (material, almacén, cantidad positiva, destino distinto del origen).
 - **«Sacar a la persona» son tres llamadas en ese orden, y no se funden en una.** Desactivar
   solo bloquea el siguiente login, cerrar las sesiones no toca las offline y un token offline
   sobrevive a las dos cosas hasta que se revoca: es lo que el README de `mto-users` deja
@@ -311,6 +323,10 @@ paseados sin total, el de roles por cliente con quién los tiene, y la fila que 
 almacén: los mensajes de sus errores, el grupo «Almacén» con sus catálogos y su ausencia sin
 `stock-read`, un rol de realm que no abre la vista, la lista paginada, buscada, ordenada y filtrada
 en el servicio, lectura sin controles, alta y modificación con `active`, errores del servicio campo
-a campo, el proyecto sincronizado sin botón de modificar, el editor de materiales) y
+a campo, el proyecto sincronizado sin botón de modificar, el editor de materiales; las
+existencias: cifras y libro de un material en un almacén, la lista bajo mínimo que sigue al almacén
+y cuya fila elige el material, el libro filtrado en el servicio, la entrada con su proveedor, la
+salida sin stock con su mensaje, la transferencia que exige otro almacén, el ajuste solo con
+`stock-adjust`) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
 sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.

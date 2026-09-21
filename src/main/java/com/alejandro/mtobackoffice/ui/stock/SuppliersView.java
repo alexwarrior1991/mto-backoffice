@@ -15,7 +15,7 @@ import java.util.UUID;
 
 @Route(value = StockRoutes.SUPPLIERS, layout = MainLayout.class)
 @PageTitle("Proveedores")
-@Menu(title = "Proveedores", order = 52, icon = "vaadin:truck")
+@Menu(title = "Proveedores", order = 53, icon = "vaadin:truck")
 @RolesAllowed(StockRoles.STOCK_READ)
 public class SuppliersView extends StockCatalogueView<SupplierDto> {
 

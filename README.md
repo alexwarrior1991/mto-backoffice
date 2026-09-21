@@ -129,8 +129,17 @@ Séptimo repositorio del dominio, hermano e independiente de
   `page`, `size`, `sort=campo,asc`; el recuento es `totalElements`), el alta con código y nombre (y
   unidad y stock mínimo en materiales) y la modificación con el estado, que es como se retira uno
   (no hay borrado en `mto-stock`). Un proyecto sincronizado desde `mto-configuration` enseña su
-  origen y no se ofrece modificarlo: el servicio lo rechazaría con `PRJ-001`. Lo que falta:
-  existencias y movimientos (S2), reservas (S3), conjuntos (S4), historial (S5).
+  origen y no se ofrece modificarlo: el servicio lo rechazaría con `PRJ-001`. S2 trae las
+  **existencias** (`almacen`, la entrada «Almacén» del menú): se elige un material (buscado en el
+  servidor) y, si se quiere, un almacén, y se ven las cifras que calcula `mto-stock` (físico,
+  reservado, disponible, mínimo y si está bajo mínimo), el libro de ese material y los materiales
+  bajo mínimo; y los **movimientos** (`almacen/movimientos`): el libro entero paginado en el
+  servidor con sus filtros (tipo, almacén, material, proyecto, fechas inclusivas, quién lo
+  registró) y las cuatro operaciones en un diálogo: entrada (proveedor opcional), salida
+  (proyecto opcional), transferencia (dos almacenes distintos; el servicio devuelve dos apuntes) y
+  ajuste (positivo o negativo; solo con `stock-adjust`). Nada se calcula aquí: si no hay
+  disponible, el servicio responde 409 `STK-001` y la notificación lo dice. Lo que falta:
+  reservas (S3), conjuntos (S4), historial (S5).
 
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|
