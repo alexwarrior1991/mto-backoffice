@@ -1,9 +1,21 @@
 package com.alejandro.mtobackoffice.client;
 
+import com.alejandro.mtobackoffice.client.configuration.BusinessEntityClient;
 import com.alejandro.mtobackoffice.client.configuration.LovClient;
+import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
+import com.alejandro.mtobackoffice.client.configuration.ProfileClient;
+import com.alejandro.mtobackoffice.client.configuration.StationClient;
+import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.configuration.LovResource;
 import com.alejandro.mtobackoffice.client.dto.LovDto;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
+import com.alejandro.mtobackoffice.client.dto.master.BusinessEntityDto;
+import com.alejandro.mtobackoffice.client.dto.master.LovRef;
+import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
+import com.alejandro.mtobackoffice.client.dto.master.StationDto;
+import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
+import com.vaadin.flow.data.provider.QuerySortOrder;
+import com.vaadin.flow.data.provider.SortDirection;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
@@ -26,6 +38,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -33,6 +46,7 @@ import java.util.List;
 import java.util.function.Supplier;
 
 import static org.hamcrest.Matchers.matchesRegex;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -59,6 +73,10 @@ class ClientLayerTest {
     private MockRestServiceServer server;
     private RestClient restClient;
     private LovClient lovClient;
+    private StationClient stationClient;
+    private TrackClient trackClient;
+    private ProfileClient profileClient;
+    private BusinessEntityClient businessEntityClient;
 
     @BeforeEach
     void setUp() {
@@ -73,6 +91,10 @@ class ClientLayerTest {
         ApiErrorDecoder decoder = new ApiErrorDecoder(new JsonMapper(), "X-Correlation-Id");
         restClient = GatewayClientConfiguration.gatewayRestClient(builder, GATEWAY, "X-Correlation-Id", tokens, decoder);
         lovClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(LovClient.class);
+        stationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(StationClient.class);
+        trackClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(TrackClient.class);
+        profileClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ProfileClient.class);
+        businessEntityClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(BusinessEntityClient.class);
     }
 
     @AfterEach
@@ -320,5 +342,120 @@ class ClientLayerTest {
 
         assertTrue(exception.getProblem().detail().contains("Bad Gateway"));
         assertFalse(exception.getProblem().hasFieldErrors());
+    }
+
+    // --- Maestros de infraestructura ------------------------------------------------------------
+
+    /** La subinterfaz vacia pone la ruta y el tipo; Spring resuelve el generico y la pagina llega tipada. */
+    @Test
+    void masterListsPostTheFilterWithSpringDataPagingAndComeBackTyped() {
+        server.expect(requestTo(matchesRegex("http://gateway/api/configuration/stations/filter\\?page=1&size=20&sort=name(,|%2C)asc&sort=id(,|%2C)desc")))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.searchText").value("ato"))
+                .andExpect(jsonPath("$.enabled").doesNotExist())
+                .andExpect(jsonPath("$.name").doesNotExist())
+                .andRespond(withSuccess("""
+                        {"content":[{"id":4,"name":"ATOCHA","executionPackageId":100,"tracks":null,"disconnectors":null,
+                                     "sectionInsulators":null,"versionNumber":3,"versionUser":"config.responsable",
+                                     "versionDate":"2026-08-02T11:00:00","brandNewField":"x"}],
+                         "page":{"size":20,"number":1,"totalElements":21,"totalPages":2}}
+                        """, MediaType.APPLICATION_JSON));
+
+        PageResponse<StationDto> page = asUser(() -> stationClient.filter(1, 20,
+                MasterFilters.sort(List.of(new QuerySortOrder("name", SortDirection.ASCENDING), new QuerySortOrder("id", SortDirection.DESCENDING))),
+                MasterFilters.of("searchText", " ato ", "enabled", null, "name", "  ")));
+
+        StationDto station = page.content().getFirst();
+        assertEquals("ATOCHA", station.getName());
+        assertEquals(100L, station.getExecutionPackageId());
+        assertEquals(3, station.getVersionNumber());
+        assertNull(station.getTracks(), "la fila de una lista llega sin hijos");
+        assertEquals("x", station.extras().get("brandNewField"), "lo que la UI no conoce se guarda aparte");
+        assertEquals(21L, page.page().totalElements());
+        server.verify();
+    }
+
+    /** README_API §4: lee, modifica sobre lo leido y devuelvelo entero; los hijos que no se tocan van a null. */
+    @Test
+    void updatingAMasterSendsBackWhatWasReadWithItsUnknownFieldsAndItsChildrenLeftAlone() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/tracks/3"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"id":3,"name":"VIA 1","enabled":true,"executionPackageId":100,"stationIds":[12,13],
+                         "profiles":[{"id":1,"profileId":"P-001","kp":"10.500","cantilevers":[]}],
+                         "versionNumber":7,"createUser":"importador","fieldOfTomorrow":{"deep":[1,2]}}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/tracks/3"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.id").value(3))
+                .andExpect(jsonPath("$.name").value("VIA PRINCIPAL"))
+                .andExpect(jsonPath("$.versionNumber").value(7))
+                .andExpect(jsonPath("$.stationIds[0]").value(12))
+                .andExpect(jsonPath("$.stationIds[1]").value(13))
+                .andExpect(jsonPath("$.profiles").value(nullValue()))
+                .andExpect(jsonPath("$.fieldOfTomorrow.deep[1]").value(2))
+                .andExpect(jsonPath("$.createUser").value("importador"))
+                .andRespond(withSuccess("""
+                        {"id":3,"name":"VIA PRINCIPAL","enabled":true,"executionPackageId":100,"stationIds":[12,13],"profiles":null,"versionNumber":8}
+                        """, MediaType.APPLICATION_JSON));
+
+        TrackDto track = asUser(() -> trackClient.findById(3L));
+        assertEquals(1, track.getProfiles().size(), "el detalle trae los hijos");
+        track.setName("VIA PRINCIPAL");
+        track.forgetChildren();
+        TrackDto saved = asUser(() -> trackClient.save(track));
+
+        assertEquals(8, saved.getVersionNumber());
+        server.verify();
+    }
+
+    @Test
+    void lovReferencesTravelAsIdAndCodeAndACreateHasNoId() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/profiles"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.profileId").value("P-9"))
+                .andExpect(jsonPath("$.kp").value("10.500"))
+                .andExpect(jsonPath("$.trackId").value(3))
+                .andExpect(jsonPath("$.poleType.id").value(5))
+                .andExpect(jsonPath("$.poleType.code").value("PT1"))
+                .andExpect(jsonPath("$.poleType.description").doesNotExist())
+                .andExpect(jsonPath("$.sectionings[1].code").value("P50"))
+                .andExpect(jsonPath("$.span").value(47.97))
+                .andExpect(jsonPath("$.id").value(nullValue()))
+                .andExpect(jsonPath("$.cantilevers").value(nullValue()))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body("""
+                        {"id":99,"profileId":"P-9","kp":"10.500","trackId":3,
+                         "poleType":{"id":5,"code":"PT1","description":"Poste 1","type":"PoleType","enabled":true},
+                         "sectionings":[{"id":1,"code":"A/S"},{"id":2,"code":"P50"}],"cantilevers":[],"versionNumber":0}
+                        """));
+
+        ProfileDto profile = new ProfileDto();
+        profile.setProfileId("P-9");
+        profile.setKp("10.500");
+        profile.setTrackId(3L);
+        profile.setPoleType(new LovRef(5L, "PT1", null));
+        profile.setSectionings(List.of(new LovRef(1L, "A/S", "Aguja"), new LovRef(2L, "P50", null)));
+        profile.setSpan(new BigDecimal("47.970"));
+
+        ProfileDto created = asUser(() -> profileClient.save(profile));
+
+        assertEquals(99L, created.getId());
+        assertEquals(new LovRef(5L, "PT1", null), created.getPoleType(), "la igualdad de una referencia es por id");
+        assertEquals("Poste 1", created.getPoleType().description());
+        assertEquals(2, created.getSectionings().size());
+        server.verify();
+    }
+
+    @Test
+    void businessEntitiesAreListedForTheExecutionPackagePicker() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/business-entities"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        [{"id":1,"identificationNumber":"A12345678","name":"Constructora Norte","code":"CN","comercialEntityType":{"code":"X"}}]
+                        """, MediaType.APPLICATION_JSON));
+
+        List<BusinessEntityDto> companies = asUser(() -> businessEntityClient.findAll());
+
+        assertEquals("Constructora Norte (A12345678)", companies.getFirst().label());
     }
 }

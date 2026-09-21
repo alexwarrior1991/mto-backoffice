@@ -2,6 +2,7 @@ package com.alejandro.mtobackoffice.ui;
 
 import com.alejandro.mtobackoffice.client.configuration.LovResource;
 import com.alejandro.mtobackoffice.ui.lov.LovCrudView;
+import com.alejandro.mtobackoffice.ui.master.MasterView;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.applayout.DrawerToggle;
@@ -69,13 +70,27 @@ public class MainLayout extends AppLayout {
 
     private Component menu() {
         SideNav nav = new SideNav();
+        // Los maestros de infraestructura cuelgan de un grupo: son seis vistas con @Menu cuya ruta
+        // empieza por el mismo prefijo, y asi el menu no se hace una lista plana.
+        SideNavItem infrastructure = null;
         for (MenuEntry entry : visibleMenuEntries()) {
             SideNavItem item = new SideNavItem(entry.title(), entry.path());
             if (entry.icon() != null && entry.icon().contains(":")) {
                 String[] icon = entry.icon().split(":", 2);
                 item.setPrefixComponent(new Icon(icon[0], icon[1]));
             }
-            nav.addItem(item);
+            String path = entry.path().startsWith("/") ? entry.path().substring(1) : entry.path();
+            if (path.startsWith(MasterView.ROUTE_PREFIX + "/")) {
+                if (infrastructure == null) {
+                    infrastructure = new SideNavItem("Infraestructura");
+                    infrastructure.setPrefixComponent(new Icon("vaadin", "train"));
+                    infrastructure.setExpanded(true);
+                    nav.addItem(infrastructure);
+                }
+                infrastructure.addItem(item);
+            } else {
+                nav.addItem(item);
+            }
         }
         // Los catalogos son una sola vista con el recurso en la ruta, asi que no pueden anotarse
         // con @Menu: se listan a mano, y solo si la persona puede abrir la vista.

@@ -57,18 +57,28 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   manejador de estado; `HttpServiceProxyFactory` para las interfaces `@HttpExchange`),
   `UserTokenProvider` (`AuthorizedClientServiceOAuth2AuthorizedClientManager` con `refreshToken()`),
   `GatewayProperties`, `CorrelationProperties`.
-- `client` — las interfaces `@HttpExchange` por servicio (`client/configuration/LovClient`, los
+- `client` — las interfaces `@HttpExchange` por servicio: `client/configuration/LovClient` (los
   ocho endpoints de `AbstractLovController` parametrizados por recurso; `LovResource`, los 17
-  catálogos con su ruta y su título), los DTO (`client/dto`: solo las claves que usa la UI,
-  `@JsonInclude(NON_NULL)` para no enviar lo que no se rellena, `PageResponse<T>` con la forma
-  `{content, page}`) y los errores (`client/error`: `ApiProblem`, `ApiErrorDecoder` y la jerarquía
-  `BackofficeApiException`).
+  catálogos con su ruta y su título), `MasterClient<D>` (lo que comparten los maestros de
+  `CRUDController`: `POST /filter` paginado, `GET/POST/PUT/DELETE`) con seis subinterfaces vacías
+  que solo ponen la ruta y el tipo (`StationClient`, `TrackClient`...; Spring resuelve el genérico
+  contra la subinterfaz), `BusinessEntityClient` (solo lectura) y `MasterFilters` (cuerpo y orden
+  del `/filter`). Los DTO (`client/dto`): `LovDto` es un record con solo las claves que usa la UI y
+  `@JsonInclude(NON_NULL)`; los maestros (`client/dto/master`) son **clases mutables** que heredan
+  de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo;
+  `PageResponse<T>` con la forma `{content, page}`. Los errores en `client/error` (`ApiProblem`,
+  `ApiErrorDecoder` y la jerarquía `BackofficeApiException`).
 - `ui` — `MainLayout` (AppLayout; el menú lo dan las vistas anotadas con `@Menu`, filtradas por
-  `AccessAnnotationChecker`, más el grupo «Catalogos» construido a mano porque la vista de catálogos
-  lleva el recurso en la ruta), `ui/views/HomeView`, `ui/lov` (`LovCrudView` en
-  `catalogos/:resource`, `LovEditorDialog` con `Binder` sobre el modelo mutable `LovForm`,
-  `LovBulkCreateDialog` con su parser de líneas), `ui/support` (`UiErrors`: excepción →
-  `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`).
+  `AccessAnnotationChecker`; las de `infraestructura/*` se agrupan bajo «Infraestructura» y los
+  catálogos se listan a mano porque su vista lleva el recurso en la ruta), `ui/views/HomeView`,
+  `ui/lov` (`LovCrudView` en `catalogos/:resource`, `LovEditorDialog` con `Binder` sobre el modelo
+  mutable `LovForm`, `LovBulkCreateDialog` con su parser de líneas), `ui/master` (`MasterView<D>`,
+  la lista paginada en el servidor con `grid.setItems(fetch, count)` sobre `POST /filter`;
+  `MasterEditorDialog<D>`, el `Binder` sobre el DTO leído; una vista y un editor por maestro;
+  `ReferenceCatalog` y `LovCatalog`, los nombres y las entradas de catálogo cargados una vez por
+  pantalla; `Pickers`, desplegables y conversores; `EnabledFilter`, el filtro de tres estados),
+  `ui/support` (`UiErrors`: excepción → `Notification`; `ServerValidation`: `errors[]` del
+  servicio → campos del `Binder`).
 
 ### Reglas que no se rompen
 
@@ -117,17 +127,38 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   descripción obligatorios, longitud de columna) y vuelca `errors[{field, code, message}]` campo a
   campo con `ServerValidation`. Un `code` repetido llega como 409 y un cuerpo sin `code` como 400
   desde que `RestExceptionHandler` los mapea (antes eran 500).
+- **Un maestro se edita sobre la fila leída y se devuelve entero** (`README_API.md` §4 de
+  `mto-configuration`: lee, modifica sobre lo leído, devuélvelo entero). Por eso los DTO de
+  `client/dto/master` son clases mutables y no records, y por eso tienen lo que un DTO «solo con
+  las claves que usa la UI» no tendría: `extras` (`@JsonAnySetter`/`@JsonAnyGetter`), que devuelve
+  tal cual lo que el servicio mandó y aquí no tiene campo, y `forgetChildren()`, que pone a `null`
+  las colecciones de hijos que el editor no toca porque para el servicio `null` es «no digo nada»
+  y una lista vacía u omitida borra a los hijos. Esas clases **no** llevan
+  `@JsonInclude(NON_NULL)`: el `null` tiene que viajar. `versionNumber` vuelve como se leyó: es el
+  bloqueo optimista, y un cambio concurrente llega como 409. Se edita una **copia** de la fila
+  (por Jackson, para que lleve los `extras`), para que cancelar o un rechazo del servicio no
+  cambien lo que enseña el Grid. `profiles.disconnector` (1:1, `null` = desvincular) no se toca.
+- **Las listas de maestros se paginan en el servidor.** `MasterView` pide cada página a
+  `POST /{recurso}/filter` con `page`, `size`, `sort=campo,asc` y `searchText`; el recuento es
+  `totalElements`. Nada de `findAll` en memoria como en los catálogos: los perfiles son miles.
+  Las filas de paquetes, estaciones y vías llegan sin hijos y los filtros booleanos solo filtran
+  si vienen; las dos cosas se arreglaron en `mto-configuration` para esta fase, no aquí.
 - **Nada de componentes de pago.** `vaadin-spring-boot-starter` trae solo `vaadin-core-internal`.
 
 ### Tests
 
 Una clase por capa; se añaden métodos, no clases: `ClientLayerTest` (interfaces `@HttpExchange` y
 `RestClient` reales contra `MockRestServiceServer`: prefijo del gateway, Bearer y correlación, forma
-de página, `problem+json` de configuration, 401/403 y 503 del gateway, cuerpo no JSON),
+de página, `problem+json` de configuration, 401/403 y 503 del gateway, cuerpo no JSON; los
+maestros: resolución del genérico, parámetros de página y orden del `/filter`, `extras` e hijos a
+`null` en un `PUT`, referencias a catálogo como `{id, code}`),
 `SecurityLayerTest` (mapeo de roles, registro OIDC sin descubrimiento, roles desde el access token,
 `CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
 de la ruta y su filtro local, menú por roles, controles de escritura ocultos sin permiso, alta por
 diálogo, errores del servicio campo a campo, borrado con confirmación, lote sobre la selección,
-parser del alta múltiple, notificación de error, diagnóstico de audiencias) y
+parser del alta múltiple, notificación de error, diagnóstico de audiencias; los maestros: lista
+paginada, ordenada y filtrada contra el cliente simulado, nombres de referencias en las columnas,
+edición sobre una copia que vuelve con `extras` e hijos a `null`, errores del servicio sobre un
+desplegable, borrado confirmado, alta de un perfil con sus referencias, KP no válido) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
 sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.

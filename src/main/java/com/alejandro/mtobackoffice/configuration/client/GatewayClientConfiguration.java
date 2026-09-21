@@ -1,6 +1,13 @@
 package com.alejandro.mtobackoffice.configuration.client;
 
+import com.alejandro.mtobackoffice.client.configuration.BusinessEntityClient;
+import com.alejandro.mtobackoffice.client.configuration.DisconnectorClient;
+import com.alejandro.mtobackoffice.client.configuration.ExecutionPackageClient;
 import com.alejandro.mtobackoffice.client.configuration.LovClient;
+import com.alejandro.mtobackoffice.client.configuration.ProfileClient;
+import com.alejandro.mtobackoffice.client.configuration.SectionInsulatorClient;
+import com.alejandro.mtobackoffice.client.configuration.StationClient;
+import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
 import com.alejandro.mtobackoffice.configuration.security.KeycloakClientRegistrations;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -77,6 +84,41 @@ public class GatewayClientConfiguration {
     @Bean
     public LovClient lovClient(RestClient gatewayRestClient) {
         return proxyFactory(gatewayRestClient).createClient(LovClient.class);
+    }
+
+    @Bean
+    public ExecutionPackageClient executionPackageClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(ExecutionPackageClient.class);
+    }
+
+    @Bean
+    public StationClient stationClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(StationClient.class);
+    }
+
+    @Bean
+    public TrackClient trackClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(TrackClient.class);
+    }
+
+    @Bean
+    public ProfileClient profileClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(ProfileClient.class);
+    }
+
+    @Bean
+    public DisconnectorClient disconnectorClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(DisconnectorClient.class);
+    }
+
+    @Bean
+    public SectionInsulatorClient sectionInsulatorClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(SectionInsulatorClient.class);
+    }
+
+    @Bean
+    public BusinessEntityClient businessEntityClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(BusinessEntityClient.class);
     }
 
     public static HttpServiceProxyFactory proxyFactory(RestClient restClient) {

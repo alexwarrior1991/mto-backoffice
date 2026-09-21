@@ -1,8 +1,24 @@
 package com.alejandro.mtobackoffice.ui;
 
+import com.alejandro.mtobackoffice.client.configuration.BusinessEntityClient;
+import com.alejandro.mtobackoffice.client.configuration.DisconnectorClient;
+import com.alejandro.mtobackoffice.client.configuration.ExecutionPackageClient;
 import com.alejandro.mtobackoffice.client.configuration.LovClient;
+import com.alejandro.mtobackoffice.client.configuration.MasterResource;
+import com.alejandro.mtobackoffice.client.configuration.ProfileClient;
+import com.alejandro.mtobackoffice.client.configuration.SectionInsulatorClient;
+import com.alejandro.mtobackoffice.client.configuration.StationClient;
+import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.configuration.LovResource;
 import com.alejandro.mtobackoffice.client.dto.LovDto;
+import com.alejandro.mtobackoffice.client.dto.PageMetadata;
+import com.alejandro.mtobackoffice.client.dto.PageResponse;
+import com.alejandro.mtobackoffice.client.dto.master.ExecutionPackageDto;
+import com.alejandro.mtobackoffice.client.dto.master.LovRef;
+import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
+import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
+import com.alejandro.mtobackoffice.client.dto.master.StationDto;
+import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
 import com.alejandro.mtobackoffice.client.error.ApiFieldError;
 import com.alejandro.mtobackoffice.client.error.ApiProblem;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
@@ -10,6 +26,9 @@ import com.alejandro.mtobackoffice.configuration.security.BackofficeUser;
 import com.alejandro.mtobackoffice.configuration.security.JwtClaimNames;
 import com.alejandro.mtobackoffice.ui.lov.LovBulkCreateDialog;
 import com.alejandro.mtobackoffice.ui.lov.LovCrudView;
+import com.alejandro.mtobackoffice.ui.master.EnabledFilter;
+import com.alejandro.mtobackoffice.ui.master.RefItem;
+import com.alejandro.mtobackoffice.ui.master.TracksView;
 import com.alejandro.mtobackoffice.ui.views.HomeView;
 import com.github.mvysny.kaributesting.v10.pro.ConfirmDialogKt;
 import com.github.mvysny.kaributesting.v10.GridKt;
@@ -22,9 +41,13 @@ import com.github.mvysny.kaributesting.v10.spring.MockSpringServlet;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.grid.GridSortOrder;
+import com.vaadin.flow.component.select.Select;
+import com.vaadin.flow.data.provider.SortDirection;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.ListItem;
 import com.vaadin.flow.component.html.Span;
@@ -51,6 +74,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -58,8 +83,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -82,9 +113,24 @@ class ViewLayerTest {
 
     @MockitoBean
     private LovClient lovClient;
+    @MockitoBean
+    private ExecutionPackageClient executionPackageClient;
+    @MockitoBean
+    private StationClient stationClient;
+    @MockitoBean
+    private TrackClient trackClient;
+    @MockitoBean
+    private ProfileClient profileClient;
+    @MockitoBean
+    private DisconnectorClient disconnectorClient;
+    @MockitoBean
+    private SectionInsulatorClient sectionInsulatorClient;
+    @MockitoBean
+    private BusinessEntityClient businessEntityClient;
 
     @BeforeEach
     void setUp() {
+        stubEmptyMasters();
         MockSpringSecurity.mock();
         Function0<UI> uiFactory = UI::new;
         MockVaadin.setup(uiFactory, new MockSpringServlet(ROUTES, context, uiFactory));
@@ -132,6 +178,21 @@ class ViewLayerTest {
         assertTrue(labels.contains("Inicio"), labels.toString());
         assertFalse(labels.contains("Catalogos"), labels.toString());
         assertFalse(labels.contains("Estados de perfil"), labels.toString());
+        assertFalse(labels.contains("Infraestructura"), labels.toString());
+        assertFalse(labels.contains("Vias"), labels.toString());
+    }
+
+    @Test
+    void theMenuGroupsTheSixMastersUnderInfrastructure() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        List<String> labels = menuLabels();
+        assertTrue(labels.contains("Infraestructura"), labels.toString());
+        for (MasterResource resource : MasterResource.values()) {
+            assertTrue(labels.contains(resource.title()), "falta " + resource.title() + " en " + labels);
+        }
     }
 
     @Test
@@ -357,5 +418,238 @@ class ViewLayerTest {
         assertTrue(audiences.stream().anyMatch(item -> "mto-gateway-api".equals(item.getElement().getAttribute("data-audience"))
                 && "false".equals(item.getElement().getAttribute("data-present"))));
         LocatorJ._get(ListItem.class, spec -> spec.withText("ROLE_REALM_MTO_ADMIN"));
+    }
+
+    // --- Maestros de infraestructura -------------------------------------------------------------
+
+    private static final String TRACKS_ROUTE = "infraestructura/vias";
+    private static final String PROFILES_ROUTE = "infraestructura/perfiles";
+
+    private static <D extends MasterDto> PageResponse<D> page(List<D> all, int page, int size) {
+        int from = Math.min(page * size, all.size());
+        int to = Math.min(from + size, all.size());
+        return new PageResponse<>(all.subList(from, to), new PageMetadata(page, size, all.size(), (all.size() + size - 1) / size));
+    }
+
+    private void stubEmptyMasters() {
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<ExecutionPackageDto>of(), 0, 50));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<StationDto>of(), 0, 50));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<TrackDto>of(), 0, 50));
+        when(profileClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<ProfileDto>of(), 0, 50));
+        when(businessEntityClient.findAll()).thenReturn(List.of());
+    }
+
+    private static ExecutionPackageDto executionPackage(Long id, String name) {
+        ExecutionPackageDto dto = new ExecutionPackageDto();
+        dto.setId(id);
+        dto.setName(name);
+        return dto;
+    }
+
+    private static StationDto station(Long id, String name, Long packageId) {
+        StationDto dto = new StationDto();
+        dto.setId(id);
+        dto.setName(name);
+        dto.setExecutionPackageId(packageId);
+        return dto;
+    }
+
+    private static TrackDto track(Long id, String name, boolean enabled, Long packageId, List<Long> stationIds) {
+        TrackDto dto = new TrackDto();
+        dto.setId(id);
+        dto.setName(name);
+        dto.setEnabled(enabled);
+        dto.setExecutionPackageId(packageId);
+        dto.setStationIds(stationIds);
+        dto.setProfiles(null);
+        dto.setVersionNumber(7);
+        dto.putExtra("fieldOfTomorrow", 1);
+        return dto;
+    }
+
+    /** El servicio simulado: pagina, filtra por texto y por estado, como hace el de verdad. */
+    private void stubTracks(List<TrackDto> all) {
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenAnswer(call -> {
+            Map<String, Object> body = call.getArgument(3);
+            String text = String.valueOf(body.getOrDefault("searchText", "")).toLowerCase(Locale.ROOT);
+            Object enabled = body.get("enabled");
+            List<TrackDto> matching = all.stream()
+                    .filter(dto -> text.isEmpty() || dto.getName().toLowerCase(Locale.ROOT).contains(text))
+                    .filter(dto -> enabled == null || enabled.equals(dto.getEnabled()))
+                    .toList();
+            return page(matching, call.getArgument(0), call.getArgument(1));
+        });
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(executionPackage(100L, "EP4")), 0, 50));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(station(12L, "ATOCHA", 100L), station(13L, "CHAMARTIN", 100L)), 0, 50));
+    }
+
+    private static List<TrackDto> threeTracks() {
+        return List.of(
+                track(3L, "VIA 1", true, 100L, List.of(12L, 13L)),
+                track(4L, "VIA 2", true, 100L, List.of()),
+                track(5L, "VIA MUERTA", false, 100L, List.of(12L)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Grid<TrackDto> trackGrid() {
+        return LocatorJ._get(Grid.class);
+    }
+
+    @Test
+    void aMasterListIsPagedSortedAndFilteredInTheServer() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubTracks(threeTracks());
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+
+        Grid<TrackDto> grid = trackGrid();
+        assertEquals(3, GridKt._size(grid));
+        assertEquals("VIA 1", GridKt._get(grid, 0).getName());
+        List<String> firstRow = GridKt._getFormattedRow(grid, 0);
+        assertTrue(firstRow.contains("EP4"), "el paquete se ensena por su nombre: " + firstRow);
+        assertTrue(firstRow.contains("ATOCHA (EP4), CHAMARTIN (EP4)"), "las estaciones por su nombre: " + firstRow);
+        LocatorJ._get(Span.class, spec -> spec.withText("3 vias"));
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withPlaceholder("Buscar")), "muerta");
+        assertEquals(1, GridKt._size(grid));
+        assertEquals("VIA MUERTA", GridKt._get(grid, 0).getName());
+        verify(trackClient, atLeastOnce()).filter(anyInt(), anyInt(), anyList(), eq(Map.of("searchText", "muerta")));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 via"));
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withPlaceholder("Buscar")), "");
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withLabel("Estado")), EnabledFilter.ENABLED);
+        assertEquals(2, GridKt._size(grid));
+        verify(trackClient, atLeastOnce()).filter(anyInt(), anyInt(), anyList(), eq(Map.of("enabled", true)));
+
+        grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("name"), SortDirection.DESCENDING)));
+        GridKt._get(grid, 0);
+        verify(trackClient, atLeastOnce()).filter(anyInt(), anyInt(), eq(List.of("name,desc")), anyMap());
+    }
+
+    @Test
+    void aReadOnlyPersonSeesTheMastersWithoutAnyWriteControl() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubTracks(threeTracks());
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withText("Nuevo")).isEmpty());
+        assertNull(trackGrid().getColumnByKey("actions"));
+    }
+
+    /** README_API §4 desde la pantalla: la fila vuelve entera, con lo que la UI no conoce, y los hijos a null. */
+    @Test
+    void editingARowSendsItBackWithItsUnknownFieldsAndItsChildrenLeftAlone() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        stubTracks(threeTracks());
+        when(trackClient.update(eq(3L), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        Component actions = GridKt._getCellComponent(trackGrid(), 0, "actions");
+        LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withId("edit-3")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Nombre")), "VIA PRINCIPAL");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        verify(trackClient).update(eq(3L), argThat(dto -> "VIA PRINCIPAL".equals(dto.getName())
+                && dto.getProfiles() == null
+                && Integer.valueOf(1).equals(dto.extras().get("fieldOfTomorrow"))
+                && List.of(12L, 13L).equals(dto.getStationIds())
+                && Long.valueOf(100L).equals(dto.getExecutionPackageId())
+                && Integer.valueOf(7).equals(dto.getVersionNumber())));
+        verify(trackClient, never()).create(any());
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
+        assertEquals("VIA 1", GridKt._get(trackGrid(), 0).getName(), "se edito una copia: la fila del Grid no cambia hasta recargar");
+    }
+
+    @Test
+    void serverValidationErrorsLandOnTheMasterFields() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        stubTracks(threeTracks());
+        ApiProblem problem = new ApiProblem("https://api.mto-configuration/errors/val-000", "Peticion invalida", 400,
+                "La peticion tiene 1 errores de validacion", null, "VAL-000", "t-2", null, null, false,
+                List.of(new ApiFieldError("executionPackageId", "VAL-001", "El paquete no existe")), null);
+        when(trackClient.update(eq(3L), any())).thenThrow(
+                BackofficeApiException.of(HttpStatus.BAD_REQUEST, problem, "corr-3", null, "PUT /api/configuration/tracks/3"));
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(trackGrid(), 0, "actions"), Button.class, spec -> spec.withId("edit-3")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> executionPackage = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Paquete de ejecucion"));
+        assertTrue(executionPackage.isInvalid());
+        assertEquals("El paquete no existe", executionPackage.getErrorMessage());
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto para corregir");
+    }
+
+    @Test
+    void deletingAMasterAsksForConfirmationThenCallsTheService() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_DELETE");
+        stubTracks(threeTracks());
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(trackGrid(), 0, "actions"), Button.class, spec -> spec.withId("delete-3")));
+
+        verify(trackClient, never()).delete(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+
+        verify(trackClient).delete(3L);
+    }
+
+    @Test
+    void creatingAProfileSendsItsCatalogueReferencesAndItsTrack() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null)));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(executionPackage(100L, "EP4")), 0, 50));
+        when(profileClient.create(any())).thenAnswer(call -> {
+            ProfileDto created = call.getArgument(0);
+            created.setId(99L);
+            return created;
+        });
+
+        UI.getCurrent().navigate(PROFILES_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Identificador")), "P-9");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("KP")), "10.500");
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> track = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via"));
+        LocatorJ._setValue(track, new RefItem(3L, "TRACK 1 (EP4)"));
+        @SuppressWarnings("unchecked")
+        ComboBox<LovRef> status = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Estado"));
+        LocatorJ._setValue(status, new LovRef(5L, "PT1", "Poste tipo 1"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        verify(profileClient).create(argThat(dto -> "P-9".equals(dto.getProfileId())
+                && "10.500".equals(dto.getKp())
+                && Long.valueOf(3L).equals(dto.getTrackId())
+                && "PT1".equals(dto.getProfileStatus().code())
+                && dto.getCantilevers() == null
+                && dto.getSectionings().isEmpty()));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
+    }
+
+    @Test
+    void aKpWithLettersNeverReachesTheService() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of());
+
+        UI.getCurrent().navigate(PROFILES_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Identificador")), "P-9");
+        TextField kp = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("KP"));
+        LocatorJ._setValue(kp, "10,5 km");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        assertTrue(kp.isInvalid());
+        verify(profileClient, never()).create(any());
     }
 }

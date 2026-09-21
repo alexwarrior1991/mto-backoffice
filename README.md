@@ -20,7 +20,7 @@ Séptimo repositorio del dominio, hermano e independiente de
 [`mto-maintenance`](../mto-maintenance), [`mto-users`](../mto-users) y
 [`mto-gateway`](../mto-gateway); la infraestructura local es de [`mto-platform`](../mto-platform).
 
-## Estado: fase 1
+## Estado: fase 2
 
 - **Fase 0**: circuito completo con lo mínimo. Cliente `mto-backoffice` en el realm, login OIDC,
   marco con menú filtrado por roles y la pantalla de inicio con el diagnóstico del token.
@@ -33,8 +33,28 @@ Séptimo repositorio del dominio, hermano e independiente de
   (`PUT /bulk`). Los errores del servicio se enseñan en su campo: `errors[{field, code, message}]`
   se vuelca sobre el formulario y lo que no se puede atribuir va a una notificación.
 
-Fases siguientes: los maestros de infraestructura con paginación de servidor y las importaciones
-Excel con trabajos asíncronos.
+- **Fase 2**: los seis maestros de infraestructura (paquetes de ejecución, estaciones, vías,
+  perfiles, seccionadores y aisladores de sección) bajo `infraestructura/*`, con **paginación en el
+  servidor**: el grid pide cada página a `POST /{recurso}/filter` con la página, el tamaño, el orden
+  de la columna y el texto de búsqueda (`searchText`, que el servicio aplica a varias columnas), y
+  el recuento sale de `totalElements`. Nunca se trae el maestro entero: los perfiles son miles.
+  Cada maestro tiene su editor con las referencias resueltas (paquete, estación, vía y empresa en
+  desplegables; el perfil de un seccionador se busca en el servidor mientras se escribe) y las
+  entradas de catálogo como desplegables. La edición sigue la regla de `README_API.md` §4 del
+  servicio: **se edita sobre la fila leída y se devuelve entera**. Lo que la pantalla no conoce
+  vuelve tal cual (`extras`), y las colecciones de hijos que no se editan aquí (vías y estaciones
+  de un paquete, perfiles de una vía, ménsulas de un perfil, agujas de un aislador) van a `null`,
+  que para el servicio es «de esta colección no digo nada». Para que eso fuera posible el backend
+  cambió con la fase: las listas de paquetes, estaciones y vías van sin hijos, los filtros
+  booleanos solo filtran si vienen y las empresas se pueden leer (`GET /business-entities`).
+
+Fase siguiente: las importaciones Excel con trabajos asíncronos.
+
+| Acción sobre un maestro | Roles de cliente de `mto-configuration-api` |
+|---|---|
+| Ver la lista y buscar | `config-read` |
+| Nuevo, modificar | `config-write` |
+| Borrar (lógico) | `config-delete` |
 
 Los botones siguen los permisos que aplica el servicio a cada catálogo:
 
