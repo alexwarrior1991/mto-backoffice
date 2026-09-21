@@ -138,8 +138,16 @@ Séptimo repositorio del dominio, hermano e independiente de
   registró) y las cuatro operaciones en un diálogo: entrada (proveedor opcional), salida
   (proyecto opcional), transferencia (dos almacenes distintos; el servicio devuelve dos apuntes) y
   ajuste (positivo o negativo; solo con `stock-adjust`). Nada se calcula aquí: si no hay
-  disponible, el servicio responde 409 `STK-001` y la notificación lo dice. Lo que falta:
-  reservas (S3), conjuntos (S4), historial (S5).
+  disponible, el servicio responde 409 `STK-001` y la notificación lo dice. S3 trae las
+  **reservas** (`almacen/reservas`): la lista paginada en el servidor con sus filtros (estado,
+  almacén, material, proyecto; por defecto las activas), el alta (material, almacén, proyecto y
+  cantidad; nace activa y reduce el disponible) y la modificación (almacén, proyecto y cantidad;
+  el material no cambia) y, solo en las filas activas, liberar (vuelve al disponible sin
+  movimiento), consumir (baja el físico), cancelar (con `stock-delete`; el servicio devuelve la
+  reserva cancelada) y «salida con esta reserva», que abre la salida de movimientos con el
+  material, el almacén y la cantidad fijos porque el servicio exige que coincidan exactamente con
+  lo reservado. Una reserva que ya no está activa no cambia: el servicio responde 422 `RES-001` y
+  la notificación lo dice. Lo que falta: conjuntos (S4), historial (S5).
 
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|

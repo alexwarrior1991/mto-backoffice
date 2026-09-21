@@ -78,10 +78,17 @@ import com.alejandro.mtobackoffice.client.dto.stock.ProjectSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.stock.SupplierSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.stock.TransferRequest;
 import com.alejandro.mtobackoffice.client.dto.stock.WarehouseSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.stock.AuditDto;
+import com.alejandro.mtobackoffice.client.dto.stock.ReservationDto;
+import com.alejandro.mtobackoffice.client.dto.stock.ReservationRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.ReservationStatus;
+import com.alejandro.mtobackoffice.client.dto.stock.ReservationUpdateRequest;
+import com.alejandro.mtobackoffice.ui.stock.ReservationsView;
 import com.alejandro.mtobackoffice.ui.stock.StockFormats;
 import com.alejandro.mtobackoffice.ui.stock.StockView;
 import com.alejandro.mtobackoffice.ui.stock.MaterialsView;
 import com.vaadin.flow.component.datepicker.DatePicker;
+import com.vaadin.flow.component.datetimepicker.DateTimePicker;
 import com.vaadin.flow.component.html.Div;
 import java.time.LocalDate;
 import com.alejandro.mtobackoffice.ui.stock.ProjectsView;
@@ -192,6 +199,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.intThat;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -2295,7 +2303,7 @@ class ViewLayerTest {
         assertFalse(labels.contains("Usuarios"), labels.toString());
         SideNavItem stock = LocatorJ._get(SideNavItem.class, spec -> spec.withLabel("Almacen"));
         assertEquals(StockRoutes.PREFIX, stock.getPath().replaceFirst("^/", ""), "las existencias son a la vez el nodo del grupo");
-        assertEquals(List.of("Materiales", "Almacenes", "Proveedores", "Proyectos", "Movimientos"),
+        assertEquals(List.of("Materiales", "Almacenes", "Proveedores", "Proyectos", "Movimientos", "Reservas"),
                 stock.getItems().stream().map(SideNavItem::getLabel).toList(), "las pantallas cuelgan del grupo, en su orden");
     }
 
@@ -2658,5 +2666,178 @@ class ViewLayerTest {
 
         verify(movementClient).adjustment(new AdjustmentRequest(MAT1, WH1, AdjustmentDirection.NEGATIVE, new BigDecimal("1"), null, null, "Rotura en obra"));
         NotificationsKt.expectNotifications("Ajuste registrado: 1 m de MAT-001");
+    }
+
+    // --- Almacen (mto-stock): reservas -------------------------------------------------------------
+
+    private static final UUID RES1 = UUID.fromString("2b2b2b2b-0000-4000-8000-000000000007");
+    private static final ProjectSummaryDto TRAMO = new ProjectSummaryDto(PRJ_MANUAL, "PRJ-001", "Renovacion", true);
+
+    private static ReservationDto reservation(UUID id, ReservationStatus status, String quantity) {
+        boolean active = status == ReservationStatus.ACTIVE;
+        return new ReservationDto(id, HILO, CENTRAL, TRAMO, new BigDecimal(quantity), status, Instant.parse("2026-09-12T08:00:00Z"),
+                active ? null : Instant.parse("2026-09-13T08:00:00Z"), active, new AuditDto(null, null, "almacen.operario", null));
+    }
+
+    private void stubReservations(ReservationDto... rows) {
+        List<ReservationDto> all = List.of(rows);
+        doAnswer(call -> page(all, call.getArgument(4), call.getArgument(5)))
+                .when(reservationClient).search(any(), any(), any(), any(), anyInt(), anyInt(), anyList());
+    }
+
+    private static Button rowAction(Grid<Object> grid, int row, String id) {
+        return LocatorJ._get(GridKt._getCellComponent(grid, row, ReservationsView.ACTIONS_COLUMN), Button.class, spec -> spec.withId(id));
+    }
+
+    @Test
+    void theReservationsAreFilteredInTheServerAndOnlyTheActiveOnesHaveActions() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        UUID consumed = UUID.randomUUID();
+        stubReservations(reservation(RES1, ReservationStatus.ACTIVE, "5"), reservation(consumed, ReservationStatus.CONSUMED, "2"));
+
+        UI.getCurrent().navigate(StockRoutes.RESERVATIONS);
+        Grid<Object> grid = gridWithId("reservations-grid");
+        assertEquals(2, GridKt._size(grid));
+        LocatorJ._get(Span.class, spec -> spec.withText("2 reservas"));
+        List<String> row = GridKt._getFormattedRow(grid, 0);
+        assertTrue(row.contains("MAT-001 - Hilo de contacto") && row.contains("PRJ-001") && row.contains("Activa"), row.toString());
+        verify(reservationClient, atLeastOnce()).search(isNull(), eq(ReservationStatus.ACTIVE), isNull(), isNull(), eq(0), anyInt(), eq(List.of("reservedAt,desc")));
+
+        rowAction(grid, 0, "edit-" + RES1);
+        rowAction(grid, 0, "output-" + RES1);
+        rowAction(grid, 0, "consume-" + RES1);
+        rowAction(grid, 0, "release-" + RES1);
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, ReservationsView.ACTIONS_COLUMN), Button.class, spec -> spec.withId("cancel-" + RES1)).isEmpty(),
+                "cancelar pide stock-delete");
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 1, ReservationsView.ACTIONS_COLUMN), Button.class).isEmpty(),
+                "una reserva consumida es historia: el servicio rechazaria cualquier cambio con RES-001");
+
+        ViewLayerTest.<ReservationStatus>combo("reservations-status").clear();
+        LocatorJ._setValue(ViewLayerTest.<WarehouseSummaryDto>combo("reservations-warehouse"), CENTRAL);
+        LocatorJ._setValue(ViewLayerTest.<MaterialSummaryDto>combo("reservations-material"), HILO);
+        LocatorJ._setValue(ViewLayerTest.<ProjectSummaryDto>combo("reservations-project"), TRAMO);
+        GridKt._get(grid, 0);
+
+        verify(reservationClient, atLeastOnce()).search(eq(WH1), isNull(), eq(PRJ_MANUAL), eq(MAT1), eq(0), anyInt(), anyList());
+        grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("quantity"), SortDirection.DESCENDING)));
+        GridKt._get(grid, 0);
+        verify(reservationClient, atLeastOnce()).search(any(), any(), any(), any(), anyInt(), anyInt(), eq(List.of("quantity,desc")));
+    }
+
+    @Test
+    void aReadOnlyPersonSeesTheReservationsWithoutAnyAction() {
+        loginAs("almacen.lector", "ROLE_STOCK_READ");
+        stubReservations(reservation(RES1, ReservationStatus.ACTIVE, "5"));
+
+        UI.getCurrent().navigate(StockRoutes.RESERVATIONS);
+        Grid<Object> grid = gridWithId("reservations-grid");
+
+        assertEquals(1, GridKt._size(grid));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("reservation-create")).isEmpty());
+        assertNull(grid.getColumnByKey(ReservationsView.ACTIONS_COLUMN), "sin stock-write ni stock-delete no hay columna de acciones");
+    }
+
+    @Test
+    void aReservationIsCreatedWithMaterialWarehouseProjectAndQuantity() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        stubReservations();
+        when(reservationClient.create(any())).thenReturn(reservation(RES1, ReservationStatus.ACTIVE, "5"));
+
+        UI.getCurrent().navigate(StockRoutes.RESERVATIONS);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("reservation-create")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("reservation-material")), HILO);
+        LocatorJ._setValue(LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("reservation-warehouse")), CENTRAL);
+        LocatorJ._setValue(LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withId("reservation-quantity")), new BigDecimal("5"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("reservation-save")));
+        assertTrue(LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("reservation-project")).isInvalid(), "una reserva es siempre para un proyecto");
+        verify(reservationClient, never()).create(any());
+
+        LocatorJ._setValue(LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("reservation-project")), TRAMO);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("reservation-save")));
+
+        verify(reservationClient).create(new ReservationRequest(MAT1, WH1, PRJ_MANUAL, new BigDecimal("5"), null));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+        NotificationsKt.expectNotifications("Reserva registrada: 5 m de MAT-001 para PRJ-001");
+        verify(reservationClient, atLeast(2)).search(any(), any(), any(), any(), eq(0), anyInt(), anyList());
+    }
+
+    @Test
+    void editingAReservationKeepsItsMaterialAndSendsWarehouseProjectAndQuantity() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        stubReservations(reservation(RES1, ReservationStatus.ACTIVE, "5"));
+        when(reservationClient.update(eq(RES1), any())).thenReturn(reservation(RES1, ReservationStatus.ACTIVE, "7"));
+
+        UI.getCurrent().navigate(StockRoutes.RESERVATIONS);
+        LocatorJ._click(rowAction(gridWithId("reservations-grid"), 0, "edit-" + RES1));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        ComboBox<MaterialSummaryDto> material = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("reservation-material"));
+        assertEquals(HILO, material.getValue());
+        assertTrue(material.isReadOnly(), "el material de una reserva no cambia: la modificacion no lo lleva");
+        assertTrue(LocatorJ._find(dialog, DateTimePicker.class).isEmpty(), "la fecha solo se fija al crear");
+        LocatorJ._setValue(LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("reservation-warehouse")), NAVE2);
+        LocatorJ._setValue(LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withId("reservation-quantity")), new BigDecimal("7"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("reservation-save")));
+
+        verify(reservationClient).update(RES1, new ReservationUpdateRequest(WH2, PRJ_MANUAL, new BigDecimal("7")));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+        NotificationsKt.expectNotifications("Reserva modificada: 7 m de MAT-001 para PRJ-001");
+    }
+
+    @Test
+    void releasingCancellingAndConsumingAReservationAreConfirmedAndCancellingNeedsStockDelete() {
+        loginAs("almacen.responsable", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE", "ROLE_STOCK_DELETE", "ROLE_STOCK_ADJUST");
+        stubReservations(reservation(RES1, ReservationStatus.ACTIVE, "5"));
+        when(reservationClient.release(RES1)).thenReturn(reservation(RES1, ReservationStatus.RELEASED, "5"));
+        when(reservationClient.cancel(RES1)).thenReturn(reservation(RES1, ReservationStatus.CANCELLED, "5"));
+        when(reservationClient.consume(RES1)).thenThrow(stockError(422, "RES-001", "Only active reservations can be changed"));
+
+        UI.getCurrent().navigate(StockRoutes.RESERVATIONS);
+        Grid<Object> grid = gridWithId("reservations-grid");
+
+        LocatorJ._click(rowAction(grid, 0, "release-" + RES1));
+        verify(reservationClient, never()).release(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(reservationClient).release(RES1);
+        NotificationsKt.expectNotifications("Reserva liberada: 5 de MAT-001");
+
+        LocatorJ._click(rowAction(grid, 0, "cancel-" + RES1));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(reservationClient).cancel(RES1);
+        NotificationsKt.expectNotifications("Reserva cancelada: 5 de MAT-001");
+
+        LocatorJ._click(rowAction(grid, 0, "consume-" + RES1));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(reservationClient).consume(RES1);
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size());
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("La operacion no es posible. Only active reservations can be changed"));
+        verify(reservationClient, atLeast(4)).search(any(), any(), any(), any(), eq(0), anyInt(), anyList());
+    }
+
+    @Test
+    void anOutputFromAReservationFixesMaterialWarehouseAndQuantityAndSendsTheReservationId() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        stubReservations(reservation(RES1, ReservationStatus.ACTIVE, "5"));
+        when(movementClient.output(any())).thenReturn(movement(MovementType.OUTPUT, "-5"));
+
+        UI.getCurrent().navigate(StockRoutes.RESERVATIONS);
+        LocatorJ._click(rowAction(gridWithId("reservations-grid"), 0, "output-" + RES1));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        ComboBox<MaterialSummaryDto> material = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("movement-material"));
+        ComboBox<WarehouseSummaryDto> warehouse = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("movement-warehouse"));
+        BigDecimalField quantity = LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withId("movement-quantity"));
+        assertEquals(HILO, material.getValue());
+        assertEquals(CENTRAL, warehouse.getValue());
+        assertEquals(new BigDecimal("5"), quantity.getValue());
+        assertTrue(material.isReadOnly() && warehouse.isReadOnly() && quantity.isReadOnly(), "el servicio exige que coincidan con lo reservado");
+        assertEquals(TRAMO, LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("movement-project")).getValue());
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Referencia externa")), "OT-9");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("movement-save")));
+
+        verify(movementClient).output(new OutputRequest(MAT1, WH1, PRJ_MANUAL, RES1, new BigDecimal("5"), null, "OT-9", null));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+        NotificationsKt.expectNotifications("Salida registrada: 5 m de MAT-001");
+        verify(reservationClient, atLeast(2)).search(any(), any(), any(), any(), eq(0), anyInt(), anyList());
     }
 }

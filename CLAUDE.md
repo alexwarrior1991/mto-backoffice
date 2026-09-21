@@ -130,7 +130,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   entrada, salida, transferencia, ajuste) con `Binder` sobre `MovementForm`, cuyas propiedades se
   llaman como los campos de la petición aunque guarden el resumen elegido; `StockOperations`, los
   botones por permiso; `StockPickers`, los desplegables que buscan en el servidor; `MovementGrid`,
-  las columnas del libro; `StockClients` y `StockFormats`; el resto llega por fases), `ui/support` (`UiErrors`: excepción →
+  las columnas del libro; `ReservationsView` en `almacen/reservas`, la lista paginada con sus
+  filtros y, en cada fila activa, modificar, salida con la reserva, consumir, liberar y cancelar;
+  `ReservationDialog` con `Binder` sobre `ReservationForm`; `StockClients` y `StockFormats`; el
+  resto llega por fases), `ui/support` (`UiErrors`: excepción →
   `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`;
   `OffsetPager`: anteriores/siguientes para una lista `first`/`max` sin total, donde una página
   llena es la única señal de que hay más).
@@ -207,6 +210,13 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   se registra y el servicio decide: sin disponible es 409 `STK-001`, un material o almacén
   retirado es 400/422, y la notificación lo dice. Lo único que el diálogo exige es lo evidente
   (material, almacén, cantidad positiva, destino distinto del origen).
+- **Solo una reserva activa cambia, y lo decide el servicio.** Modificar (`PUT`, sin el material),
+  liberar y consumir (`POST` sin cuerpo) y cancelar (`DELETE`, que devuelve la reserva cancelada y
+  pide `stock-delete`) son llamadas distintas y no se funden: la pantalla solo las ofrece en las
+  filas activas porque en las demás el servicio responde 422 `RES-001`, y si aun así llega, la
+  notificación lo dice. «Salida con esta reserva» es la salida de movimientos con `reservationId`:
+  material, almacén y cantidad van fijos porque el servicio exige que coincidan exactamente con lo
+  reservado; referencia y notas son lo que el consumo directo no lleva.
 - **«Sacar a la persona» son tres llamadas en ese orden, y no se funden en una.** Desactivar
   solo bloquea el siguiente login, cerrar las sesiones no toca las offline y un token offline
   sobrevive a las dos cosas hasta que se revoca: es lo que el README de `mto-users` deja
@@ -327,6 +337,10 @@ a campo, el proyecto sincronizado sin botón de modificar, el editor de material
 existencias: cifras y libro de un material en un almacén, la lista bajo mínimo que sigue al almacén
 y cuya fila elige el material, el libro filtrado en el servicio, la entrada con su proveedor, la
 salida sin stock con su mensaje, la transferencia que exige otro almacén, el ajuste solo con
-`stock-adjust`) y
+`stock-adjust`; las reservas: la lista filtrada y ordenada en el servicio con las acciones solo en
+las filas activas y cancelar solo con `stock-delete`, lectura sin acciones, el alta con su proyecto
+obligatorio, la modificación sin tocar el material, liberar, cancelar y consumir confirmados y el
+422 `RES-001` notificado, y la salida desde una reserva con material, almacén y cantidad fijos y su
+`reservationId`) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
 sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.
