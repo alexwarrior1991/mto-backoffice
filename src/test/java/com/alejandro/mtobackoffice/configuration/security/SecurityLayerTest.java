@@ -35,10 +35,11 @@ class SecurityLayerTest {
 
     private static final String CLIENT_ID = "mto-configuration-api";
     private static final String USERS_CLIENT_ID = "mto-users-api";
-    private static final KeycloakProperties PROPERTIES =
-            new KeycloakProperties("http://localhost:8082/realms/mto/", "mto-backoffice", "secret", List.of(CLIENT_ID, USERS_CLIENT_ID));
+    private static final String STOCK_CLIENT_ID = "mto-stock-api";
+    private static final KeycloakProperties PROPERTIES = new KeycloakProperties("http://localhost:8082/realms/mto/",
+            "mto-backoffice", "secret", List.of(CLIENT_ID, USERS_CLIENT_ID, STOCK_CLIENT_ID));
 
-    private final KeycloakRoleMapper mapper = new KeycloakRoleMapper(List.of(CLIENT_ID, USERS_CLIENT_ID));
+    private final KeycloakRoleMapper mapper = new KeycloakRoleMapper(List.of(CLIENT_ID, USERS_CLIENT_ID, STOCK_CLIENT_ID));
 
     @AfterEach
     void clearSecurityContext() {
@@ -80,7 +81,7 @@ class SecurityLayerTest {
     void rolesOfAClientThatIsNotListedAndScopesAreKeptApart() {
         Set<String> names = authorities(mapper.authorities(Map.of(
                 JwtClaimNames.SCOPE, "openid profile email",
-                JwtClaimNames.RESOURCE_ACCESS, Map.of("mto-stock-api", Map.of(JwtClaimNames.ROLES, List.of("stock-write"))))));
+                JwtClaimNames.RESOURCE_ACCESS, Map.of("mto-maintenance-api", Map.of(JwtClaimNames.ROLES, List.of("maintenance-write"))))));
 
         assertEquals(Set.of("SCOPE_openid", "SCOPE_profile", "SCOPE_email"), names);
     }
@@ -90,12 +91,14 @@ class SecurityLayerTest {
         Set<String> names = authorities(mapper.authorities(Map.of(
                 JwtClaimNames.RESOURCE_ACCESS, Map.of(
                         CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("config-read")),
-                        USERS_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("users-read", "users-sessions-write"))))));
+                        USERS_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("users-read", "users-sessions-write")),
+                        STOCK_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("stock-adjust"))))));
 
         assertEquals(Set.of(
                 "ROLE_CONFIG_READ", "ROLE_CLIENT_MTO_CONFIGURATION_API_CONFIG_READ",
                 "ROLE_USERS_READ", "ROLE_CLIENT_MTO_USERS_API_USERS_READ",
-                "ROLE_USERS_SESSIONS_WRITE", "ROLE_CLIENT_MTO_USERS_API_USERS_SESSIONS_WRITE"), names);
+                "ROLE_USERS_SESSIONS_WRITE", "ROLE_CLIENT_MTO_USERS_API_USERS_SESSIONS_WRITE",
+                "ROLE_STOCK_ADJUST", "ROLE_CLIENT_MTO_STOCK_API_STOCK_ADJUST"), names);
     }
 
     /** La regla que protege config-write vale igual para users-read: un rol de realm nunca abre el modulo. */
@@ -211,15 +214,41 @@ class SecurityLayerTest {
         assertEquals(fromRealm, declared);
     }
 
-    /** Emitir ROLE_ para los dos clientes solo es inocuo mientras sus nombres de rol no se solapen. */
     @Test
-    void securityRolesAndUserRolesAreDisjoint() {
+    void stockRolesMatchTheClientRolesOfMtoStockApiOnceNormalized() {
+        Set<String> declared = Set.of(StockRoles.STOCK_READ, StockRoles.STOCK_WRITE, StockRoles.STOCK_DELETE, StockRoles.STOCK_ADJUST);
+        Set<String> fromRealm = Set.of("stock-read", "stock-write", "stock-delete", "stock-adjust")
+                .stream().map(KeycloakRoleMapper::normalize).collect(Collectors.toSet());
+
+        assertEquals(fromRealm, declared);
+    }
+
+    /** Emitir ROLE_ para los tres clientes solo es inocuo mientras sus nombres de rol no se solapen. */
+    @Test
+    void theRoleNamesOfTheListedClientsAreDisjoint() {
         Set<String> configuration = Set.of(SecurityRoles.CONFIG_READ, SecurityRoles.CONFIG_WRITE, SecurityRoles.CONFIG_DELETE,
                 SecurityRoles.CONFIG_IMPORT, SecurityRoles.LOV_MANAGE, SecurityRoles.CONFIG_AUDIT);
         Set<String> users = Set.of(UserRoles.USERS_READ, UserRoles.USERS_WRITE, UserRoles.USERS_DELETE,
                 UserRoles.USERS_ROLES_WRITE, UserRoles.USERS_PASSWORD_RESET, UserRoles.USERS_PROFILES_WRITE,
                 UserRoles.USERS_SESSIONS_WRITE, UserRoles.USERS_CREDENTIALS_WRITE);
+        Set<String> stock = Set.of(StockRoles.STOCK_READ, StockRoles.STOCK_WRITE, StockRoles.STOCK_DELETE, StockRoles.STOCK_ADJUST);
 
         assertTrue(java.util.Collections.disjoint(configuration, users));
+        assertTrue(java.util.Collections.disjoint(configuration, stock));
+        assertTrue(java.util.Collections.disjoint(users, stock));
+    }
+
+    /** Un rol de realm llamado como un permiso de almacen tampoco abre nada: solo ROLE_REALM_. */
+    @Test
+    void aRealmRoleNamedLikeAStockPermissionNeverOpensTheModule() {
+        Set<String> names = authorities(mapper.authorities(Map.of(
+                JwtClaimNames.REALM_ACCESS, Map.of(JwtClaimNames.ROLES, List.of("stock-read", "mto-warehouse-admin")),
+                JwtClaimNames.RESOURCE_ACCESS, Map.of(STOCK_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("stock-write"))))));
+
+        assertTrue(names.contains("ROLE_REALM_STOCK_READ"));
+        assertTrue(names.contains("ROLE_REALM_MTO_WAREHOUSE_ADMIN"));
+        assertTrue(names.contains("ROLE_STOCK_WRITE"));
+        assertTrue(names.contains("ROLE_CLIENT_MTO_STOCK_API_STOCK_WRITE"));
+        assertFalse(names.contains("ROLE_STOCK_READ"));
     }
 }

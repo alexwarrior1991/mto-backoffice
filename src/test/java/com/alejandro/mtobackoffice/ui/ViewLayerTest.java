@@ -49,6 +49,7 @@ import com.alejandro.mtobackoffice.client.dto.users.UserEnabledRequest;
 import com.alejandro.mtobackoffice.client.dto.users.UsersPage;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.ui.users.UserAttributes;
+import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.alejandro.mtobackoffice.ui.users.UsersView;
 import com.vaadin.flow.component.combobox.MultiSelectComboBox;
 import com.vaadin.flow.component.textfield.PasswordField;
@@ -102,6 +103,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -2153,5 +2155,25 @@ class ViewLayerTest {
         LocatorJ._get(UserDetailView.class);
         LocatorJ._get(H2.class, spec -> spec.withText("ana"));
         assertTrue(LocatorJ._find(ClientRolesView.class).isEmpty());
+    }
+
+    // --- Almacen (mto-stock): los mensajes de sus errores -------------------------------------------
+
+    private static BackofficeApiException stockError(int status, String code, String message) {
+        ApiProblem problem = new ApiProblem(null, HttpStatus.valueOf(status).name(), status, message, null, code, null, null, null, false, null, null);
+        return BackofficeApiException.of(HttpStatusCode.valueOf(status), problem, "corr-s9", null, "POST /api/stock/movements/outputs");
+    }
+
+    /** Un 422 sin campos es una regla de negocio y un 409 STK-001 es falta de stock: no «peticion no valida» ni «recarga». */
+    @Test
+    void stockErrorsReadAsStockErrorsInTheNotifications() {
+        assertEquals("La operacion no es posible. Only active reservations can be changed",
+                UiErrors.message(stockError(422, "RES-001", "Only active reservations can be changed")));
+        assertEquals("No hay stock disponible suficiente. Insufficient stock for material m in warehouse w: requested 5, available 2",
+                UiErrors.message(stockError(409, "STK-001", "Insufficient stock for material m in warehouse w: requested 5, available 2")));
+        assertEquals("Conflicto con otro cambio: recarga y vuelve a intentarlo. Material code 'MAT-001' already exists",
+                UiErrors.message(stockError(409, "MAT-409", "Material code 'MAT-001' already exists")));
+        assertEquals("La peticion no es valida. Material 'MAT-001' is inactive",
+                UiErrors.message(stockError(400, "VAL-001", "Material 'MAT-001' is inactive")));
     }
 }

@@ -16,16 +16,19 @@ import java.util.List;
  *   <li>el fallback del gateway (503): {@code service} y {@code correlationId};</li>
  *   <li>mto-users: los campos RFC 9457 mas {@code errorCode} (que aqui cae en {@code code}),
  *       {@code correlationId}, {@code timestamp} y {@code validationErrors} de dos campos, sin
- *       codigo por error (que cae en {@code errors}).</li>
+ *       codigo por error (que cae en {@code errors});</li>
+ *   <li>mto-stock: no es problem+json sino {@code application/json} con {@code error} (el nombre del
+ *       estado, que cae en {@code title}), {@code message} (cae en {@code detail}), {@code errorCode},
+ *       {@code correlationId} (eco de la cabecera, o nulo) y {@code validationErrors} como mto-users.</li>
  * </ul>
  * Todo es nullable y lo desconocido se ignora, asi que un campo nuevo en cualquiera de ellos no
  * rompe la decodificacion.
  */
 public record ApiProblem(
         String type,
-        String title,
+        @JsonAlias("error") String title,
         Integer status,
-        String detail,
+        @JsonAlias("message") String detail,
         String instance,
         @JsonAlias("errorCode") String code,
         String traceId,

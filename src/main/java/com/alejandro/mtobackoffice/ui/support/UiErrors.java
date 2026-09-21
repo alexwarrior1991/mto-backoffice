@@ -63,10 +63,16 @@ public final class UiErrors {
             case ForbiddenApiException ignored -> "No tienes permiso para esta operacion.";
             case NotFoundApiException ignored -> "No se ha encontrado lo que se pedia."
                     + detail(exception);
+            // Un 422 sin errores por campo es una regla de negocio (mto-stock: reserva no activa, conjunto
+            // sin lista de materiales, almacen inactivo...): la peticion esta bien, la operacion no cabe.
+            case ValidationApiException business when business.getStatus().value() == 422 && !business.getProblem().hasFieldErrors() ->
+                    "La operacion no es posible." + detail(exception);
             case ValidationApiException validation -> validation.getProblem().hasFieldErrors()
                     ? "Datos no validos: " + validation.getProblem().errors().stream()
                             .map(UiErrors::field).collect(Collectors.joining("; "))
                     : "La peticion no es valida." + detail(exception);
+            case ConflictApiException stock when "STK-001".equals(stock.getProblem().code()) -> "No hay stock disponible suficiente."
+                    + detail(exception);
             case ConflictApiException ignored -> "Conflicto con otro cambio: recarga y vuelve a intentarlo."
                     + detail(exception);
             // Un 502 no es transitorio (mto-users sin SMTP, por ejemplo): su detalle es lo unico que lo explica.

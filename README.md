@@ -20,7 +20,7 @@ Séptimo repositorio del dominio, hermano e independiente de
 [`mto-maintenance`](../mto-maintenance), [`mto-users`](../mto-users) y
 [`mto-gateway`](../mto-gateway); la infraestructura local es de [`mto-platform`](../mto-platform).
 
-## Estado: fase 5
+## Estado: fase 6 (en curso)
 
 - **Fase 0**: circuito completo con lo mínimo. Cliente `mto-backoffice` en el realm, login OIDC,
   marco con menú filtrado por roles y la pantalla de inicio con el diagnóstico del token.
@@ -114,6 +114,18 @@ Séptimo repositorio del dominio, hermano e independiente de
   es la única señal de que hay más; son asignaciones directas (quien tiene un rol por un perfil
   aparece en el perfil, no en el rol), y una fila abre la ficha.
 
+- **Fase 6** (en curso): el módulo **Almacén** sobre `mto-stock`, el inventario de la nave de
+  catenaria: catálogos (almacenes, proveedores, proyectos, materiales), existencias y movimientos
+  (entradas, salidas, transferencias, ajustes), reservas, conjuntos con su lista de materiales y su
+  disponibilidad, e historial de revisiones. S0 deja la base: los roles de `mto-stock-api` se leen
+  del access token junto a los de los otros dos clientes, `ApiErrorDecoder` entiende el JSON de
+  error de `mto-stock` (que no es `problem+json`), siete clientes `@HttpExchange` cubren la API
+  entera (`/api/stock/**`) y el menú tiene el grupo «Almacén». Antes de las pantallas,
+  `mto-stock` ganó lo que la pantalla necesita y la API no daba (su PR previo): `search` por código o
+  nombre y `active` en las cinco listas de catálogo, y los proyectos sincronizados desde
+  `mto-configuration` expuestos con su origen y rechazados en el `PUT`. Las pantallas llegan por
+  fases: catálogos (S1), existencias y movimientos (S2), reservas (S3), conjuntos (S4), historial (S5).
+
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|
 | Exportar perfiles, consultar, descargar | `config-read` |
@@ -149,6 +161,17 @@ Las pantallas de usuarios (fase 5) siguen los permisos de `mto-users-api`, y nin
 | Quitar una credencial | `users-credentials-write` |
 | «Sacar a la persona» (desactivar, cerrar sesiones, revocar offline) | `users-write` **y** `users-sessions-write` |
 
+Las pantallas de almacén (fase 6) siguen los permisos de `mto-stock-api`, que el servicio aplica por
+método HTTP (`GET` lee, `POST`/`PUT` escriben, `DELETE` cancela) y ninguno implica otro:
+
+| Acción en el almacén | Roles de cliente de `mto-stock-api` |
+|---|---|
+| Ver catálogos, existencias, movimientos, reservas, conjuntos e historial | `stock-read` |
+| Nuevo y modificar en los catálogos y conjuntos (retirar es modificar con `active=false`) | `stock-write` |
+| Entradas, salidas y transferencias; crear, modificar, liberar y consumir reservas | `stock-write` |
+| Ajustes de inventario | `stock-write` **y** `stock-adjust` |
+| Cancelar una reserva | `stock-delete` |
+
 Esconder un botón es cortesía: la guarda real es `@RolesAllowed` en la vista y el 403 del servicio.
 Con los usuarios de desarrollo, `config.responsable` (`mto-admin`) lo ve todo; `config.editor`
 (`mto-editor`) ve los catálogos pero no puede tocarlos: le falta `lov-manage`, a propósito.
@@ -175,7 +198,9 @@ cd ../mto-backoffice
 | `config.responsable` | `mto-admin` | todo lo de configuración; los `config.*` no llevan `users-*`, así que no ven «Usuarios» |
 | `config.editor` | `mto-editor` | lectura; escritura de infraestructura pero no de catálogos (sin `lov-manage`) |
 | `config.lector` | `mto-viewer` | solo lectura |
-| `almacen.lector` | `mto-warehouse-viewer` | nada de configuración: el menú no ofrece las pantallas y la URL directa se deniega |
+| `almacen.lector` | `mto-warehouse-viewer` | Almacén en solo lectura; nada de configuración ni de usuarios: el menú no ofrece esas pantallas y la URL directa se deniega |
+| `almacen.operario` | `mto-warehouse-operator` | Almacén: catálogos, movimientos y reservas, sin ajustes ni cancelaciones |
+| `almacen.responsable` | `mto-warehouse-admin` | el módulo Almacén entero (fase 6) |
 | `usuarios.responsable` | `mto-users-admin` | el módulo Usuarios entero (fase 5); nada de configuración |
 | `usuarios.gestor` | `mto-users-manager` | Usuarios, todo menos borrar |
 | `usuarios.lector` | `mto-users-viewer` | Usuarios en solo lectura |
@@ -193,7 +218,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 | `KEYCLOAK_ISSUER_URI` | Realm que emite los tokens | `http://auth.mto.local:8082/realms/mto` |
 | `KEYCLOAK_CLIENT_ID` | Cliente confidencial de esta aplicación | `mto-backoffice` |
 | `KEYCLOAK_CLIENT_SECRET` | Su secreto | vacío (`dev`: el local; `prod`: obligatorio) |
-| `KEYCLOAK_ROLES_CLIENT_IDS` | Clientes cuyos roles del access token son los permisos (lista por comas) | `mto-configuration-api,mto-users-api` |
+| `KEYCLOAK_ROLES_CLIENT_IDS` | Clientes cuyos roles del access token son los permisos (lista por comas) | `mto-configuration-api,mto-users-api,mto-stock-api` |
 | `MTO_GATEWAY_URL` | El gateway | `http://localhost:8090` |
 | `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP | `2s` / `15s` |
 
@@ -205,14 +230,15 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 - Cliente **confidencial** `mto-backoffice` (Authorization Code con secreto) declarado en
   `keycloak/mto-backoffice-partial-import.json`, con los mismos cinco audience mapper que
   `mto-frontend`, que queda intacto y reservado a una futura SPA. Detalle en `keycloak/README.md`.
-- Los permisos son roles de **cliente** de dos clientes: `mto-configuration-api` (`config-read`,
+- Los permisos son roles de **cliente** de tres clientes: `mto-configuration-api` (`config-read`,
   `config-write`, `config-delete`, `config-import`, `lov-manage`, `config-audit`) para las
-  pantallas de configuración y `mto-users-api` (`users-read`, `users-write`, `users-delete`,
+  pantallas de configuración, `mto-users-api` (`users-read`, `users-write`, `users-delete`,
   `users-roles-write`, `users-password-reset`, `users-profiles-write`, `users-sessions-write`,
-  `users-credentials-write`) para el módulo de usuarios. Llegan como `ROLE_CONFIG_READ`,
-  `ROLE_USERS_READ`... y se comprueban con `@RolesAllowed` en cada vista; cada uno sale además
-  cualificado por su cliente (`ROLE_CLIENT_MTO_USERS_API_USERS_READ`). Que un rol de un cliente no
-  se confunda con uno del otro depende de que sus nombres no se solapen, cosa que
+  `users-credentials-write`) para el módulo de usuarios y `mto-stock-api` (`stock-read`,
+  `stock-write`, `stock-delete`, `stock-adjust`) para el de almacén. Llegan como `ROLE_CONFIG_READ`,
+  `ROLE_USERS_READ`, `ROLE_STOCK_READ`... y se comprueban con `@RolesAllowed` en cada vista; cada
+  uno sale además cualificado por su cliente (`ROLE_CLIENT_MTO_USERS_API_USERS_READ`). Que un rol
+  de un cliente no se confunda con uno de otro depende de que sus nombres no se solapen, cosa que
   `SecurityLayerTest` comprueba. Los roles de realm (`mto-admin`, `mto-users-manager`...) llegan
   solo como `ROLE_REALM_*`: un perfil nunca se confunde con un permiso.
 - Keycloak pone los roles en el **access token**, no en el ID token; por eso `BackofficeOidcUserService`
@@ -247,7 +273,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 ## Cómo se habla con la API
 
 - Un `RestClient` hacia el gateway (`/api/configuration/**` → `/api/v1/configuration/**`,
-  `/api/users/**` → `/api/v1/users/**`) con el Bearer de la persona y un `X-Correlation-Id` nuevo
+  `/api/users/**` → `/api/v1/users/**`, `/api/stock/**` → `/api/v1/inventory/**`) con el Bearer de la persona y un `X-Correlation-Id` nuevo
   por llamada, que el gateway acepta y propaga: el mismo id sale en el log del gateway, en el del
   servicio y en la notificación de error que ve la persona.
 - Interfaces declarativas `@HttpExchange` escritas a mano, pantalla a pantalla (`client/`). Nada de
@@ -257,12 +283,16 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   `mto-configuration` es la forma DTO `{content, page:{size,number,totalElements,totalPages}}`,
   fijada allí con `spring.data.web.pageable.serialization-mode: via_dto`. La de `mto-users` es la
   de Keycloak: `first`/`max` (`max` ≤ 200) y una página `{content, first, max, total}` solo en la
-  búsqueda; las listas de miembros de un perfil o de un rol van planas, sin total.
+  búsqueda; las listas de miembros de un perfil o de un rol van planas, sin total. La de `mto-stock`
+  es el `Pageable` de Spring por parámetros (`page`, `size`, `sort=campo,asc`, solo atributos de la
+  entidad) con la misma página anidada que configuración.
 - Errores: `ApiErrorDecoder` entiende el `application/problem+json` de `mto-configuration` (`code`,
   `traceId`, `retryable`, `errors[{field,code,message}]`), el de `mto-users` (`errorCode`,
-  `correlationId`, `validationErrors[{field,message}]`, `Retry-After` en su 503), el 401/403 del
-  gateway (solo `correlationId`) y el 503 de su circuit breaker (`Retry-After`, `service`), y los
-  convierte en `NotFoundApiException`, `ValidationApiException`, `ForbiddenApiException`,
+  `correlationId`, `validationErrors[{field,message}]`, `Retry-After` en su 503), el JSON de error
+  de `mto-stock` (no es `problem+json`: `error`, `message`, `errorCode`, `correlationId`,
+  `validationErrors[{field,message}]`; 409 `STK-001` es falta de stock y un 422 sin campos es una
+  regla de negocio), el 401/403 del gateway (solo `correlationId`) y el 503 de su circuit breaker
+  (`Retry-After`, `service`), y los convierte en `NotFoundApiException`, `ValidationApiException`, `ForbiddenApiException`,
   `SessionExpiredApiException`, `ConflictApiException` o `ServiceUnavailableApiException`.
 
 ## Pruebas

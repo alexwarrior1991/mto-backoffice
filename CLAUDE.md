@@ -52,7 +52,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (claims → `ROLE_*` para los clientes de `app.keycloak.roles-client-ids`, más el sinónimo
   `ROLE_CLIENT_<CLIENTE>_*`), `BackofficeUser` (el usuario con las audiencias del access token),
   `CurrentPrincipal` (nombre del principal desde cualquier hilo), `PrincipalSessionRecorder`,
-  `SecurityRoles` y `UserRoles` (los permisos de `mto-configuration-api` y de `mto-users-api`),
+  `SecurityRoles`, `UserRoles` y `StockRoles` (los permisos de `mto-configuration-api`, de
+  `mto-users-api` y de `mto-stock-api`),
   `SecurityAuthorityPrefixes`, `JwtClaimNames`, `KeycloakProperties`.
 - `configuration/client` — `GatewayClientConfiguration` (un `RestClient` hacia el gateway con dos
   interceptores, `BearerTokenInterceptor` y `CorrelationIdInterceptor`, y `ApiErrorDecoder` como
@@ -72,7 +73,15 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `first`/`max`, alta, modificación parcial, activar, borrado, contraseña temporal, correo de
   acciones, sesiones normales y offline, credenciales, roles de cliente —quitar es un `DELETE`
   con cuerpo—, perfiles y sus miembros; sus DTO son records en `client/dto/users`, con
-  `UsersPage` para `{content, first, max, total}`). Los DTO
+  `UsersPage` para `{content, first, max, total}`); `client/stock` (la API de `mto-stock` bajo
+  `/api/stock`: `StockCatalogueClient<D, C, U>`, lo que comparten los cinco catálogos —lista con
+  `search`/`active` y `Pageable`, lectura, alta, modificación con `active`, historial— con
+  `WarehouseClient`, `SupplierClient`, `ProjectClient`, `MaterialClient` (además existencias,
+  bajo mínimo y libro por material) y `AssemblyClient` (además disponibilidad) resolviendo el
+  genérico contra la subinterfaz; `MovementClient` (entradas, salidas, ajustes, transferencias y
+  el libro) y `ReservationClient` (alta, modificación, cancelar con un `DELETE` que devuelve
+  cuerpo, liberar, consumir); DTO como records en `client/dto/stock`, con `RevisionDto<T>` para el
+  historial y enumerados con etiqueta). Los DTO
   (`client/dto`): `LovDto` es un record con solo las claves que usa la UI y
   `@JsonInclude(NON_NULL)`; los maestros (`client/dto/master`) son **clases mutables** que heredan
   de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo y los hijos
@@ -109,7 +118,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   servicio; `TakeOut`, las tres llamadas de «sacar a la persona» en su orden, parando en el
   primer fallo; `UserProfilesView` en `usuarios/perfiles` y `ClientRolesView` en `usuarios/roles`,
   los dos catálogos de solo lectura con filtro local, y `MembersPanel`, los miembros de un perfil
-  o de un rol paseados sin total), `ui/support` (`UiErrors`: excepción →
+  o de un rol paseados sin total), `ui/stock` (`StockRoutes`, las rutas del módulo de almacén bajo
+  `almacen`; las vistas llegan por fases), `ui/support` (`UiErrors`: excepción →
   `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`;
   `OffsetPager`: anteriores/siguientes para una lista `first`/`max` sin total, donde una página
   llena es la única señal de que hay más).
@@ -128,11 +138,12 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   access token.
 - **Los roles de realm se emiten solo como `ROLE_REALM_*`, nunca como `ROLE_*`.** Los permisos que
   comprueban las vistas (`@RolesAllowed("CONFIG_READ")`, `@RolesAllowed("USERS_READ")`) son roles
-  de **cliente** de `mto-configuration-api` y de `mto-users-api` (`app.keycloak.roles-client-ids`).
+  de **cliente** de `mto-configuration-api`, `mto-users-api` y `mto-stock-api`
+  (`app.keycloak.roles-client-ids`).
   Si un rol de realm se emitiera con `ROLE_`, quien administre el realm podría crear un rol llamado
   como un permiso y concederlo a cualquiera (`SecurityLayerTest`). El mapeo emite `ROLE_X` para
-  los dos clientes, así que sus nombres de rol no pueden solaparse (`config-*` y `lov-manage`
-  frente a `users-*`; `SecurityLayerTest` lo comprueba), y además `ROLE_CLIENT_<CLIENTE>_X`.
+  los tres clientes, así que sus nombres de rol no pueden solaparse (`config-*` y `lov-manage`,
+  `users-*` y `stock-*`; `SecurityLayerTest` lo comprueba), y además `ROLE_CLIENT_<CLIENTE>_X`.
 - **Sin descubrimiento OIDC en el arranque.** `KeycloakClientRegistrations` deriva los endpoints del
   issuer y añade `end_session_endpoint` a los metadatos; con `issuer-uri` en YAML la aplicación no
   arrancaría sin Keycloak, y con él tampoco arrancarían los tests de contexto. El JWK Set se pide al
@@ -148,16 +159,21 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 - **Los DTO son un subconjunto**: solo las claves que la UI usa. Un campo nuevo en el servicio no
   rompe nada aquí; lo desconocido se ignora.
 - **Los errores se tipan en la capa de cliente**, no en las vistas. `ApiErrorDecoder` tolera los
-  cuatro formatos que llegan (el `problem+json` de `mto-configuration` con `code`/`traceId`/`errors`,
+  cinco formatos que llegan (el `problem+json` de `mto-configuration` con `code`/`traceId`/`errors`,
   el de `mto-users` con `errorCode`/`validationErrors[{field,message}]` —alias en `ApiProblem`, sin
-  código por campo—, el 401/403 del gateway solo con `correlationId`, y el 503 del fallback del
-  gateway con `Retry-After` y `service`) y las vistas solo conocen `BackofficeApiException` y sus
-  subclases. Un 502 no es transitorio y su notificación lleva el detalle.
+  código por campo—, el JSON de `mto-stock`, que no es `problem+json` y trae `error` y `message`
+  —alias en `title` y `detail`—, el 401/403 del gateway solo con `correlationId`, y el 503 del
+  fallback del gateway con `Retry-After` y `service`) y las vistas solo conocen
+  `BackofficeApiException` y sus subclases. Un 502 no es transitorio y su notificación lleva el
+  detalle; un 409 `STK-001` es falta de stock y un 422 sin errores por campo es una regla de negocio
+  (`UiErrors` los dice así, no como «conflicto» ni «petición no válida»).
 - **La paginación es la forma DTO** `{content, page:{size,number,totalElements,totalPages}}`, fijada
   en `mto-configuration` con `spring.data.web.pageable.serialization-mode: via_dto` y pinada allí
   por test. `PageResponse<T>` la lee (y tolera `first`/`last` de stock y maintenance). La API de
   usuarios pagina al estilo de Keycloak (`first`/`max` con `max` ≤ 200, `UsersPage<T>`), y las
-  listas de miembros de un perfil o de un rol no traen total.
+  listas de miembros de un perfil o de un rol no traen total. La de almacén es el `Pageable` de
+  Spring por parámetros (`page`, `size`, `sort=campo,asc`; solo atributos de la entidad, o el
+  servicio responde 500) con la misma página anidada, que `PageResponse<T>` ya lee.
 - **Un usuario se modifica con lo que cambió, y la lista se pide como la pide Keycloak.** El
   `PUT /api/users/{id}` de `mto-users` es parcial: `null` es «no tocar» y la cadena vacía, «vaciar»,
   así que `UserForm.toUpdateRequest(original)` compara con lo leído y solo manda lo distinto; el
@@ -248,10 +264,14 @@ el estado por familia y el fichero con sus cabeceras, qué es descargable; los u
 búsqueda `first/max` con su total, atributos repetidos, alta 201 sin la contraseña en el `toString`,
 `PUT` parcial y `PATCH` de activo, el `DELETE` con cuerpo de los roles, perfiles, sesiones,
 credenciales, contraseña y correo, miembros sin total, catálogos, y el `problem+json` de
-`mto-users` por alias),
-`SecurityLayerTest` (mapeo de roles de los dos clientes con el sinónimo cualificado, un cliente no
-listado no aporta nada, un rol de realm `users-read` nunca abre el módulo, `SecurityRoles` y
-`UserRoles` coinciden con el realm y son disjuntos, registro OIDC sin descubrimiento, roles desde
+`mto-users` por alias; el almacén: `search`/`active`/`Pageable` y la página anidada de los
+catálogos, alta y modificación con `active`, el proyecto sincronizado, existencias y libro de un
+material, los cuatro movimientos en sus rutas y la transferencia con dos apuntes, la reserva
+cancelada con un `DELETE` con cuerpo y liberada o consumida con `POST` sin cuerpo, el conjunto con
+su BOM y su disponibilidad, el historial tipado y el JSON de error de `mto-stock` por alias),
+`SecurityLayerTest` (mapeo de roles de los tres clientes con el sinónimo cualificado, un cliente no
+listado no aporta nada, un rol de realm `users-read` o `stock-read` nunca abre el módulo,
+`SecurityRoles`, `UserRoles` y `StockRoles` coinciden con el realm y son disjuntos, registro OIDC sin descubrimiento, roles desde
 el access token, `CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
 de la ruta y su filtro local, menú por roles, controles de escritura ocultos sin permiso, alta por
 diálogo, errores del servicio campo a campo, borrado con confirmación, lote sobre la selección,
@@ -277,6 +297,7 @@ de vuelta a la lista; sesiones normales y offline listadas y cerradas una a una 
 confirmación, la sesión ajena avisada y recargada, credenciales quitadas con su aviso, y «sacar
 a la persona» con sus tres llamadas en orden y parando en el primer fallo; los catálogos: las
 rutas estáticas ganan a `:userId`, el catálogo de perfiles con lo que concede y sus miembros
-paseados sin total, el de roles por cliente con quién los tiene, y la fila que abre la ficha) y
+paseados sin total, el de roles por cliente con quién los tiene, y la fila que abre la ficha; el
+almacén: los mensajes de sus errores) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
 sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.

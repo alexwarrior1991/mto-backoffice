@@ -10,6 +10,13 @@ import com.alejandro.mtobackoffice.client.configuration.SectionInsulatorClient;
 import com.alejandro.mtobackoffice.client.configuration.StationClient;
 import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
+import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
+import com.alejandro.mtobackoffice.client.stock.MaterialClient;
+import com.alejandro.mtobackoffice.client.stock.MovementClient;
+import com.alejandro.mtobackoffice.client.stock.ProjectClient;
+import com.alejandro.mtobackoffice.client.stock.ReservationClient;
+import com.alejandro.mtobackoffice.client.stock.SupplierClient;
+import com.alejandro.mtobackoffice.client.stock.WarehouseClient;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.configuration.security.KeycloakClientRegistrations;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -81,6 +88,41 @@ public class GatewayClientConfiguration {
                 .requestInterceptor(new CorrelationIdInterceptor(correlationHeader))
                 .defaultStatusHandler(HttpStatusCode::isError, errors)
                 .build();
+    }
+
+    @Bean
+    public MaterialClient materialClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(MaterialClient.class);
+    }
+
+    @Bean
+    public WarehouseClient warehouseClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(WarehouseClient.class);
+    }
+
+    @Bean
+    public SupplierClient supplierClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(SupplierClient.class);
+    }
+
+    @Bean
+    public ProjectClient projectClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(ProjectClient.class);
+    }
+
+    @Bean
+    public AssemblyClient assemblyClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(AssemblyClient.class);
+    }
+
+    @Bean
+    public MovementClient movementClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(MovementClient.class);
+    }
+
+    @Bean
+    public ReservationClient reservationClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(ReservationClient.class);
     }
 
     @Bean
