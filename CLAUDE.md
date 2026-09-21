@@ -103,9 +103,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   propiedades se llaman como los campos del servicio para `ServerValidation`; `UserAttributes`,
   los atributos como texto `clave=valor` por línea; `UserDetailView` en `usuarios/:userId`, la
   ficha con su cabecera, su botonera por permiso y un `TabSheet` de paneles `LazyPanel`, que
-  piden sus datos la primera vez que se abren: `UserProfilesPanel` y `UserRolesPanel`;
-  `ResetPasswordDialog` y `ExecuteActionsEmailDialog`, cada uno con su `Binder` sobre un `Form`
-  con los nombres del servicio), `ui/support` (`UiErrors`: excepción →
+  piden sus datos la primera vez que se abren: `UserProfilesPanel`, `UserRolesPanel`,
+  `UserSessionsPanel` (normales y offline) y `UserCredentialsPanel`; `ResetPasswordDialog` y
+  `ExecuteActionsEmailDialog`, cada uno con su `Binder` sobre un `Form` con los nombres del
+  servicio; `TakeOut`, las tres llamadas de «sacar a la persona» en su orden, parando en el
+  primer fallo), `ui/support` (`UiErrors`: excepción →
   `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`).
 - `configuration/vaadin` — `BackofficeSystemMessages`, los mensajes de sistema de Vaadin en
   castellano y con el aviso de sesión caducada apagado (recarga → login → SSO).
@@ -163,6 +165,13 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   asignar y quitar perfiles o roles **pintan lo que devuelve el servicio** (la lista actualizada),
   sin releer; y las rutas estáticas del módulo (`usuarios/perfiles`, `usuarios/roles`) ganan a
   `usuarios/:userId` porque Vaadin resuelve antes los segmentos literales.
+- **«Sacar a la persona» son tres llamadas en ese orden, y no se funden en una.** Desactivar
+  solo bloquea el siguiente login, cerrar las sesiones no toca las offline y un token offline
+  sobrevive a las dos cosas hasta que se revoca: es lo que el README de `mto-users` deja
+  explícitamente en manos del cliente. `TakeOut.run` hace `PATCH /enabled {false}`,
+  `DELETE /sessions` y `DELETE /offline-sessions`, para en el primer `BackofficeApiException` y
+  devuelve lo hecho y el paso que falló; el botón pide `users-write` **y** `users-sessions-write`
+  (`hasAllRoles`). No es una regla nueva de negocio: es la orquestación documentada allí.
 - **El menú no es una guarda.** `MainLayout` esconde lo que la persona no puede abrir; quien manda
   es `@RolesAllowed` en la vista y el 403 del servicio. Dentro de una vista pasa lo mismo: los
   botones de `LovCrudView` siguen los permisos del servicio (`config-write`+`lov-manage` para crear
@@ -260,6 +269,8 @@ atributos; la ficha: cabecera y pestañas cargadas al abrirse, usuario desconoci
 lista, cada botón y cada panel tras su permiso, perfiles y roles asignados y quitados pintando la
 respuesta, contraseña temporal por defecto y la política del realm sobre el campo, el correo de
 acciones con su 502 detallado y sin email, modificar y desactivar repintando la cabecera, borrar
-de vuelta a la lista) y
+de vuelta a la lista; sesiones normales y offline listadas y cerradas una a una o todas con
+confirmación, la sesión ajena avisada y recargada, credenciales quitadas con su aviso, y «sacar
+a la persona» con sus tres llamadas en orden y parando en el primer fallo) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
 sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.

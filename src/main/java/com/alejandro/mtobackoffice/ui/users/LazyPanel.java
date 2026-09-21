@@ -25,5 +25,12 @@ abstract class LazyPanel extends VerticalLayout {
         load();
     }
 
+    /** Vuelve a pedir los datos solo si ya se habian pedido: si no, los pedira al abrirse. */
+    final void reloadIfLoaded() {
+        if (loaded) {
+            reload();
+        }
+    }
+
     protected abstract void load();
 }

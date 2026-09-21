@@ -41,10 +41,10 @@ import java.util.Map;
 
 /**
  * La ficha de un usuario: cabecera con lo que es, botonera con lo que se le puede hacer y una
- * pestana por cada cosa que Keycloak guarda aparte (perfiles, roles de cliente; sesiones y
- * credenciales llegan en la fase siguiente). Cada pestana pide sus datos la primera vez que se
- * abre. Cada boton sigue su permiso de {@code mto-users-api}; esconderlo es cortesia, la guarda
- * es el servicio.
+ * pestana por cada cosa que Keycloak guarda aparte (perfiles, roles de cliente, sesiones y
+ * credenciales). Cada pestana pide sus datos la primera vez que se abre. Cada boton sigue su
+ * permiso de {@code mto-users-api}; esconderlo es cortesia, la guarda es el servicio. «Sacar a la
+ * persona» pide {@code users-write} y {@code users-sessions-write} a la vez: son sus tres llamadas.
  *
  * <p>Las rutas estaticas del modulo ({@code usuarios/perfiles}, {@code usuarios/roles}) ganan a
  * {@code :userId}: Vaadin resuelve antes los segmentos literales.</p>
@@ -59,8 +59,11 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
     static final String RESET_PASSWORD_ID = "user-reset-password";
     static final String ACTIONS_EMAIL_ID = "user-actions-email";
     static final String DELETE_ID = "user-delete";
+    static final String TAKE_OUT_ID = "user-take-out";
     static final String PROFILES_TAB = "Perfiles";
     static final String ROLES_TAB = "Roles de cliente";
+    static final String SESSIONS_TAB = "Sesiones";
+    static final String CREDENTIALS_TAB = "Credenciales";
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault());
 
     private final UsersClient client;
@@ -76,6 +79,7 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
     private final Div tabsHolder = new Div();
 
     private UserDto user;
+    private UserSessionsPanel sessions;
 
     public static RouteParameters parametersOf(String userId) {
         return new RouteParameters(USER_ID_PARAMETER, userId);
@@ -140,6 +144,12 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
             email.setId(ACTIONS_EMAIL_ID);
             buttons.add(email);
         }
+        if (authentication.hasAllRoles(UserRoles.USERS_WRITE, UserRoles.USERS_SESSIONS_WRITE)) {
+            Button takeOut = new Button("Sacar a la persona", VaadinIcon.EXIT.create(), click -> confirmTakeOut());
+            takeOut.setId(TAKE_OUT_ID);
+            takeOut.addThemeVariants(ButtonVariant.LUMO_ERROR);
+            buttons.add(takeOut);
+        }
         if (authentication.hasRole(UserRoles.USERS_DELETE)) {
             Button delete = new Button("Borrar", VaadinIcon.TRASH.create(), click -> confirmDelete());
             delete.setId(DELETE_ID);
@@ -155,6 +165,9 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
         tabs.setWidthFull();
         tabs.add(PROFILES_TAB, new UserProfilesPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_PROFILES_WRITE)));
         tabs.add(ROLES_TAB, new UserRolesPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_ROLES_WRITE)));
+        sessions = new UserSessionsPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_SESSIONS_WRITE));
+        tabs.add(SESSIONS_TAB, sessions);
+        tabs.add(CREDENTIALS_TAB, new UserCredentialsPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_CREDENTIALS_WRITE)));
         tabs.addSelectedChangeListener(change -> loadTab(tabs, change.getSelectedTab()));
         tabsHolder.removeAll();
         tabsHolder.add(tabs);
@@ -221,6 +234,34 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }
+    }
+
+    /**
+     * Lo que el README de mto-users deja en manos del cliente: desactivar, cerrar las sesiones y
+     * revocar las offline, en ese orden ({@link TakeOut}). No borra nada.
+     */
+    private void confirmTakeOut() {
+        ConfirmDialog dialog = new ConfirmDialog("Sacar a " + user.username(),
+                "Se desactiva, se cierran sus sesiones y se revocan sus sesiones offline, en ese orden. "
+                        + "No se borra nada: podra volver cuando alguien vuelva a activarle.",
+                "Sacar", confirm -> takeOut(), "Cancelar", cancel -> { });
+        dialog.setConfirmButtonTheme("error primary");
+        dialog.open();
+    }
+
+    private void takeOut() {
+        TakeOut.Result result = TakeOut.run(client, user.id());
+        if (result.isComplete()) {
+            Notification.show(user.username() + " fuera: desactivado, sesiones cerradas y sesiones offline revocadas",
+                    5000, Notification.Position.BOTTOM_START).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+        } else {
+            String done = result.done().isEmpty() ? "nada" : String.join(" y ", result.done().stream().map(TakeOut.Step::label).toList());
+            Notification.show("No se ha podido sacar a " + user.username() + ": fallo al " + result.failed().label()
+                            + " (hecho: " + done + "). " + UiErrors.message(result.failure()),
+                    10000, Notification.Position.BOTTOM_START).addThemeVariants(NotificationVariant.LUMO_ERROR);
+        }
+        reload();
+        sessions.reloadIfLoaded();
     }
 
     private void confirmDelete() {

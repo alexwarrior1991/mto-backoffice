@@ -32,7 +32,11 @@ import com.alejandro.mtobackoffice.client.dto.users.ExecuteActionsEmailRequest;
 import com.alejandro.mtobackoffice.client.dto.users.RealmProfileSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.users.ResetPasswordRequest;
 import com.alejandro.mtobackoffice.client.dto.users.RoleNamesRequest;
+import com.alejandro.mtobackoffice.client.dto.users.UserCredentialDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
+import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
+import com.alejandro.mtobackoffice.ui.users.TakeOut;
+import org.mockito.InOrder;
 import com.alejandro.mtobackoffice.ui.users.UserDetailView;
 import com.vaadin.flow.component.tabs.TabSheet;
 import com.alejandro.mtobackoffice.client.dto.users.RequiredAction;
@@ -128,6 +132,7 @@ import java.util.ArrayList;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -1469,6 +1474,14 @@ class ViewLayerTest {
         when(usersClient.clients()).thenReturn(List.of(USERS_API, CONFIGURATION_API));
         when(usersClient.clientRoles("mto-users-api")).thenReturn(List.of(
                 new ClientRoleDto("users-read", null, false), new ClientRoleDto("users-write", null, false), new ClientRoleDto("users-delete", null, false)));
+        when(usersClient.sessions(dto.id())).thenReturn(List.of(
+                new UserSessionDto("s1", dto.username(), "10.0.0.7", Instant.parse("2026-09-21T07:00:00Z"), Instant.parse("2026-09-21T07:45:00Z"), List.of("mto-backoffice")),
+                new UserSessionDto("s2", dto.username(), "10.0.0.8", Instant.parse("2026-09-21T08:00:00Z"), null, List.of("mto-frontend", "mto-gateway"))));
+        when(usersClient.offlineSessions(dto.id())).thenReturn(List.of(
+                new UserSessionDto("o1", dto.username(), null, Instant.parse("2026-09-01T09:00:00Z"), Instant.parse("2026-09-20T09:00:00Z"), List.of("mto-frontend"))));
+        when(usersClient.credentials(dto.id())).thenReturn(List.of(
+                new UserCredentialDto("c1", "password", null, Instant.parse("2026-09-01T08:30:00Z")),
+                new UserCredentialDto("c2", "otp", "Movil", Instant.parse("2026-09-02T08:30:00Z"))));
     }
 
     @SuppressWarnings("unchecked")
@@ -1817,5 +1830,184 @@ class ViewLayerTest {
         LocatorJ._get(UsersView.class);
         assertTrue(LocatorJ._find(UserDetailView.class).isEmpty());
         NotificationsKt.expectNotifications("Borrado ana");
+    }
+
+    // --- Sesiones, credenciales y «sacar a la persona» ----------------------------------------------
+
+    @Test
+    void theSessionsTabListsBothKindsAndClosingThemNeedsThePermission() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        verify(usersClient, never()).sessions(any());
+        selectTab(2);
+
+        verify(usersClient).sessions(ANA_ID);
+        verify(usersClient).offlineSessions(ANA_ID);
+        Grid<Object> sessions = gridWithId("sessions-grid");
+        Grid<Object> offline = gridWithId("offline-sessions-grid");
+        assertEquals(2, GridKt._size(sessions));
+        assertEquals(1, GridKt._size(offline));
+        List<String> first = GridKt._getFormattedRow(sessions, 0);
+        assertTrue(first.contains("10.0.0.7") && first.contains("mto-backoffice"), first.toString());
+        assertTrue(GridKt._getFormattedRow(sessions, 1).contains("mto-frontend, mto-gateway"));
+        LocatorJ._get(Span.class, spec -> spec.withText("2 sesiones"));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 sesion offline"));
+        assertNull(sessions.getColumnByKey("actions"));
+        assertNull(offline.getColumnByKey("actions"));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("sessions-revoke-all")).isEmpty());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("offline-sessions-revoke-all")).isEmpty());
+    }
+
+    @Test
+    void closingOneSessionIsDirectAndClosingAllConfirmsForBothKinds() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_SESSIONS_WRITE");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(2);
+        Grid<Object> sessions = gridWithId("sessions-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(sessions, 0, "actions"), Button.class, spec -> spec.withId("revoke-s1")));
+
+        assertTrue(LocatorJ._find(ConfirmDialog.class).isEmpty(), "una sesion se cierra sin preguntar");
+        verify(usersClient).revokeSession(ANA_ID, "s1");
+        verify(usersClient, times(2)).sessions(ANA_ID);
+        verify(usersClient, times(2)).offlineSessions(ANA_ID);
+        NotificationsKt.expectNotifications("Sesion cerrada");
+
+        LocatorJ._click(detailButton("sessions-revoke-all"));
+        verify(usersClient, never()).revokeAllSessions(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(usersClient).revokeAllSessions(ANA_ID);
+        verify(usersClient, never()).revokeAllOfflineSessions(any());
+        NotificationsKt.expectNotifications("Sesiones cerradas");
+
+        Grid<Object> offline = gridWithId("offline-sessions-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(offline, 0, "actions"), Button.class, spec -> spec.withId("revoke-offline-o1")));
+        verify(usersClient).revokeOfflineSession(ANA_ID, "o1");
+        NotificationsKt.expectNotifications("Sesion offline revocada");
+
+        LocatorJ._click(detailButton("offline-sessions-revoke-all"));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(usersClient).revokeAllOfflineSessions(ANA_ID);
+        verify(usersClient, never()).setEnabled(any(), any());
+    }
+
+    @Test
+    void aSessionThatIsNotOfThisUserIsReportedAndTheListsReloaded() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_SESSIONS_WRITE");
+        stubUserDetail(ana());
+        ApiProblem problem = new ApiProblem("about:blank", "Not Found", 404, "Session s1 does not belong to user", null,
+                "SES-404", null, null, null, false, null, null);
+        doThrow(BackofficeApiException.of(HttpStatus.NOT_FOUND, problem, "corr-u7", null, "DELETE /api/users/" + ANA_ID + "/sessions/s1"))
+                .when(usersClient).revokeSession(ANA_ID, "s1");
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(2);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("sessions-grid"), 0, "actions"), Button.class, spec -> spec.withId("revoke-s1")));
+
+        NotificationsKt.expectNotifications("Esa sesion ya no existe o no es de este usuario.");
+        verify(usersClient, times(2)).sessions(ANA_ID);
+    }
+
+    @Test
+    void removingACredentialWarnsAndCallsTheService() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_CREDENTIALS_WRITE");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(3);
+        Grid<Object> credentials = gridWithId("credentials-grid");
+        assertEquals(2, GridKt._size(credentials));
+        assertTrue(GridKt._getFormattedRow(credentials, 0).contains("Contrasena"));
+        List<String> otp = GridKt._getFormattedRow(credentials, 1);
+        assertTrue(otp.contains("Segundo factor (OTP)") && otp.contains("Movil"), otp.toString());
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(credentials, 0, "actions"), Button.class, spec -> spec.withId("remove-credential-c1")));
+        ConfirmDialog confirm = LocatorJ._get(ConfirmDialog.class);
+        assertTrue(confirm.getElement().getProperty("message").contains("no podra entrar"), "quitar la contrasena avisa de lo que supone");
+        verify(usersClient, never()).deleteCredential(any(), any());
+        ConfirmDialogKt._fireConfirm(confirm);
+
+        verify(usersClient).deleteCredential(ANA_ID, "c1");
+        verify(usersClient, times(2)).credentials(ANA_ID);
+        NotificationsKt.expectNotifications("Credencial quitada: Contrasena");
+    }
+
+    @Test
+    void aReaderSeesTheCredentialsWithoutTheTrash() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(3);
+
+        Grid<Object> credentials = gridWithId("credentials-grid");
+        assertEquals(2, GridKt._size(credentials));
+        assertNull(credentials.getColumnByKey("actions"));
+    }
+
+    @Test
+    void theTakeOutButtonNeedsWriteAndSessionsTogether() {
+        loginAs("usuarios.mixto", "ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_DELETE", "ROLE_USERS_PASSWORD_RESET");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+
+        detailButton("user-edit");
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("user-take-out")).isEmpty(), "sin users-sessions-write no hay tercer paso");
+    }
+
+    @Test
+    void takingSomebodyOutMakesTheThreeCallsInOrder() {
+        loginAs("usuarios.responsable", "ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_SESSIONS_WRITE");
+        UserDto disabled = user(ANA_ID, "ana", "Ana", "Alvarez", "ana@mto.local", false, Map.of());
+        stubUserDetail(ana());
+        when(usersClient.get(ANA_ID)).thenReturn(ana(), disabled);
+        when(usersClient.setEnabled(ANA_ID, new UserEnabledRequest(false))).thenReturn(disabled);
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(2);
+        LocatorJ._click(detailButton("user-take-out"));
+        verify(usersClient, never()).setEnabled(any(), any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+
+        InOrder order = inOrder(usersClient);
+        order.verify(usersClient).setEnabled(ANA_ID, new UserEnabledRequest(false));
+        order.verify(usersClient).revokeAllSessions(ANA_ID);
+        order.verify(usersClient).revokeAllOfflineSessions(ANA_ID);
+        LocatorJ._get(Span.class, spec -> spec.withText("Desactivado"));
+        verify(usersClient, times(2)).sessions(ANA_ID);
+        NotificationsKt.expectNotifications("ana fuera: desactivado, sesiones cerradas y sesiones offline revocadas");
+    }
+
+    @Test
+    void takingSomebodyOutStopsAtTheFirstFailureAndSaysWhichStepFailed() {
+        loginAs("usuarios.responsable", "ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_SESSIONS_WRITE");
+        UserDto disabled = user(ANA_ID, "ana", "Ana", "Alvarez", "ana@mto.local", false, Map.of());
+        stubUserDetail(ana());
+        when(usersClient.setEnabled(ANA_ID, new UserEnabledRequest(false))).thenReturn(disabled);
+        ApiProblem problem = new ApiProblem("about:blank", "Service Unavailable", 503, "Keycloak no responde", null,
+                "KC-503", null, null, null, true, null, null);
+        doThrow(BackofficeApiException.of(HttpStatus.SERVICE_UNAVAILABLE, problem, "corr-u8", null, "DELETE /api/users/" + ANA_ID + "/sessions"))
+                .when(usersClient).revokeAllSessions(ANA_ID);
+
+        TakeOut.Result result = TakeOut.run(usersClient, ANA_ID);
+        assertFalse(result.isComplete());
+        assertEquals(List.of(TakeOut.Step.DISABLE), result.done());
+        assertEquals(TakeOut.Step.SESSIONS, result.failed());
+        verify(usersClient, never()).revokeAllOfflineSessions(any());
+        clearInvocations(usersClient);
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        LocatorJ._click(detailButton("user-take-out"));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+
+        verify(usersClient).setEnabled(ANA_ID, new UserEnabledRequest(false));
+        verify(usersClient).revokeAllSessions(ANA_ID);
+        verify(usersClient, never()).revokeAllOfflineSessions(any());
+        NotificationsKt.expectNotifications("No se ha podido sacar a ana: fallo al cerrar las sesiones (hecho: desactivar). "
+                + "El servicio no esta disponible ahora mismo. Intentalo mas tarde.");
     }
 }

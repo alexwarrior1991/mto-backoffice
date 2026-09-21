@@ -97,8 +97,15 @@ Séptimo repositorio del dominio, hermano e independiente de
   se pinta la lista que devuelve el servicio) y **Roles de cliente** (elegir cliente, luego los
   roles que aún no tiene; quitar es el `DELETE` con cuerpo). La contraseña temporal lo es por
   defecto (la fija otra persona) y la política del realm cae sobre el campo; el correo de acciones
-  necesita SMTP en el realm y, sin él, la notificación enseña el detalle del 502. Las pantallas
-  que faltan: sesiones, credenciales y «sacar a la persona» (U3), catálogos de perfiles y roles
+  necesita SMTP en el realm y, sin él, la notificación enseña el detalle del 502. U3 añade a la
+  ficha las pestañas **Sesiones** (las normales y las offline, cada una con su lista y su «cerrar
+  todas» confirmado; una sola se cierra sin preguntar, y una que ya no exista o no sea de ese
+  usuario, `SES-404`, se avisa y se recarga) y **Credenciales** (tipo, etiqueta y fecha, sin
+  secretos; quitar confirma y, si es la contraseña, avisa de que la persona no podrá entrar
+  hasta que se le fije una temporal), y el botón **«Sacar a la persona»**: las tres llamadas que
+  el README de `mto-users` deja al cliente, en su orden (desactivar, cerrar las sesiones, revocar
+  las offline), parando en el primer fallo y diciendo qué paso falló y qué quedó hecho. Pide
+  `users-write` y `users-sessions-write` a la vez. Lo que falta: catálogos de perfiles y roles
   con sus miembros (U4).
 
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
