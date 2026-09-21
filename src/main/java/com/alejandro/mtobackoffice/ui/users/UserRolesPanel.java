@@ -26,6 +26,7 @@ import com.vaadin.flow.data.renderer.ComponentRenderer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Los roles de cliente asignados directamente a una persona, y el alta de mas: se elige el
@@ -138,7 +139,7 @@ class UserRolesPanel extends LazyPanel {
             Set<String> assigned = current.clientRoles().stream()
                     .filter(assignment -> chosen.clientId().equals(assignment.clientId()))
                     .flatMap(assignment -> assignment.roles().stream())
-                    .collect(java.util.stream.Collectors.toSet());
+                    .collect(Collectors.toSet());
             rolePicker.setItems(client.clientRoles(chosen.clientId()).stream()
                     .map(ClientRoleDto::name)
                     .filter(name -> !assigned.contains(name))

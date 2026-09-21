@@ -37,7 +37,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * La ficha de un usuario: cabecera con lo que es, botonera con lo que se le puede hacer y una
@@ -281,10 +280,5 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }
-    }
-
-    /** Para las pruebas y para quien quiera saber que atributos se pintan. */
-    Map<String, List<String>> attributesShown() {
-        return user == null ? Map.of() : user.attributes();
     }
 }
