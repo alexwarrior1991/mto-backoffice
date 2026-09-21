@@ -37,7 +37,10 @@ import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
 import com.alejandro.mtobackoffice.ui.users.TakeOut;
 import org.mockito.InOrder;
+import com.alejandro.mtobackoffice.client.dto.users.RealmProfileDto;
+import com.alejandro.mtobackoffice.ui.users.ClientRolesView;
 import com.alejandro.mtobackoffice.ui.users.UserDetailView;
+import com.alejandro.mtobackoffice.ui.users.UserProfilesView;
 import com.vaadin.flow.component.tabs.TabSheet;
 import com.alejandro.mtobackoffice.client.dto.users.RequiredAction;
 import com.alejandro.mtobackoffice.client.dto.users.UpdateUserRequest;
@@ -84,6 +87,7 @@ import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.data.provider.SortDirection;
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.H4;
 import com.vaadin.flow.component.html.ListItem;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.notification.Notification;
@@ -1188,6 +1192,8 @@ class ViewLayerTest {
         assertFalse(labels.contains("Catalogos"), labels.toString());
         SideNavItem users = LocatorJ._get(SideNavItem.class, spec -> spec.withLabel("Usuarios"));
         assertEquals(USERS_ROUTE, users.getPath().replaceFirst("^/", ""), "la lista es a la vez el nodo del grupo");
+        assertEquals(List.of("Perfiles de usuario", "Roles de cliente"), users.getItems().stream().map(SideNavItem::getLabel).toList(),
+                "los catalogos del modulo cuelgan del nodo");
     }
 
     @Test
@@ -2009,5 +2015,143 @@ class ViewLayerTest {
         verify(usersClient, never()).revokeAllOfflineSessions(any());
         NotificationsKt.expectNotifications("No se ha podido sacar a ana: fallo al cerrar las sesiones (hecho: desactivar). "
                 + "El servicio no esta disponible ahora mismo. Intentalo mas tarde.");
+    }
+
+    // --- Catalogos de perfiles y roles de cliente ---------------------------------------------------
+
+    @Test
+    void aStaticUsersRouteWinsOverTheUserIdParameter() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        when(usersClient.profiles()).thenReturn(List.of(VIEWER));
+        when(usersClient.clients()).thenReturn(List.of(USERS_API));
+
+        UI.getCurrent().navigate(UserProfilesView.ROUTE);
+        LocatorJ._get(UserProfilesView.class);
+        UI.getCurrent().navigate(ClientRolesView.ROUTE);
+        LocatorJ._get(ClientRolesView.class);
+
+        assertTrue(LocatorJ._find(UserDetailView.class).isEmpty());
+        verify(usersClient, never()).get(any());
+    }
+
+    @Test
+    void theProfilesCatalogueShowsWhatAProfileGrantsAndPagesItsMembersWithoutATotal() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        List<UserDto> admins = new ArrayList<>();
+        for (int i = 0; i < 53; i++) {
+            admins.add(user(UUID.randomUUID().toString(), String.format("admin%02d", i), "Admin", String.valueOf(i), null, true, Map.of()));
+        }
+        when(usersClient.profiles()).thenReturn(List.of(VIEWER, MANAGER, ADMIN));
+        when(usersClient.profile("mto-users-admin")).thenReturn(new RealmProfileDto("mto-users-admin", "Todo sobre usuarios",
+                List.of(new ClientRoleAssignmentDto("mto-users-api", List.of("users-read", "users-write", "users-delete"))), List.of("default-roles-mto")));
+        when(usersClient.profileMembers(eq("mto-users-admin"), anyInt(), anyInt())).thenAnswer(call -> {
+            int first = call.getArgument(1);
+            int max = call.getArgument(2);
+            return admins.subList(Math.min(first, admins.size()), Math.min(first + max, admins.size()));
+        });
+
+        UI.getCurrent().navigate(UserProfilesView.ROUTE);
+        Grid<Object> catalogue = gridWithId("profiles-catalogue");
+        assertEquals(3, GridKt._size(catalogue));
+        LocatorJ._get(Span.class, spec -> spec.withText("3 perfiles"));
+        verify(usersClient, never()).profile(any());
+
+        catalogue.select(GridKt._get(catalogue, 2));
+
+        verify(usersClient).profile("mto-users-admin");
+        Grid<Object> grants = gridWithId("grants-grid");
+        assertEquals(3, GridKt._size(grants));
+        List<String> grant = GridKt._getFormattedRow(grants, 0);
+        assertTrue(grant.contains("mto-users-api") && grant.contains("users-read"), grant.toString());
+        LocatorJ._get(Span.class, spec -> spec.withText("Roles de realm: default-roles-mto"));
+        Grid<Object> members = gridWithId("members-grid");
+        assertEquals(50, GridKt._size(members));
+        verify(usersClient).profileMembers("mto-users-admin", 0, 50);
+        Button next = detailButton("members-next");
+        Button previous = detailButton("members-previous");
+        assertTrue(next.isEnabled(), "una pagina llena es la unica senal de que hay mas");
+        assertFalse(previous.isEnabled());
+        LocatorJ._get(Span.class, spec -> spec.withText("Pagina 1"));
+
+        LocatorJ._click(next);
+        verify(usersClient).profileMembers("mto-users-admin", 50, 50);
+        assertEquals(3, GridKt._size(members));
+        assertEquals("admin50", ((UserDto) GridKt._get(members, 0)).username());
+        assertFalse(next.isEnabled(), "una pagina corta es la ultima");
+        assertTrue(previous.isEnabled());
+        LocatorJ._get(Span.class, spec -> spec.withText("Pagina 2"));
+
+        LocatorJ._click(previous);
+        verify(usersClient, times(2)).profileMembers("mto-users-admin", 0, 50);
+        assertEquals(50, GridKt._size(members));
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("profile-filter")), "gestion");
+        assertEquals(1, GridKt._size(catalogue), "el filtro es local: el servicio devuelve el catalogo entero");
+        assertEquals("mto-users-manager", ((RealmProfileSummaryDto) GridKt._get(catalogue, 0)).name());
+        LocatorJ._get(Span.class, spec -> spec.withText("1 de 3 perfiles"));
+        assertFalse(members.getParent().orElseThrow().isVisible(), "al filtrar se deselecciona y el detalle se esconde");
+        verify(usersClient, times(1)).profiles();
+    }
+
+    @Test
+    void theClientRolesCatalogueListsRolesPerClientAndWhoHoldsThem() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        when(usersClient.clients()).thenReturn(List.of(USERS_API, CONFIGURATION_API));
+        when(usersClient.clientRoles("mto-users-api")).thenReturn(List.of(
+                new ClientRoleDto("users-read", "Leer usuarios", false), new ClientRoleDto("users-write", "Escribir usuarios", false),
+                new ClientRoleDto("users-delete", null, false)));
+        when(usersClient.clientRoleMembers("mto-users-api", "users-read", 0, 50)).thenReturn(List.of(ana(), threeUsers().get(1)));
+
+        UI.getCurrent().navigate(ClientRolesView.ROUTE);
+        @SuppressWarnings("unchecked")
+        ComboBox<ClientDto> picker = LocatorJ._get(ComboBox.class, spec -> spec.withId("roles-client"));
+        Grid<Object> catalogue = gridWithId("roles-catalogue");
+        assertEquals(List.of(USERS_API, CONFIGURATION_API), picker.getListDataView().getItems().toList());
+        assertEquals(0, GridKt._size(catalogue));
+
+        LocatorJ._setValue(picker, USERS_API);
+        verify(usersClient).clientRoles("mto-users-api");
+        assertEquals(3, GridKt._size(catalogue));
+        LocatorJ._get(Span.class, spec -> spec.withText("3 roles"));
+        List<String> row = GridKt._getFormattedRow(catalogue, 0);
+        assertTrue(row.contains("users-read") && row.contains("Leer usuarios") && row.contains("No"), row.toString());
+
+        TextField filter = LocatorJ._get(TextField.class, spec -> spec.withId("roles-filter"));
+        LocatorJ._setValue(filter, "write");
+        assertEquals(1, GridKt._size(catalogue));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 de 3 roles"));
+        LocatorJ._setValue(filter, "");
+        assertEquals(3, GridKt._size(catalogue));
+
+        catalogue.select(GridKt._get(catalogue, 0));
+        verify(usersClient).clientRoleMembers("mto-users-api", "users-read", 0, 50);
+        Grid<Object> members = gridWithId("role-members-grid");
+        assertEquals(2, GridKt._size(members));
+        assertTrue(GridKt._getFormattedRow(members, 0).contains("ana"));
+        LocatorJ._get(H4.class, spec -> spec.withText("Miembros de mto-users-api / users-read"));
+        assertFalse(detailButton("role-members-next").isEnabled());
+        assertFalse(detailButton("role-members-previous").isEnabled());
+        verify(usersClient, times(1)).clients();
+    }
+
+    @Test
+    void aMemberRowOpensTheUserDetail() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        when(usersClient.clients()).thenReturn(List.of(USERS_API));
+        when(usersClient.clientRoles("mto-users-api")).thenReturn(List.of(new ClientRoleDto("users-read", null, false)));
+        when(usersClient.clientRoleMembers("mto-users-api", "users-read", 0, 50)).thenReturn(List.of(ana()));
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ClientRolesView.ROUTE);
+        @SuppressWarnings("unchecked")
+        ComboBox<ClientDto> picker = LocatorJ._get(ComboBox.class, spec -> spec.withId("roles-client"));
+        LocatorJ._setValue(picker, USERS_API);
+        Grid<Object> catalogue = gridWithId("roles-catalogue");
+        catalogue.select(GridKt._get(catalogue, 0));
+        GridKt._clickItem(gridWithId("role-members-grid"), 0, 1, false, false, false, false);
+
+        LocatorJ._get(UserDetailView.class);
+        LocatorJ._get(H2.class, spec -> spec.withText("ana"));
+        assertTrue(LocatorJ._find(ClientRolesView.class).isEmpty());
     }
 }

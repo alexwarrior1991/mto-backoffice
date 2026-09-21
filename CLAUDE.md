@@ -107,8 +107,12 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `UserSessionsPanel` (normales y offline) y `UserCredentialsPanel`; `ResetPasswordDialog` y
   `ExecuteActionsEmailDialog`, cada uno con su `Binder` sobre un `Form` con los nombres del
   servicio; `TakeOut`, las tres llamadas de «sacar a la persona» en su orden, parando en el
-  primer fallo), `ui/support` (`UiErrors`: excepción →
-  `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`).
+  primer fallo; `UserProfilesView` en `usuarios/perfiles` y `ClientRolesView` en `usuarios/roles`,
+  los dos catálogos de solo lectura con filtro local, y `MembersPanel`, los miembros de un perfil
+  o de un rol paseados sin total), `ui/support` (`UiErrors`: excepción →
+  `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`;
+  `OffsetPager`: anteriores/siguientes para una lista `first`/`max` sin total, donde una página
+  llena es la única señal de que hay más).
 - `configuration/vaadin` — `BackofficeSystemMessages`, los mensajes de sistema de Vaadin en
   castellano y con el aviso de sesión caducada apagado (recarga → login → SSO).
 
@@ -271,6 +275,8 @@ respuesta, contraseña temporal por defecto y la política del realm sobre el ca
 acciones con su 502 detallado y sin email, modificar y desactivar repintando la cabecera, borrar
 de vuelta a la lista; sesiones normales y offline listadas y cerradas una a una o todas con
 confirmación, la sesión ajena avisada y recargada, credenciales quitadas con su aviso, y «sacar
-a la persona» con sus tres llamadas en orden y parando en el primer fallo) y
+a la persona» con sus tres llamadas en orden y parando en el primer fallo; los catálogos: las
+rutas estáticas ganan a `:userId`, el catálogo de perfiles con lo que concede y sus miembros
+paseados sin total, el de roles por cliente con quién los tiene, y la fila que abre la ficha) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
 sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.

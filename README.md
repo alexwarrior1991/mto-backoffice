@@ -20,7 +20,7 @@ Séptimo repositorio del dominio, hermano e independiente de
 [`mto-maintenance`](../mto-maintenance), [`mto-users`](../mto-users) y
 [`mto-gateway`](../mto-gateway); la infraestructura local es de [`mto-platform`](../mto-platform).
 
-## Estado: fase 5 (en curso)
+## Estado: fase 5
 
 - **Fase 0**: circuito completo con lo mínimo. Cliente `mto-backoffice` en el realm, login OIDC,
   marco con menú filtrado por roles y la pantalla de inicio con el diagnóstico del token.
@@ -76,7 +76,7 @@ Séptimo repositorio del dominio, hermano e independiente de
   castellano y sin diálogo de sesión caducada: tras un reinicio la pantalla recarga sola y vuelve
   por el SSO (ver «Límites», más abajo).
 
-- **Fase 5** (en curso): el módulo **Usuarios** sobre `mto-users`, que administra usuarios, roles
+- **Fase 5**: el módulo **Usuarios** sobre `mto-users`, que administra usuarios, roles
   de cliente y perfiles del realm por la Admin API de Keycloak. U0 deja la base: los roles de
   `mto-users-api` se leen del access token junto a los de `mto-configuration-api`
   (`KEYCLOAK_ROLES_CLIENT_IDS`), `ApiErrorDecoder` entiende el `problem+json` de `mto-users`,
@@ -105,8 +105,14 @@ Séptimo repositorio del dominio, hermano e independiente de
   hasta que se le fije una temporal), y el botón **«Sacar a la persona»**: las tres llamadas que
   el README de `mto-users` deja al cliente, en su orden (desactivar, cerrar las sesiones, revocar
   las offline), parando en el primer fallo y diciendo qué paso falló y qué quedó hecho. Pide
-  `users-write` y `users-sessions-write` a la vez. Lo que falta: catálogos de perfiles y roles
-  con sus miembros (U4).
+  `users-write` y `users-sessions-write` a la vez. U4 cierra el módulo con dos catálogos de solo
+  lectura bajo el mismo grupo del menú: **Perfiles de usuario** (`usuarios/perfiles`: la lista con
+  filtro local y, para el elegido, lo que concede —roles por cliente y de realm— y sus miembros)
+  y **Roles de cliente** (`usuarios/roles`: los roles del cliente elegido, sin los clientes
+  protegidos que `mto-users` no lista, y quién tiene cada uno). Los miembros llegan del servicio
+  como lista plana y sin total, así que se pasean con «anteriores/siguientes» y una página llena
+  es la única señal de que hay más; son asignaciones directas (quien tiene un rol por un perfil
+  aparece en el perfil, no en el rol), y una fila abre la ficha.
 
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|
