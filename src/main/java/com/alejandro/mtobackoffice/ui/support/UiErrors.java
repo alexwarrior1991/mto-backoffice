@@ -69,6 +69,9 @@ public final class UiErrors {
                     : "La peticion no es valida." + detail(exception);
             case ConflictApiException ignored -> "Conflicto con otro cambio: recarga y vuelve a intentarlo."
                     + detail(exception);
+            // Un 502 no es transitorio (mto-users sin SMTP, por ejemplo): su detalle es lo unico que lo explica.
+            case ServiceUnavailableApiException unavailable when unavailable.getStatus().value() == 502 ->
+                    "El servicio no ha podido completar la operacion." + detail(exception);
             case ServiceUnavailableApiException unavailable -> "El servicio no esta disponible ahora mismo."
                     + unavailable.getRetryAfter().map(d -> " Intentalo en " + d.toSeconds() + " s.").orElse(" Intentalo mas tarde.");
             default -> "Error inesperado (" + exception.getStatus().value() + ")." + detail(exception);

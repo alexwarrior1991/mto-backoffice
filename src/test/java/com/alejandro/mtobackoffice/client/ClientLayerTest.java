@@ -57,6 +57,24 @@ import java.util.function.Supplier;
 
 import com.alejandro.mtobackoffice.client.dto.master.CantileverDto;
 import java.util.ArrayList;
+import com.alejandro.mtobackoffice.client.users.UsersClient;
+import com.alejandro.mtobackoffice.client.dto.users.ClientDto;
+import com.alejandro.mtobackoffice.client.dto.users.ClientRoleDto;
+import com.alejandro.mtobackoffice.client.dto.users.CreateUserRequest;
+import com.alejandro.mtobackoffice.client.dto.users.ExecuteActionsEmailRequest;
+import com.alejandro.mtobackoffice.client.dto.users.RealmProfileDto;
+import com.alejandro.mtobackoffice.client.dto.users.RealmProfileSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.users.RequiredAction;
+import com.alejandro.mtobackoffice.client.dto.users.ResetPasswordRequest;
+import com.alejandro.mtobackoffice.client.dto.users.RoleNamesRequest;
+import com.alejandro.mtobackoffice.client.dto.users.UpdateUserRequest;
+import com.alejandro.mtobackoffice.client.dto.users.UserCredentialDto;
+import com.alejandro.mtobackoffice.client.dto.users.UserDto;
+import com.alejandro.mtobackoffice.client.dto.users.UserEnabledRequest;
+import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
+import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
+import com.alejandro.mtobackoffice.client.dto.users.UsersPage;
+import com.alejandro.mtobackoffice.client.error.ConflictApiException;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesRegex;
 import static org.hamcrest.Matchers.nullValue;
@@ -92,6 +110,7 @@ class ClientLayerTest {
     private ProfileClient profileClient;
     private BusinessEntityClient businessEntityClient;
     private JobsClient jobsClient;
+    private UsersClient usersClient;
 
     @BeforeEach
     void setUp() {
@@ -111,6 +130,7 @@ class ClientLayerTest {
         profileClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ProfileClient.class);
         businessEntityClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(BusinessEntityClient.class);
         jobsClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(JobsClient.class);
+        usersClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(UsersClient.class);
     }
 
     @AfterEach
@@ -635,6 +655,282 @@ class ClientLayerTest {
         ProfileDto saved = asUser(() -> profileClient.update(7L, profile));
 
         assertEquals(3, saved.getVersionNumber());
+        server.verify();
+    }
+
+    // --- Usuarios: mto-users a traves del gateway --------------------------------------------------
+
+    private static final String USERS = GATEWAY + "/api/users";
+
+    private static final String ANA = """
+            {"id":"u-1","username":"ana.nueva","firstName":"Ana","lastName":"Nueva","email":"ana@mto.local",
+             "emailVerified":true,"enabled":true,"createdAt":"2026-09-21T10:00:00Z",
+             "attributes":{"dept":["taller"]},"requiredActions":["UPDATE_PASSWORD"],"unknownTomorrow":1}
+            """;
+
+    private static CreateUserRequest newUser(String username) {
+        return new CreateUserRequest(username, null, null, null, null, null, null, null, null);
+    }
+
+    @Test
+    void userSearchSendsTheKeycloakStyleOffsetAndReadsThePageWithItsTotal() {
+        server.expect(requestTo(USERS + "?search=ana&enabled=true&first=50&max=50"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"content\":[" + ANA + "],\"first\":50,\"max\":50,\"total\":123}", MediaType.APPLICATION_JSON));
+
+        UsersPage<UserDto> page = asUser(() -> usersClient.search("ana", null, null, true, null, null, 50, 50));
+
+        assertEquals(123, page.total());
+        assertEquals(50, page.first());
+        UserDto ana = page.content().getFirst();
+        assertEquals("u-1", ana.id());
+        assertEquals("Ana Nueva", ana.fullName());
+        assertEquals(List.of("taller"), ana.attributes().get("dept"));
+        assertEquals(List.of("UPDATE_PASSWORD"), ana.requiredActions());
+        assertTrue(ana.isEnabled());
+        server.verify();
+    }
+
+    @Test
+    void attributeFiltersRepeatTheParameterAndNeverTravelWithSearch() {
+        server.expect(requestTo(matchesRegex(".*/api/users\\?attribute=dept(:|%3A)taller&attribute=turno(:|%3A)noche&first=0&max=20")))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"content\":[],\"first\":0,\"max\":20,\"total\":0}", MediaType.APPLICATION_JSON));
+
+        UsersPage<UserDto> page = asUser(() -> usersClient.search(null, null, null, null, null, List.of("dept:taller", "turno:noche"), 0, 20));
+
+        assertTrue(page.content().isEmpty());
+        server.verify();
+    }
+
+    @Test
+    void creatingAUserPostsOnlyWhatIsFilledAndReadsThe201() {
+        server.expect(requestTo(USERS))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.username").value("ana.nueva"))
+                .andExpect(jsonPath("$.temporaryPassword").value("Cambiame.123"))
+                .andExpect(jsonPath("$.requiredActions[0]").value("UPDATE_PASSWORD"))
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.firstName").doesNotExist())
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                        .header(HttpHeaders.LOCATION, GATEWAY + "/api/users/u-1").body(ANA));
+
+        CreateUserRequest request = new CreateUserRequest("ana.nueva", null, null, "ana@mto.local", null, true, null,
+                List.of(RequiredAction.UPDATE_PASSWORD), "Cambiame.123");
+        UserDto created = asUser(() -> usersClient.create(request));
+
+        assertEquals("u-1", created.id());
+        assertFalse(request.toString().contains("Cambiame.123"), "una contrasena nunca llega a un log");
+        server.verify();
+    }
+
+    @Test
+    void updatingAUserSendsOnlyTheEditableFieldsAndEnabledHasItsOwnPatch() {
+        server.expect(requestTo(USERS + "/u-1"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.firstName").value("Ana"))
+                .andExpect(jsonPath("$.email").value(""))
+                .andExpect(jsonPath("$.username").doesNotExist())
+                .andExpect(jsonPath("$.lastName").doesNotExist())
+                .andRespond(withSuccess(ANA, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(USERS + "/u-1/enabled"))
+                .andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"enabled\":false}"))
+                .andRespond(withSuccess(ANA.replace("\"enabled\":true", "\"enabled\":false"), MediaType.APPLICATION_JSON));
+
+        UserDto updated = asUser(() -> usersClient.update("u-1", new UpdateUserRequest("Ana", null, "", null, null)));
+        UserDto disabled = asUser(() -> usersClient.setEnabled("u-1", new UserEnabledRequest(false)));
+
+        assertEquals("Ana", updated.firstName());
+        assertFalse(disabled.isEnabled());
+        server.verify();
+    }
+
+    /** README de mto-users: anadir es un PUT aditivo; quitar, un DELETE con los nombres en el cuerpo. */
+    @Test
+    void removingClientRolesIsADeleteWithAJsonBody() {
+        String roles = "{\"realmRoles\":[\"mto-users-viewer\"],\"clientRoles\":[{\"clientId\":\"mto-users-api\",\"roles\":[\"users-write\"]}]}";
+        server.expect(requestTo(USERS + "/u-1/roles/clients/mto-users-api"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(content().json("{\"roles\":[\"users-write\"]}"))
+                .andRespond(withSuccess(roles, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(USERS + "/u-1/roles/clients/mto-users-api"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(content().json("{\"roles\":[\"users-read\"]}"))
+                .andRespond(withSuccess(roles, MediaType.APPLICATION_JSON));
+
+        UserRolesDto added = asUser(() -> usersClient.addClientRoles("u-1", "mto-users-api", new RoleNamesRequest(List.of("users-write"))));
+        UserRolesDto removed = asUser(() -> usersClient.removeClientRoles("u-1", "mto-users-api", new RoleNamesRequest(List.of("users-read"))));
+
+        assertEquals(List.of("users-write"), added.clientRoles().getFirst().roles());
+        assertEquals(List.of("mto-users-viewer"), removed.realmRoles());
+        server.verify();
+    }
+
+    @Test
+    void profilesAreAssignedWithABodilessPutAndTheUsersProfilesComeBack() {
+        String profiles = "[{\"name\":\"mto-users-viewer\",\"description\":\"Lectura\"}]";
+        server.expect(requestTo(USERS + "/u-1/profiles/mto-users-viewer")).andExpect(method(HttpMethod.PUT))
+                .andExpect(content().string(""))
+                .andRespond(withSuccess(profiles, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(USERS + "/u-1/profiles/mto-users-viewer")).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(USERS + "/u-1/profiles")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(profiles, MediaType.APPLICATION_JSON));
+
+        List<RealmProfileSummaryDto> assigned = asUser(() -> usersClient.assignProfile("u-1", "mto-users-viewer"));
+        List<RealmProfileSummaryDto> removed = asUser(() -> usersClient.removeProfile("u-1", "mto-users-viewer"));
+        List<RealmProfileSummaryDto> current = asUser(() -> usersClient.userProfiles("u-1"));
+
+        assertEquals("mto-users-viewer", assigned.getFirst().name());
+        assertTrue(removed.isEmpty());
+        assertEquals(1, current.size());
+        server.verify();
+    }
+
+    @Test
+    void sessionsCredentialsAndTheirRevocationsUseTheirPaths() {
+        server.expect(requestTo(USERS + "/u-1/sessions")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        [{"id":"s-1","username":"ana.nueva","ipAddress":"10.0.0.7","startedAt":"2026-09-21T09:00:00Z",
+                          "lastAccessAt":"2026-09-21T09:30:00Z","clients":["mto-backoffice","mto-frontend"]}]
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(USERS + "/u-1/sessions")).andExpect(method(HttpMethod.DELETE)).andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(USERS + "/u-1/offline-sessions/o-9")).andExpect(method(HttpMethod.DELETE)).andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(USERS + "/u-1/credentials")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[{\"id\":\"c-1\",\"type\":\"otp\",\"userLabel\":\"movil\",\"createdAt\":\"2026-09-21T09:00:00Z\"}]",
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(USERS + "/u-1/credentials/c-1")).andExpect(method(HttpMethod.DELETE)).andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        List<UserSessionDto> sessions = asUser(() -> usersClient.sessions("u-1"));
+        asUser(() -> {
+            usersClient.revokeAllSessions("u-1");
+            usersClient.revokeOfflineSession("u-1", "o-9");
+            return null;
+        });
+        List<UserCredentialDto> credentials = asUser(() -> usersClient.credentials("u-1"));
+        asUser(() -> {
+            usersClient.deleteCredential("u-1", "c-1");
+            return null;
+        });
+
+        assertEquals(Instant.parse("2026-09-21T09:30:00Z"), sessions.getFirst().lastAccessAt());
+        assertEquals(List.of("mto-backoffice", "mto-frontend"), sessions.getFirst().clients());
+        assertEquals("Segundo factor (OTP)", credentials.getFirst().typeLabel());
+        assertFalse(credentials.getFirst().isPassword());
+        server.verify();
+    }
+
+    @Test
+    void resetPasswordAndActionsEmailPostTheirBodies() {
+        server.expect(requestTo(USERS + "/u-1/reset-password")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"password\":\"Secreta.123\",\"temporary\":true}"))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(USERS + "/u-1/execute-actions-email")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"actions\":[\"UPDATE_PASSWORD\",\"VERIFY_EMAIL\"],\"lifespanSeconds\":3600}"))
+                .andExpect(jsonPath("$.clientId").doesNotExist())
+                .andRespond(withStatus(HttpStatus.ACCEPTED));
+
+        ResetPasswordRequest reset = new ResetPasswordRequest("Secreta.123", true);
+        asUser(() -> {
+            usersClient.resetPassword("u-1", reset);
+            usersClient.executeActionsEmail("u-1", new ExecuteActionsEmailRequest(
+                    List.of(RequiredAction.UPDATE_PASSWORD, RequiredAction.VERIFY_EMAIL), 3600, null, null));
+            return null;
+        });
+
+        assertFalse(reset.toString().contains("Secreta.123"));
+        server.verify();
+    }
+
+    @Test
+    void roleAndProfileMembersArePlainListsWithoutATotal() {
+        server.expect(requestTo(USERS + "/roles/clients/mto-users-api/users-read/users?first=0&max=50")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[" + ANA + "]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(USERS + "/profiles/mto-users-admin/users?first=50&max=50")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+        List<UserDto> holders = asUser(() -> usersClient.clientRoleMembers("mto-users-api", "users-read", 0, 50));
+        List<UserDto> secondPage = asUser(() -> usersClient.profileMembers("mto-users-admin", 50, 50));
+
+        assertEquals("ana.nueva", holders.getFirst().username());
+        assertTrue(secondPage.isEmpty());
+        server.verify();
+    }
+
+    @Test
+    void theRolesAndProfilesCataloguesAreReadTyped() {
+        server.expect(requestTo(USERS + "/roles/clients")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[{\"clientId\":\"mto-users-api\",\"name\":\"\",\"description\":\"Usuarios\"},"
+                        + "{\"clientId\":\"mto-configuration-api\",\"name\":\"Configuracion\",\"description\":null}]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(USERS + "/roles/clients/mto-users-api")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[{\"name\":\"users-read\",\"description\":\"Consulta\",\"composite\":false}]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(USERS + "/profiles")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[{\"name\":\"mto-users-admin\",\"description\":\"Todo\"}]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(USERS + "/profiles/mto-users-admin")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"name\":\"mto-users-admin\",\"description\":\"Todo\","
+                        + "\"clientRoles\":[{\"clientId\":\"mto-users-api\",\"roles\":[\"users-read\",\"users-delete\"]}],\"realmRoles\":[]}", MediaType.APPLICATION_JSON));
+
+        List<ClientDto> clients = asUser(() -> usersClient.clients());
+        List<ClientRoleDto> roles = asUser(() -> usersClient.clientRoles("mto-users-api"));
+        List<RealmProfileSummaryDto> profiles = asUser(() -> usersClient.profiles());
+        RealmProfileDto admin = asUser(() -> usersClient.profile("mto-users-admin"));
+
+        assertEquals("mto-users-api", clients.getFirst().label(), "sin nombre, el clientId");
+        assertEquals("Configuracion", clients.get(1).label());
+        assertEquals("users-read", roles.getFirst().name());
+        assertEquals("mto-users-admin", profiles.getFirst().name());
+        assertEquals(List.of("users-read", "users-delete"), admin.clientRoles().getFirst().roles());
+        server.verify();
+    }
+
+    /** El problem+json de mto-users usa errorCode y validationErrors[{field, message}]: caen en code y errors. */
+    @Test
+    void theUsersProblemJsonIsReadThroughItsAliases() {
+        server.expect(requestTo(USERS)).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .header("X-Correlation-Id", "corr-u1")
+                        .body("""
+                                {"type":"urn:problem:mto-users:REQ-VALIDATION","title":"Bad Request","status":400,
+                                 "detail":"Validation failed","instance":"/api/v1/users","errorCode":"REQ-VALIDATION",
+                                 "timestamp":"2026-09-21T10:00:00Z","correlationId":"corr-u1",
+                                 "validationErrors":[{"field":"username","message":"may only contain letters, digits, '.', '_', '@' and '-'"}]}
+                                """));
+
+        ValidationApiException exception = assertThrows(ValidationApiException.class,
+                () -> asUser(() -> usersClient.create(newUser("ana nueva"))));
+
+        assertEquals("REQ-VALIDATION", exception.getProblem().code());
+        assertTrue(exception.getProblem().hasFieldErrors());
+        assertEquals("username", exception.getProblem().errors().getFirst().field());
+        assertNull(exception.getProblem().errors().getFirst().code(), "mto-users no manda codigo por campo");
+        assertEquals(Instant.parse("2026-09-21T10:00:00Z"), exception.getProblem().timestamp());
+        assertEquals("corr-u1", exception.getReference());
+        server.verify();
+    }
+
+    @Test
+    void theUsersServiceUnavailableCarriesItsRetryAfterAndAConflictIsAConflict() {
+        server.expect(requestTo(USERS + "/profiles")).andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE).contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .header(HttpHeaders.RETRY_AFTER, "10")
+                        .body("{\"status\":503,\"title\":\"Service Unavailable\",\"detail\":\"Keycloak no responde\","
+                                + "\"errorCode\":\"KC-503\",\"correlationId\":\"corr-u2\"}"));
+        server.expect(requestTo(USERS)).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("{\"status\":409,\"title\":\"Conflict\",\"detail\":\"User exists with same username\",\"errorCode\":\"USR-409\"}"));
+
+        ServiceUnavailableApiException unavailable = assertThrows(ServiceUnavailableApiException.class,
+                () -> asUser(() -> usersClient.profiles()));
+        ConflictApiException conflict = assertThrows(ConflictApiException.class,
+                () -> asUser(() -> usersClient.create(newUser("ana.nueva"))));
+
+        assertEquals(Duration.ofSeconds(10), unavailable.getRetryAfter().orElseThrow());
+        assertEquals("KC-503", unavailable.getProblem().code());
+        assertEquals("corr-u2", unavailable.getReference());
+        assertEquals("USR-409", conflict.getProblem().code());
         server.verify();
     }
 }

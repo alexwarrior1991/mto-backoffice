@@ -32,7 +32,7 @@ public class SecurityConfiguration {
 
     @Bean
     public KeycloakRoleMapper keycloakRoleMapper(KeycloakProperties properties) {
-        return new KeycloakRoleMapper(properties.rolesClientId());
+        return new KeycloakRoleMapper(properties.rolesClientIds());
     }
 
     @Bean

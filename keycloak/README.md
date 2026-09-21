@@ -11,7 +11,9 @@ Dos ficheros, que aplica `mto-platform/keycloak/apply-partials.sh` en su sitio d
 
 Un solo cliente, y sin roles: los permisos que comprueba el backoffice son los roles de cliente de
 `mto-configuration-api` (`config-read`, `config-write`, `config-delete`, `config-import`,
-`lov-manage`, `config-audit`), que declara `mto-configuration`.
+`lov-manage`, `config-audit`), que declara `mto-configuration`, y los de `mto-users-api`
+(`users-read`, `users-write`, `users-delete`, `users-roles-write`, `users-password-reset`,
+`users-profiles-write`, `users-sessions-write`, `users-credentials-write`), que declara `mto-users`.
 
 | Cliente | Tipo | Para qué |
 |---|---|---|

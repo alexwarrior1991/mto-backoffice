@@ -10,6 +10,7 @@ import com.alejandro.mtobackoffice.client.configuration.SectionInsulatorClient;
 import com.alejandro.mtobackoffice.client.configuration.StationClient;
 import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
+import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.configuration.security.KeycloakClientRegistrations;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -125,6 +126,11 @@ public class GatewayClientConfiguration {
     @Bean
     public JobsClient jobsClient(RestClient gatewayRestClient) {
         return proxyFactory(gatewayRestClient).createClient(JobsClient.class);
+    }
+
+    @Bean
+    public UsersClient usersClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(UsersClient.class);
     }
 
     public static HttpServiceProxyFactory proxyFactory(RestClient restClient) {

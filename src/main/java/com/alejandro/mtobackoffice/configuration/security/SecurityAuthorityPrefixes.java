@@ -12,6 +12,11 @@ public final class SecurityAuthorityPrefixes {
 
     public static final String ROLE_PREFIX = "ROLE_";
     public static final String REALM_ROLE_PREFIX = "ROLE_REALM_";
+    /**
+     * Sinonimo cualificado por cliente: {@code ROLE_CLIENT_MTO_USERS_API_USERS_READ}. Nombra al
+     * cliente para que, si dos clientes leidos compartieran un nombre de rol, una comprobacion
+     * pudiera exigir el de uno en concreto.
+     */
     public static final String CLIENT_ROLE_PREFIX = "ROLE_CLIENT_";
     public static final String SCOPE_PREFIX = "SCOPE_";
 }

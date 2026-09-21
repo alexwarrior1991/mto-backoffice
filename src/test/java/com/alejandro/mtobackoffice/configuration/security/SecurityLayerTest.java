@@ -34,10 +34,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SecurityLayerTest {
 
     private static final String CLIENT_ID = "mto-configuration-api";
+    private static final String USERS_CLIENT_ID = "mto-users-api";
     private static final KeycloakProperties PROPERTIES =
-            new KeycloakProperties("http://localhost:8082/realms/mto/", "mto-backoffice", "secret", CLIENT_ID);
+            new KeycloakProperties("http://localhost:8082/realms/mto/", "mto-backoffice", "secret", List.of(CLIENT_ID, USERS_CLIENT_ID));
 
-    private final KeycloakRoleMapper mapper = new KeycloakRoleMapper(CLIENT_ID);
+    private final KeycloakRoleMapper mapper = new KeycloakRoleMapper(List.of(CLIENT_ID, USERS_CLIENT_ID));
 
     @AfterEach
     void clearSecurityContext() {
@@ -56,7 +57,7 @@ class SecurityLayerTest {
                 JwtClaimNames.RESOURCE_ACCESS, Map.of(CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("config-read", "lov manage"))))));
 
         assertTrue(names.containsAll(Set.of(
-                "ROLE_CONFIG_READ", "ROLE_CLIENT_CONFIG_READ", "ROLE_LOV_MANAGE", "ROLE_CLIENT_LOV_MANAGE")));
+                "ROLE_CONFIG_READ", "ROLE_CLIENT_MTO_CONFIGURATION_API_CONFIG_READ", "ROLE_LOV_MANAGE", "ROLE_CLIENT_MTO_CONFIGURATION_API_LOV_MANAGE")));
     }
 
     /**
@@ -74,13 +75,38 @@ class SecurityLayerTest {
         assertFalse(names.contains("ROLE_CONFIG_WRITE"));
     }
 
+    /** Un cliente que no esta en la lista no aporta nada, aunque venga en el token. */
     @Test
-    void rolesOfAnotherClientAndScopesAreKeptApart() {
+    void rolesOfAClientThatIsNotListedAndScopesAreKeptApart() {
         Set<String> names = authorities(mapper.authorities(Map.of(
                 JwtClaimNames.SCOPE, "openid profile email",
                 JwtClaimNames.RESOURCE_ACCESS, Map.of("mto-stock-api", Map.of(JwtClaimNames.ROLES, List.of("stock-write"))))));
 
         assertEquals(Set.of("SCOPE_openid", "SCOPE_profile", "SCOPE_email"), names);
+    }
+
+    @Test
+    void rolesOfEveryListedClientAreMappedAndQualifiedByTheirClient() {
+        Set<String> names = authorities(mapper.authorities(Map.of(
+                JwtClaimNames.RESOURCE_ACCESS, Map.of(
+                        CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("config-read")),
+                        USERS_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("users-read", "users-sessions-write"))))));
+
+        assertEquals(Set.of(
+                "ROLE_CONFIG_READ", "ROLE_CLIENT_MTO_CONFIGURATION_API_CONFIG_READ",
+                "ROLE_USERS_READ", "ROLE_CLIENT_MTO_USERS_API_USERS_READ",
+                "ROLE_USERS_SESSIONS_WRITE", "ROLE_CLIENT_MTO_USERS_API_USERS_SESSIONS_WRITE"), names);
+    }
+
+    /** La regla que protege config-write vale igual para users-read: un rol de realm nunca abre el modulo. */
+    @Test
+    void aRealmRoleNamedLikeAUsersPermissionNeverOpensTheModule() {
+        Set<String> names = authorities(mapper.authorities(Map.of(
+                JwtClaimNames.REALM_ACCESS, Map.of(JwtClaimNames.ROLES, List.of("users-read", "mto-users-admin")))));
+
+        assertTrue(names.contains("ROLE_REALM_USERS_READ"));
+        assertTrue(names.contains("ROLE_REALM_MTO_USERS_ADMIN"));
+        assertFalse(names.contains("ROLE_USERS_READ"));
     }
 
     @Test
@@ -126,7 +152,7 @@ class SecurityLayerTest {
         OidcUser user = service.loadUser(request);
 
         Set<String> names = authorities(user.getAuthorities());
-        assertTrue(names.containsAll(Set.of("ROLE_CONFIG_READ", "ROLE_CLIENT_CONFIG_WRITE", "ROLE_REALM_MTO_EDITOR", "OIDC_USER")));
+        assertTrue(names.containsAll(Set.of("ROLE_CONFIG_READ", "ROLE_CLIENT_MTO_CONFIGURATION_API_CONFIG_WRITE", "ROLE_REALM_MTO_EDITOR", "OIDC_USER")));
         assertFalse(names.contains("ROLE_MTO_EDITOR"));
         assertEquals("config.editor", user.getName());
         BackofficeUser backofficeUser = assertInstanceOf(BackofficeUser.class, user);
@@ -171,5 +197,29 @@ class SecurityLayerTest {
                 .stream().map(KeycloakRoleMapper::normalize).collect(Collectors.toSet());
 
         assertEquals(fromRealm, declared);
+    }
+
+    @Test
+    void userRolesMatchTheClientRolesOfMtoUsersApiOnceNormalized() {
+        Set<String> declared = Set.of(UserRoles.USERS_READ, UserRoles.USERS_WRITE, UserRoles.USERS_DELETE,
+                UserRoles.USERS_ROLES_WRITE, UserRoles.USERS_PASSWORD_RESET, UserRoles.USERS_PROFILES_WRITE,
+                UserRoles.USERS_SESSIONS_WRITE, UserRoles.USERS_CREDENTIALS_WRITE);
+        Set<String> fromRealm = Set.of("users-read", "users-write", "users-delete", "users-roles-write", "users-password-reset",
+                        "users-profiles-write", "users-sessions-write", "users-credentials-write")
+                .stream().map(KeycloakRoleMapper::normalize).collect(Collectors.toSet());
+
+        assertEquals(fromRealm, declared);
+    }
+
+    /** Emitir ROLE_ para los dos clientes solo es inocuo mientras sus nombres de rol no se solapen. */
+    @Test
+    void securityRolesAndUserRolesAreDisjoint() {
+        Set<String> configuration = Set.of(SecurityRoles.CONFIG_READ, SecurityRoles.CONFIG_WRITE, SecurityRoles.CONFIG_DELETE,
+                SecurityRoles.CONFIG_IMPORT, SecurityRoles.LOV_MANAGE, SecurityRoles.CONFIG_AUDIT);
+        Set<String> users = Set.of(UserRoles.USERS_READ, UserRoles.USERS_WRITE, UserRoles.USERS_DELETE,
+                UserRoles.USERS_ROLES_WRITE, UserRoles.USERS_PASSWORD_RESET, UserRoles.USERS_PROFILES_WRITE,
+                UserRoles.USERS_SESSIONS_WRITE, UserRoles.USERS_CREDENTIALS_WRITE);
+
+        assertTrue(java.util.Collections.disjoint(configuration, users));
     }
 }
