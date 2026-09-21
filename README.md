@@ -123,8 +123,14 @@ Séptimo repositorio del dominio, hermano e independiente de
   entera (`/api/stock/**`) y el menú tiene el grupo «Almacén». Antes de las pantallas,
   `mto-stock` ganó lo que la pantalla necesita y la API no daba (su PR previo): `search` por código o
   nombre y `active` en las cinco listas de catálogo, y los proyectos sincronizados desde
-  `mto-configuration` expuestos con su origen y rechazados en el `PUT`. Las pantallas llegan por
-  fases: catálogos (S1), existencias y movimientos (S2), reservas (S3), conjuntos (S4), historial (S5).
+  `mto-configuration` expuestos con su origen y rechazados en el `PUT`. S1 trae los **catálogos**
+  bajo `almacen/*` (materiales, almacenes, proveedores, proyectos): la lista paginada en el servidor
+  con la búsqueda por código o nombre, el estado y el orden de la columna (`search`, `active`,
+  `page`, `size`, `sort=campo,asc`; el recuento es `totalElements`), el alta con código y nombre (y
+  unidad y stock mínimo en materiales) y la modificación con el estado, que es como se retira uno
+  (no hay borrado en `mto-stock`). Un proyecto sincronizado desde `mto-configuration` enseña su
+  origen y no se ofrece modificarlo: el servicio lo rechazaría con `PRJ-001`. Lo que falta:
+  existencias y movimientos (S2), reservas (S3), conjuntos (S4), historial (S5).
 
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|

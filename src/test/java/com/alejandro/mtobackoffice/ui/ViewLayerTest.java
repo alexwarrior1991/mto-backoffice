@@ -51,6 +51,27 @@ import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.ui.users.UserAttributes;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.alejandro.mtobackoffice.ui.users.UsersView;
+import com.alejandro.mtobackoffice.client.dto.stock.CatalogueRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.CatalogueUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.MaterialDto;
+import com.alejandro.mtobackoffice.client.dto.stock.MaterialRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.ProjectDto;
+import com.alejandro.mtobackoffice.client.dto.stock.SupplierDto;
+import com.alejandro.mtobackoffice.client.dto.stock.WarehouseDto;
+import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
+import com.alejandro.mtobackoffice.client.stock.MaterialClient;
+import com.alejandro.mtobackoffice.client.stock.MovementClient;
+import com.alejandro.mtobackoffice.client.stock.ProjectClient;
+import com.alejandro.mtobackoffice.client.stock.ReservationClient;
+import com.alejandro.mtobackoffice.client.stock.StockCatalogueClient;
+import com.alejandro.mtobackoffice.client.stock.SupplierClient;
+import com.alejandro.mtobackoffice.client.stock.WarehouseClient;
+import com.alejandro.mtobackoffice.ui.stock.MaterialsView;
+import com.alejandro.mtobackoffice.ui.stock.ProjectsView;
+import com.alejandro.mtobackoffice.ui.stock.StockRoutes;
+import com.alejandro.mtobackoffice.ui.stock.SuppliersView;
+import com.alejandro.mtobackoffice.ui.stock.WarehousesView;
+import java.util.function.Function;
 import com.vaadin.flow.component.combobox.MultiSelectComboBox;
 import com.vaadin.flow.component.textfield.PasswordField;
 import com.vaadin.flow.component.textfield.TextArea;
@@ -136,6 +157,7 @@ import com.vaadin.flow.server.VaadinService;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
@@ -195,6 +217,20 @@ class ViewLayerTest {
     private JobsClient jobsClient;
     @MockitoBean
     private UsersClient usersClient;
+    @MockitoBean
+    private MaterialClient materialClient;
+    @MockitoBean
+    private WarehouseClient warehouseClient;
+    @MockitoBean
+    private SupplierClient supplierClient;
+    @MockitoBean
+    private ProjectClient projectClient;
+    @MockitoBean
+    private AssemblyClient assemblyClient;
+    @MockitoBean
+    private MovementClient movementClient;
+    @MockitoBean
+    private ReservationClient reservationClient;
 
     @BeforeEach
     void setUp() {
@@ -513,6 +549,31 @@ class ViewLayerTest {
         when(sectionInsulatorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<SectionInsulatorDto>of(), 0, 50));
         when(jobsClient.list(anyInt(), anyInt(), any(), any())).thenReturn(page(List.<JobDto>of(), 0, 20));
         stubUsers(List.of());
+        stubCatalogue(warehouseClient, List.<WarehouseDto>of(), WarehouseDto::code, WarehouseDto::name, WarehouseDto::active);
+        stubCatalogue(supplierClient, List.<SupplierDto>of(), SupplierDto::code, SupplierDto::name, SupplierDto::active);
+        stubCatalogue(projectClient, List.<ProjectDto>of(), ProjectDto::code, ProjectDto::name, ProjectDto::active);
+        stubCatalogue(materialClient, List.<MaterialDto>of(), MaterialDto::code, MaterialDto::name, MaterialDto::active);
+        stubCatalogue(assemblyClient, List.<com.alejandro.mtobackoffice.client.dto.stock.AssemblyDto>of(),
+                com.alejandro.mtobackoffice.client.dto.stock.AssemblyDto::code, com.alejandro.mtobackoffice.client.dto.stock.AssemblyDto::name,
+                com.alejandro.mtobackoffice.client.dto.stock.AssemblyDto::active);
+    }
+
+    /** Un catalogo de almacen simulado: busca en codigo o nombre, filtra por estado y pagina por page/size como el servicio. */
+    private static <D> void stubCatalogue(StockCatalogueClient<D, ?, ?> client, List<D> all, Function<D, String> code,
+                                          Function<D, String> name, Function<D, Boolean> active) {
+        // doAnswer y no when(...).thenAnswer: volver a simular un metodo ya simulado con thenAnswer
+        // ejecuta la respuesta anterior con los comodines (page 0, size 0) y divide por cero.
+        doAnswer(call -> {
+            String search = call.getArgument(0);
+            Boolean state = call.getArgument(1);
+            String text = search == null ? "" : search.toLowerCase(Locale.ROOT);
+            List<D> matching = all.stream()
+                    .filter(dto -> text.isEmpty() || code.apply(dto).toLowerCase(Locale.ROOT).contains(text)
+                            || name.apply(dto).toLowerCase(Locale.ROOT).contains(text))
+                    .filter(dto -> state == null || state.equals(active.apply(dto)))
+                    .toList();
+            return page(matching, call.getArgument(2), call.getArgument(3));
+        }).when(client).search(any(), any(), anyInt(), anyInt(), anyList());
     }
 
     private static ExecutionPackageDto executionPackage(Long id, String name) {
@@ -2175,5 +2236,201 @@ class ViewLayerTest {
                 UiErrors.message(stockError(409, "MAT-409", "Material code 'MAT-001' already exists")));
         assertEquals("La peticion no es valida. Material 'MAT-001' is inactive",
                 UiErrors.message(stockError(400, "VAL-001", "Material 'MAT-001' is inactive")));
+    }
+
+    // --- Almacen (mto-stock): los catalogos -------------------------------------------------------
+
+    private static final UUID WH1 = UUID.fromString("2b2b2b2b-0000-4000-8000-000000000001");
+    private static final UUID PRJ_MANUAL = UUID.fromString("2b2b2b2b-0000-4000-8000-000000000002");
+    private static final UUID PRJ_SYNCED = UUID.fromString("2b2b2b2b-0000-4000-8000-000000000003");
+    private static final UUID MAT1 = UUID.fromString("2b2b2b2b-0000-4000-8000-000000000004");
+
+    private static WarehouseDto warehouse(UUID id, String code, String name, boolean active) {
+        return new WarehouseDto(id, code, name, active, null);
+    }
+
+    private static List<WarehouseDto> manyWarehouses() {
+        List<WarehouseDto> all = new ArrayList<>();
+        all.add(warehouse(WH1, "WH-000", "Central", true));
+        for (int i = 1; i < 120; i++) {
+            all.add(warehouse(UUID.randomUUID(), String.format("WH-%03d", i), "Nave " + i, i % 4 != 0));
+        }
+        return all;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Grid<Object> stockGrid() {
+        return LocatorJ._get(Grid.class);
+    }
+
+    @Test
+    void theMenuGroupsTheStockCataloguesUnderAlmacen() {
+        loginAs("almacen.lector", "ROLE_STOCK_READ");
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        List<String> labels = menuLabels();
+        assertTrue(labels.contains("Almacen"), labels.toString());
+        assertFalse(labels.contains("Infraestructura"), labels.toString());
+        assertFalse(labels.contains("Usuarios"), labels.toString());
+        SideNavItem stock = LocatorJ._get(SideNavItem.class, spec -> spec.withLabel("Almacen"));
+        assertEquals(List.of("Materiales", "Almacenes", "Proveedores", "Proyectos"),
+                stock.getItems().stream().map(SideNavItem::getLabel).toList(), "los catalogos cuelgan del grupo, en su orden");
+    }
+
+    @Test
+    void theStockViewsAreNotReachableWithARealmRoleOnly() {
+        loginAs("almacen.impostor", "ROLE_REALM_STOCK_READ", "ROLE_REALM_MTO_WAREHOUSE_ADMIN");
+
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(StockRoutes.WAREHOUSES));
+
+        assertTrue(LocatorJ._find(WarehousesView.class).isEmpty());
+        verify(warehouseClient, never()).search(any(), any(), anyInt(), anyInt(), anyList());
+    }
+
+    @Test
+    void aStockCatalogueIsPagedSearchedSortedAndFilteredInTheServer() {
+        loginAs("almacen.lector", "ROLE_STOCK_READ");
+        stubCatalogue(warehouseClient, manyWarehouses(), WarehouseDto::code, WarehouseDto::name, WarehouseDto::active);
+
+        UI.getCurrent().navigate(StockRoutes.WAREHOUSES);
+        Grid<Object> grid = stockGrid();
+
+        assertEquals(120, GridKt._size(grid));
+        LocatorJ._get(Span.class, spec -> spec.withText("120 almacenes"));
+        assertEquals("WH-000", ((WarehouseDto) GridKt._get(grid, 0)).code());
+        assertEquals("WH-077", ((WarehouseDto) GridKt._get(grid, 77)).code(), "la segunda pagina se pide con su page");
+        verify(warehouseClient, atLeastOnce()).search(isNull(), isNull(), intThat(page -> page > 0), anyInt(), eq(List.of("code,asc")));
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("stock-search")), "nave 1");
+        assertEquals(31, GridKt._size(grid), "Nave 1, Nave 10..19 y Nave 100..119");
+        verify(warehouseClient, atLeastOnce()).search(eq("nave 1"), isNull(), eq(0), anyInt(), anyList());
+
+        @SuppressWarnings("unchecked")
+        Select<EnabledFilter> state = LocatorJ._get(Select.class, spec -> spec.withLabel("Estado"));
+        LocatorJ._setValue(state, EnabledFilter.DISABLED);
+        assertEquals(7, GridKt._size(grid), "de esas 31, las retiradas (i multiplo de 4): 12, 16, 100, 104, 108, 112 y 116");
+        verify(warehouseClient, atLeastOnce()).search(eq("nave 1"), eq(false), eq(0), anyInt(), anyList());
+        LocatorJ._get(Span.class, spec -> spec.withText("7 almacenes"));
+
+        grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("name"), SortDirection.DESCENDING)));
+        GridKt._get(grid, 0);
+        verify(warehouseClient, atLeastOnce()).search(any(), any(), anyInt(), anyInt(), eq(List.of("name,desc")));
+    }
+
+    @Test
+    void aReadOnlyPersonSeesTheStockCatalogueWithoutAnyWriteControl() {
+        loginAs("almacen.lector", "ROLE_STOCK_READ");
+        stubCatalogue(materialClient, List.of(new MaterialDto(MAT1, "MAT-001", "Hilo de contacto", "m", new BigDecimal("100.000000"), true, null)),
+                MaterialDto::code, MaterialDto::name, MaterialDto::active);
+
+        UI.getCurrent().navigate(StockRoutes.MATERIALS);
+
+        Grid<Object> grid = stockGrid();
+        assertEquals(1, GridKt._size(grid));
+        List<String> row = GridKt._getFormattedRow(grid, 0);
+        assertTrue(row.contains("MAT-001") && row.contains("m") && row.contains("100"), row.toString());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("stock-create")).isEmpty());
+        assertNull(grid.getColumnByKey("actions"));
+    }
+
+    @Test
+    void creatingAWarehousePostsCodeAndNameAndEditingSendsTheActiveFlag() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        stubCatalogue(warehouseClient, List.of(warehouse(WH1, "WH-000", "Central", true)), WarehouseDto::code, WarehouseDto::name, WarehouseDto::active);
+        when(warehouseClient.create(any())).thenAnswer(call -> warehouse(UUID.randomUUID(), ((CatalogueRequest) call.getArgument(0)).code(), "Nave 9", true));
+        when(warehouseClient.update(eq(WH1), any())).thenReturn(warehouse(WH1, "WH-000", "Central", false));
+
+        UI.getCurrent().navigate(StockRoutes.WAREHOUSES);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("stock-create")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        assertTrue(LocatorJ._find(dialog, Checkbox.class).isEmpty(), "el alta nace activa: el estado solo se toca al modificar");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("catalogue-save")));
+        TextField code = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Codigo"));
+        assertTrue(code.isInvalid());
+        verify(warehouseClient, never()).create(any());
+        LocatorJ._setValue(code, "WH-009");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Nombre")), " Nave 9 ");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("catalogue-save")));
+
+        verify(warehouseClient).create(new CatalogueRequest("WH-009", "Nave 9"));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+        NotificationsKt.expectNotifications("Guardado WH-009");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(stockGrid(), 0, "actions"), Button.class, spec -> spec.withId("edit-" + WH1)));
+        Dialog editor = LocatorJ._get(Dialog.class);
+        Checkbox active = LocatorJ._get(editor, Checkbox.class);
+        assertTrue(active.getValue());
+        LocatorJ._setValue(active, false);
+        LocatorJ._click(LocatorJ._get(editor, Button.class, spec -> spec.withId("catalogue-save")));
+
+        verify(warehouseClient).update(WH1, new CatalogueUpdateRequest("WH-000", "Central", false));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+    }
+
+    @Test
+    void serverValidationErrorsLandOnTheStockFieldsAndTheRestIsNotified() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        ApiProblem problem = new ApiProblem(null, "BAD_REQUEST", 400, "Request validation failed.", null, "REQ-VALIDATION", null, "corr-s2",
+                null, false, List.of(new ApiFieldError("code", null, "size must be between 1 and 64"),
+                        new ApiFieldError("supplierRequest", null, "something about the whole body")), null);
+        when(supplierClient.create(any())).thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, problem, "corr-s2", null, "POST /api/stock/suppliers"));
+
+        UI.getCurrent().navigate(StockRoutes.SUPPLIERS);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("stock-create")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        TextField code = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Codigo"));
+        LocatorJ._setValue(code, "SUP-1");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Nombre")), "Rail");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("catalogue-save")));
+
+        assertTrue(code.isInvalid());
+        assertEquals("size must be between 1 and 64", code.getErrorMessage());
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto para corregir");
+        assertEquals(1, NotificationsKt.getNotifications().size(), "el error de todo el cuerpo no tiene campo: se notifica");
+    }
+
+    @Test
+    void aSynchronizedProjectShowsItsOriginAndHasNoEditButton() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        stubCatalogue(projectClient, List.of(
+                        new ProjectDto(PRJ_MANUAL, "PRJ-001", "Renovacion", true, null, false, null),
+                        new ProjectDto(PRJ_SYNCED, "EP-42", "Tramo Sants-Sagrera", true, "mto-configuration", true, null)),
+                ProjectDto::code, ProjectDto::name, ProjectDto::active);
+
+        UI.getCurrent().navigate(StockRoutes.PROJECTS);
+        Grid<Object> grid = stockGrid();
+
+        assertTrue(GridKt._getFormattedRow(grid, 0).contains("manual"), GridKt._getFormattedRow(grid, 0).toString());
+        assertTrue(GridKt._getFormattedRow(grid, 1).contains("sincronizado de mto-configuration"), GridKt._getFormattedRow(grid, 1).toString());
+        LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("edit-" + PRJ_MANUAL));
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 1, "actions"), Button.class, spec -> spec.withId("edit-" + PRJ_SYNCED)).isEmpty(),
+                "lo sincronizado se edita en su origen: el servicio lo rechazaria con PRJ-001");
+    }
+
+    @Test
+    void theMaterialEditorSendsUnitAndMinimumStockAndRejectsANegativeMinimum() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        when(materialClient.create(any())).thenAnswer(call -> new MaterialDto(UUID.randomUUID(), ((MaterialRequest) call.getArgument(0)).code(), "Hilo", "m",
+                new BigDecimal("100"), true, null));
+
+        UI.getCurrent().navigate(StockRoutes.MATERIALS);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("stock-create")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Codigo")), "MAT-009");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Nombre")), "Hilo");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Unidad de medida")), "m");
+        BigDecimalField minimum = LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withLabel("Stock minimo"));
+        LocatorJ._setValue(minimum, new BigDecimal("-1"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("material-save")));
+        assertTrue(minimum.isInvalid());
+        verify(materialClient, never()).create(any());
+
+        LocatorJ._setValue(minimum, new BigDecimal("100"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("material-save")));
+
+        verify(materialClient).create(new MaterialRequest("MAT-009", "Hilo", "m", new BigDecimal("100")));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+        NotificationsKt.expectNotifications("Guardado MAT-009");
     }
 }

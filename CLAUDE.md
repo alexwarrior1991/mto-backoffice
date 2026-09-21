@@ -119,7 +119,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   primer fallo; `UserProfilesView` en `usuarios/perfiles` y `ClientRolesView` en `usuarios/roles`,
   los dos catálogos de solo lectura con filtro local, y `MembersPanel`, los miembros de un perfil
   o de un rol paseados sin total), `ui/stock` (`StockRoutes`, las rutas del módulo de almacén bajo
-  `almacen`; las vistas llegan por fases), `ui/support` (`UiErrors`: excepción →
+  `almacen`; `StockCatalogueView<D>`, la lista paginada en el servidor sobre
+  `StockCatalogueClient.search` con búsqueda, estado y orden de columna, con `MaterialsView`,
+  `WarehousesView`, `SuppliersView` y `ProjectsView` poniendo columnas y editor;
+  `CatalogueEditorDialog` con `Binder` sobre `CatalogueForm` para almacenes, proveedores y
+  proyectos, y `MaterialEditorDialog` sobre `MaterialForm`; el resto llega por fases), `ui/support` (`UiErrors`: excepción →
   `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`;
   `OffsetPager`: anteriores/siguientes para una lista `first`/`max` sin total, donde una página
   llena es la única señal de que hay más).
@@ -185,6 +189,12 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   asignar y quitar perfiles o roles **pintan lo que devuelve el servicio** (la lista actualizada),
   sin releer; y las rutas estáticas del módulo (`usuarios/perfiles`, `usuarios/roles`) ganan a
   `usuarios/:userId` porque Vaadin resuelve antes los segmentos literales.
+- **Un catálogo de almacén no se borra: se retira.** `mto-stock` no tiene `DELETE` de maestros
+  (`stock_movement` y `reservation` los referencian); el editor de modificación lleva `active` y
+  desmarcarlo es retirar. El alta no lleva `active` (el servicio lo crea activo). Un proyecto con
+  `synchronizedFromMasterData` es de `mto-configuration`: la vista enseña su origen y no ofrece
+  modificarlo, porque el servicio lo rechaza con 422 `PRJ-001`; no se reimplementa esa regla aquí,
+  solo se evita ofrecer lo que va a fallar.
 - **«Sacar a la persona» son tres llamadas en ese orden, y no se funden en una.** Desactivar
   solo bloquea el siguiente login, cerrar las sesiones no toca las offline y un token offline
   sobrevive a las dos cosas hasta que se revoca: es lo que el README de `mto-users` deja
@@ -298,6 +308,9 @@ confirmación, la sesión ajena avisada y recargada, credenciales quitadas con s
 a la persona» con sus tres llamadas en orden y parando en el primer fallo; los catálogos: las
 rutas estáticas ganan a `:userId`, el catálogo de perfiles con lo que concede y sus miembros
 paseados sin total, el de roles por cliente con quién los tiene, y la fila que abre la ficha; el
-almacén: los mensajes de sus errores) y
+almacén: los mensajes de sus errores, el grupo «Almacén» con sus catálogos y su ausencia sin
+`stock-read`, un rol de realm que no abre la vista, la lista paginada, buscada, ordenada y filtrada
+en el servicio, lectura sin controles, alta y modificación con `active`, errores del servicio campo
+a campo, el proyecto sincronizado sin botón de modificar, el editor de materiales) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
 sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.
