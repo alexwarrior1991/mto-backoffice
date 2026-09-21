@@ -147,7 +147,13 @@ Séptimo repositorio del dominio, hermano e independiente de
   reserva cancelada) y «salida con esta reserva», que abre la salida de movimientos con el
   material, el almacén y la cantidad fijos porque el servicio exige que coincidan exactamente con
   lo reservado. Una reserva que ya no está activa no cambia: el servicio responde 422 `RES-001` y
-  la notificación lo dice. Lo que falta: conjuntos (S4), historial (S5).
+  la notificación lo dice. S4 trae los **conjuntos** (`almacen/conjuntos`): productos virtuales
+  definidos por su lista de materiales y sin stock propio; la lista es la de cualquier catálogo,
+  el editor lleva la lista de materiales entera (material buscado en el servidor y cantidad por
+  conjunto; repetir un material sustituye su cantidad, y no puede ir vacía) y cada fila ofrece,
+  también a quien solo lee, la **disponibilidad** por almacén: cuántos se podrían montar ahora y
+  qué componente lo limita, tal como lo calcula el servicio
+  (`GET /assemblies/{id}/availability?warehouseId`). Lo que falta: historial (S5).
 
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|

@@ -78,12 +78,20 @@ import com.alejandro.mtobackoffice.client.dto.stock.ProjectSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.stock.SupplierSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.stock.TransferRequest;
 import com.alejandro.mtobackoffice.client.dto.stock.WarehouseSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.stock.AssemblyAvailabilityComponentDto;
+import com.alejandro.mtobackoffice.client.dto.stock.AssemblyAvailabilityDto;
+import com.alejandro.mtobackoffice.client.dto.stock.AssemblyComponentDto;
+import com.alejandro.mtobackoffice.client.dto.stock.AssemblyComponentRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.AssemblyDto;
+import com.alejandro.mtobackoffice.client.dto.stock.AssemblyRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.AssemblyUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.stock.AuditDto;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationDto;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationRequest;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationStatus;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationUpdateRequest;
 import com.alejandro.mtobackoffice.ui.stock.ReservationsView;
+import com.alejandro.mtobackoffice.ui.stock.StockCatalogueView;
 import com.alejandro.mtobackoffice.ui.stock.StockFormats;
 import com.alejandro.mtobackoffice.ui.stock.StockView;
 import com.alejandro.mtobackoffice.ui.stock.MaterialsView;
@@ -579,8 +587,7 @@ class ViewLayerTest {
         stubCatalogue(projectClient, List.<ProjectDto>of(), ProjectDto::code, ProjectDto::name, ProjectDto::active);
         stubCatalogue(materialClient, List.<MaterialDto>of(), MaterialDto::code, MaterialDto::name, MaterialDto::active);
         stubCatalogue(assemblyClient, List.<com.alejandro.mtobackoffice.client.dto.stock.AssemblyDto>of(),
-                com.alejandro.mtobackoffice.client.dto.stock.AssemblyDto::code, com.alejandro.mtobackoffice.client.dto.stock.AssemblyDto::name,
-                com.alejandro.mtobackoffice.client.dto.stock.AssemblyDto::active);
+                AssemblyDto::code, AssemblyDto::name, AssemblyDto::active);
         when(materialClient.lowStock(any(), anyInt(), anyInt(), anyList())).thenReturn(page(List.<MaterialDto>of(), 0, 50));
         when(materialClient.movements(any(), any(), any(), any(), any(), anyInt(), anyInt(), anyList())).thenReturn(page(List.<MovementDto>of(), 0, 50));
         when(movementClient.search(any(), any(), any(), any(), any(), any(), any(), anyInt(), anyInt(), anyList())).thenReturn(page(List.<MovementDto>of(), 0, 50));
@@ -2303,7 +2310,7 @@ class ViewLayerTest {
         assertFalse(labels.contains("Usuarios"), labels.toString());
         SideNavItem stock = LocatorJ._get(SideNavItem.class, spec -> spec.withLabel("Almacen"));
         assertEquals(StockRoutes.PREFIX, stock.getPath().replaceFirst("^/", ""), "las existencias son a la vez el nodo del grupo");
-        assertEquals(List.of("Materiales", "Almacenes", "Proveedores", "Proyectos", "Movimientos", "Reservas"),
+        assertEquals(List.of("Materiales", "Almacenes", "Proveedores", "Proyectos", "Movimientos", "Reservas", "Conjuntos"),
                 stock.getItems().stream().map(SideNavItem::getLabel).toList(), "las pantallas cuelgan del grupo, en su orden");
     }
 
@@ -2839,5 +2846,130 @@ class ViewLayerTest {
         assertTrue(LocatorJ._find(Dialog.class).isEmpty());
         NotificationsKt.expectNotifications("Salida registrada: 5 m de MAT-001");
         verify(reservationClient, atLeast(2)).search(any(), any(), any(), any(), eq(0), anyInt(), anyList());
+    }
+
+    // --- Almacen (mto-stock): conjuntos -----------------------------------------------------------
+
+    private static final UUID ASM1 = UUID.fromString("2b2b2b2b-0000-4000-8000-000000000008");
+    private static final UUID MAT2 = UUID.fromString("2b2b2b2b-0000-4000-8000-000000000009");
+    private static final MaterialSummaryDto GRAPA = new MaterialSummaryDto(MAT2, "MAT-002", "Grapa", "ud", true);
+
+    private static AssemblyDto mensula() {
+        return new AssemblyDto(ASM1, "ASM-001", "Mensula", true, List.of(
+                new AssemblyComponentDto(UUID.randomUUID(), HILO, new BigDecimal("2")),
+                new AssemblyComponentDto(UUID.randomUUID(), GRAPA, new BigDecimal("4"))), null);
+    }
+
+    private static AssemblyAvailabilityComponentDto availabilityOf(MaterialSummaryDto material, String required, String available,
+                                                                   String producible, boolean limiting) {
+        return new AssemblyAvailabilityComponentDto(material, new BigDecimal(required), new BigDecimal(available), BigDecimal.ZERO,
+                new BigDecimal(available), new BigDecimal(producible), limiting);
+    }
+
+    private static Button assemblyAction(String id) {
+        return LocatorJ._get(GridKt._getCellComponent(stockGrid(), 0, StockCatalogueView.ACTIONS_COLUMN), Button.class, spec -> spec.withId(id));
+    }
+
+    @Test
+    void theAssembliesListShowsTheirLinesAndAReaderCanOnlyAskForAvailability() {
+        loginAs("almacen.lector", "ROLE_STOCK_READ");
+        stubCatalogue(assemblyClient, List.of(mensula()), AssemblyDto::code, AssemblyDto::name, AssemblyDto::active);
+
+        UI.getCurrent().navigate(StockRoutes.ASSEMBLIES);
+        Grid<Object> grid = stockGrid();
+
+        assertEquals(1, GridKt._size(grid));
+        List<String> row = GridKt._getFormattedRow(grid, 0);
+        assertTrue(row.contains("ASM-001") && row.contains("2"), row.toString());
+        LocatorJ._get(Span.class, spec -> spec.withText("1 conjuntos"));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("stock-create")).isEmpty());
+        assemblyAction("availability-" + ASM1);
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, StockCatalogueView.ACTIONS_COLUMN), Button.class, spec -> spec.withId("edit-" + ASM1)).isEmpty(),
+                "sin stock-write no se modifica, pero la disponibilidad es una consulta");
+    }
+
+    @Test
+    void theAvailabilityOfAnAssemblyIsAskedPerWarehouseAndMarksTheLimitingComponent() {
+        loginAs("almacen.lector", "ROLE_STOCK_READ");
+        stubCatalogue(assemblyClient, List.of(mensula()), AssemblyDto::code, AssemblyDto::name, AssemblyDto::active);
+        when(assemblyClient.availability(ASM1, WH1)).thenReturn(new AssemblyAvailabilityDto(mensula().summary(), CENTRAL, new BigDecimal("3.000000"),
+                List.of(availabilityOf(HILO, "2", "12.5", "6", false), availabilityOf(GRAPA, "4", "13", "3", true)), Instant.parse("2026-09-21T10:00:00Z")));
+
+        UI.getCurrent().navigate(StockRoutes.ASSEMBLIES);
+        LocatorJ._click(assemblyAction("availability-" + ASM1));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        assertTrue(LocatorJ._find(dialog, Span.class, spec -> spec.withId("availability-quantity")).isEmpty(), "sin almacen no hay calculo: el stock es por almacen");
+        verify(assemblyClient, never()).availability(any(), any());
+
+        LocatorJ._setValue(LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("availability-warehouse")), CENTRAL);
+
+        assertEquals("3 conjuntos montables en WH-000", LocatorJ._get(dialog, Span.class, spec -> spec.withId("availability-quantity")).getText());
+        Grid<Object> components = gridWithId("availability-grid");
+        assertEquals(2, GridKt._size(components));
+        List<String> grapa = GridKt._getFormattedRow(components, 1);
+        assertTrue(grapa.contains("MAT-002 - Grapa") && grapa.contains("13") && grapa.contains("Limita"), grapa.toString());
+        assertFalse(GridKt._getFormattedRow(components, 0).contains("Limita"), "el hilo da para 6");
+    }
+
+    @Test
+    void anAssemblyIsCreatedWithItsLinesAndAnEmptyListIsRefusedBeforeCalling() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        when(assemblyClient.create(any())).thenReturn(mensula());
+
+        UI.getCurrent().navigate(StockRoutes.ASSEMBLIES);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("stock-create")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Codigo")), "ASM-002");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Nombre")), "Mensula doble");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("assembly-save")));
+        LocatorJ._get(dialog, Span.class, spec -> spec.withId("bom-error"));
+        verify(assemblyClient, never()).create(any());
+
+        ComboBox<MaterialSummaryDto> material = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("bom-material"));
+        BigDecimalField quantity = LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withId("bom-quantity"));
+        Button add = LocatorJ._get(dialog, Button.class, spec -> spec.withId("bom-add"));
+        LocatorJ._click(add);
+        assertTrue(material.isInvalid() && quantity.isInvalid(), "una linea es un material y una cantidad positiva");
+        LocatorJ._setValue(material, HILO);
+        LocatorJ._setValue(quantity, new BigDecimal("2"));
+        LocatorJ._click(add);
+        LocatorJ._setValue(material, GRAPA);
+        LocatorJ._setValue(quantity, new BigDecimal("4"));
+        LocatorJ._click(add);
+        LocatorJ._setValue(material, HILO);
+        LocatorJ._setValue(quantity, new BigDecimal("3"));
+        LocatorJ._click(add);
+        Grid<Object> bom = gridWithId("bom-grid");
+        assertEquals(2, GridKt._size(bom), "repetir un material sustituye su cantidad");
+        assertTrue(GridKt._getFormattedRow(bom, 0).contains("3 m"), GridKt._getFormattedRow(bom, 0).toString());
+        assertNull(material.getValue(), "la linea de alta se vacia tras anadir");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("assembly-save")));
+
+        verify(assemblyClient).create(new AssemblyRequest("ASM-002", "Mensula doble", List.of(
+                new AssemblyComponentRequest(MAT1, new BigDecimal("3")), new AssemblyComponentRequest(MAT2, new BigDecimal("4")))));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+        NotificationsKt.expectNotifications("Guardado ASM-002");
+    }
+
+    @Test
+    void editingAnAssemblySendsTheWholeListWithTheActiveFlag() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        stubCatalogue(assemblyClient, List.of(mensula()), AssemblyDto::code, AssemblyDto::name, AssemblyDto::active);
+        when(assemblyClient.update(eq(ASM1), any())).thenReturn(mensula());
+
+        UI.getCurrent().navigate(StockRoutes.ASSEMBLIES);
+        LocatorJ._click(assemblyAction("edit-" + ASM1));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        Grid<Object> bom = gridWithId("bom-grid");
+        assertEquals(2, GridKt._size(bom), "las lineas leidas vienen puestas");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(bom, 1, "actions"), Button.class, spec -> spec.withId("bom-remove-" + MAT2)));
+        assertEquals(1, GridKt._size(bom));
+        LocatorJ._setValue(LocatorJ._get(dialog, Checkbox.class, spec -> spec.withLabel("Activo")), false);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("assembly-save")));
+
+        verify(assemblyClient).update(ASM1, new AssemblyUpdateRequest("ASM-001", "Mensula", false,
+                List.of(new AssemblyComponentRequest(MAT1, new BigDecimal("2")))));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+        NotificationsKt.expectNotifications("Guardado ASM-001");
     }
 }

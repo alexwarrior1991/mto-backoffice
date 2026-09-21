@@ -7,7 +7,9 @@ import com.alejandro.mtobackoffice.client.stock.StockCatalogueClient;
 import com.alejandro.mtobackoffice.configuration.security.StockRoles;
 import com.alejandro.mtobackoffice.ui.master.EnabledFilter;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
+import com.vaadin.flow.component.ClickEvent;
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.ComponentEventListener;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.grid.Grid;
@@ -102,8 +104,10 @@ public abstract class StockCatalogueView<D> extends VerticalLayout {
 
     private Component buildGrid() {
         configureColumns(grid);
-        if (canWrite) {
+        if (canWrite || readersHaveActions()) {
             grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey(ACTIONS_COLUMN).setAutoWidth(true).setFlexGrow(0);
+        }
+        if (canWrite) {
             grid.addItemDoubleClickListener(event -> {
                 if (isEditable(event.getItem())) {
                     openEditor(event.getItem());
@@ -120,14 +124,28 @@ public abstract class StockCatalogueView<D> extends VerticalLayout {
     private Component rowActions(D row) {
         HorizontalLayout actions = new HorizontalLayout();
         actions.setSpacing(false);
-        if (isEditable(row)) {
-            Button edit = new Button(VaadinIcon.EDIT.create(), click -> openEditor(row));
-            edit.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
-            edit.setTooltipText("Modificar");
-            edit.setId("edit-" + idOf(row));
-            actions.add(edit);
+        if (canWrite && isEditable(row)) {
+            actions.add(rowButton("edit-" + idOf(row), VaadinIcon.EDIT, "Modificar", click -> openEditor(row)));
         }
+        addRowActions(row, actions);
         return actions;
+    }
+
+    /** Acciones de la fila ademas de modificar (la disponibilidad de un conjunto); nada por defecto. */
+    protected void addRowActions(D row, HorizontalLayout actions) {
+    }
+
+    /** Si {@link #addRowActions} ofrece algo a quien solo lee, la columna de acciones existe tambien sin {@code stock-write}. */
+    protected boolean readersHaveActions() {
+        return false;
+    }
+
+    protected static Button rowButton(String id, VaadinIcon icon, String tooltip, ComponentEventListener<ClickEvent<Button>> listener) {
+        Button button = new Button(icon.create(), listener);
+        button.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
+        button.setTooltipText(tooltip);
+        button.setId(id);
+        return button;
     }
 
     private Stream<D> fetch(Query<D, Void> query) {

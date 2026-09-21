@@ -132,8 +132,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   botones por permiso; `StockPickers`, los desplegables que buscan en el servidor; `MovementGrid`,
   las columnas del libro; `ReservationsView` en `almacen/reservas`, la lista paginada con sus
   filtros y, en cada fila activa, modificar, salida con la reserva, consumir, liberar y cancelar;
-  `ReservationDialog` con `Binder` sobre `ReservationForm`; `StockClients` y `StockFormats`; el
-  resto llega por fases), `ui/support` (`UiErrors`: excepción →
+  `ReservationDialog` con `Binder` sobre `ReservationForm`; `AssembliesView` en
+  `almacen/conjuntos`, un catálogo más cuyo editor (`AssemblyEditorDialog`) lleva la lista de
+  materiales entera en `BomEditor` y cuya fila ofrece, también a quien solo lee,
+  `AssemblyAvailabilityDialog`, la disponibilidad por almacén que calcula el servicio;
+  `StockClients` y `StockFormats`; el resto llega por fases), `ui/support` (`UiErrors`: excepción →
   `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`;
   `OffsetPager`: anteriores/siguientes para una lista `first`/`max` sin total, donde una página
   llena es la única señal de que hay más).
@@ -217,6 +220,13 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   notificación lo dice. «Salida con esta reserva» es la salida de movimientos con `reservationId`:
   material, almacén y cantidad van fijos porque el servicio exige que coincidan exactamente con lo
   reservado; referencia y notas son lo que el consumo directo no lleva.
+- **Un conjunto no tiene stock: su disponibilidad la calcula el servicio.** La lista de materiales
+  va entera en el alta y en la modificación (la que llega sustituye a la anterior) y no puede ir
+  vacía; `BomEditor` no permite dos líneas del mismo material porque añadir uno que ya está
+  sustituye su cantidad. Cuántos se pueden montar en un almacén y qué componente limita es
+  `GET /assemblies/{id}/availability?warehouseId` (el almacén es obligatorio porque el stock es
+  por almacén): aquí no se divide nada. La disponibilidad es una consulta, así que la fila la
+  ofrece con `stock-read` (`readersHaveActions()` de `StockCatalogueView`).
 - **«Sacar a la persona» son tres llamadas en ese orden, y no se funden en una.** Desactivar
   solo bloquea el siguiente login, cerrar las sesiones no toca las offline y un token offline
   sobrevive a las dos cosas hasta que se revoca: es lo que el README de `mto-users` deja
@@ -341,6 +351,9 @@ salida sin stock con su mensaje, la transferencia que exige otro almacén, el aj
 las filas activas y cancelar solo con `stock-delete`, lectura sin acciones, el alta con su proyecto
 obligatorio, la modificación sin tocar el material, liberar, cancelar y consumir confirmados y el
 422 `RES-001` notificado, y la salida desde una reserva con material, almacén y cantidad fijos y su
-`reservationId`) y
+`reservationId`; los conjuntos: la lista con sus líneas y la disponibilidad ofrecida a quien solo
+lee, la disponibilidad por almacén con el componente que limita, el alta con sus líneas (la lista
+vacía rechazada antes de llamar, la línea sin material ni cantidad, el material repetido
+sustituido) y la modificación con la lista entera y `active`) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
 sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.
