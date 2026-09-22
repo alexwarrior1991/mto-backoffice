@@ -23,7 +23,7 @@ public record KeycloakProperties(
         @NotBlank String issuerUri,
         @DefaultValue("mto-backoffice") @NotBlank String clientId,
         @DefaultValue("") String clientSecret,
-        @DefaultValue({"mto-configuration-api", "mto-users-api"}) @NotEmpty List<String> rolesClientIds
+        @DefaultValue({"mto-configuration-api", "mto-users-api", "mto-stock-api"}) @NotEmpty List<String> rolesClientIds
 ) {
 
     /** El issuer sin barra final, para concatenar rutas. */

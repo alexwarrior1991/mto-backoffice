@@ -1,7 +1,15 @@
 package com.alejandro.mtobackoffice;
 
 import com.alejandro.mtobackoffice.client.configuration.LovClient;
+import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
+import com.alejandro.mtobackoffice.client.stock.MaterialClient;
+import com.alejandro.mtobackoffice.client.stock.MovementClient;
+import com.alejandro.mtobackoffice.client.stock.ProjectClient;
+import com.alejandro.mtobackoffice.client.stock.ReservationClient;
+import com.alejandro.mtobackoffice.client.stock.SupplierClient;
+import com.alejandro.mtobackoffice.client.stock.WarehouseClient;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
+import com.alejandro.mtobackoffice.configuration.security.KeycloakProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -49,6 +57,12 @@ class MtoBackofficeApplicationTests {
     void contextLoadsWithoutKeycloakListening() {
         assertNotNull(context.getBean(LovClient.class));
         assertNotNull(context.getBean(UsersClient.class));
+        for (Class<?> stockClient : List.of(MaterialClient.class, WarehouseClient.class, SupplierClient.class, ProjectClient.class,
+                AssemblyClient.class, MovementClient.class, ReservationClient.class)) {
+            assertNotNull(context.getBean(stockClient), stockClient.getSimpleName());
+        }
+        assertEquals(List.of("mto-configuration-api", "mto-users-api", "mto-stock-api"),
+                context.getBean(KeycloakProperties.class).rolesClientIds(), "los tres clientes cuyos roles son permisos");
         ClientRegistration keycloak = context.getBean(ClientRegistrationRepository.class).findByRegistrationId("keycloak");
         assertNotNull(keycloak);
         assertEquals("http://localhost:8082/realms/mto/protocol/openid-connect/token", keycloak.getProviderDetails().getTokenUri());

@@ -57,6 +57,37 @@ import java.util.function.Supplier;
 
 import com.alejandro.mtobackoffice.client.dto.master.CantileverDto;
 import java.util.ArrayList;
+import com.alejandro.mtobackoffice.client.dto.stock.AdjustmentDirection;
+import com.alejandro.mtobackoffice.client.dto.stock.AdjustmentRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.AssemblyAvailabilityDto;
+import com.alejandro.mtobackoffice.client.dto.stock.AssemblyComponentRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.AssemblyDto;
+import com.alejandro.mtobackoffice.client.dto.stock.AssemblyRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.CatalogueRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.CatalogueUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.EntryRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.MaterialDto;
+import com.alejandro.mtobackoffice.client.dto.stock.MaterialRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.MaterialStockDto;
+import com.alejandro.mtobackoffice.client.dto.stock.MovementDto;
+import com.alejandro.mtobackoffice.client.dto.stock.MovementType;
+import com.alejandro.mtobackoffice.client.dto.stock.OutputRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.ProjectDto;
+import com.alejandro.mtobackoffice.client.dto.stock.ReservationDto;
+import com.alejandro.mtobackoffice.client.dto.stock.ReservationRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.ReservationStatus;
+import com.alejandro.mtobackoffice.client.dto.stock.RevisionDto;
+import com.alejandro.mtobackoffice.client.dto.stock.RevisionOperation;
+import com.alejandro.mtobackoffice.client.dto.stock.SupplierDto;
+import com.alejandro.mtobackoffice.client.dto.stock.TransferRequest;
+import com.alejandro.mtobackoffice.client.dto.stock.WarehouseDto;
+import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
+import com.alejandro.mtobackoffice.client.stock.MaterialClient;
+import com.alejandro.mtobackoffice.client.stock.MovementClient;
+import com.alejandro.mtobackoffice.client.stock.ProjectClient;
+import com.alejandro.mtobackoffice.client.stock.ReservationClient;
+import com.alejandro.mtobackoffice.client.stock.SupplierClient;
+import com.alejandro.mtobackoffice.client.stock.WarehouseClient;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.client.dto.users.ClientDto;
 import com.alejandro.mtobackoffice.client.dto.users.ClientRoleDto;
@@ -111,6 +142,13 @@ class ClientLayerTest {
     private BusinessEntityClient businessEntityClient;
     private JobsClient jobsClient;
     private UsersClient usersClient;
+    private MaterialClient materialClient;
+    private WarehouseClient warehouseClient;
+    private SupplierClient supplierClient;
+    private ProjectClient projectClient;
+    private AssemblyClient assemblyClient;
+    private MovementClient movementClient;
+    private ReservationClient reservationClient;
 
     @BeforeEach
     void setUp() {
@@ -131,6 +169,13 @@ class ClientLayerTest {
         businessEntityClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(BusinessEntityClient.class);
         jobsClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(JobsClient.class);
         usersClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(UsersClient.class);
+        materialClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(MaterialClient.class);
+        warehouseClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(WarehouseClient.class);
+        supplierClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(SupplierClient.class);
+        projectClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ProjectClient.class);
+        assemblyClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(AssemblyClient.class);
+        movementClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(MovementClient.class);
+        reservationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ReservationClient.class);
     }
 
     @AfterEach
@@ -931,6 +976,288 @@ class ClientLayerTest {
         assertEquals("KC-503", unavailable.getProblem().code());
         assertEquals("corr-u2", unavailable.getReference());
         assertEquals("USR-409", conflict.getProblem().code());
+        server.verify();
+    }
+
+    // --- Almacen: mto-stock a traves del gateway ----------------------------------------------------
+
+    private static final String STOCK = GATEWAY + "/api/stock";
+    private static final String MAT_ID = "1a2b3c4d-0000-4000-8000-000000000001";
+    private static final String WH_ID = "1a2b3c4d-0000-4000-8000-000000000002";
+    private static final String WH2_ID = "1a2b3c4d-0000-4000-8000-000000000003";
+    private static final String PRJ_ID = "1a2b3c4d-0000-4000-8000-000000000004";
+    private static final String RES_ID = "1a2b3c4d-0000-4000-8000-000000000005";
+    private static final String AUDIT = "\"audit\":{\"createdAt\":\"2026-09-01T08:00:00Z\",\"updatedAt\":\"2026-09-02T08:00:00Z\","
+            + "\"createdBy\":\"almacen.responsable\",\"updatedBy\":\"almacen.operario\"}";
+    private static final String MATERIAL_SUMMARY = "{\"id\":\"" + MAT_ID + "\",\"code\":\"MAT-001\",\"name\":\"Hilo de contacto\",\"unitOfMeasure\":\"m\",\"active\":true}";
+    private static final String WAREHOUSE_SUMMARY = "{\"id\":\"" + WH_ID + "\",\"code\":\"WH-001\",\"name\":\"Central\",\"active\":true}";
+    private static final String MOVEMENT = "{\"id\":\"1a2b3c4d-0000-4000-8000-00000000000a\",\"material\":" + MATERIAL_SUMMARY
+            + ",\"warehouse\":" + WAREHOUSE_SUMMARY + ",\"type\":\"OUTPUT\",\"quantity\":3,\"signedQuantity\":-3,"
+            + "\"occurredAt\":\"2026-09-10T10:00:00Z\",\"supplier\":null,\"project\":{\"id\":\"" + PRJ_ID + "\",\"code\":\"EP-42\",\"name\":\"Tramo\",\"active\":true},"
+            + "\"reservation\":null,\"relatedMovement\":null,\"externalReference\":\"OT-7\",\"notes\":null," + AUDIT + "}";
+
+    private static String stockPage(String content, int number, int size, long total) {
+        int pages = (int) Math.max(1, (total + size - 1) / size);
+        return "{\"content\":[" + content + "],\"page\":{\"number\":" + number + ",\"size\":" + size + ",\"totalElements\":" + total
+                + ",\"totalPages\":" + pages + ",\"first\":" + (number == 0) + ",\"last\":" + (number >= pages - 1) + "}}";
+    }
+
+    @Test
+    void stockCataloguesSendSearchActiveAndPageableAndReadTheNestedPage() {
+        server.expect(requestTo(STOCK + "/warehouses?search=cen&active=true&page=1&size=20&sort=code%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer token-for-" + PRINCIPAL))
+                .andRespond(withSuccess(stockPage("{\"id\":\"" + WH_ID + "\",\"code\":\"WH-001\",\"name\":\"Central\",\"active\":true," + AUDIT + "}", 1, 20, 21),
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(STOCK + "/suppliers?page=0&size=50&sort=name%2Cdesc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("", 0, 50, 0), MediaType.APPLICATION_JSON));
+
+        PageResponse<WarehouseDto> warehouses = asUser(() -> warehouseClient.search("cen", true, 1, 20, List.of("code,asc")));
+        PageResponse<SupplierDto> suppliers = asUser(() -> supplierClient.search(null, null, 0, 50, List.of("name,desc")));
+
+        assertEquals(21, warehouses.page().totalElements());
+        assertEquals(2, warehouses.page().totalPages());
+        WarehouseDto central = warehouses.content().getFirst();
+        assertEquals("WH-001", central.code());
+        assertEquals("WH-001 - Central", central.summary().label());
+        assertEquals("almacen.operario", central.audit().updatedBy());
+        assertTrue(suppliers.content().isEmpty());
+        server.verify();
+    }
+
+    @Test
+    void stockCatalogueEntriesAreCreatedUpdatedAndReadWithTheirFlags() {
+        server.expect(requestTo(STOCK + "/suppliers")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"SUP-001\",\"name\":\"Rail Supplier\"}", true))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"id\":\"1a2b3c4d-0000-4000-8000-00000000000b\",\"code\":\"SUP-001\",\"name\":\"Rail Supplier\",\"active\":true," + AUDIT + "}"));
+        server.expect(requestTo(STOCK + "/projects/" + PRJ_ID)).andExpect(method(HttpMethod.PUT))
+                .andExpect(content().json("{\"code\":\"PRJ-001\",\"name\":\"Renovacion\",\"active\":false}", true))
+                .andRespond(withSuccess("{\"id\":\"" + PRJ_ID + "\",\"code\":\"PRJ-001\",\"name\":\"Renovacion\",\"active\":false,"
+                        + "\"sourceService\":null,\"synchronizedFromMasterData\":false," + AUDIT + "}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(STOCK + "/projects/" + RES_ID)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"id\":\"" + RES_ID + "\",\"code\":\"EP-42\",\"name\":\"Tramo\",\"active\":true,"
+                        + "\"sourceService\":\"mto-configuration\",\"synchronizedFromMasterData\":true,\"newTomorrow\":1," + AUDIT + "}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(STOCK + "/materials")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"MAT-001\",\"name\":\"Hilo de contacto\",\"unitOfMeasure\":\"m\",\"minimumStockLevel\":100}", true))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"id\":\"" + MAT_ID + "\",\"code\":\"MAT-001\",\"name\":\"Hilo de contacto\",\"unitOfMeasure\":\"m\",\"minimumStockLevel\":100,\"active\":true," + AUDIT + "}"));
+
+        SupplierDto supplier = asUser(() -> supplierClient.create(new CatalogueRequest("SUP-001", "Rail Supplier")));
+        ProjectDto retired = asUser(() -> projectClient.update(UUID.fromString(PRJ_ID), new CatalogueUpdateRequest("PRJ-001", "Renovacion", false)));
+        ProjectDto synchronized_ = asUser(() -> projectClient.findById(UUID.fromString(RES_ID)));
+        MaterialDto material = asUser(() -> materialClient.create(new MaterialRequest("MAT-001", "Hilo de contacto", "m", new BigDecimal("100"))));
+
+        assertTrue(supplier.isEnabled());
+        assertFalse(retired.isEnabled());
+        assertFalse(retired.isSynchronized());
+        assertTrue(synchronized_.isSynchronized());
+        assertEquals("mto-configuration", synchronized_.sourceService());
+        assertEquals(0, new BigDecimal("100").compareTo(material.minimumStockLevel()));
+        server.verify();
+    }
+
+    @Test
+    void theMaterialClientFiltersByStockAndReadsTheStockAndTheLedgerOfOneMaterial() {
+        server.expect(requestTo(STOCK + "/materials?search=hilo&active=true&warehouseId=" + WH_ID + "&belowMinimum=true&page=0&size=20&sort=code%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("", 0, 20, 0), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(STOCK + "/materials/low-stock?page=0&size=20&sort=code%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("", 0, 20, 0), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(STOCK + "/materials/" + MAT_ID + "/stock?warehouseId=" + WH_ID))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"material\":" + MATERIAL_SUMMARY + ",\"warehouse\":" + WAREHOUSE_SUMMARY
+                        + ",\"onHandQuantity\":12.5,\"activeReservedQuantity\":2,\"availableQuantity\":10.5,\"minimumStockLevel\":100,"
+                        + "\"lowStock\":true,\"calculatedAt\":\"2026-09-21T10:00:00Z\"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(matchesRegex(".*/api/stock/materials/" + MAT_ID + "/movements\\?dateFrom=2026-09-01T00(:|%3A)00(:|%3A)00Z&page=0&size=20&sort=occurredAt(,|%2C)desc")))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(MOVEMENT, 0, 20, 1), MediaType.APPLICATION_JSON));
+
+        asUser(() -> materialClient.filter("hilo", true, UUID.fromString(WH_ID), true, 0, 20, List.of("code,asc")));
+        asUser(() -> materialClient.lowStock(null, 0, 20, List.of("code,asc")));
+        MaterialStockDto stock = asUser(() -> materialClient.stock(UUID.fromString(MAT_ID), UUID.fromString(WH_ID)));
+        PageResponse<MovementDto> ledger = asUser(() -> materialClient.movements(UUID.fromString(MAT_ID), null,
+                Instant.parse("2026-09-01T00:00:00Z"), null, null, 0, 20, List.of("occurredAt,desc")));
+
+        assertEquals("MAT-001 - Hilo de contacto", stock.material().label());
+        assertEquals("WH-001", stock.warehouse().code());
+        assertEquals(0, new BigDecimal("10.5").compareTo(stock.availableQuantity()));
+        assertTrue(stock.isLowStock());
+        MovementDto output = ledger.content().getFirst();
+        assertEquals(MovementType.OUTPUT, output.type());
+        assertEquals(-1, output.type().sign());
+        assertEquals(0, new BigDecimal("-3").compareTo(output.signedQuantity()));
+        assertEquals("EP-42", output.project().code());
+        assertNull(output.supplier());
+        server.verify();
+    }
+
+    @Test
+    void movementsArePostedToTheirOwnPathsAndATransferReturnsTwoRows() {
+        String entry = MOVEMENT.replace("\"type\":\"OUTPUT\",\"quantity\":3,\"signedQuantity\":-3", "\"type\":\"ENTRY\",\"quantity\":10,\"signedQuantity\":10");
+        String outgoing = MOVEMENT.replace("\"type\":\"OUTPUT\"", "\"type\":\"OUTGOING_TRANSFER\"");
+        String incoming = MOVEMENT.replace("\"type\":\"OUTPUT\",\"quantity\":3,\"signedQuantity\":-3", "\"type\":\"INCOMING_TRANSFER\",\"quantity\":3,\"signedQuantity\":3")
+                .replace("\"relatedMovement\":null", "\"relatedMovement\":{\"id\":\"1a2b3c4d-0000-4000-8000-00000000000a\",\"type\":\"OUTGOING_TRANSFER\",\"quantity\":3,\"occurredAt\":\"2026-09-10T10:00:00Z\",\"externalReference\":\"OT-7\"}");
+        server.expect(requestTo(STOCK + "/movements/entries")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"materialId\":\"" + MAT_ID + "\",\"warehouseId\":\"" + WH_ID + "\",\"quantity\":10}", true))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(entry));
+        server.expect(requestTo(STOCK + "/movements/outputs")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"materialId\":\"" + MAT_ID + "\",\"warehouseId\":\"" + WH_ID + "\",\"reservationId\":\"" + RES_ID
+                        + "\",\"quantity\":3,\"externalReference\":\"OT-7\"}", true))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(MOVEMENT));
+        server.expect(requestTo(STOCK + "/movements/adjustments")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"materialId\":\"" + MAT_ID + "\",\"warehouseId\":\"" + WH_ID + "\",\"direction\":\"NEGATIVE\",\"quantity\":1,\"notes\":\"Rotura\"}", true))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(MOVEMENT));
+        server.expect(requestTo(STOCK + "/movements/transfers")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"materialId\":\"" + MAT_ID + "\",\"sourceWarehouseId\":\"" + WH_ID + "\",\"targetWarehouseId\":\"" + WH2_ID + "\",\"quantity\":3}", true))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body("[" + outgoing + "," + incoming + "]"));
+
+        MovementDto entered = asUser(() -> movementClient.entry(new EntryRequest(UUID.fromString(MAT_ID), UUID.fromString(WH_ID), null, BigDecimal.TEN, null, null, null)));
+        MovementDto consumed = asUser(() -> movementClient.output(new OutputRequest(UUID.fromString(MAT_ID), UUID.fromString(WH_ID), null, UUID.fromString(RES_ID),
+                new BigDecimal("3"), null, "OT-7", null)));
+        MovementDto adjusted = asUser(() -> movementClient.adjustment(new AdjustmentRequest(UUID.fromString(MAT_ID), UUID.fromString(WH_ID), AdjustmentDirection.NEGATIVE,
+                BigDecimal.ONE, null, null, "Rotura")));
+        List<MovementDto> transferred = asUser(() -> movementClient.transfer(new TransferRequest(UUID.fromString(MAT_ID), UUID.fromString(WH_ID), UUID.fromString(WH2_ID),
+                new BigDecimal("3"), null, null, null)));
+
+        assertEquals(MovementType.ENTRY, entered.type());
+        assertEquals(0, BigDecimal.TEN.compareTo(entered.signedQuantity()));
+        assertEquals(MovementType.OUTPUT, consumed.type());
+        assertEquals(MovementType.OUTPUT, adjusted.type());
+        assertEquals(2, transferred.size());
+        assertEquals(MovementType.OUTGOING_TRANSFER, transferred.get(0).type());
+        assertEquals(MovementType.INCOMING_TRANSFER, transferred.get(1).type());
+        assertEquals(MovementType.OUTGOING_TRANSFER, transferred.get(1).relatedMovement().type());
+        server.verify();
+    }
+
+    @Test
+    void reservationsAreCancelledWithADeleteThatReturnsTheBodyAndChangeStateWithBodilessPosts() {
+        String reservation = "{\"id\":\"" + RES_ID + "\",\"material\":" + MATERIAL_SUMMARY + ",\"warehouse\":" + WAREHOUSE_SUMMARY
+                + ",\"project\":{\"id\":\"" + PRJ_ID + "\",\"code\":\"EP-42\",\"name\":\"Tramo\",\"active\":true},\"quantity\":2,"
+                + "\"status\":\"%s\",\"reservedAt\":\"2026-09-10T10:00:00Z\",\"releasedAt\":%s,\"active\":%s," + AUDIT + "}";
+        server.expect(requestTo(STOCK + "/reservations")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"materialId\":\"" + MAT_ID + "\",\"warehouseId\":\"" + WH_ID + "\",\"projectId\":\"" + PRJ_ID + "\",\"quantity\":2}", true))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(reservation.formatted("ACTIVE", "null", "true")));
+        server.expect(requestTo(STOCK + "/reservations/" + RES_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withSuccess(reservation.formatted("CANCELLED", "\"2026-09-11T10:00:00Z\"", "false"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(STOCK + "/reservations/" + RES_ID + "/release")).andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(reservation.formatted("RELEASED", "\"2026-09-11T10:00:00Z\"", "false"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(STOCK + "/reservations/" + RES_ID + "/consume")).andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(reservation.formatted("CONSUMED", "\"2026-09-11T10:00:00Z\"", "false"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(STOCK + "/reservations?warehouseId=" + WH_ID + "&status=ACTIVE&page=0&size=20&sort=reservedAt%2Cdesc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(reservation.formatted("ACTIVE", "null", "true"), 0, 20, 1), MediaType.APPLICATION_JSON));
+
+        ReservationDto created = asUser(() -> reservationClient.create(new ReservationRequest(UUID.fromString(MAT_ID), UUID.fromString(WH_ID), UUID.fromString(PRJ_ID),
+                new BigDecimal("2"), null)));
+        ReservationDto cancelled = asUser(() -> reservationClient.cancel(UUID.fromString(RES_ID)));
+        ReservationDto released = asUser(() -> reservationClient.release(UUID.fromString(RES_ID)));
+        ReservationDto consumed = asUser(() -> reservationClient.consume(UUID.fromString(RES_ID)));
+        PageResponse<ReservationDto> active = asUser(() -> reservationClient.search(UUID.fromString(WH_ID), ReservationStatus.ACTIVE, null, null, 0, 20, List.of("reservedAt,desc")));
+
+        assertTrue(created.isActive());
+        assertEquals(ReservationStatus.CANCELLED, cancelled.status());
+        assertEquals(Instant.parse("2026-09-11T10:00:00Z"), cancelled.releasedAt());
+        assertEquals(ReservationStatus.RELEASED, released.status());
+        assertEquals(ReservationStatus.CONSUMED, consumed.status());
+        assertEquals(1, active.page().totalElements());
+        assertEquals("Hilo de contacto", active.content().getFirst().material().name());
+        server.verify();
+    }
+
+    @Test
+    void assembliesCarryTheirBomAndTheAvailabilityMarksTheLimitingComponent() {
+        String assembly = "{\"id\":\"1a2b3c4d-0000-4000-8000-00000000000c\",\"code\":\"ASM-001\",\"name\":\"Mensula\",\"active\":true,"
+                + "\"components\":[{\"id\":\"1a2b3c4d-0000-4000-8000-00000000000d\",\"material\":" + MATERIAL_SUMMARY + ",\"quantity\":2," + AUDIT + "}]," + AUDIT + "}";
+        server.expect(requestTo(STOCK + "/assemblies")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"ASM-001\",\"name\":\"Mensula\",\"components\":[{\"materialId\":\"" + MAT_ID + "\",\"quantity\":2}]}", true))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(assembly));
+        server.expect(requestTo(STOCK + "/assemblies/1a2b3c4d-0000-4000-8000-00000000000c/availability?warehouseId=" + WH_ID))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"assembly\":{\"id\":\"1a2b3c4d-0000-4000-8000-00000000000c\",\"code\":\"ASM-001\",\"name\":\"Mensula\",\"active\":true},"
+                        + "\"warehouse\":" + WAREHOUSE_SUMMARY + ",\"availableQuantity\":5,\"components\":[{\"material\":" + MATERIAL_SUMMARY
+                        + ",\"requiredQuantityPerAssembly\":2,\"onHandQuantity\":12,\"activeReservedQuantity\":2,\"availableQuantity\":10,"
+                        + "\"producibleAssemblyQuantity\":5,\"limitingComponent\":true}],\"calculatedAt\":\"2026-09-21T10:00:00Z\"}", MediaType.APPLICATION_JSON));
+
+        AssemblyDto created = asUser(() -> assemblyClient.create(new AssemblyRequest("ASM-001", "Mensula",
+                List.of(new AssemblyComponentRequest(UUID.fromString(MAT_ID), new BigDecimal("2"))))));
+        AssemblyAvailabilityDto availability = asUser(() -> assemblyClient.availability(created.id(), UUID.fromString(WH_ID)));
+
+        assertEquals(1, created.components().size());
+        assertEquals("MAT-001", created.components().getFirst().material().code());
+        assertEquals(0, new BigDecimal("5").compareTo(availability.availableQuantity()));
+        assertTrue(availability.components().getFirst().isLimiting());
+        assertEquals("Central", availability.warehouse().name());
+        server.verify();
+    }
+
+    /** El generico del historial se resuelve contra la subinterfaz: la foto sale tipada, no como un mapa. */
+    @Test
+    void stockRevisionsComeTypedForEachResource() {
+        server.expect(requestTo(STOCK + "/materials/" + MAT_ID + "/revisions?page=0&size=10")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("{\"revision\":{\"revision\":3,\"revisionAt\":\"2026-09-02T08:00:00Z\",\"operation\":\"UPDATED\","
+                        + "\"author\":\"almacen.operario\",\"source\":\"HTTP\",\"correlationId\":\"c-1\"},"
+                        + "\"entity\":{\"id\":\"" + MAT_ID + "\",\"code\":\"MAT-001\",\"name\":\"Hilo de contacto\",\"unitOfMeasure\":\"m\",\"minimumStockLevel\":100,\"active\":true,"
+                        + "\"audit\":{\"createdAt\":null,\"updatedAt\":null,\"createdBy\":null,\"updatedBy\":null}}}", 0, 10, 3), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(STOCK + "/reservations/" + RES_ID + "/revisions?page=0&size=10")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("{\"revision\":{\"revision\":1,\"revisionAt\":\"2026-09-01T08:00:00Z\",\"operation\":\"CREATED\","
+                        + "\"author\":\"system\",\"source\":\"BASELINE\",\"correlationId\":null},"
+                        + "\"entity\":{\"id\":\"" + RES_ID + "\",\"material\":" + MATERIAL_SUMMARY + ",\"warehouse\":" + WAREHOUSE_SUMMARY
+                        + ",\"project\":null,\"quantity\":2,\"status\":\"ACTIVE\",\"reservedAt\":\"2026-09-01T08:00:00Z\",\"releasedAt\":null,\"active\":true,\"audit\":null}}", 0, 10, 1),
+                        MediaType.APPLICATION_JSON));
+
+        PageResponse<RevisionDto<MaterialDto>> material = asUser(() -> materialClient.revisions(UUID.fromString(MAT_ID), 0, 10));
+        PageResponse<RevisionDto<ReservationDto>> reservation = asUser(() -> reservationClient.revisions(UUID.fromString(RES_ID), 0, 10));
+
+        RevisionDto<MaterialDto> revision = material.content().getFirst();
+        assertEquals(3, revision.revision().revision());
+        assertEquals(RevisionOperation.UPDATED, revision.revision().operation());
+        assertEquals("almacen.operario", revision.revision().author());
+        assertEquals("MAT-001", revision.entity().code());
+        assertNull(revision.entity().audit().createdBy(), "las columnas de auditoria no se auditan");
+        assertEquals("BASELINE", reservation.content().getFirst().revision().source());
+        assertEquals(ReservationStatus.ACTIVE, reservation.content().getFirst().entity().status());
+        server.verify();
+    }
+
+    /** mto-stock no manda problem+json: error y message caen en title y detail, y lo demas por los alias de siempre. */
+    @Test
+    void theStockErrorJsonIsReadThroughItsAliases() {
+        server.expect(requestTo(STOCK + "/materials")).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Correlation-Id", "corr-s1")
+                        .body("{\"timestamp\":\"2026-09-21T10:00:00Z\",\"status\":400,\"error\":\"BAD_REQUEST\",\"message\":\"Request validation failed.\","
+                                + "\"path\":\"/api/v1/inventory/materials\",\"method\":\"POST\",\"errorCode\":\"REQ-VALIDATION\",\"correlationId\":\"corr-s1\","
+                                + "\"validationErrors\":[{\"field\":\"code\",\"message\":\"must not be blank\"}]}"));
+        server.expect(requestTo(STOCK + "/movements/outputs")).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":409,\"error\":\"CONFLICT\",\"message\":\"Insufficient stock for material " + MAT_ID + " in warehouse " + WH_ID
+                                + ": requested 5, available 2\",\"errorCode\":\"STK-001\",\"correlationId\":null,\"validationErrors\":[]}"));
+        server.expect(requestTo(STOCK + "/reservations/" + RES_ID + "/release")).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.UNPROCESSABLE_CONTENT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":422,\"error\":\"UNPROCESSABLE_CONTENT\",\"message\":\"Only active reservations can be changed\",\"errorCode\":\"RES-001\",\"validationErrors\":[]}"));
+
+        ValidationApiException validation = assertThrows(ValidationApiException.class,
+                () -> asUser(() -> materialClient.create(new MaterialRequest("", "Hilo", "m", BigDecimal.ONE))));
+        ConflictApiException insufficient = assertThrows(ConflictApiException.class,
+                () -> asUser(() -> movementClient.output(new OutputRequest(UUID.fromString(MAT_ID), UUID.fromString(WH_ID), null, null, new BigDecimal("5"), null, null, null))));
+        ValidationApiException rule = assertThrows(ValidationApiException.class,
+                () -> asUser(() -> reservationClient.release(UUID.fromString(RES_ID))));
+
+        assertEquals("REQ-VALIDATION", validation.getProblem().code());
+        assertEquals("BAD_REQUEST", validation.getProblem().title());
+        assertEquals("Request validation failed.", validation.getProblem().detail());
+        assertEquals("code", validation.getProblem().errors().getFirst().field());
+        assertEquals("corr-s1", validation.getReference());
+        assertEquals("STK-001", insufficient.getProblem().code());
+        assertTrue(insufficient.getProblem().detail().contains("requested 5, available 2"));
+        assertEquals(422, rule.getStatus().value());
+        assertEquals("RES-001", rule.getProblem().code());
+        assertFalse(rule.getProblem().hasFieldErrors());
+        assertEquals("Only active reservations can be changed", rule.getProblem().detail());
         server.verify();
     }
 }
