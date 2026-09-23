@@ -20,7 +20,7 @@ Séptimo repositorio del dominio, hermano e independiente de
 [`mto-maintenance`](../mto-maintenance), [`mto-users`](../mto-users) y
 [`mto-gateway`](../mto-gateway); la infraestructura local es de [`mto-platform`](../mto-platform).
 
-## Estado: fase 6
+## Estado: fase 7
 
 - **Fase 0**: circuito completo con lo mínimo. Cliente `mto-backoffice` en el realm, login OIDC,
   marco con menú filtrado por roles y la pantalla de inicio con el diagnóstico del token.
@@ -210,6 +210,17 @@ método HTTP (`GET` lee, `POST`/`PUT` escriben, `DELETE` cancela) y ninguno impl
 Esconder un botón es cortesía: la guarda real es `@RolesAllowed` en la vista y el 403 del servicio.
 Con los usuarios de desarrollo, `config.responsable` (`mto-admin`) lo ve todo; `config.editor`
 (`mto-editor`) ve los catálogos pero no puede tocarlos: le falta `lov-manage`, a propósito.
+- **Fase 7**: el **esquema de una vía**, desde el botón «Esquema» de cada fila de *Infraestructura ›
+  Vías* (también para quien solo lee): una ventana con la vía como una línea recta y, sobre ella, un
+  poste por perfil a distancia uniforme, en el orden físico de la vía, con su código encima y su KP
+  debajo, el tipo de poste y el estado, los seccionamientos, sus ménsulas como brazos (con el tipo,
+  hacia el lado que dice `railPoleDistance`) y su seccionador; los aisladores de sección van sobre
+  la línea, colocados entre los dos perfiles vecinos por KP, con sus agujas; las estaciones de la
+  vía, en la cabecera; el detalle de cada elemento, al pasar por encima. Es esquemático a propósito:
+  no es el layout CAD. Lo que se dibuja es la proyección que `mto-configuration` devuelve en **una
+  llamada** (`GET /tracks/{id}/schematic`, añadido allí para esto y **cacheado en Redis**, con solo
+  lo que el dibujo necesita): la pantalla no ordena ni calcula nada, reparte los postes y escapa el
+  texto antes de convertirlo en SVG.
 
 ## Requisitos
 

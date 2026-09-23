@@ -21,10 +21,15 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.ui.support.UiErrors;
+import com.vaadin.flow.component.icon.VaadinIcon;
+import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 
 /**
  * Las vias: nombre, paquete y las estaciones que atraviesa. Sus perfiles (cientos por via) no
- * viajan en la lista ni se tocan al guardar.
+ * viajan en la lista ni se tocan al guardar. Cada fila ofrece ademas, a quien solo lee tambien, el
+ * esquema de la via ({@link TrackSchematicDialog}): una llamada a {@code GET /tracks/{id}/schematic}.
  */
 @Route(value = MasterView.ROUTE_PREFIX + "/vias", layout = MainLayout.class)
 @PageTitle("Vias")
@@ -32,12 +37,14 @@ import java.util.stream.Collectors;
 @RolesAllowed(SecurityRoles.CONFIG_READ)
 public class TracksView extends MasterView<TrackDto> {
 
+    private final TrackClient tracks;
     private final ReferenceCatalog catalog;
     private final Select<EnabledFilter> state = EnabledFilter.select("Estado", "Todas", "Activas", "Inactivas");
 
     public TracksView(TrackClient client, ExecutionPackageClient packages, StationClient stations,
                       BusinessEntityClient companies, AuthenticationContext authentication, ObjectMapper objectMapper) {
         super(MasterResource.TRACKS, TrackDto.class, client, authentication, objectMapper);
+        this.tracks = client;
         this.catalog = new ReferenceCatalog(packages, stations, client, companies);
         state.addValueChangeListener(change -> refresh());
         init();
@@ -70,6 +77,20 @@ public class TracksView extends MasterView<TrackDto> {
         }
         return dto.getStationIds().stream().map(id -> catalog.stationRef(id).map(RefItem::label).orElse("#" + id))
                 .collect(Collectors.joining(", "));
+    }
+
+    @Override
+    protected void addRowActions(TrackDto row, HorizontalLayout actions) {
+        actions.add(rowButton("schematic-" + row.getId(), VaadinIcon.SPLINE_CHART, "Esquema", click -> openSchematic(row)));
+    }
+
+    /** Una llamada, y el servicio decide: la proyeccion ya viene ordenada y cacheada alli. */
+    private void openSchematic(TrackDto row) {
+        try {
+            new TrackSchematicDialog(tracks.schematic(row.getId())).open();
+        } catch (BackofficeApiException failure) {
+            UiErrors.show(failure);
+        }
     }
 
     @Override
