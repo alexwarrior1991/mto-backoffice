@@ -82,9 +82,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   el libro) y `ReservationClient` (alta, modificación, cancelar con un `DELETE` que devuelve
   cuerpo, liberar, consumir); DTO como records en `client/dto/stock`, con `RevisionDto<T>` para el
   historial y enumerados con etiqueta). Los DTO
-  (`client/dto`): `LovDto` es un record con solo las claves que usa la UI y
-  `@JsonInclude(NON_NULL)`; los maestros (`client/dto/master`) son **clases mutables** que heredan
-  de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo y los hijos
+  (`client/dto`): `LovDto` es un record con solo las claves que usa la UI (con `versionNumber`,
+  que vuelve como se leyó) y `@JsonInclude(NON_NULL)`; los maestros (`client/dto/master`) son
+  **clases mutables** que heredan de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo y los hijos
   tipados que los editores gestionan (`CantileverDto` con su `SteadyArmDto` 1:1,
   `SectionInsulatorSwitchDto`; `DisconnectorDto` trae además `profileCode`/`profileKp`, solo de
   salida); `PageResponse<T>` con la forma `{content, page}`; los trabajos (`client/dto/jobs`:
@@ -187,7 +187,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   fallback del gateway con `Retry-After` y `service`) y las vistas solo conocen
   `BackofficeApiException` y sus subclases. Un 502 no es transitorio y su notificación lleva el
   detalle; un 409 `STK-001` es falta de stock y un 422 sin errores por campo es una regla de negocio
-  (`UiErrors` los dice así, no como «conflicto» ni «petición no válida»).
+  (`UiErrors` los dice así, no como «conflicto» ni «petición no válida»). Los dos 409 de
+  `mto-configuration` tampoco se dicen igual: `CON-001` es una versión vieja («recarga y vuelve a
+  intentarlo») y `BUS-002`, un valor único repetido o una entrada en uso, que recargar no arregla.
 - **La paginación es la forma DTO** `{content, page:{size,number,totalElements,totalPages}}`, fijada
   en `mto-configuration` con `spring.data.web.pageable.serialization-mode: via_dto` y pinada allí
   por test. `PageResponse<T>` la lee (y tolera `first`/`last` de stock y maintenance). La API de
@@ -254,10 +256,17 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 - **Una vista por familia de endpoints, no por recurso.** Los 17 catálogos comparten controlador
   base y DTO en `mto-configuration`; aquí son una `LovCrudView` con el recurso en la ruta. Un
   catálogo nuevo allí es una constante más en `LovResource`, nada más.
+- **Una entrada de catálogo se modifica con el `versionNumber` que se leyó.** Es el bloqueo
+  optimista de `mto-configuration`: `LovForm.toDto(existing)` y el lote de activar o desactivar
+  parten de la fila leída, así que la versión viaja sin que nadie la toque, y el alta no la lleva.
+  Tras guardar, la vista relee el catálogo, y la siguiente modificación lleva la versión nueva. Si
+  otra persona guardó antes, el servicio responde 409 `CON-001` sin escribir nada (en un lote, una
+  sola entrada vieja rechaza el lote entero); el diálogo sigue abierto con lo escrito y la
+  notificación pide recargar. La pantalla no compara versiones: eso lo decide el servicio.
 - **La validación de negocio vive en el servicio.** El formulario solo exige lo evidente (código y
   descripción obligatorios, longitud de columna) y vuelca `errors[{field, code, message}]` campo a
-  campo con `ServerValidation`. Un `code` repetido llega como 409 y un cuerpo sin `code` como 400
-  desde que `RestExceptionHandler` los mapea (antes eran 500).
+  campo con `ServerValidation`. Un `code` repetido llega como 409 `BUS-002` y un cuerpo sin `code`
+  como 400 desde que `RestExceptionHandler` los mapea (antes eran 500).
 - **Un maestro se edita sobre la fila leída y se devuelve entero** (`README_API.md` §4 de
   `mto-configuration`: lee, modifica sobre lo leído, devuélvelo entero). Por eso los DTO de
   `client/dto/master` son clases mutables y no records, y por eso tienen lo que un DTO «solo con
@@ -318,7 +327,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 Una clase por capa; se añaden métodos, no clases: `ClientLayerTest` (interfaces `@HttpExchange` y
 `RestClient` reales contra `MockRestServiceServer`: prefijo del gateway, Bearer y correlación, forma
 de página, `problem+json` de configuration, 401/403 y 503 del gateway, cuerpo no JSON; los
-maestros: resolución del genérico, parámetros de página y orden del `/filter`, `extras` e hijos a
+catálogos: el `versionNumber` leído en el `PUT` y en el lote, y los dos 409 de configuration
+(`CON-001` y `BUS-002`) distinguidos por su código; los maestros: resolución del genérico,
+parámetros de página y orden del `/filter`, `extras` e hijos a
 `null` en un `PUT`, referencias a catálogo como `{id, code}`, las ménsulas tipadas con su brazo y
 el seccionador 1:1 en un `PUT`, el esquema de una vía con sus records anidados; los trabajos: la importación como parte multipart con `dryRun` en
 la query, el 429 con el trabajo rechazado y el `Retry-After`, la lista paginada con sus filtros,
@@ -336,9 +347,11 @@ listado no aporta nada, un rol de realm `users-read` o `stock-read` nunca abre e
 `SecurityRoles`, `UserRoles` y `StockRoles` coinciden con el realm y son disjuntos, registro OIDC sin descubrimiento, roles desde
 el access token, `CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
 de la ruta y su filtro local, menú por roles, controles de escritura ocultos sin permiso, alta por
-diálogo, errores del servicio campo a campo, borrado con confirmación, lote sobre la selección,
-parser del alta múltiple, notificación de error, diagnóstico de audiencias; los maestros: lista
-paginada, ordenada y filtrada contra el cliente simulado, nombres de referencias en las columnas,
+diálogo, errores del servicio campo a campo, la modificación con la versión leída y la siguiente
+con la recargada, la versión vieja con su aviso de recargar y el diálogo abierto, los dos 409 de
+configuration dichos distinto, borrado con confirmación, lote sobre la selección con la versión
+de cada fila, parser del alta múltiple, notificación de error, diagnóstico de audiencias; los
+maestros: lista paginada, ordenada y filtrada contra el cliente simulado, nombres de referencias en las columnas,
 edición sobre una copia que vuelve con `extras` e hijos a `null`, errores del servicio sobre un
 desplegable, borrado confirmado, alta de un perfil con sus referencias, KP no válido, las
 ménsulas a `null` sin tocar y enteras al tocarlas, las agujas en su diálogo y enteras al guardar,

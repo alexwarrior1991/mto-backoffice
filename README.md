@@ -31,7 +31,11 @@ Séptimo repositorio del dominio, hermano e independiente de
   alta y modificación en un diálogo, borrado con confirmación (lógico en el servicio), alta múltiple
   pegando `CODIGO;Descripción` por línea (`POST /bulk`) y activar o desactivar la selección
   (`PUT /bulk`). Los errores del servicio se enseñan en su campo: `errors[{field, code, message}]`
-  se vuelca sobre el formulario y lo que no se puede atribuir va a una notificación.
+  se vuelca sobre el formulario y lo que no se puede atribuir va a una notificación. Cada
+  modificación, también cada entrada del lote, lleva el `versionNumber` de la fila que se leyó, y
+  el catálogo se relee al guardar: si otra persona guardó la entrada entre medias, el servicio
+  responde 409 `CON-001` sin escribir nada y la notificación pide recargar, en vez de pisar su
+  cambio.
 
 - **Fase 2**: los seis maestros de infraestructura (paquetes de ejecución, estaciones, vías,
   perfiles, seccionadores y aisladores de sección) bajo `infraestructura/*`, con **paginación en el
@@ -333,7 +337,9 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   es el `Pageable` de Spring por parámetros (`page`, `size`, `sort=campo,asc`, solo atributos de la
   entidad) con la misma página anidada que configuración.
 - Errores: `ApiErrorDecoder` entiende el `application/problem+json` de `mto-configuration` (`code`,
-  `traceId`, `retryable`, `errors[{field,code,message}]`), el de `mto-users` (`errorCode`,
+  `traceId`, `retryable`, `errors[{field,code,message}]`; sus dos 409 son `CON-001`, un
+  `versionNumber` que ya no es el guardado y que se arregla recargando, y `BUS-002`, un valor único
+  repetido o una entrada en uso, que no), el de `mto-users` (`errorCode`,
   `correlationId`, `validationErrors[{field,message}]`, `Retry-After` en su 503), el JSON de error
   de `mto-stock` (no es `problem+json`: `error`, `message`, `errorCode`, `correlationId`,
   `validationErrors[{field,message}]`; 409 `STK-001` es falta de stock y un 422 sin campos es una
