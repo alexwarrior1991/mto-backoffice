@@ -73,6 +73,14 @@ public final class UiErrors {
                     : "La peticion no es valida." + detail(exception);
             case ConflictApiException stock when "STK-001".equals(stock.getProblem().code()) -> "No hay stock disponible suficiente."
                     + detail(exception);
+            // mto-configuration: el versionNumber que se mando ya no es el guardado. Lo que hay que
+            // hacer es exactamente eso, y el detalle del servicio ("intentelo de nuevo") no aporta nada.
+            case ConflictApiException concurrent when "CON-001".equals(concurrent.getProblem().code()) ->
+                    "Conflicto con otro cambio: recarga y vuelve a intentarlo.";
+            // mto-configuration: un valor unico repetido (el codigo de un catalogo) o una entrada en
+            // uso. Recargar no lo arregla, asi que no se pide recargar.
+            case ConflictApiException duplicated when "BUS-002".equals(duplicated.getProblem().code()) ->
+                    "Ya existe otro registro con ese valor (un codigo que no se puede repetir), o la entrada esta en uso.";
             case ConflictApiException ignored -> "Conflicto con otro cambio: recarga y vuelve a intentarlo."
                     + detail(exception);
             // Un 502 no es transitorio (mto-users sin SMTP, por ejemplo): su detalle es lo unico que lo explica.

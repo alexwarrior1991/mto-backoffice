@@ -296,9 +296,9 @@ class ViewLayerTest {
 
     private static List<LovDto> threeStatuses() {
         return List.of(
-                new LovDto(1L, "DRAFT", "Borrador", true, LocalDateTime.of(2026, 8, 1, 10, 15), "config.responsable"),
-                new LovDto(2L, "PROVISIONAL", "Provisional", true, null, null),
-                new LovDto(3L, "DEFINITIVE", "Definitivo", false, null, null));
+                new LovDto(1L, "DRAFT", "Borrador", true, 3, LocalDateTime.of(2026, 8, 1, 10, 15), "config.responsable"),
+                new LovDto(2L, "PROVISIONAL", "Provisional", true, 1, null, null),
+                new LovDto(3L, "DEFINITIVE", "Definitivo", false, 1, null, null));
     }
 
     @SuppressWarnings("unchecked")
@@ -441,7 +441,7 @@ class ViewLayerTest {
         loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_LOV_MANAGE");
         when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
         LovDto expected = LovDto.forCreate("ARCHIVED", "Archivado", true);
-        when(lovClient.create(PROFILE_STATUSES, expected)).thenReturn(new LovDto(4L, "ARCHIVED", "Archivado", true, null, null));
+        when(lovClient.create(PROFILE_STATUSES, expected)).thenReturn(new LovDto(4L, "ARCHIVED", "Archivado", true, 1, null, null));
 
         UI.getCurrent().navigate(CATALOGUE_ROUTE);
         LocatorJ._click(button("Nuevo"));
@@ -477,6 +477,77 @@ class ViewLayerTest {
         assertEquals("El codigo ya existe", code.getErrorMessage());
         assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto para corregir");
         assertEquals(1, NotificationsKt.getNotifications().size(), "lo no atribuible a un campo se notifica");
+    }
+
+    private static void editTheFirstRowDescription(String description) {
+        Component actions = GridKt._getCellComponent(grid(), 0, "actions");
+        LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withId("edit-1")));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withLabel("Descripcion")), description);
+        LocatorJ._click(button("Guardar"));
+    }
+
+    private static BackofficeApiException configurationConflict(String code, String detail) {
+        ApiProblem problem = new ApiProblem("https://api.mto-configuration/errors/" + code.toLowerCase(Locale.ROOT),
+                "Conflicto", 409, detail, null, code, "t-409", null, null, "CON-001".equals(code), null, null);
+        return BackofficeApiException.of(HttpStatus.CONFLICT, problem, "corr-409", null, "PUT /api/configuration/profile-statuses/1");
+    }
+
+    /**
+     * El versionNumber es el bloqueo optimista del servicio: cada modificacion lleva el de la fila que
+     * se edito, y la segunda el de la fila recargada tras la primera, no el que se leyo al entrar.
+     */
+    @Test
+    void editingAnEntrySendsTheVersionItReadAndTheNextEditTheReloadedOne() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_LOV_MANAGE");
+        List<LovDto> reloaded = List.of(
+                new LovDto(1L, "DRAFT", "Borrador revisado", true, 4, LocalDateTime.of(2026, 9, 23, 9, 0), "config.responsable"),
+                threeStatuses().get(1), threeStatuses().get(2));
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses(), reloaded);
+        when(lovClient.update(eq(PROFILE_STATUSES), eq(1L), any())).thenAnswer(call -> {
+            LovDto sent = call.getArgument(2);
+            return new LovDto(1L, sent.code(), sent.description(), sent.enabled(), sent.versionNumber() + 1, null, null);
+        });
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        editTheFirstRowDescription("Borrador revisado");
+        editTheFirstRowDescription("Borrador definitivo");
+
+        InOrder order = inOrder(lovClient);
+        order.verify(lovClient).update(eq(PROFILE_STATUSES), eq(1L), argThat(dto ->
+                Integer.valueOf(3).equals(dto.versionNumber()) && "Borrador revisado".equals(dto.description())));
+        order.verify(lovClient).update(eq(PROFILE_STATUSES), eq(1L), argThat(dto ->
+                Integer.valueOf(4).equals(dto.versionNumber()) && "Borrador definitivo".equals(dto.description())));
+        verify(lovClient, times(3)).findAll(PROFILE_STATUSES);
+    }
+
+    /** Otra persona guardo la entrada despues de leerla: el servicio no la pisa y la pantalla dice que se recargue. */
+    @Test
+    void aStaleVersionEndsInTheReloadMessageAndTheDialogStaysOpen() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_LOV_MANAGE");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
+        when(lovClient.update(eq(PROFILE_STATUSES), eq(1L), any()))
+                .thenThrow(configurationConflict("CON-001", "Conflicto de concurrencia detectado. Inténtelo de nuevo."));
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        editTheFirstRowDescription("Borrador revisado");
+
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size());
+        LocatorJ._get(notifications.getFirst(), Span.class,
+                spec -> spec.withText("Conflicto con otro cambio: recarga y vuelve a intentarlo."));
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("Referencia: t-409"));
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto con lo escrito");
+        verify(lovClient, times(1)).findAll(PROFILE_STATUSES);
+    }
+
+    /** Recargar arregla una version vieja, pero no un codigo repetido: los dos 409 no se dicen igual. */
+    @Test
+    void theTwoConfigurationConflictsSayWhetherReloadingHelps() {
+        assertEquals("Conflicto con otro cambio: recarga y vuelve a intentarlo.",
+                UiErrors.message(configurationConflict("CON-001", "Conflicto de concurrencia detectado. Inténtelo de nuevo.")));
+        assertEquals("Ya existe otro registro con ese valor (un codigo que no se puede repetir), o la entrada esta en uso.",
+                UiErrors.message(configurationConflict("BUS-002",
+                        "La operación entra en conflicto con un registro existente: valor único repetido o referencia en uso")));
     }
 
     @Test
@@ -523,8 +594,12 @@ class ViewLayerTest {
         assertTrue(disable.isEnabled());
         LocatorJ._click(disable);
 
+        // Cada entrada del lote lleva la version de su fila: una sola desactualizada y el servicio
+        // rechaza el lote entero con 409 CON-001.
         verify(lovClient).bulkUpdate(eq(PROFILE_STATUSES), argThat(changes ->
-                changes.size() == 2 && changes.stream().noneMatch(LovDto::isEnabled)));
+                changes.size() == 2 && changes.stream().noneMatch(LovDto::isEnabled)
+                        && changes.stream().map(dto -> dto.id() + "@" + dto.versionNumber()).sorted().toList()
+                                .equals(List.of("1@3", "2@1"))));
         verify(lovClient, times(2)).findAll(PROFILE_STATUSES);
     }
 
@@ -915,7 +990,7 @@ class ViewLayerTest {
     @Test
     void creatingAProfileSendsItsCatalogueReferencesAndItsTrack() {
         loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
-        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null)));
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null, null)));
         when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
                 .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
         when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
@@ -993,7 +1068,7 @@ class ViewLayerTest {
     @Test
     void theCantileversOfAProfileGoAsNullUntouchedAndWholeWhenEdited() {
         loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
-        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null)));
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null, null)));
         when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
                 .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
         when(profileClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(profileWithOneCantilever()), 0, 50));

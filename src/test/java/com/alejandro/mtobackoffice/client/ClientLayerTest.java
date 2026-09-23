@@ -201,7 +201,7 @@ class ClientLayerTest {
         List<LovDto> statuses = asUser(() -> lovClient.findAll(LovResource.PROFILE_STATUSES));
 
         assertEquals(1, statuses.size());
-        assertEquals(new LovDto(1L, "DRAFT", "Borrador", true, LocalDateTime.parse("2026-08-02T11:00:00"), "config.responsable"),
+        assertEquals(new LovDto(1L, "DRAFT", "Borrador", true, 0, LocalDateTime.parse("2026-08-02T11:00:00"), "config.responsable"),
                 statuses.getFirst());
         server.verify();
     }
@@ -216,6 +216,7 @@ class ClientLayerTest {
                 .andExpect(jsonPath("$.enabled").value(true))
                 .andExpect(jsonPath("$.id").doesNotExist())
                 .andExpect(jsonPath("$.versionDate").doesNotExist())
+                .andExpect(jsonPath("$.versionNumber").doesNotExist())
                 .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
                         .body("""
                                 {"id":42,"code":"PT9","description":"Poste tipo 9","enabled":true,"versionNumber":0}
@@ -228,21 +229,24 @@ class ClientLayerTest {
     }
 
     @Test
-    void updatePutsToTheIdPathAndDeleteIsA204() {
+    void updatePutsToTheIdPathWithTheVersionReadAndDeleteIsA204() {
+        // El versionNumber leido viaja tal cual: es el bloqueo optimista del servicio.
         server.expect(requestTo(GATEWAY + "/api/configuration/pole-types/42"))
                 .andExpect(method(HttpMethod.PUT))
                 .andExpect(jsonPath("$.id").value(42))
                 .andExpect(jsonPath("$.enabled").value(false))
+                .andExpect(jsonPath("$.versionNumber").value(3))
                 .andRespond(withSuccess("""
-                        {"id":42,"code":"PT9","description":"Poste tipo 9 (baja)","enabled":false}
+                        {"id":42,"code":"PT9","description":"Poste tipo 9 (baja)","enabled":false,"versionNumber":4}
                         """, MediaType.APPLICATION_JSON));
         server.expect(requestTo(GATEWAY + "/api/configuration/pole-types/42"))
                 .andExpect(method(HttpMethod.DELETE))
                 .andRespond(withStatus(HttpStatus.NO_CONTENT));
 
-        LovDto existing = new LovDto(42L, "PT9", "Poste tipo 9", true, null, null);
+        LovDto existing = new LovDto(42L, "PT9", "Poste tipo 9", true, 3, null, null);
         LovDto updated = asUser(() -> lovClient.update("pole-types", 42L, existing.withValues("PT9", "Poste tipo 9 (baja)", false)));
         assertFalse(updated.isEnabled());
+        assertEquals(4, updated.versionNumber(), "la respuesta trae la version que se acaba de escribir");
 
         asUser(() -> {
             lovClient.delete("pole-types", 42L);
@@ -258,12 +262,14 @@ class ClientLayerTest {
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[1].code").value("PT2"))
                 .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
-                        .body("[{\"id\":1,\"code\":\"PT1\",\"enabled\":true},{\"id\":2,\"code\":\"PT2\",\"enabled\":true}]"));
+                        .body("[{\"id\":1,\"code\":\"PT1\",\"enabled\":true,\"versionNumber\":1},"
+                                + "{\"id\":2,\"code\":\"PT2\",\"enabled\":true,\"versionNumber\":1}]"));
         server.expect(requestTo(GATEWAY + "/api/configuration/pole-types/bulk"))
                 .andExpect(method(HttpMethod.PUT))
                 .andExpect(jsonPath("$[0].id").value(1))
                 .andExpect(jsonPath("$[0].enabled").value(false))
-                .andRespond(withSuccess("[{\"id\":1,\"code\":\"PT1\",\"enabled\":false}]", MediaType.APPLICATION_JSON));
+                .andExpect(jsonPath("$[0].versionNumber").value(1))
+                .andRespond(withSuccess("[{\"id\":1,\"code\":\"PT1\",\"enabled\":false,\"versionNumber\":2}]", MediaType.APPLICATION_JSON));
 
         List<LovDto> created = asUser(() -> lovClient.bulkCreate("pole-types",
                 List.of(LovDto.forCreate("PT1", "Uno", true), LovDto.forCreate("PT2", "Dos", true))));
@@ -271,6 +277,47 @@ class ClientLayerTest {
 
         List<LovDto> updated = asUser(() -> lovClient.bulkUpdate("pole-types", List.of(created.getFirst().withEnabled(false))));
         assertFalse(updated.getFirst().isEnabled());
+        server.verify();
+    }
+
+    /**
+     * Los dos 409 de mto-configuration son la misma excepcion y solo el codigo los distingue:
+     * CON-001 es una version vieja (recargar lo arregla) y BUS-002, un valor unico repetido o una
+     * entrada en uso (recargar no lo arregla). Cuerpos tal como los escribe su RestExceptionHandler.
+     */
+    @Test
+    void aStaleVersionAndARepeatedValueAreBothConflictsToldApartByTheirCode() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/pole-types/42"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.versionNumber").value(3))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("""
+                                {"type":"https://api.mto-configuration/errors/con-001","title":"Conflicto de concurrencia",
+                                 "status":409,"detail":"Conflicto de concurrencia detectado. Inténtelo de nuevo.",
+                                 "instance":"/api/v1/configuration/pole-types/42","code":"CON-001","traceId":"t-409",
+                                 "retryable":true}
+                                """));
+        server.expect(requestTo(GATEWAY + "/api/configuration/pole-types"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("""
+                                {"type":"https://api.mto-configuration/errors/bus-002","title":"Regla de negocio incumplida",
+                                 "status":409,"detail":"La operación entra en conflicto con un registro existente: valor único repetido o referencia en uso",
+                                 "instance":"/api/v1/configuration/pole-types","code":"BUS-002","traceId":"t-dup",
+                                 "retryable":false}
+                                """));
+
+        LovDto read = new LovDto(42L, "PT9", "Poste tipo 9", true, 3, null, null);
+        ConflictApiException stale = assertThrows(ConflictApiException.class,
+                () -> asUser(() -> lovClient.update("pole-types", 42L, read.withValues("PT9", "Otra", true))));
+        ConflictApiException repeated = assertThrows(ConflictApiException.class,
+                () -> asUser(() -> lovClient.create("pole-types", LovDto.forCreate("PT9", "Repetido", true))));
+
+        assertEquals("CON-001", stale.getProblem().code());
+        assertEquals(Boolean.TRUE, stale.getProblem().retryable());
+        assertEquals("t-409", stale.getReference());
+        assertEquals("BUS-002", repeated.getProblem().code());
+        assertEquals(Boolean.FALSE, repeated.getProblem().retryable());
         server.verify();
     }
 
