@@ -216,6 +216,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import com.alejandro.mtobackoffice.client.dto.master.TrackSchematicDto;
+import com.alejandro.mtobackoffice.ui.master.SchematicDrawing;
+import com.alejandro.mtobackoffice.ui.master.TrackSchematicDialog;
+import com.vaadin.flow.component.Svg;
 
 /**
  * Las vistas en la JVM, sin navegador (Karibu-Testing sobre el contexto de Spring real, con el
@@ -711,7 +715,140 @@ class ViewLayerTest {
         UI.getCurrent().navigate(TRACKS_ROUTE);
 
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withText("Nuevo")).isEmpty());
-        assertNull(trackGrid().getColumnByKey("actions"));
+        assertEquals(List.of("schematic-3"), actionIds(anyGrid(), 0),
+                "la columna de acciones existe para leer: solo el esquema, ni modificar ni borrar");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Grid<Object> anyGrid() {
+        return LocatorJ._get(Grid.class);
+    }
+
+    private static TrackSchematicDto schematicOfVia1() {
+        var arm = new TrackSchematicDto.CantileverArm(21L, "PT1", "-200", "5300", "1400", "SA1", 1200L);
+        var disconnector = new TrackSchematicDto.DisconnectorMark(40L, "SEC-40", true, "FEED", "ATOCHA");
+        var p1 = new TrackSchematicDto.ProfileNode(1L, "P-001", "10.000", 1, "55.000", "HEB", null, "OK", "-2.500",
+                List.of("S1"), List.of(arm), null);
+        var p2 = new TrackSchematicDto.ProfileNode(2L, "P-002", "20.000", 2, null, null, null, null, "2.500",
+                List.of(), List.of(), disconnector);
+        var turnout = new TrackSchematicDto.SwitchMark(60L, "W31", "15.500", 9, "VIA 1");
+        var insulator = new TrackSchematicDto.InsulatorMark(50L, "AIS-50", "15.000", "TRACK_CONNECTION", true,
+                "ATOCHA", "VIA 1", "VIA 2", List.of(turnout));
+        return new TrackSchematicDto(3L, "VIA 1", true, "EP4", List.of("ATOCHA", "CHAMARTIN"), List.of(p1, p2), List.of(insulator));
+    }
+
+    private static Button schematicButton(int row, long trackId) {
+        return LocatorJ._get(GridKt._getCellComponent(trackGrid(), row, "actions"), Button.class, spec -> spec.withId("schematic-" + trackId));
+    }
+
+    private static String drawing(Dialog dialog) {
+        return LocatorJ._get(dialog, Svg.class).getElement().getProperty("innerHTML");
+    }
+
+    /** Fase 7: el esquema es una llamada al servicio y se dibuja tal cual llega, en su orden. */
+    @Test
+    void theSchematicOfATrackOpensFromItsRowInOneCallAndDrawsWhatTheServiceSent() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubTracks(threeTracks());
+        when(trackClient.schematic(3L)).thenReturn(schematicOfVia1());
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(schematicButton(0, 3L));
+
+        verify(trackClient).schematic(3L);
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        assertEquals("Esquema · VIA 1 (EP4)", dialog.getHeaderTitle());
+        assertEquals("2 perfiles · 1 mensula · 1 seccionador · 1 aislador · Estaciones: ATOCHA, CHAMARTIN",
+                LocatorJ._get(dialog, Span.class, spec -> spec.withId(TrackSchematicDialog.SUMMARY_ID)).getText());
+        String svg = drawing(dialog);
+        assertTrue(svg.startsWith("<svg "), svg);
+        assertTrue(svg.indexOf("id=\"pole-1\"") < svg.indexOf("id=\"pole-2\""), "los postes van en el orden recibido, sin reordenar");
+        assertTrue(svg.contains(">P-001<") && svg.contains(">KP 10.000<") && svg.contains(">HEB · OK<"), "codigo, KP y tipo/estado del poste");
+        assertTrue(svg.contains(">P-002<") && svg.contains(">KP 20.000<"));
+        assertTrue(svg.contains("id=\"arm-21\"") && svg.contains(">PT1<"), "la mensula con su tipo");
+        assertTrue(svg.contains("Mensula PT1 · descentramiento -200 · altura hilo 5300 · altura catenaria 1400 · brazo SA1 1200 mm"));
+        assertTrue(svg.contains(">S1<"), "los seccionamientos del poste");
+        assertTrue(svg.contains("id=\"disconnector-40\"") && svg.contains(">SEC-40<") && svg.contains(">ATOCHA<"), "el seccionador sobre su poste, con su estacion");
+        assertTrue(svg.contains("id=\"insulator-50\"") && svg.contains(">AIS-50<"), "el aislador sobre la via");
+        assertTrue(svg.contains(">conexion de vias · ↔ VIA 2 · ATOCHA<") && svg.contains(">W31 1:9<"), "la otra via, la estacion y las agujas del aislador");
+        assertTrue(LocatorJ._find(dialog, Span.class, spec -> spec.withId(TrackSchematicDialog.EMPTY_ID)).isEmpty());
+    }
+
+    @Test
+    void whatTheServiceSendsIsEscapedBeforeItBecomesSvg() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubTracks(threeTracks());
+        var evil = new TrackSchematicDto.ProfileNode(9L, "<script>P</script>", "1.000", 1, null, null, null, null, null,
+                List.of("<b>"), List.of(), new TrackSchematicDto.DisconnectorMark(1L, "\"SEC\" & co", null, null, null));
+        when(trackClient.schematic(3L)).thenReturn(new TrackSchematicDto(3L, "VIA \"1\" & <b>", true, null, List.of(), List.of(evil), List.of()));
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(schematicButton(0, 3L));
+
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        assertEquals("Esquema · VIA \"1\" & <b>", dialog.getHeaderTitle(), "la cabecera es texto: Vaadin la escapa sola");
+        String svg = drawing(dialog);
+        assertFalse(svg.contains("<script>") || svg.contains("<b>"), svg);
+        assertTrue(svg.contains("&lt;script&gt;P&lt;/script&gt;"));
+        assertTrue(svg.contains("VIA &quot;1&quot; &amp; &lt;b&gt;"));
+        assertTrue(svg.contains("&quot;SEC&quot; &amp; co"));
+    }
+
+    @Test
+    void aFailureLoadingTheSchematicIsNotifiedAndOpensNoWindow() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubTracks(threeTracks());
+        ApiProblem problem = new ApiProblem("https://api.mto-configuration/errors/not-001", "Recurso no encontrado", 404,
+                "Track not found with id 4", null, "NOT-001", "t-9", null, null, false, List.of(), null);
+        when(trackClient.schematic(4L)).thenThrow(
+                BackofficeApiException.of(HttpStatus.NOT_FOUND, problem, "corr-9", null, "GET /api/configuration/tracks/4/schematic"));
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(schematicButton(1, 4L));
+
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "sin esquema no hay ventana");
+        assertFalse(NotificationsKt.getNotifications().isEmpty(), "el fallo se notifica");
+    }
+
+    @Test
+    void aTrackWithoutProfilesSaysSoInsteadOfDrawing() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubTracks(threeTracks());
+        when(trackClient.schematic(4L)).thenReturn(new TrackSchematicDto(4L, "VIA 2", false, "EP4", null, null, null));
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(schematicButton(1, 4L));
+
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._get(dialog, Span.class, spec -> spec.withId(TrackSchematicDialog.EMPTY_ID));
+        assertTrue(LocatorJ._find(dialog, Svg.class).isEmpty(), "sin perfiles no se dibuja nada");
+        assertEquals("0 perfiles · 0 mensulas · 0 seccionadores · 0 aisladores · sin estaciones · via inactiva",
+                LocatorJ._get(dialog, Span.class, spec -> spec.withId(TrackSchematicDialog.SUMMARY_ID)).getText());
+    }
+
+    /** El reparto del dibujo, sin Vaadin: espaciado uniforme, el aislador entre sus vecinos por KP, el brazo al lado del poste. */
+    @Test
+    void theDrawingSpacesPolesEvenlyAndPlacesInsulatorsBetweenTheirNeighboursByKp() {
+        List<TrackSchematicDto.ProfileNode> profiles = schematicOfVia1().profiles(); // KP 10.000 y 20.000
+
+        assertEquals(SchematicDrawing.MARGIN, SchematicDrawing.xOf(0), 0.0);
+        assertEquals(SchematicDrawing.MARGIN + SchematicDrawing.STEP, SchematicDrawing.xOf(1), 0.0);
+        assertEquals(2 * SchematicDrawing.MARGIN + SchematicDrawing.STEP * 599, SchematicDrawing.width(600), "600 postes, 599 pasos");
+        assertEquals(SchematicDrawing.MARGIN + SchematicDrawing.STEP / 2.0, SchematicDrawing.insulatorX(profiles, "15.000"), 0.001);
+        assertEquals(SchematicDrawing.MARGIN + SchematicDrawing.STEP * 0.25, SchematicDrawing.insulatorX(profiles, "12.500"), 0.001);
+        assertEquals(SchematicDrawing.xOf(1) + SchematicDrawing.STEP / 2.0, SchematicDrawing.insulatorX(profiles, "99.000"), 0.001, "despues del ultimo: medio paso fuera");
+        assertEquals(Math.max(SchematicDrawing.MARGIN / 3.0, SchematicDrawing.xOf(0) - SchematicDrawing.STEP / 2.0),
+                SchematicDrawing.insulatorX(profiles, "1.000"), 0.001, "antes del primero: medio paso fuera, sin salirse de la linea");
+        assertEquals(SchematicDrawing.xOf(1) + SchematicDrawing.STEP / 2.0, SchematicDrawing.insulatorX(profiles, null), 0.001, "sin KP, al final");
+        assertEquals(-1, SchematicDrawing.armDirection(profiles.get(0)), "railPoleDistance negativo: el poste a la izquierda");
+        assertEquals(1, SchematicDrawing.armDirection(profiles.get(1)));
+
+        // Dos tramos con la kilometracion reiniciada (README_API §4): el aislador cae en el tramo que lo contiene primero.
+        var reinicio = new TrackSchematicDto.ProfileNode(3L, "P-003", "5.000", 3, null, null, null, null, null, List.of(), List.of(), null);
+        var dosTramos = List.of(profiles.get(0), profiles.get(1), reinicio);
+        assertEquals(SchematicDrawing.xOf(0) + SchematicDrawing.STEP * 0.5, SchematicDrawing.insulatorX(dosTramos, "15.000"), 0.001);
+        assertEquals(SchematicDrawing.xOf(1) + SchematicDrawing.STEP * (20.0 - 8.0) / (20.0 - 5.0), SchematicDrawing.insulatorX(dosTramos, "8.000"), 0.001,
+                "8.000 no cabe entre 10 y 20: cae en el tramo que baja de 20 a 5");
     }
 
     /** README_API §4 desde la pantalla: la fila vuelve entera, con lo que la UI no conoce, y los hijos a null. */

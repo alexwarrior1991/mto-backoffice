@@ -63,7 +63,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 - `client` — las interfaces `@HttpExchange` por servicio: `client/configuration/LovClient` (los
   ocho endpoints de `AbstractLovController` parametrizados por recurso; `LovResource`, los 17
   catálogos con su ruta y su título), `MasterClient<D>` (lo que comparten los maestros de
-  `CRUDController`: `POST /filter` paginado, `GET/POST/PUT/DELETE`) con seis subinterfaces vacías
+  `CRUDController`: `POST /filter` paginado, `GET/POST/PUT/DELETE`) con seis subinterfaces vacías (salvo `TrackClient`, que añade `schematic`: el esquema de la vía en una llamada)
   que solo ponen la ruta y el tipo (`StationClient`, `TrackClient`...; Spring resuelve el genérico
   contra la subinterfaz), `BusinessEntityClient` (solo lectura), `MasterFilters` (cuerpo y orden
   del `/filter`) y `JobsClient` (los trabajos en segundo plano: importaciones multipart con
@@ -103,7 +103,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `ReferenceCatalog` y `LovCatalog`, los nombres y las entradas de catálogo cargados una vez por
   pantalla; `Pickers`, desplegables y conversores; `EnabledFilter`, el filtro de tres estados;
   `ChildrenEditor<C>`, la tabla de hijos dentro del editor del padre, con `CantileverDialog` y
-  `SwitchDialog`), `ui/jobs` (`JobsView` en `trabajos`: los lanzadores y la lista del servicio,
+  `SwitchDialog`; `TrackSchematicDialog`, la ventana con el esquema de una vía, y `SchematicDrawing`,
+  el SVG que la dibuja en Java puro; `MasterView.addRowActions` y `rowButton`, el gancho de acciones
+  de fila con el que `TracksView` pone el botón «Esquema»), `ui/jobs` (`JobsView` en `trabajos`: los lanzadores y la lista del servicio,
   paginada y filtrada; `JobLog`, lo que solo sabe la sesión de sus trabajos —la etiqueta y el
   último estado— en la `VaadinSession`; `JobPolling`, el hilo compartido que vuelve a pedir la
   página mientras hay algo en curso; `JobErrorsDialog`), `ui/users` (`UsersView` en `usuarios`:
@@ -272,6 +274,14 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `totalElements`. Nada de `findAll` en memoria como en los catálogos: los perfiles son miles.
   Las filas de paquetes, estaciones y vías llegan sin hijos y los filtros booleanos solo filtran
   si vienen; las dos cosas se arreglaron en `mto-configuration` para esta fase, no aquí.
+- **El esquema de una vía es una proyección del servicio, cacheada allí.** `GET /tracks/{id}/schematic`
+  de `mto-configuration` devuelve en una llamada lo justo para dibujar (los perfiles en el orden
+  físico con sus ménsulas y su seccionador, los aisladores, las estaciones), y `SchematicDrawing`
+  solo reparte los postes a distancia uniforme, coloca cada aislador entre sus dos vecinos por KP y
+  **escapa todo texto** antes de meterlo en el SVG (`Svg` vuelca la cadena en `innerHTML` tal cual).
+  Nada se ordena, suma ni interpreta aquí; si el dibujo necesita otro dato, se añade a la proyección
+  en el servicio. La columna de acciones de `MasterView` existe siempre, también para quien solo
+  lee, porque el esquema es lectura (`addRowActions`); modificar y borrar siguen tras sus permisos.
 - **Un trabajo se lanza y se sigue; no se espera.** Lanzar responde 202 con el trabajo, o 429 con
   el trabajo ya rechazado y un `Retry-After` (`TooManyRequestsApiException` trae ese cuerpo, y
   `JobsView` lo apunta como rechazado en vez de tratarlo como un fallo). El progreso lo trae
@@ -310,7 +320,7 @@ Una clase por capa; se añaden métodos, no clases: `ClientLayerTest` (interface
 de página, `problem+json` de configuration, 401/403 y 503 del gateway, cuerpo no JSON; los
 maestros: resolución del genérico, parámetros de página y orden del `/filter`, `extras` e hijos a
 `null` en un `PUT`, referencias a catálogo como `{id, code}`, las ménsulas tipadas con su brazo y
-el seccionador 1:1 en un `PUT`; los trabajos: la importación como parte multipart con `dryRun` en
+el seccionador 1:1 en un `PUT`, el esquema de una vía con sus records anidados; los trabajos: la importación como parte multipart con `dryRun` en
 la query, el 429 con el trabajo rechazado y el `Retry-After`, la lista paginada con sus filtros,
 el estado por familia y el fichero con sus cabeceras, qué es descargable; los usuarios: la
 búsqueda `first/max` con su total, atributos repetidos, alta 201 sin la contraseña en el `toString`,
@@ -332,7 +342,10 @@ paginada, ordenada y filtrada contra el cliente simulado, nombres de referencias
 edición sobre una copia que vuelve con `extras` e hijos a `null`, errores del servicio sobre un
 desplegable, borrado confirmado, alta de un perfil con sus referencias, KP no válido, las
 ménsulas a `null` sin tocar y enteras al tocarlas, las agujas en su diálogo y enteras al guardar,
-el perfil legible en la lista de seccionadores, los mensajes de sistema; los trabajos: subir y
+el perfil legible en la lista de seccionadores, los mensajes de sistema, el esquema de una vía desde
+su fila en una llamada con los postes en el orden recibido, el texto escapado, el fallo notificado
+sin ventana, la vía sin perfiles y el reparto del dibujo (aisladores entre sus vecinos por KP, brazos
+al lado del poste); los trabajos: subir y
 lanzar una importación, el progreso llegando por `pollOnce()` + `UI.access()` hasta el enlace de
 descarga y el botón de errores (que pide el detalle), el 429 apuntado como rechazado con su aviso,
 un trabajo propio fuera de la página seguido por su familia, la lista paginada y filtrada en el

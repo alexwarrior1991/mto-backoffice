@@ -121,6 +121,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import com.alejandro.mtobackoffice.client.dto.master.TrackSchematicDto;
 
 /**
  * Las interfaces {@code @HttpExchange} y el RestClient reales contra un servidor simulado: sin
@@ -487,6 +488,55 @@ class ClientLayerTest {
         TrackDto saved = asUser(() -> trackClient.save(track));
 
         assertEquals(8, saved.getVersionNumber());
+        server.verify();
+    }
+
+    /** README_API §6 del servicio: el esquema de una via es una llamada, con sus records anidados y lo desconocido fuera. */
+    @Test
+    void theSchematicOfATrackIsOneCallWithItsNestedRecords() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/tracks/3/schematic"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer token-for-" + PRINCIPAL))
+                .andExpect(header("X-Correlation-Id", matchesRegex(UUID_PATTERN)))
+                .andRespond(withSuccess("""
+                        {"trackId":3,"trackName":"VIA 1","enabled":true,"executionPackageName":"EP4","stations":["ATOCHA","CHAMARTIN"],
+                         "profiles":[
+                           {"id":7,"code":"P-007","kp":"12.345","orderInTrack":1,"span":"55.000","poleType":"HEB","profileStatus":"OK",
+                            "railPoleDistance":"-2.500","sectionings":["S1"],
+                            "cantilevers":[{"id":21,"type":"PT1","stagger":"-200","cwHeight":"5300","catenaryHeight":"1400",
+                                            "steadyArmType":"SA1","steadyArmLength":1200}],
+                            "disconnector":{"id":40,"name":"SEC-40","onLoad":true,"function":"FEED","station":"ATOCHA"},
+                            "fieldOfTomorrow":{"deep":[1]}},
+                           {"id":8,"code":"P-008","kp":"70.000","orderInTrack":2,"sectionings":[],"cantilevers":[]}],
+                         "sectionInsulators":[
+                           {"id":50,"name":"AIS-50","kp":"15.000","installationType":"TRACK_CONNECTION","enabled":true,
+                            "station":"ATOCHA","track":"VIA 1","connectedTrack":"VIA 2",
+                            "switches":[{"id":60,"code":"W31","kp":"15.500","turnoutDenominator":9,"track":"VIA 1"}]}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        TrackSchematicDto schematic = asUser(() -> trackClient.schematic(3L));
+
+        assertEquals("VIA 1", schematic.trackName());
+        assertEquals("EP4", schematic.executionPackageName());
+        assertEquals(List.of("ATOCHA", "CHAMARTIN"), schematic.stations());
+        assertEquals(2, schematic.profiles().size());
+        TrackSchematicDto.ProfileNode first = schematic.profiles().getFirst();
+        assertEquals("P-007", first.code());
+        assertEquals("12.345", first.kp());
+        assertEquals("-2.500", first.railPoleDistance());
+        assertEquals(List.of("S1"), first.sectionings());
+        assertEquals("PT1", first.cantilevers().getFirst().type());
+        assertEquals(1200L, first.cantilevers().getFirst().steadyArmLength());
+        assertEquals("SEC-40", first.disconnector().name());
+        assertEquals("ATOCHA", first.disconnector().station());
+        TrackSchematicDto.ProfileNode second = schematic.profiles().get(1);
+        assertNull(second.disconnector(), "lo que el servicio no manda es null");
+        assertTrue(second.cantilevers().isEmpty());
+        TrackSchematicDto.InsulatorMark insulator = schematic.sectionInsulators().getFirst();
+        assertEquals("AIS-50", insulator.name());
+        assertEquals("VIA 2", insulator.connectedTrack());
+        assertEquals("W31", insulator.switches().getFirst().code());
+        assertEquals(9, insulator.switches().getFirst().turnoutDenominator());
         server.verify();
     }
 

@@ -33,6 +33,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Stream;
+import com.vaadin.flow.component.ClickEvent;
+import com.vaadin.flow.component.ComponentEventListener;
 
 /**
  * Una pantalla de maestro de infraestructura: lista paginada <b>en el servidor</b> y un editor.
@@ -46,7 +48,8 @@ import java.util.stream.Stream;
  *
  * <p>Los botones siguen los permisos del servicio: crear y modificar piden {@code config-write};
  * borrar (logico), {@code config-delete}. Esconderlos es cortesia: la guarda real esta en el
- * servicio.</p>
+ * servicio. La columna de acciones existe siempre, tambien para quien solo lee, porque un maestro
+ * puede ofrecer acciones de lectura ({@link #addRowActions}: el esquema de una via).</p>
  */
 public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
 
@@ -90,9 +93,7 @@ public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
         configureColumns(grid);
         grid.addColumn(dto -> dto.getVersionDate() == null ? "" : DATE_TIME.format(dto.getVersionDate()))
                 .setHeader("Modificado").setKey("versionDate").setSortProperty("versionDate").setSortable(true).setAutoWidth(true);
-        if (canWrite || canDelete) {
-            grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey(ACTIONS_COLUMN).setAutoWidth(true).setFlexGrow(0);
-        }
+        grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey(ACTIONS_COLUMN).setAutoWidth(true).setFlexGrow(0);
         if (canWrite) {
             grid.addItemDoubleClickListener(event -> edit(event.getItem()));
         }
@@ -150,20 +151,32 @@ public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
         HorizontalLayout actions = new HorizontalLayout();
         actions.setSpacing(false);
         if (canWrite) {
-            Button edit = new Button(VaadinIcon.EDIT.create(), click -> edit(dto));
-            edit.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
-            edit.setTooltipText("Modificar");
-            edit.setId("edit-" + dto.getId());
-            actions.add(edit);
+            actions.add(rowButton("edit-" + dto.getId(), VaadinIcon.EDIT, "Modificar", click -> edit(dto)));
         }
+        addRowActions(dto, actions);
         if (canDelete) {
-            Button delete = new Button(VaadinIcon.TRASH.create(), click -> confirmDelete(dto));
-            delete.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
-            delete.setTooltipText("Borrar");
-            delete.setId("delete-" + dto.getId());
+            Button delete = rowButton("delete-" + dto.getId(), VaadinIcon.TRASH, "Borrar", click -> confirmDelete(dto));
+            delete.addThemeVariants(ButtonVariant.LUMO_ERROR);
             actions.add(delete);
         }
         return actions;
+    }
+
+    /**
+     * Las acciones propias de un maestro, entre modificar y borrar; por defecto ninguna. Se montan
+     * con {@link #rowButton} y llevan un id {@code <accion>-<id>} para que los tests las encuentren.
+     * Una accion de lectura se ofrece a todo el mundo: quien no puede escribir tambien ve la fila.
+     */
+    protected void addRowActions(D row, HorizontalLayout actions) {
+    }
+
+    protected static Button rowButton(String id, VaadinIcon icon, String tooltip,
+                                      ComponentEventListener<ClickEvent<Button>> listener) {
+        Button button = new Button(icon.create(), listener);
+        button.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
+        button.setTooltipText(tooltip);
+        button.setId(id);
+        return button;
     }
 
     private Map<String, Object> filterBody() {
