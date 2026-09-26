@@ -119,6 +119,21 @@ import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
 import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.AssignOrderRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemResult;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CommentRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CompleteOrderRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.GenerateTasksRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.GenerateTasksResultDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceTaskStatus;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OrderRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OrderUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.PlanOrderRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ReasonRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.StatusHistoryDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetUpdateRequest;
@@ -1601,6 +1616,126 @@ class ClientLayerTest {
         assertEquals(new BigDecimal("12.50"), types.getFirst().standardMinutesPerUnit());
         assertEquals(CatenaryAssetType.PROFILE, templates.getFirst().assetType());
         assertEquals(new BigDecimal("5300"), templates.getFirst().items().getFirst().minValue());
+        server.verify();
+    }
+
+    private static final String STRICT_EMPTY = "{}";
+
+    /**
+     * El ciclo de una orden en sus rutas: alta sin lo vacio, modificacion con solo lo cambiado, y
+     * cada transicion con su cuerpo (la fecha en ISO, lo vacio fuera, iniciar con un {} ). Un
+     * TRN-001 llega como conflicto con su codigo.
+     */
+    @Test
+    void ordersAreCreatedUpdatedAndMovedThroughTheirStates() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        server.expect(requestTo(MAINTENANCE + "/orders")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"title\":\"Revision tramo 12\",\"type\":\"PREVENTIVE\",\"priority\":\"MEDIUM\",\"assetId\":\""
+                        + ASSET_ID + "\"}", strict))
+                .andRespond(withSuccess(orderJson(ORDER_ID, "MO-000001", "DRAFT", "MEDIUM"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID)).andExpect(method(HttpMethod.PUT))
+                .andExpect(content().json("{\"priority\":\"HIGH\",\"plannedDate\":\"2026-10-05\"}", strict))
+                .andRespond(withSuccess(orderJson(ORDER_ID, "MO-000001", "DRAFT", "HIGH"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID + "/plan")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"plannedDate\":\"2026-10-05\",\"comment\":\"noche del lunes\"}", strict))
+                .andRespond(withSuccess(orderJson(ORDER_ID, "MO-000001", "PLANNED", "HIGH"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID + "/assign")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"teamId\":\"" + TEAM_ID + "\"}", strict))
+                .andRespond(withSuccess(orderJson(ORDER_ID, "MO-000001", "ASSIGNED", "HIGH"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID + "/start")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json(STRICT_EMPTY, strict))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":409,\"error\":\"CONFLICT\",\"message\":\"Order MO-000001 cannot be started from ASSIGNED\","
+                                + "\"errorCode\":\"TRN-001\",\"validationErrors\":[]}"));
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID + "/complete")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"closingNotes\":\"Sin incidencias\",\"force\":true}", strict))
+                .andRespond(withSuccess(orderJson(ORDER_ID, "MO-000001", "COMPLETED", "HIGH"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID + "/cancel")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"reason\":\"Duplicada\"}", strict))
+                .andRespond(withSuccess(orderJson(ORDER_ID, "MO-000001", "CANCELLED", "HIGH"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID + "/history")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[{\"id\":\"2b3c4d5e-0000-4000-8000-000000000040\",\"previousStatus\":null,\"newStatus\":\"DRAFT\","
+                        + "\"changedAt\":\"2026-09-20T08:00:00Z\",\"changedBy\":\"mantenimiento.tecnico\",\"comment\":\"Order created\"},"
+                        + "{\"id\":\"2b3c4d5e-0000-4000-8000-000000000041\",\"previousStatus\":\"DRAFT\",\"newStatus\":\"PLANNED\","
+                        + "\"changedAt\":\"2026-09-21T08:00:00Z\",\"changedBy\":\"mantenimiento.tecnico\",\"comment\":null}]", MediaType.APPLICATION_JSON));
+
+        UUID id = UUID.fromString(ORDER_ID);
+        OrderDto created = asUser(() -> orderClient.create(new OrderRequest("Revision tramo 12", null, MaintenanceOrderType.PREVENTIVE,
+                MaintenancePriority.MEDIUM, UUID.fromString(ASSET_ID), null, null, null, null)));
+        asUser(() -> orderClient.update(id, new OrderUpdateRequest(null, null, MaintenancePriority.HIGH, LocalDate.of(2026, 10, 5), null, null,
+                null, null, null, null, null, null, null)));
+        OrderDto planned = asUser(() -> orderClient.plan(id, new PlanOrderRequest(LocalDate.of(2026, 10, 5), "noche del lunes")));
+        asUser(() -> orderClient.assign(id, new AssignOrderRequest(UUID.fromString(TEAM_ID), null, null)));
+        ConflictApiException refused = assertThrows(ConflictApiException.class, () -> asUser(() -> orderClient.start(id, new CommentRequest(null))));
+        OrderDto completed = asUser(() -> orderClient.complete(id, new CompleteOrderRequest("Sin incidencias", true, null)));
+        OrderDto cancelled = asUser(() -> orderClient.cancel(id, new ReasonRequest("Duplicada")));
+        List<StatusHistoryDto> history = asUser(() -> orderClient.history(id));
+
+        assertEquals(MaintenanceOrderStatus.DRAFT, created.status());
+        assertEquals(MaintenanceOrderStatus.PLANNED, planned.status());
+        assertEquals("TRN-001", refused.getProblem().code());
+        assertEquals(MaintenanceOrderStatus.COMPLETED, completed.status());
+        assertEquals(MaintenanceOrderStatus.CANCELLED, cancelled.status());
+        assertNull(history.getFirst().previousStatus(), "el alta no tiene estado anterior");
+        assertEquals("PLANNED", history.get(1).newStatus());
+        assertTrue(new OrderUpdateRequest(null, null, null, null, null, null, null, null, null, null, null, null, null).changesNothing());
+        server.verify();
+    }
+
+    private static final String TASK_ID = "2b3c4d5e-0000-4000-8000-000000000050";
+
+    private static String taskJson(String status) {
+        return "{\"id\":\"" + TASK_ID + "\",\"orderId\":\"" + ORDER_ID + "\",\"sequence\":3,\"description\":\"Perfil 12-2.27\","
+                + "\"status\":\"" + status + "\",\"assignedUser\":null,\"asset\":{\"id\":\"" + ASSET_ID + "\",\"code\":\"PRF-0001\","
+                + "\"name\":\"12-2.27\",\"type\":\"PROFILE\",\"trackId\":12,\"startKp\":12.270,\"endKp\":12.270,\"sectioning\":\"S-3\","
+                + "\"enabled\":true},\"shiftId\":null,\"startedAt\":null,\"completedAt\":null,\"defectsFound\":null,\"notes\":null,"
+                + "\"photoRefs\":[],\"taskTypeCodes\":[\"RG-01\",\"RG-04\"],\"checkItems\":[{\"id\":\"2b3c4d5e-0000-4000-8000-000000000051\","
+                + "\"code\":\"P-01\",\"label\":\"Altura del hilo\",\"unit\":\"mm\",\"minValue\":5300,\"maxValue\":5700,\"requiresMeasure\":true,"
+                + "\"measuredValue\":null,\"adjusted\":null,\"valueAfterAdjustment\":null,\"itemResult\":null,\"notes\":null,\"orderIndex\":1,"
+                + "\"outOfRange\":false}],\"audit\":null}";
+    }
+
+    @Test
+    void tasksAreListedCreatedGeneratedUpdatedAndCancelled() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String tasks = MAINTENANCE + "/orders/" + ORDER_ID + "/tasks";
+        server.expect(requestTo(tasks)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[" + taskJson("PENDING") + "," + taskJson("ON_HOLD") + "]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(tasks)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"description\":\"Revisar la mensula\",\"assetId\":\"" + ASSET_ID
+                        + "\",\"taskTypeCodes\":[\"RG-04\"],\"withChecklist\":true}", strict))
+                .andRespond(withSuccess(taskJson("PENDING"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(tasks + "/generate")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json(STRICT_EMPTY, strict))
+                .andRespond(withSuccess("{\"createdTasks\":14,\"skippedProfiles\":2,\"totalTasks\":16,\"estimatedMinutes\":720.0,\"estimatedShifts\":3}",
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(tasks + "/" + TASK_ID)).andExpect(method(HttpMethod.PUT))
+                .andExpect(content().json("{\"taskTypeCodes\":[\"RG-01\"],\"notes\":\"Falta la llave\"}", strict))
+                .andRespond(withSuccess(taskJson("PENDING"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(tasks + "/" + TASK_ID + "/cancel")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"reason\":\"Perfil desmontado\"}", strict))
+                .andRespond(withSuccess(taskJson("CANCELLED"), MediaType.APPLICATION_JSON));
+
+        UUID orderId = UUID.fromString(ORDER_ID);
+        UUID taskId = UUID.fromString(TASK_ID);
+        List<TaskDto> listed = asUser(() -> orderClient.tasks(orderId));
+        asUser(() -> orderClient.createTask(orderId, new TaskRequest("Revisar la mensula", UUID.fromString(ASSET_ID), null, List.of("RG-04"), true)));
+        GenerateTasksResultDto generated = asUser(() -> orderClient.generateTasks(orderId, new GenerateTasksRequest(null, null)));
+        asUser(() -> orderClient.updateTask(orderId, taskId, new TaskUpdateRequest(null, null, List.of("RG-01"), "Falta la llave", null, null)));
+        TaskDto cancelled = asUser(() -> orderClient.cancelTask(orderId, taskId, new ReasonRequest("Perfil desmontado")));
+
+        TaskDto task = listed.getFirst();
+        assertEquals(List.of("RG-01", "RG-04"), task.taskTypeCodes());
+        assertEquals("12-2.27", task.asset().name());
+        assertEquals(new BigDecimal("5300"), task.checkItems().getFirst().minValue());
+        assertNull(task.checkItems().getFirst().itemResult());
+        assertTrue(task.isOpen());
+        assertEquals(MaintenanceTaskStatus.UNKNOWN, listed.get(1).status());
+        assertFalse(listed.get(1).isOpen(), "un estado desconocido no abre ninguna accion");
+        assertEquals(14, generated.createdTasks());
+        assertEquals(3, generated.estimatedShifts());
+        assertEquals(MaintenanceTaskStatus.CANCELLED, cancelled.status());
+        assertEquals(CheckItemResult.UNKNOWN, CheckItemResult.of("MAYBE"));
         server.verify();
     }
 }

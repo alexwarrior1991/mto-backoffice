@@ -149,9 +149,12 @@ public class AssetsView extends VerticalLayout {
         return grid;
     }
 
+    /** La columna existe siempre: ver las ordenes de un activo es lectura. */
     private Component rowActions(AssetDto asset) {
         HorizontalLayout actions = new HorizontalLayout();
         actions.setSpacing(false);
+        actions.add(MaintenanceUi.rowButton("asset-orders-" + asset.id(), VaadinIcon.LIST, "Ordenes",
+                click -> new AssetOrdersDialog(asset, clients).open()));
         if (canWrite) {
             actions.add(MaintenanceUi.rowButton("asset-edit-" + asset.id(), VaadinIcon.EDIT, "Modificar",
                     click -> new AssetEditorDialog(asset, clients, names, this::refresh).open()));

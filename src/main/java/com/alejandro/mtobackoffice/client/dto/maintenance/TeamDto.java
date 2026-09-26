@@ -17,6 +17,11 @@ public record TeamDto(UUID id, String code, String name, String baseName, String
         return Boolean.TRUE.equals(active);
     }
 
+    /** Lo que llevan una orden o un turno. */
+    public TeamSummaryDto summary() {
+        return new TeamSummaryDto(id, code, name, baseName);
+    }
+
     public String label() {
         return name == null || name.isBlank() ? code : code + " - " + name;
     }

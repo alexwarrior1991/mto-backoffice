@@ -1,17 +1,33 @@
 package com.alejandro.mtobackoffice.client.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
+import com.alejandro.mtobackoffice.client.dto.maintenance.AssignOrderRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CommentRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CompleteOrderRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.GenerateTasksRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.GenerateTasksResultDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderFilter;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OrderRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OrderUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.PlanOrderRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ReasonRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.StatusHistoryDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskUpdateRequest;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.service.annotation.GetExchange;
 import org.springframework.web.service.annotation.HttpExchange;
+import org.springframework.web.service.annotation.PostExchange;
+import org.springframework.web.service.annotation.PutExchange;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -24,6 +40,13 @@ import java.util.UUID;
  */
 @HttpExchange("/api/maintenance/orders")
 public interface OrderClient {
+
+    /** 201, en borrador; el activo tiene que estar activo (409 {@code AST-001} si no). */
+    @PostExchange
+    OrderDto create(@RequestBody OrderRequest request);
+
+    @PutExchange("/{id}")
+    OrderDto update(@PathVariable("id") UUID id, @RequestBody OrderUpdateRequest request);
 
     @GetExchange("/{id}")
     OrderDto findById(@PathVariable("id") UUID id);
@@ -56,4 +79,45 @@ public interface OrderClient {
                 filter.trackId(), filter.stationId(), filter.executionPackageId(), filter.plannedFrom(),
                 filter.plannedTo(), filter.assignedUser(), filter.teamId(), filter.code(), page, size, sort);
     }
+
+    // --- Transiciones: 409 TRN-001 desde un estado que no la admite ---------------------------------
+
+    @PostExchange("/{id}/plan")
+    OrderDto plan(@PathVariable("id") UUID id, @RequestBody PlanOrderRequest request);
+
+    @PostExchange("/{id}/assign")
+    OrderDto assign(@PathVariable("id") UUID id, @RequestBody AssignOrderRequest request);
+
+    @PostExchange("/{id}/start")
+    OrderDto start(@PathVariable("id") UUID id, @RequestBody CommentRequest request);
+
+    /** {@code force} pide {@code maintenance-supervise} ademas de {@code maintenance-write}. */
+    @PostExchange("/{id}/complete")
+    OrderDto complete(@PathVariable("id") UUID id, @RequestBody CompleteOrderRequest request);
+
+    /** Pide {@code maintenance-supervise} ademas de {@code maintenance-write}; libera las reservas de sus materiales. */
+    @PostExchange("/{id}/cancel")
+    OrderDto cancel(@PathVariable("id") UUID id, @RequestBody ReasonRequest request);
+
+    /** Los cambios de estado, el primero el alta. */
+    @GetExchange("/{id}/history")
+    List<StatusHistoryDto> history(@PathVariable("id") UUID id);
+
+    // --- Tareas -------------------------------------------------------------------------------------
+
+    @GetExchange("/{id}/tasks")
+    List<TaskDto> tasks(@PathVariable("id") UUID id);
+
+    @PostExchange("/{id}/tasks")
+    TaskDto createTask(@PathVariable("id") UUID id, @RequestBody TaskRequest request);
+
+    /** Una tarea por perfil habilitado del tramo; los que ya tienen tarea se saltan. Solo preventivas en borrador o planificadas. */
+    @PostExchange("/{id}/tasks/generate")
+    GenerateTasksResultDto generateTasks(@PathVariable("id") UUID id, @RequestBody GenerateTasksRequest request);
+
+    @PutExchange("/{id}/tasks/{taskId}")
+    TaskDto updateTask(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @RequestBody TaskUpdateRequest request);
+
+    @PostExchange("/{id}/tasks/{taskId}/cancel")
+    TaskDto cancelTask(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @RequestBody ReasonRequest request);
 }

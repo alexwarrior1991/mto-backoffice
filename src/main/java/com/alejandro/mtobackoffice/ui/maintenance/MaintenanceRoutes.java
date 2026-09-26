@@ -8,6 +8,7 @@ public final class MaintenanceRoutes {
 
     public static final String PREFIX = "mantenimiento";
     public static final String ORDERS = PREFIX;
+    public static final String ORDER = PREFIX + "/ordenes";
     public static final String ASSETS = PREFIX + "/activos";
     public static final String TEAMS = PREFIX + "/equipos";
     public static final String TASK_TYPES = PREFIX + "/tipos-de-tarea";

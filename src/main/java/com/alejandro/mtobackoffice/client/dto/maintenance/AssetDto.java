@@ -32,6 +32,11 @@ public record AssetDto(UUID id, String code, String name, CatenaryAssetType type
         return Boolean.TRUE.equals(enabled);
     }
 
+    /** Lo que llevan una orden o un desplegable. */
+    public AssetSummaryDto summary() {
+        return new AssetSummaryDto(id, code, name, type, trackId, startKp, endKp, sectioning, enabled);
+    }
+
     /** El codigo y, si lo hay, el nombre. */
     public String label() {
         if (name == null || name.isBlank() || name.equals(code)) {

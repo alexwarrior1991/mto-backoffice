@@ -155,6 +155,24 @@ import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
 import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CompleteOrderRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.GenerateTasksRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.GenerateTasksResultDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceTaskStatus;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OrderRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OrderUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.PlanOrderRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ReasonRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.StatusHistoryDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskUpdateRequest;
+import com.alejandro.mtobackoffice.ui.maintenance.OrderDetailView;
+import com.alejandro.mtobackoffice.ui.maintenance.OrderEditorDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.OrderTransitionDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.TaskEditorDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.GenerateTasksDialog;
+import com.github.mvysny.kaributesting.v10.ComboBoxKt;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetUpdateRequest;
@@ -3513,8 +3531,8 @@ class ViewLayerTest {
                 Formats.endOfDay(LocalDate.of(2026, 10, 31)))), eq(0), anyInt(), anyList());
 
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("asset-create")).isEmpty(), "sin write no hay alta");
-        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, AssetsView.ACTIONS_COLUMN), Button.class).isEmpty(),
-                "quien solo lee no ve ni modificar ni desactivar");
+        assertEquals(List.of("asset-orders-" + ASSET_SYNCED), LocatorJ._find(GridKt._getCellComponent(grid, 0, AssetsView.ACTIONS_COLUMN),
+                Button.class).stream().map(button -> button.getId().orElse("")).toList(), "quien solo lee ve las ordenes, no modificar ni desactivar");
     }
 
     @Test
@@ -3630,5 +3648,279 @@ class ViewLayerTest {
         assertEquals(2, GridKt._size(gridWithId("templates-grid")));
         LocatorJ._get(H3.class, spec -> spec.withText("Puntos de Perfil (version 2)"));
         assertEquals(List.of("P-01", "Altura del hilo", "Si", "mm", "5300", "5700"), GridKt._getFormattedRow(gridWithId("template-items-grid"), 0));
+    }
+
+    // --- Mantenimiento: ordenes y tareas ----------------------------------------------------------
+
+    private static final UUID TASK1 = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000021");
+    private static final UUID TASK2 = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000022");
+
+    private static OrderDto orderOf(MaintenanceOrderStatus status, MaintenanceOrderType type) {
+        OrderDto base = order(ORDER1, "MO-000001", status, 12L, 3L);
+        return new OrderDto(base.id(), base.code(), base.title(), base.description(), type, status, base.priority(), base.asset(),
+                base.executionPackageId(), base.trackId(), base.stationId(), base.startKp(), base.endKp(), base.plannedDate(),
+                base.actualStartDate(), base.actualEndDate(), base.team(), base.assignedUser(), base.closingNotes(), base.cancellationReason(),
+                base.originInspectionId(), base.originDefectId(), base.stockProjectId(), base.taskCount(), base.completedTaskCount(),
+                base.estimatedMinutes(), base.estimatedShifts(), base.audit());
+    }
+
+    private static TaskDto task(UUID id, int sequence, MaintenanceTaskStatus status) {
+        AssetSummaryDto profile = new AssetSummaryDto(ASSET_SYNCED, "PRF-0001", "12-2.27", CatenaryAssetType.PROFILE, 12L,
+                new BigDecimal("12.270"), new BigDecimal("12.270"), "S-3", true);
+        return new TaskDto(id, ORDER1, sequence, "Perfil 12-2.27", status, null, profile, null, null, null, null, null, List.of(),
+                List.of("RG-01"), List.of(), null);
+    }
+
+    private static List<TaskTypeDto> twoTaskTypes() {
+        return List.of(
+                new TaskTypeDto(UUID.randomUUID(), "RG-01", "Revision visual", FunctionalGroup.STRUCTURAL_SUPPORTS, BigDecimal.TEN, TaskUnit.PROFILE,
+                        null, false, false, true, 1),
+                new TaskTypeDto(UUID.randomUUID(), "RG-04", "Revision del hilo de contacto", FunctionalGroup.OVERHEAD_CONDUCTORS,
+                        new BigDecimal("12.5"), TaskUnit.SPAN, null, true, false, true, 4));
+    }
+
+    /** Las ordenes simuladas, paginadas como el servicio. */
+    private void stubOrders(List<OrderDto> all) {
+        doAnswer(call -> page(all, call.getArgument(1), call.getArgument(2)))
+                .when(orderClient).search(any(OrderFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    private void openOrder(OrderDto order) {
+        when(orderClient.findById(order.id())).thenReturn(order);
+        UI.getCurrent().navigate(OrderDetailView.class, OrderDetailView.parametersOf(order.id()));
+    }
+
+    private static boolean hasButton(String id) {
+        return !LocatorJ._find(Button.class, spec -> spec.withId(id)).isEmpty();
+    }
+
+    private static void click(String id) {
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(id)));
+    }
+
+    @Test
+    void theOrdersAreFilteredInTheServerAndARowOpensItsDetail() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        stubReferencesForMaintenance();
+        when(maintenanceCatalogClient.teams()).thenReturn(List.of(new TeamDto(TEAM1, "EQ-01", "Brigada norte", null, null, true, Set.of(3L), null)));
+        OrderDto order = order(ORDER1, "MO-000001", MaintenanceOrderStatus.IN_PROGRESS, 12L, 3L);
+        stubOrders(List.of(order));
+        when(orderClient.findById(ORDER1)).thenReturn(order);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        LocatorJ._setValue(comboWithId("orders-status"), MaintenanceOrderStatus.IN_PROGRESS);
+        LocatorJ._setValue(comboWithId("orders-type"), MaintenanceOrderType.PREVENTIVE);
+        LocatorJ._setValue(comboWithId("orders-priority"), MaintenancePriority.HIGH);
+        LocatorJ._setValue(comboWithId("orders-track"), new RefItem(12L, "VIA 1 (PAQ NORTE)"));
+        LocatorJ._setValue(comboWithId("orders-package"), new RefItem(3L, "PAQ NORTE"));
+        ComboBox<TeamDto> team = comboWithId("orders-team");
+        ComboBoxKt.selectByLabel(team, "EQ-01 - Brigada norte");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("orders-code")), "MO-0000");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("orders-assigned-user")), "mantenimiento.tecnico");
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("orders-planned-from")), LocalDate.of(2026, 9, 1));
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("orders-planned-to")), LocalDate.of(2026, 9, 30));
+        Grid<Object> grid = gridWithId("orders-grid");
+        GridKt._size(grid);
+
+        verify(orderClient, atLeastOnce()).search(eq(new OrderFilter(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE,
+                MaintenancePriority.HIGH, null, null, 12L, null, 3L, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), "mantenimiento.tecnico",
+                TEAM1, "MO-0000")), eq(0), anyInt(), anyList());
+        assertFalse(hasButton("order-create"), "sin write no hay alta");
+
+        GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        LocatorJ._get(OrderDetailView.class);
+        LocatorJ._get(H2.class, spec -> spec.withText("MO-000001 · Revision tramo 12"));
+        assertFalse(hasButton("order-edit"), "quien solo lee no ve ningun boton de escritura");
+        assertFalse(hasButton("order-complete"));
+    }
+
+    @Test
+    void aNewOrderSearchesItsAssetInTheServerAndOpensItsDetail() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        stubAssets(List.of(ownSection(ASSET_OWN, "TS-0001", true)));
+        OrderDto created = orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE);
+        when(orderClient.create(any())).thenReturn(created);
+        when(orderClient.findById(ORDER1)).thenReturn(created);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        click("order-create");
+        ComboBox<AssetSummaryDto> asset = comboWithId("order-asset");
+        ComboBoxKt.setUserInput(asset, "TS");
+        assertEquals(List.of("TS-0001 - Tramo TS-0001"), ComboBoxKt.getSuggestions(asset));
+        verify(assetClient, atLeastOnce()).search(eq(new AssetFilter(null, null, null, null, true, "TS", null)), anyInt(), anyInt(), anyList());
+        ComboBoxKt.selectByLabel(asset, "TS-0001 - Tramo TS-0001");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("order-title")), "Revision tramo 12");
+        click(OrderEditorDialog.SAVE_ID);
+
+        verify(orderClient).create(new OrderRequest("Revision tramo 12", null, MaintenanceOrderType.PREVENTIVE, MaintenancePriority.MEDIUM,
+                ASSET_OWN, null, null, null, null));
+        LocatorJ._get(OrderDetailView.class);
+    }
+
+    /** Cada estado ofrece lo suyo, cancelar pide supervise y una orden que no existe devuelve a la lista. */
+    @Test
+    void theOrderDetailOffersWhatItsStateAdmitsAndAMissingOrderGoesBack() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+        assertTrue(hasButton("order-edit") && hasButton("order-plan"));
+        assertFalse(hasButton("order-start"), "una preventiva en borrador se planifica antes de iniciar");
+        assertFalse(hasButton("order-assign") || hasButton("order-complete"));
+        assertFalse(hasButton("order-cancel"), "cancelar pide maintenance-supervise");
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.URGENT));
+        assertTrue(hasButton("order-start"), "una urgente arranca sin planificar");
+
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        openOrder(orderOf(MaintenanceOrderStatus.ASSIGNED, MaintenanceOrderType.PREVENTIVE));
+        assertTrue(hasButton("order-assign") && hasButton("order-start") && hasButton("order-cancel"));
+        when(orderClient.cancel(eq(ORDER1), any())).thenReturn(orderOf(MaintenanceOrderStatus.CANCELLED, MaintenanceOrderType.PREVENTIVE));
+        click("order-cancel");
+        click("reason-confirm");
+        verify(orderClient, never()).cancel(any(), any());
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("reason-text")), "Duplicada");
+        click("reason-confirm");
+        verify(orderClient).cancel(ORDER1, new ReasonRequest("Duplicada"));
+        NotificationsKt.expectNotifications("MO-000001 cancelada");
+        assertEquals("Cancelada", LocatorJ._get(Span.class, spec -> spec.withId("order-status")).getText());
+        assertFalse(hasButton("order-edit") || hasButton("order-cancel"), "una orden terminada no ofrece nada");
+
+        UUID missing = UUID.randomUUID();
+        when(orderClient.findById(missing)).thenThrow(maintenanceError(404, "ORD-404", "MaintenanceOrder with id " + missing + " was not found"));
+        UI.getCurrent().navigate(OrderDetailView.class, OrderDetailView.parametersOf(missing));
+        LocatorJ._get(OrdersView.class);
+        NotificationsKt.expectNotifications("No existe la orden " + missing);
+    }
+
+    @Test
+    void planningRepaintsTheOrderAndARefusedTransitionIsNotifiedWithTheDialogOpen() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        LocalDate nextWeek = LocalDate.now().plusDays(7);
+        when(orderClient.plan(eq(ORDER1), any())).thenReturn(orderOf(MaintenanceOrderStatus.PLANNED, MaintenanceOrderType.PREVENTIVE));
+        when(orderClient.start(eq(ORDER1), any())).thenThrow(maintenanceError(409, "TRN-001", "Order MO-000001 cannot be started from PLANNED"));
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("order-plan");
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("order-transition-planned-date")), nextWeek);
+        click(OrderTransitionDialog.CONFIRM_ID);
+        verify(orderClient).plan(ORDER1, new PlanOrderRequest(nextWeek, null));
+        assertEquals("Planificada", LocatorJ._get(Span.class, spec -> spec.withId("order-status")).getText());
+        assertTrue(hasButton("order-start") && hasButton("order-assign"));
+        assertFalse(hasButton("order-plan"));
+
+        click("order-start");
+        click(OrderTransitionDialog.CONFIRM_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("El estado actual no permite esta operacion. Order MO-000001 cannot be started from PLANNED"));
+        assertFalse(LocatorJ._find(OrderTransitionDialog.class).isEmpty(), "el dialogo sigue abierto");
+    }
+
+    @Test
+    void anOrderInProgressOnlyChangesWhatTheServiceAdmitsAndForceNeedsSupervise() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        OrderDto running = orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE);
+        when(orderClient.update(eq(ORDER1), any())).thenReturn(running);
+        when(orderClient.complete(eq(ORDER1), any())).thenReturn(orderOf(MaintenanceOrderStatus.COMPLETED, MaintenanceOrderType.PREVENTIVE));
+        openOrder(running);
+
+        click("order-edit");
+        assertTrue(LocatorJ._find(TextField.class, spec -> spec.withId("order-title")).isEmpty(), "en curso ya no se cambia el titulo");
+        LocatorJ._setValue(comboWithId("order-priority"), MaintenancePriority.CRITICAL);
+        click(OrderEditorDialog.SAVE_ID);
+        verify(orderClient).update(ORDER1, new OrderUpdateRequest(null, null, MaintenancePriority.CRITICAL, null, null, null, null, null, null,
+                null, null, null, null));
+
+        click("order-complete");
+        assertTrue(LocatorJ._find(Checkbox.class, spec -> spec.withId("order-transition-force")).isEmpty(), "force pide supervise");
+        click(OrderTransitionDialog.CONFIRM_ID);
+        verify(orderClient).complete(ORDER1, new CompleteOrderRequest(null, null, null));
+
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        openOrder(running);
+        click("order-complete");
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("order-transition-force")), true);
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("order-transition-closing-notes")), "Sin incidencias");
+        click(OrderTransitionDialog.CONFIRM_ID);
+        verify(orderClient).complete(ORDER1, new CompleteOrderRequest("Sin incidencias", true, null));
+    }
+
+    @Test
+    void theTasksTabAddsGeneratesEditsAndCancelsOnlyOpenTasks() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of(task(TASK1, 1, MaintenanceTaskStatus.PENDING), task(TASK2, 2, MaintenanceTaskStatus.COMPLETED)));
+        when(orderClient.generateTasks(eq(ORDER1), any())).thenReturn(new GenerateTasksResultDto(14, 2, 16, new BigDecimal("720.0"), 3));
+        when(orderClient.createTask(eq(ORDER1), any())).thenReturn(task(TASK2, 3, MaintenanceTaskStatus.PENDING));
+        when(orderClient.updateTask(eq(ORDER1), eq(TASK1), any())).thenReturn(task(TASK1, 1, MaintenanceTaskStatus.PENDING));
+        when(orderClient.cancelTask(eq(ORDER1), eq(TASK1), any())).thenReturn(task(TASK1, 1, MaintenanceTaskStatus.CANCELLED));
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        Grid<Object> tasks = gridWithId("order-tasks-grid");
+        assertEquals(2, GridKt._size(tasks));
+        assertFalse(LocatorJ._find(GridKt._getCellComponent(tasks, 0, "actions"), Button.class).isEmpty(), "una tarea pendiente se toca");
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(tasks, 1, "actions"), Button.class).isEmpty(), "una completada no");
+
+        click("task-generate");
+        click(GenerateTasksDialog.CONFIRM_ID);
+        verify(orderClient).generateTasks(ORDER1, new GenerateTasksRequest(null, null));
+        NotificationsKt.expectNotifications("Tareas nuevas: 14; perfiles que ya tenian tarea: 2. Total: 16, unos 720 min en 3 turnos.");
+
+        click("task-add");
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("task-description")), "Revisar la mensula");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<TaskTypeDto> types = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("task-types"));
+        LocatorJ._setValue(types, Set.of(twoTaskTypes().get(1)));
+        click(TaskEditorDialog.SAVE_ID);
+        verify(orderClient).createTask(ORDER1, new TaskRequest("Revisar la mensula", null, null, List.of("RG-04"), null));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("task-edit-" + TASK1)));
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("task-notes")), "Falta la llave");
+        click(TaskEditorDialog.SAVE_ID);
+        verify(orderClient).updateTask(ORDER1, TASK1, new TaskUpdateRequest(null, null, null, "Falta la llave", null, null));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("task-cancel-" + TASK1)));
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("reason-text")), "Perfil desmontado");
+        click("reason-confirm");
+        verify(orderClient).cancelTask(ORDER1, TASK1, new ReasonRequest("Perfil desmontado"));
+        verify(orderClient, atLeast(4)).findById(ORDER1);
+    }
+
+    @Test
+    void theHistoryTabNamesTheStatesAndAnAssetRowShowsItsOrders() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        stubReferencesForMaintenance();
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        when(orderClient.history(ORDER1)).thenReturn(List.of(
+                new StatusHistoryDto(UUID.randomUUID(), null, "DRAFT", Instant.parse("2026-09-20T08:00:00Z"), "mantenimiento.tecnico", "Order created"),
+                new StatusHistoryDto(UUID.randomUUID(), "DRAFT", "PLANNED", Instant.parse("2026-09-21T08:00:00Z"), "mantenimiento.tecnico", null)));
+        OrderDto order = orderOf(MaintenanceOrderStatus.PLANNED, MaintenanceOrderType.PREVENTIVE);
+        openOrder(order);
+        verify(orderClient, never()).history(any());
+        selectTab(1);
+        Grid<Object> history = gridWithId("order-history-grid");
+        assertEquals(List.of("", "Borrador", "mantenimiento.tecnico", "Order created"),
+                List.of(GridKt._getFormattedRow(history, 0).get(1), GridKt._getFormattedRow(history, 0).get(2),
+                        GridKt._getFormattedRow(history, 0).get(3), GridKt._getFormattedRow(history, 0).get(4)));
+        assertEquals("Planificada", GridKt._getFormattedRow(history, 1).get(2));
+
+        stubAssets(List.of(ownSection(ASSET_OWN, "TS-0001", true)));
+        doAnswer(call -> page(List.of(order), call.getArgument(1), call.getArgument(2)))
+                .when(assetClient).orders(eq(ASSET_OWN), anyInt(), anyInt(), anyList());
+        UI.getCurrent().navigate(MaintenanceRoutes.ASSETS);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("assets-grid"), 0, AssetsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("asset-orders-" + ASSET_OWN)));
+        Grid<Object> orders = gridWithId("asset-orders-grid");
+        assertEquals("MO-000001", GridKt._getFormattedRow(orders, 0).getFirst());
+        verify(assetClient, atLeastOnce()).orders(eq(ASSET_OWN), eq(0), anyInt(), eq(List.of("createdAt,desc")));
+        GridKt._clickItem(orders, 0, 1, false, false, false, false);
+        LocatorJ._get(OrderDetailView.class);
     }
 }
