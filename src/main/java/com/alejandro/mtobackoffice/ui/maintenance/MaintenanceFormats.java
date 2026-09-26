@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 
 import java.math.BigDecimal;
@@ -23,6 +24,23 @@ public final class MaintenanceFormats {
             return kp(start == null ? end : start);
         }
         return kp(start) + " - " + kp(end);
+    }
+
+    /**
+     * Si un activo admite trabajo y, si no, quien lo desactivo: mantenimiento, mto-configuration o
+     * los dos. Un servicio sin esas dos columnas solo dice «Desactivado».
+     */
+    public static String assetState(AssetDto asset) {
+        if (asset.isEnabled()) {
+            return "Activo";
+        }
+        if (asset.isDisabledLocally() && asset.isDisabledAtSource()) {
+            return "Desactivado aqui y en configuracion";
+        }
+        if (asset.isDisabledLocally()) {
+            return "Desactivado aqui";
+        }
+        return asset.isDisabledAtSource() ? "Desactivado en configuracion" : "Desactivado";
     }
 
     /** Tareas completadas sobre el total: {@code 3/10}; sin tareas, vacio. */
