@@ -63,6 +63,10 @@ public final class UiErrors {
             case ForbiddenApiException ignored -> "No tienes permiso para esta operacion.";
             case NotFoundApiException ignored -> "No se ha encontrado lo que se pedia."
                     + detail(exception);
+            // mto-maintenance: la inspeccion no casa con su checklist (un OK con items defectuosos, un
+            // defecto que no hay que registrar...). Es un 422 sin campos, pero dice algo mas concreto.
+            case ValidationApiException inspection when "INS-001".equals(inspection.getProblem().code()) ->
+                    "La inspeccion o su checklist no admiten esta operacion." + detail(exception);
             // Un 422 sin errores por campo es una regla de negocio (mto-stock: reserva no activa, conjunto
             // sin lista de materiales, almacen inactivo...): la peticion esta bien, la operacion no cabe.
             case ValidationApiException business when business.getStatus().value() == 422 && !business.getProblem().hasFieldErrors() ->
@@ -81,8 +85,24 @@ public final class UiErrors {
             // uso. Recargar no lo arregla, asi que no se pide recargar.
             case ConflictApiException duplicated when "BUS-002".equals(duplicated.getProblem().code()) ->
                     "Ya existe otro registro con ese valor (un codigo que no se puede repetir), o la entrada esta en uso.";
+            // mto-maintenance: los 409 que no son de concurrencia (el servicio no tiene bloqueo optimista)
+            // sino de estado. Recargar no los arregla; el detalle del servicio dice que falta.
+            case ConflictApiException transition when "TRN-001".equals(transition.getProblem().code()) ->
+                    "El estado actual no permite esta operacion." + detail(exception);
+            case ConflictApiException shift when "SHF-001".equals(shift.getProblem().code()) ->
+                    "El turno no admite ese trabajo." + detail(exception);
+            case ConflictApiException material when "MAT-001".equals(material.getProblem().code()) ->
+                    "La linea de material no admite esta operacion." + detail(exception);
+            case ConflictApiException asset when "AST-001".equals(asset.getProblem().code()) ->
+                    "El activo esta desactivado, o ese dato lo manda mto-configuration." + detail(exception);
+            case ConflictApiException duplicated when "AST-409".equals(duplicated.getProblem().code())
+                    || "TEA-409".equals(duplicated.getProblem().code()) -> "Ya existe otro con ese codigo.";
             case ConflictApiException ignored -> "Conflicto con otro cambio: recarga y vuelve a intentarlo."
                     + detail(exception);
+            // mto-maintenance no ha podido hablar con mto-stock al sincronizar o al quitar una linea: el
+            // servicio de mantenimiento si responde, y la linea se queda como estaba.
+            case ServiceUnavailableApiException stock when "STK-503".equals(stock.getProblem().code()) ->
+                    "El almacen no responde: la linea de material se queda como estaba. Intentalo mas tarde." + detail(exception);
             // Un 502 no es transitorio (mto-users sin SMTP, por ejemplo): su detalle es lo unico que lo explica.
             case ServiceUnavailableApiException unavailable when unavailable.getStatus().value() == 502 ->
                     "El servicio no ha podido completar la operacion." + detail(exception);

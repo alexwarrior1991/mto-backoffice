@@ -268,7 +268,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 | `KEYCLOAK_ISSUER_URI` | Realm que emite los tokens | `http://auth.mto.local:8082/realms/mto` |
 | `KEYCLOAK_CLIENT_ID` | Cliente confidencial de esta aplicación | `mto-backoffice` |
 | `KEYCLOAK_CLIENT_SECRET` | Su secreto | vacío (`dev`: el local; `prod`: obligatorio) |
-| `KEYCLOAK_ROLES_CLIENT_IDS` | Clientes cuyos roles del access token son los permisos (lista por comas) | `mto-configuration-api,mto-users-api,mto-stock-api` |
+| `KEYCLOAK_ROLES_CLIENT_IDS` | Clientes cuyos roles del access token son los permisos (lista por comas) | `mto-configuration-api,mto-users-api,mto-stock-api,mto-maintenance-api` |
 | `MTO_GATEWAY_URL` | El gateway | `http://localhost:8090` |
 | `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP | `2s` / `15s` |
 

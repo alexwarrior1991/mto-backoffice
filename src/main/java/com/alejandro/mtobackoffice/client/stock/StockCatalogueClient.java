@@ -1,7 +1,7 @@
 package com.alejandro.mtobackoffice.client.stock;
 
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
-import com.alejandro.mtobackoffice.client.dto.stock.RevisionDto;
+import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;

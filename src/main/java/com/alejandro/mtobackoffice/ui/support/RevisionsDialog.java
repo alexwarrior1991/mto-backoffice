@@ -1,10 +1,9 @@
-package com.alejandro.mtobackoffice.ui.stock;
+package com.alejandro.mtobackoffice.ui.support;
 
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
-import com.alejandro.mtobackoffice.client.dto.stock.RevisionDto;
+import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
-import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
@@ -17,11 +16,11 @@ import java.util.function.Function;
 import java.util.stream.Stream;
 
 /**
- * El historial de una fila de almacen (Envers en mto-stock): las revisiones paginadas, la mas
- * reciente primero, con quien, cuando, que operacion y por que camino ({@code HTTP},
- * {@code MESSAGING}, {@code SYSTEM} o {@code BASELINE}, la foto inicial de lo que ya existia), la
- * referencia de correlacion y una linea con la fila tal como quedo. Sin revisiones el servicio
- * responde 404, y eso es «sin historial todavia», no un error.
+ * El historial de una fila (Envers en mto-stock y en mto-maintenance, con la misma forma): las
+ * revisiones paginadas, la mas reciente primero, con quien, cuando, que operacion y por que camino
+ * ({@code HTTP}, {@code MESSAGING}, {@code SYSTEM} o {@code BASELINE}, la foto inicial de lo que ya
+ * existia), la referencia de correlacion y una linea con la fila tal como quedo. Sin revisiones el
+ * servicio responde 404, y eso es «sin historial todavia», no un error.
  *
  * @param <D> la entidad tal como la devuelve el servicio en cada revision
  */
@@ -58,7 +57,7 @@ public class RevisionsDialog<D> extends Dialog {
 
         grid.setId("revisions-grid");
         grid.addColumn(row -> row.revision().revision()).setHeader("Revision").setKey("revision").setAutoWidth(true).setFlexGrow(0);
-        grid.addColumn(row -> StockFormats.dateTime(row.revision().revisionAt())).setHeader("Cuando").setKey("revisionAt").setAutoWidth(true);
+        grid.addColumn(row -> Formats.dateTime(row.revision().revisionAt())).setHeader("Cuando").setKey("revisionAt").setAutoWidth(true);
         grid.addColumn(row -> row.revision().operation() == null ? "" : row.revision().operation().label()).setHeader("Operacion").setKey("operation").setAutoWidth(true);
         grid.addColumn(row -> text(row.revision().author())).setHeader("Quien").setKey("author").setAutoWidth(true);
         grid.addColumn(row -> text(row.revision().source())).setHeader("Origen").setKey("source").setAutoWidth(true);

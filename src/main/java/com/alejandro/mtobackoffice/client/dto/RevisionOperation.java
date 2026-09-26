@@ -1,4 +1,4 @@
-package com.alejandro.mtobackoffice.client.dto.stock;
+package com.alejandro.mtobackoffice.client.dto;
 
 public enum RevisionOperation {
     CREATED("Alta"),

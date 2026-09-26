@@ -80,8 +80,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   bajo mínimo y libro por material) y `AssemblyClient` (además disponibilidad) resolviendo el
   genérico contra la subinterfaz; `MovementClient` (entradas, salidas, ajustes, transferencias y
   el libro) y `ReservationClient` (alta, modificación, cancelar con un `DELETE` que devuelve
-  cuerpo, liberar, consumir); DTO como records en `client/dto/stock`, con `RevisionDto<T>` para el
-  historial y enumerados con etiqueta). Los DTO
+  cuerpo, liberar, consumir); DTO como records en `client/dto/stock`, con enumerados con etiqueta;
+  el historial usa `RevisionDto<T>`, `RevisionMetadataDto`, `RevisionOperation` y `AuditDto`, que
+  viven en `client/dto` porque mantenimiento los comparte). Los DTO
   (`client/dto`): `LovDto` es un record con solo las claves que usa la UI (con `versionNumber`,
   que vuelve como se leyó) y `@JsonInclude(NON_NULL)`; los maestros (`client/dto/master`) son
   **clases mutables** que heredan de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo y los hijos
@@ -113,8 +114,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `first`/`max`; `UserEditorDialog`, el `Binder` sobre el modelo mutable `UserForm`, cuyas
   propiedades se llaman como los campos del servicio para `ServerValidation`; `UserAttributes`,
   los atributos como texto `clave=valor` por línea; `UserDetailView` en `usuarios/:userId`, la
-  ficha con su cabecera, su botonera por permiso y un `TabSheet` de paneles `LazyPanel`, que
-  piden sus datos la primera vez que se abren: `UserProfilesPanel`, `UserRolesPanel`,
+  ficha con su cabecera, su botonera por permiso y un `TabSheet` de paneles `LazyPanel` (en
+  `ui/support`), que piden sus datos la primera vez que se abren: `UserProfilesPanel`, `UserRolesPanel`,
   `UserSessionsPanel` (normales y offline) y `UserCredentialsPanel`; `ResetPasswordDialog` y
   `ExecuteActionsEmailDialog`, cada uno con su `Binder` sobre un `Form` con los nombres del
   servicio; `TakeOut`, las tres llamadas de «sacar a la persona» en su orden, parando en el
@@ -138,12 +139,14 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `almacen/conjuntos`, un catálogo más cuyo editor (`AssemblyEditorDialog`) lleva la lista de
   materiales entera en `BomEditor` y cuya fila ofrece, también a quien solo lee,
   `AssemblyAvailabilityDialog`, la disponibilidad por almacén que calcula el servicio;
-  `RevisionsDialog<D>`, el historial de cualquier fila de almacén (paginado, la más reciente
-  primero; el 404 es «sin historial»), abierto desde el botón de historial que cada catálogo y
-  cada reserva ofrecen a quien puede leer; `StockClients` y `StockFormats`), `ui/support` (`UiErrors`: excepción →
+  el historial de cada fila, en `RevisionsDialog`, abierto desde el botón de historial que cada
+  catálogo y cada reserva ofrecen a quien puede leer; `StockClients` y `StockFormats`), `ui/support` (`UiErrors`: excepción →
   `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`;
   `OffsetPager`: anteriores/siguientes para una lista `first`/`max` sin total, donde una página
-  llena es la única señal de que hay más).
+  llena es la única señal de que hay más; `RevisionsDialog<D>`, el historial de cualquier fila
+  (paginado, la más reciente primero; el 404 es «sin historial»); `LazyPanel`, la pestaña que
+  pide sus datos al abrirse; `Downloads`, el fichero de un servicio servido a través de esta
+  aplicación con `DownloadHandler`; `Formats`, cantidades y fechas).
 - `configuration/vaadin` — `BackofficeSystemMessages`, los mensajes de sistema de Vaadin en
   castellano y con el aviso de sesión caducada apagado (recarga → login → SSO).
 

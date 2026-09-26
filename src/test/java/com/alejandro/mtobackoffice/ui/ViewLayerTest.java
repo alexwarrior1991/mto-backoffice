@@ -85,14 +85,14 @@ import com.alejandro.mtobackoffice.client.dto.stock.AssemblyComponentRequest;
 import com.alejandro.mtobackoffice.client.dto.stock.AssemblyDto;
 import com.alejandro.mtobackoffice.client.dto.stock.AssemblyRequest;
 import com.alejandro.mtobackoffice.client.dto.stock.AssemblyUpdateRequest;
-import com.alejandro.mtobackoffice.client.dto.stock.AuditDto;
+import com.alejandro.mtobackoffice.client.dto.AuditDto;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationDto;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationRequest;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationStatus;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationUpdateRequest;
-import com.alejandro.mtobackoffice.client.dto.stock.RevisionDto;
-import com.alejandro.mtobackoffice.client.dto.stock.RevisionMetadataDto;
-import com.alejandro.mtobackoffice.client.dto.stock.RevisionOperation;
+import com.alejandro.mtobackoffice.client.dto.RevisionDto;
+import com.alejandro.mtobackoffice.client.dto.RevisionMetadataDto;
+import com.alejandro.mtobackoffice.client.dto.RevisionOperation;
 import com.alejandro.mtobackoffice.ui.stock.ReservationsView;
 import com.alejandro.mtobackoffice.ui.stock.StockCatalogueView;
 import com.alejandro.mtobackoffice.ui.stock.StockFormats;
@@ -143,6 +143,21 @@ import com.vaadin.flow.component.grid.GridSortOrder;
 import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.data.provider.SortDirection;
 import com.vaadin.flow.component.html.Anchor;
+import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderStatus;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderType;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OrderFilter;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
+import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
+import com.alejandro.mtobackoffice.ui.maintenance.MaintenanceRoutes;
+import com.alejandro.mtobackoffice.ui.maintenance.OrdersView;
+import com.alejandro.mtobackoffice.ui.support.Downloads;
+import com.vaadin.flow.server.streams.DownloadResponse;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.ResponseEntity;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H4;
 import com.vaadin.flow.component.html.ListItem;
@@ -160,6 +175,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -196,6 +213,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -271,6 +289,8 @@ class ViewLayerTest {
     private MovementClient movementClient;
     @MockitoBean
     private ReservationClient reservationClient;
+    @MockitoBean
+    private OrderClient orderClient;
 
     @BeforeEach
     void setUp() {
@@ -326,6 +346,7 @@ class ViewLayerTest {
         assertFalse(labels.contains("Vias"), labels.toString());
         assertFalse(labels.contains("Trabajos"), labels.toString());
         assertFalse(labels.contains("Usuarios"), labels.toString());
+        assertFalse(labels.contains("Mantenimiento"), labels.toString());
     }
 
     @Test
@@ -673,6 +694,7 @@ class ViewLayerTest {
         when(materialClient.lowStock(any(), anyInt(), anyInt(), anyList())).thenReturn(page(List.<MaterialDto>of(), 0, 50));
         when(materialClient.movements(any(), any(), any(), any(), any(), anyInt(), anyInt(), anyList())).thenReturn(page(List.<MovementDto>of(), 0, 50));
         when(movementClient.search(any(), any(), any(), any(), any(), any(), any(), anyInt(), anyInt(), anyList())).thenReturn(page(List.<MovementDto>of(), 0, 50));
+        when(orderClient.search(any(OrderFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<OrderDto>of(), 0, 50));
     }
 
     /** Un catalogo de almacen simulado: busca en codigo o nombre, filtra por estado y pagina por page/size como el servicio. */
@@ -3259,5 +3281,145 @@ class ViewLayerTest {
         assertTrue(GridKt._getFormattedRow(grid, 0).contains("2 m de MAT-001 en WH-000 para PRJ-001 · Consumida"), GridKt._getFormattedRow(grid, 0).toString());
         assertTrue(GridKt._getFormattedRow(grid, 1).contains("2 m de MAT-001 en WH-000 para PRJ-001 · Activa"), GridKt._getFormattedRow(grid, 1).toString());
         assertTrue(LocatorJ._find(Dialog.class).size() == 1);
+    }
+
+    // --- Mantenimiento (mto-maintenance): cimientos --------------------------------------------------
+
+    private static final UUID ORDER1 = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000001");
+    private static final UUID ASSET1 = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000002");
+    private static final UUID TEAM1 = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000003");
+
+    /** Lo que lee una persona de mantenimiento: sus roles de cliente y los dos de lectura que su perfil del realm le da. */
+    private static final String[] MAINTENANCE_READER = {"ROLE_MAINTENANCE_READ", "ROLE_CONFIG_READ", "ROLE_STOCK_READ",
+            "ROLE_REALM_MTO_MAINTENANCE_VIEWER"};
+
+    private static OrderDto order(UUID id, String code, MaintenanceOrderStatus status, Long trackId, Long packageId) {
+        AssetSummaryDto asset = new AssetSummaryDto(ASSET1, "TS-0001", "Tramo 12", CatenaryAssetType.TRACK_SECTION, trackId,
+                new BigDecimal("12.100"), new BigDecimal("13.450"), null, true);
+        TeamSummaryDto team = new TeamSummaryDto(TEAM1, "EQ-01", "Brigada norte", "Base Norte");
+        return new OrderDto(id, code, "Revision tramo 12", null, MaintenanceOrderType.PREVENTIVE, status, MaintenancePriority.HIGH,
+                asset, packageId, trackId, null, new BigDecimal("12.100"), new BigDecimal("13.450"), LocalDate.of(2026, 9, 14), null, null,
+                team, "mantenimiento.tecnico", null, null, null, null, null, 10, 3, new BigDecimal("450"), 2, null);
+    }
+
+    @Test
+    void theMaintenanceGroupOpensOnTheOrdersAndShowsWhatTheProfileReads() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        List<String> labels = menuLabels();
+        SideNavItem maintenance = LocatorJ._get(SideNavItem.class, spec -> spec.withLabel("Mantenimiento"));
+        assertEquals(MaintenanceRoutes.PREFIX, maintenance.getPath().replaceFirst("^/", ""), "las ordenes son a la vez el nodo del grupo");
+        assertTrue(labels.contains("Infraestructura") && labels.contains("Almacen"),
+                "el perfil de mantenimiento lee configuracion y almacen, y sus vistas de lectura se abren: " + labels);
+        assertFalse(labels.contains("Usuarios"), labels.toString());
+    }
+
+    @Test
+    void theMaintenanceViewsAreNotReachableWithARealmRoleOnly() {
+        loginAs("mantenimiento.impostor", "ROLE_REALM_MAINTENANCE_READ", "ROLE_REALM_MTO_MAINTENANCE_MANAGER");
+
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(MaintenanceRoutes.ORDERS));
+
+        assertTrue(LocatorJ._find(OrdersView.class).isEmpty());
+        verify(orderClient, never()).search(any(OrderFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    private static BackofficeApiException maintenanceError(int status, String code, String message) {
+        ApiProblem problem = new ApiProblem(null, HttpStatus.valueOf(status).name(), status, message, null, code, null, null, null, false, null, null);
+        return BackofficeApiException.of(HttpStatusCode.valueOf(status), problem, "corr-m9", null, "POST /api/maintenance/orders");
+    }
+
+    /** Los 409 de mantenimiento son de estado, no de concurrencia: ninguno pide recargar. */
+    @Test
+    void maintenanceErrorsSayWhatBlocksTheOperation() {
+        assertEquals("El estado actual no permite esta operacion. Order MO-000001 cannot go from COMPLETED to PLANNED",
+                UiErrors.message(maintenanceError(409, "TRN-001", "Order MO-000001 cannot go from COMPLETED to PLANNED")));
+        assertEquals("El turno no admite ese trabajo. Shift SH-000001 has partial possession; the task includes work that needs full track possession",
+                UiErrors.message(maintenanceError(409, "SHF-001",
+                        "Shift SH-000001 has partial possession; the task includes work that needs full track possession")));
+        assertEquals("La linea de material no admite esta operacion. Material MAT-001 was already consumed in stock; the line cannot be removed",
+                UiErrors.message(maintenanceError(409, "MAT-001", "Material MAT-001 was already consumed in stock; the line cannot be removed")));
+        assertEquals("El activo esta desactivado, o ese dato lo manda mto-configuration. Catenary asset P-0001 comes from master data",
+                UiErrors.message(maintenanceError(409, "AST-001", "Catenary asset P-0001 comes from master data")));
+        assertEquals("Ya existe otro con ese codigo.", UiErrors.message(maintenanceError(409, "AST-409", "Catenary asset code 'TS-1' is already in use")));
+        assertEquals("Ya existe otro con ese codigo.", UiErrors.message(maintenanceError(409, "TEA-409", "Maintenance team code 'EQ-01' is already in use")));
+        assertEquals("La inspeccion o su checklist no admiten esta operacion. Inspection INS-000001 is OK: there is no defect to record",
+                UiErrors.message(maintenanceError(422, "INS-001", "Inspection INS-000001 is OK: there is no defect to record")));
+        assertEquals("El almacen no responde: la linea de material se queda como estaba. Intentalo mas tarde. Stock service unavailable",
+                UiErrors.message(maintenanceError(503, "STK-503", "Stock service unavailable")));
+        assertEquals("El servicio no esta disponible ahora mismo. Intentalo mas tarde.",
+                UiErrors.message(maintenanceError(503, null, null)), "el 503 del gateway sigue siendo el de siempre");
+    }
+
+    @Test
+    void theOrdersListNamesTracksAndPackagesFromConfigurationAndSortsInTheServer() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(executionPackage(3L, "PAQ NORTE")), 0, 1000));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(12L, "VIA 1", true, 3L, List.of())), 0, 1000));
+        when(orderClient.search(any(OrderFilter.class), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.of(order(ORDER1, "MO-000001", MaintenanceOrderStatus.IN_PROGRESS, 12L, 3L)), 0, 50));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+
+        Grid<Object> grid = gridWithId("orders-grid");
+        assertEquals(1, GridKt._size(grid));
+        assertEquals(List.of("MO-000001", "Revision tramo 12", "Preventiva", "En curso", "Alta", "TS-0001 - Tramo 12", "VIA 1 (PAQ NORTE)",
+                "12.1 - 13.45", "PAQ NORTE", "14/09/2026", "EQ-01 - Brigada norte", "3/10", "mantenimiento.tecnico"), GridKt._getFormattedRow(grid, 0));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 ordenes"));
+        verify(orderClient, atLeastOnce()).search(eq(OrderFilter.NONE), eq(0), anyInt(), eq(List.of("createdAt,desc")));
+
+        grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("plannedDate"), SortDirection.ASCENDING)));
+        GridKt._get(grid, 0);
+        verify(orderClient, atLeastOnce()).search(eq(OrderFilter.NONE), eq(0), anyInt(), eq(List.of("plannedDate,asc")));
+        assertFalse(grid.getColumnByKey("tasks").isSortable(), "el avance lo calcula el servicio y no se puede ordenar");
+        assertFalse(grid.getColumnByKey("track").isSortable(), "ordenar por el id de la via no seria ordenar por su nombre");
+    }
+
+    /** Sin config-read no se llama a mto-configuration (seria un 403 por fila): se ensenan los ids. */
+    @Test
+    void withoutConfigReadTheOrdersShowTheIdsAndConfigurationIsNotCalled() {
+        loginAs("mantenimiento.solo", "ROLE_MAINTENANCE_READ");
+        when(orderClient.search(any(OrderFilter.class), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.of(order(ORDER1, "MO-000001", MaintenanceOrderStatus.PLANNED, 12L, 3L)), 0, 50));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+
+        List<String> row = GridKt._getFormattedRow(gridWithId("orders-grid"), 0);
+        assertTrue(row.contains("#12") && row.contains("#3"), row.toString());
+        verify(trackClient, never()).filter(anyInt(), anyInt(), anyList(), anyMap());
+        verify(executionPackageClient, never()).filter(anyInt(), anyInt(), anyList(), anyMap());
+        assertTrue(LocatorJ._find(com.vaadin.flow.component.notification.Notification.class).isEmpty(), "ninguna notificacion de 403");
+    }
+
+    /** Lo que sirve un enlace de descarga: el cuerpo con el nombre y el tipo del servicio, o su estado si falla. */
+    @Test
+    void aDownloadServesTheFileWithTheNameAndTypeOfTheServiceOrItsStatus() throws Exception {
+        byte[] xlsx = {80, 75, 3, 4};
+        DownloadResponse served = Downloads.response(() -> ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename("parte-SH-000001.xlsx").build().toString())
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(xlsx), "parte.xlsx");
+        DownloadResponse unnamed = Downloads.response(() -> ResponseEntity.ok().body(new byte[]{1, 2}), "informe.pdf");
+        DownloadResponse failed = Downloads.response(() -> {
+            throw maintenanceError(503, null, null);
+        }, "informe.pdf");
+
+        assertEquals("parte-SH-000001.xlsx", served.getFileName());
+        assertEquals("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", served.getContentType());
+        assertEquals(4, served.getContentLength());
+        assertArrayEquals(xlsx, served.getInputStream().readAllBytes());
+        assertEquals("informe.pdf", unnamed.getFileName(), "sin Content-Disposition, el nombre de reserva");
+        assertEquals(MediaType.APPLICATION_OCTET_STREAM_VALUE, unnamed.getContentType());
+        assertTrue(failed.hasError());
+        assertEquals(503, failed.getError());
+
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        Anchor link = Downloads.link("report-xlsx", "Excel", "avance.xlsx", () -> ResponseEntity.ok().body(xlsx));
+        assertEquals("report-xlsx", link.getId().orElseThrow());
+        assertEquals("Excel", link.getText());
     }
 }

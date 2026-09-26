@@ -7,6 +7,7 @@ import com.alejandro.mtobackoffice.client.dto.users.RoleNamesRequest;
 import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
+import com.alejandro.mtobackoffice.ui.support.LazyPanel;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.button.Button;

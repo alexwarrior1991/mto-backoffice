@@ -50,6 +50,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -76,8 +77,8 @@ import com.alejandro.mtobackoffice.client.dto.stock.ProjectDto;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationDto;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationRequest;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationStatus;
-import com.alejandro.mtobackoffice.client.dto.stock.RevisionDto;
-import com.alejandro.mtobackoffice.client.dto.stock.RevisionOperation;
+import com.alejandro.mtobackoffice.client.dto.RevisionDto;
+import com.alejandro.mtobackoffice.client.dto.RevisionOperation;
 import com.alejandro.mtobackoffice.client.dto.stock.SupplierDto;
 import com.alejandro.mtobackoffice.client.dto.stock.TransferRequest;
 import com.alejandro.mtobackoffice.client.dto.stock.WarehouseDto;
@@ -106,6 +107,14 @@ import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
 import com.alejandro.mtobackoffice.client.dto.users.UsersPage;
 import com.alejandro.mtobackoffice.client.error.ConflictApiException;
+import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderStatus;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderType;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OrderFilter;
+import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesRegex;
 import static org.hamcrest.Matchers.nullValue;
@@ -150,6 +159,7 @@ class ClientLayerTest {
     private AssemblyClient assemblyClient;
     private MovementClient movementClient;
     private ReservationClient reservationClient;
+    private OrderClient orderClient;
 
     @BeforeEach
     void setUp() {
@@ -177,6 +187,7 @@ class ClientLayerTest {
         assemblyClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(AssemblyClient.class);
         movementClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(MovementClient.class);
         reservationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ReservationClient.class);
+        orderClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(OrderClient.class);
     }
 
     @AfterEach
@@ -1355,6 +1366,104 @@ class ClientLayerTest {
         assertEquals("RES-001", rule.getProblem().code());
         assertFalse(rule.getProblem().hasFieldErrors());
         assertEquals("Only active reservations can be changed", rule.getProblem().detail());
+        server.verify();
+    }
+
+    // --- Mantenimiento --------------------------------------------------------------------------
+
+    private static final String MAINTENANCE = GATEWAY + "/api/maintenance";
+    private static final String ORDER_ID = "2b3c4d5e-0000-4000-8000-000000000001";
+    private static final String ASSET_ID = "2b3c4d5e-0000-4000-8000-000000000002";
+    private static final String TEAM_ID = "2b3c4d5e-0000-4000-8000-000000000003";
+
+    /** Una orden como la devuelve mto-maintenance; {@code status} y {@code priority} van tal cual, para probar los desconocidos. */
+    private static String orderJson(String id, String code, String status, String priority) {
+        return "{\"id\":\"" + id + "\",\"code\":\"" + code + "\",\"title\":\"Revision tramo 12\",\"description\":null,"
+                + "\"type\":\"PREVENTIVE\",\"status\":\"" + status + "\",\"priority\":\"" + priority + "\","
+                + "\"asset\":{\"id\":\"" + ASSET_ID + "\",\"code\":\"TS-0001\",\"name\":\"Tramo 12\",\"type\":\"TRACK_SECTION\","
+                + "\"trackId\":12,\"startKp\":12.100,\"endKp\":13.450,\"sectioning\":null,\"enabled\":true},"
+                + "\"executionPackageId\":3,\"trackId\":12,\"stationId\":null,\"startKp\":12.100,\"endKp\":13.450,"
+                + "\"plannedDate\":\"2026-09-14\",\"actualStartDate\":\"2026-09-14T22:30:00Z\",\"actualEndDate\":null,"
+                + "\"team\":{\"id\":\"" + TEAM_ID + "\",\"code\":\"EQ-01\",\"name\":\"Brigada norte\",\"baseName\":\"Base Norte\"},"
+                + "\"assignedUser\":\"mantenimiento.tecnico\",\"closingNotes\":null,\"cancellationReason\":null,"
+                + "\"originInspectionId\":null,\"originDefectId\":null,\"stockProjectId\":null,"
+                + "\"taskCount\":10,\"completedTaskCount\":3,\"estimatedMinutes\":450.00,\"estimatedShifts\":2,"
+                + "\"futureField\":{\"x\":1},\"audit\":{\"createdAt\":\"2026-09-01T08:00:00Z\",\"updatedAt\":\"2026-09-14T22:30:00Z\","
+                + "\"createdBy\":\"mantenimiento.responsable\",\"updatedBy\":\"mantenimiento.tecnico\"}}";
+    }
+
+    /**
+     * Los filtros viajan como el servicio los lee: el enumerado por su nombre, la fecha en ISO (sin
+     * {@code @DateTimeFormat} saldria con el formato corto de la maquina), el texto en blanco no
+     * viaja y el orden se repite. Un valor que esta version no conoce se lee como {@code UNKNOWN} y
+     * no rompe la pagina.
+     */
+    @Test
+    void ordersArePagedWithTheirFiltersAndAnUnknownValueIsReadAsUnknown() {
+        server.expect(requestTo(MAINTENANCE + "/orders?status=IN_PROGRESS&type=PREVENTIVE&assetType=TRACK_SECTION&trackId=12"
+                        + "&plannedFrom=2026-09-01&plannedTo=2026-09-30&teamId=" + TEAM_ID + "&code=MO-0000&page=1&size=50"
+                        + "&sort=plannedDate%2Casc&sort=code%2Cdesc"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer token-for-" + PRINCIPAL))
+                .andRespond(withSuccess(stockPage(orderJson(ORDER_ID, "MO-000001", "IN_PROGRESS", "HIGH") + ","
+                        + orderJson("2b3c4d5e-0000-4000-8000-000000000009", "MO-000002", "ON_HOLD", "SOMEDAY"), 1, 50, 52), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(orderJson(ORDER_ID, "MO-000001", "IN_PROGRESS", "HIGH"), MediaType.APPLICATION_JSON));
+
+        OrderFilter filter = new OrderFilter(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE, null, null,
+                CatenaryAssetType.TRACK_SECTION, 12L, null, null, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), "  ",
+                UUID.fromString(TEAM_ID), " MO-0000 ");
+        PageResponse<OrderDto> page = asUser(() -> orderClient.search(filter, 1, 50, List.of("plannedDate,asc", "code,desc")));
+        OrderDto one = asUser(() -> orderClient.findById(UUID.fromString(ORDER_ID)));
+
+        assertEquals(52, page.page().totalElements());
+        OrderDto order = page.content().getFirst();
+        assertEquals("MO-000001", order.code());
+        assertEquals(MaintenanceOrderType.PREVENTIVE, order.type());
+        assertEquals(MaintenancePriority.HIGH, order.priority());
+        assertEquals("TS-0001 - Tramo 12", order.asset().label());
+        assertEquals(CatenaryAssetType.TRACK_SECTION, order.asset().type());
+        assertEquals("EQ-01 - Brigada norte", order.team().label());
+        assertEquals(LocalDate.of(2026, 9, 14), order.plannedDate());
+        assertEquals(3, order.completedTaskCount());
+        assertEquals(new BigDecimal("450.00"), order.estimatedMinutes());
+        assertEquals("mantenimiento.responsable", order.audit().createdBy());
+        OrderDto unknown = page.content().get(1);
+        assertEquals(MaintenanceOrderStatus.UNKNOWN, unknown.status());
+        assertEquals(MaintenancePriority.UNKNOWN, unknown.priority());
+        assertEquals("Desconocido", unknown.status().label());
+        assertFalse(MaintenanceOrderStatus.selectable().contains(MaintenanceOrderStatus.UNKNOWN));
+        assertEquals(6, MaintenanceOrderStatus.selectable().size());
+        assertEquals(order, one);
+        server.verify();
+    }
+
+    /** mto-maintenance manda el mismo JSON de error que mto-stock, con path y method de mas: se lee por los mismos alias. */
+    @Test
+    void theMaintenanceErrorJsonIsReadThroughItsAliases() {
+        server.expect(requestTo(MAINTENANCE + "/orders?page=0&size=50&sort=nope%2Casc")).andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Correlation-Id", "corr-m1")
+                        .body("{\"timestamp\":\"2026-09-26T10:00:00Z\",\"status\":400,\"error\":\"BAD_REQUEST\",\"message\":\"Invalid request parameter.\","
+                                + "\"path\":\"/api/v1/maintenance/orders\",\"method\":\"GET\",\"errorCode\":\"REQ-400\",\"correlationId\":\"corr-m1\","
+                                + "\"validationErrors\":[{\"field\":\"sort\",\"message\":\"unknown property 'nope'\"}]}"));
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID)).andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":404,\"error\":\"NOT_FOUND\",\"message\":\"MaintenanceOrder with id " + ORDER_ID + " was not found\","
+                                + "\"path\":\"/api/v1/maintenance/orders/" + ORDER_ID + "\",\"method\":\"GET\",\"errorCode\":\"ORD-404\","
+                                + "\"correlationId\":null,\"validationErrors\":[]}"));
+
+        ValidationApiException sort = assertThrows(ValidationApiException.class,
+                () -> asUser(() -> orderClient.search(OrderFilter.NONE, 0, 50, List.of("nope,asc"))));
+        NotFoundApiException missing = assertThrows(NotFoundApiException.class,
+                () -> asUser(() -> orderClient.findById(UUID.fromString(ORDER_ID))));
+
+        assertEquals("REQ-400", sort.getProblem().code());
+        assertEquals("sort", sort.getProblem().errors().getFirst().field());
+        assertEquals("unknown property 'nope'", sort.getProblem().errors().getFirst().message());
+        assertEquals("corr-m1", sort.getReference());
+        assertEquals("ORD-404", missing.getProblem().code());
+        assertTrue(missing.getProblem().detail().contains("was not found"));
         server.verify();
     }
 }

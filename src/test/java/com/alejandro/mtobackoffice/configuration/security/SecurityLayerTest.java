@@ -36,10 +36,12 @@ class SecurityLayerTest {
     private static final String CLIENT_ID = "mto-configuration-api";
     private static final String USERS_CLIENT_ID = "mto-users-api";
     private static final String STOCK_CLIENT_ID = "mto-stock-api";
+    private static final String MAINTENANCE_CLIENT_ID = "mto-maintenance-api";
+    private static final List<String> LISTED_CLIENTS = List.of(CLIENT_ID, USERS_CLIENT_ID, STOCK_CLIENT_ID, MAINTENANCE_CLIENT_ID);
     private static final KeycloakProperties PROPERTIES = new KeycloakProperties("http://localhost:8082/realms/mto/",
-            "mto-backoffice", "secret", List.of(CLIENT_ID, USERS_CLIENT_ID, STOCK_CLIENT_ID));
+            "mto-backoffice", "secret", LISTED_CLIENTS);
 
-    private final KeycloakRoleMapper mapper = new KeycloakRoleMapper(List.of(CLIENT_ID, USERS_CLIENT_ID, STOCK_CLIENT_ID));
+    private final KeycloakRoleMapper mapper = new KeycloakRoleMapper(LISTED_CLIENTS);
 
     @AfterEach
     void clearSecurityContext() {
@@ -76,12 +78,15 @@ class SecurityLayerTest {
         assertFalse(names.contains("ROLE_CONFIG_WRITE"));
     }
 
-    /** Un cliente que no esta en la lista no aporta nada, aunque venga en el token. */
+    /**
+     * Un cliente que no esta en la lista no aporta nada, aunque venga en el token: el access token del
+     * backoffice lleva la audiencia del gateway, y sus {@code ops-*} no son permisos de ninguna vista.
+     */
     @Test
     void rolesOfAClientThatIsNotListedAndScopesAreKeptApart() {
         Set<String> names = authorities(mapper.authorities(Map.of(
                 JwtClaimNames.SCOPE, "openid profile email",
-                JwtClaimNames.RESOURCE_ACCESS, Map.of("mto-maintenance-api", Map.of(JwtClaimNames.ROLES, List.of("maintenance-write"))))));
+                JwtClaimNames.RESOURCE_ACCESS, Map.of("mto-gateway-api", Map.of(JwtClaimNames.ROLES, List.of("ops-write"))))));
 
         assertEquals(Set.of("SCOPE_openid", "SCOPE_profile", "SCOPE_email"), names);
     }
@@ -92,13 +97,15 @@ class SecurityLayerTest {
                 JwtClaimNames.RESOURCE_ACCESS, Map.of(
                         CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("config-read")),
                         USERS_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("users-read", "users-sessions-write")),
-                        STOCK_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("stock-adjust"))))));
+                        STOCK_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("stock-adjust")),
+                        MAINTENANCE_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("maintenance-supervise"))))));
 
         assertEquals(Set.of(
                 "ROLE_CONFIG_READ", "ROLE_CLIENT_MTO_CONFIGURATION_API_CONFIG_READ",
                 "ROLE_USERS_READ", "ROLE_CLIENT_MTO_USERS_API_USERS_READ",
                 "ROLE_USERS_SESSIONS_WRITE", "ROLE_CLIENT_MTO_USERS_API_USERS_SESSIONS_WRITE",
-                "ROLE_STOCK_ADJUST", "ROLE_CLIENT_MTO_STOCK_API_STOCK_ADJUST"), names);
+                "ROLE_STOCK_ADJUST", "ROLE_CLIENT_MTO_STOCK_API_STOCK_ADJUST",
+                "ROLE_MAINTENANCE_SUPERVISE", "ROLE_CLIENT_MTO_MAINTENANCE_API_MAINTENANCE_SUPERVISE"), names);
     }
 
     /** La regla que protege config-write vale igual para users-read: un rol de realm nunca abre el modulo. */
@@ -223,7 +230,11 @@ class SecurityLayerTest {
         assertEquals(fromRealm, declared);
     }
 
-    /** Emitir ROLE_ para los tres clientes solo es inocuo mientras sus nombres de rol no se solapen. */
+    /**
+     * Emitir ROLE_ para los cuatro clientes solo es inocuo mientras sus nombres de rol no se solapen.
+     * Los {@code ops-*} se repiten en todos a proposito (son de operacion, no de pantalla) y ninguna
+     * vista los comprueba, asi que no hay constante que los nombre.
+     */
     @Test
     void theRoleNamesOfTheListedClientsAreDisjoint() {
         Set<String> configuration = Set.of(SecurityRoles.CONFIG_READ, SecurityRoles.CONFIG_WRITE, SecurityRoles.CONFIG_DELETE,
@@ -232,10 +243,16 @@ class SecurityLayerTest {
                 UserRoles.USERS_ROLES_WRITE, UserRoles.USERS_PASSWORD_RESET, UserRoles.USERS_PROFILES_WRITE,
                 UserRoles.USERS_SESSIONS_WRITE, UserRoles.USERS_CREDENTIALS_WRITE);
         Set<String> stock = Set.of(StockRoles.STOCK_READ, StockRoles.STOCK_WRITE, StockRoles.STOCK_DELETE, StockRoles.STOCK_ADJUST);
+        Set<String> maintenance = Set.of(MaintenanceRoles.MAINTENANCE_READ, MaintenanceRoles.MAINTENANCE_WRITE,
+                MaintenanceRoles.MAINTENANCE_DELETE, MaintenanceRoles.MAINTENANCE_SUPERVISE);
 
-        assertTrue(java.util.Collections.disjoint(configuration, users));
-        assertTrue(java.util.Collections.disjoint(configuration, stock));
-        assertTrue(java.util.Collections.disjoint(users, stock));
+        List<Set<String>> sets = List.of(configuration, users, stock, maintenance);
+        for (int i = 0; i < sets.size(); i++) {
+            for (int j = i + 1; j < sets.size(); j++) {
+                assertTrue(java.util.Collections.disjoint(sets.get(i), sets.get(j)), sets.get(i) + " / " + sets.get(j));
+            }
+        }
+        sets.forEach(set -> assertTrue(set.stream().noneMatch(role -> role.startsWith("OPS_")), set.toString()));
     }
 
     /** Un rol de realm llamado como un permiso de almacen tampoco abre nada: solo ROLE_REALM_. */
@@ -250,5 +267,32 @@ class SecurityLayerTest {
         assertTrue(names.contains("ROLE_STOCK_WRITE"));
         assertTrue(names.contains("ROLE_CLIENT_MTO_STOCK_API_STOCK_WRITE"));
         assertFalse(names.contains("ROLE_STOCK_READ"));
+    }
+
+    @Test
+    void maintenanceRolesMatchTheClientRolesOfMtoMaintenanceApiOnceNormalized() {
+        Set<String> declared = Set.of(MaintenanceRoles.MAINTENANCE_READ, MaintenanceRoles.MAINTENANCE_WRITE,
+                MaintenanceRoles.MAINTENANCE_DELETE, MaintenanceRoles.MAINTENANCE_SUPERVISE);
+        Set<String> fromRealm = Set.of("maintenance-read", "maintenance-write", "maintenance-delete", "maintenance-supervise")
+                .stream().map(KeycloakRoleMapper::normalize).collect(Collectors.toSet());
+
+        assertEquals(fromRealm, declared);
+    }
+
+    /**
+     * Los roles de realm de mantenimiento ({@code mto-maintenance-technician}...) son composites: lo
+     * que abre el modulo es el rol de cliente que traen dentro, nunca un rol de realm con su nombre.
+     */
+    @Test
+    void aRealmRoleNamedLikeAMaintenancePermissionNeverOpensTheModule() {
+        Set<String> names = authorities(mapper.authorities(Map.of(
+                JwtClaimNames.REALM_ACCESS, Map.of(JwtClaimNames.ROLES, List.of("maintenance-supervise", "mto-maintenance-manager")),
+                JwtClaimNames.RESOURCE_ACCESS, Map.of(MAINTENANCE_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("maintenance-read"))))));
+
+        assertTrue(names.contains("ROLE_REALM_MAINTENANCE_SUPERVISE"));
+        assertTrue(names.contains("ROLE_REALM_MTO_MAINTENANCE_MANAGER"));
+        assertTrue(names.contains("ROLE_MAINTENANCE_READ"));
+        assertTrue(names.contains("ROLE_CLIENT_MTO_MAINTENANCE_API_MAINTENANCE_READ"));
+        assertFalse(names.contains("ROLE_MAINTENANCE_SUPERVISE"));
     }
 }
