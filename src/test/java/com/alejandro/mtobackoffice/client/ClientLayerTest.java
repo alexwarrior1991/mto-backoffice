@@ -52,6 +52,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -181,6 +182,11 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.TaskUnit;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TrackKind;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MonthlyReportDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ProgressReportDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ReportFormat;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftReportDto;
+import com.alejandro.mtobackoffice.client.maintenance.ReportClient;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesRegex;
 import static org.hamcrest.Matchers.nullValue;
@@ -231,6 +237,7 @@ class ClientLayerTest {
     private ShiftClient shiftClient;
     private InspectionClient inspectionClient;
     private DefectClient defectClient;
+    private ReportClient reportClient;
 
     @BeforeEach
     void setUp() {
@@ -264,6 +271,7 @@ class ClientLayerTest {
         shiftClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ShiftClient.class);
         inspectionClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(InspectionClient.class);
         defectClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(DefectClient.class);
+        reportClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ReportClient.class);
     }
 
     @AfterEach
@@ -2085,6 +2093,77 @@ class ClientLayerTest {
         assertEquals(StockSyncStatus.RESERVED, synced.stockSyncStatus());
         assertEquals("STK-503", down.getProblem().code());
         assertEquals(503, down.getStatus().value());
+        server.verify();
+    }
+
+    /**
+     * Informes: el JSON y el fichero de cada uno por la misma ruta, que se distinguen por
+     * {@code format}. Los instantes del avance van en ISO, el mes como {@code 2026-09} y el fichero
+     * vuelve con su nombre y su tipo. El avance es una fraccion (0.4500) y se lee tal cual; un tipo
+     * de activo que esta version no conoce no rompe el informe.
+     */
+    @Test
+    void reportsComeAsJsonOrAsAFileWithItsNameThroughTheSameRoute() {
+        String progress = MAINTENANCE + "/reports/progress?executionPackageId=3&trackId=12&assetType=PROFILE"
+                + "&from=2026-09-01T00%3A00%3A00Z&to=2026-09-30T23%3A59%3A59.999Z";
+        server.expect(requestTo(progress)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"from\":\"2026-09-01T00:00:00Z\",\"to\":\"2026-09-30T23:59:59.999Z\",\"totalAssets\":40,"
+                        + "\"checkedAssets\":18,\"completionRatio\":0.4500,\"coveredKm\":5.400,\"totalKm\":12.000,\"rows\":["
+                        + "{\"executionPackageId\":3,\"trackId\":12,\"assetType\":\"PROFILE\",\"totalAssets\":40,\"checkedAssets\":18,"
+                        + "\"completionRatio\":0.4500,\"coveredKm\":5.400,\"totalKm\":12.000},"
+                        + "{\"executionPackageId\":3,\"trackId\":12,\"assetType\":\"CROSSOVER\",\"totalAssets\":0,\"checkedAssets\":0,"
+                        + "\"completionRatio\":0.0000,\"coveredKm\":0,\"totalKm\":0}]}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(progress + "&format=xlsx")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("PK", MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"progress-report-2026-09-30.xlsx\""));
+        server.expect(requestTo(MAINTENANCE + "/reports/monthly?month=2026-09")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"month\":\"2026-09\",\"executionPackageId\":null,\"shiftsPlanned\":8,\"shiftsClosed\":6,"
+                        + "\"shiftsCancelled\":1,\"netWorkMinutes\":1440,\"averageNetMinutesPerShift\":240.00,\"ordersCompleted\":3,"
+                        + "\"tasksCompleted\":45,\"profilesChecked\":44,\"coveredKm\":2.900,\"defectsDetected\":5,\"defectsResolved\":3,"
+                        + "\"correctiveOrdersCreated\":2,\"materials\":[{\"materialId\":\"" + MAT_ID + "\",\"materialCode\":\"MAT-001\","
+                        + "\"unit\":\"m\",\"consumedQuantity\":12.500000}]}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/reports/monthly?month=2026-09&executionPackageId=3&format=pdf")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("%PDF-1.7", MediaType.APPLICATION_PDF)
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"monthly-report-2026-09.pdf\""));
+        server.expect(requestTo(MAINTENANCE + "/shifts/" + SHIFT_ID + "/report")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"shift\":" + shiftJson("CLOSED") + ",\"tasksCompleted\":2,\"tasksPending\":1,"
+                        + "\"profilesReviewed\":2,\"defectsFound\":1,\"defectsResolved\":0,\"rows\":[{\"number\":1,\"taskId\":\"" + TASK_ID + "\","
+                        + "\"orderCode\":\"MO-000001\",\"executionPackageId\":3,\"trackId\":12,\"profileCode\":\"PRF-0001\","
+                        + "\"profileName\":\"12-2.27\",\"kp\":12.270,\"sectioning\":\"S-3\",\"switches\":[],\"taskTypeCodes\":[\"RG-01\",\"RG-04\"],"
+                        + "\"worksPerformed\":\"Revision general\",\"defectsFound\":\"DEF-000001\",\"materials\":[\"MAT-001 2 m\"],"
+                        + "\"startedAt\":\"2026-10-05T22:10:00Z\",\"completedAt\":\"2026-10-05T23:00:00Z\",\"status\":\"COMPLETED\","
+                        + "\"workComplete\":true,\"repairPlannedDate\":null,\"photoRefs\":null}]}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/shifts/" + SHIFT_ID + "/report?format=xlsx")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("PK", MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"shift-report-SH-000001-2026-10-05.xlsx\""));
+
+        Instant from = Instant.parse("2026-09-01T00:00:00Z");
+        Instant to = Instant.parse("2026-09-30T23:59:59.999Z");
+        ProgressReportDto report = asUser(() -> reportClient.progress(3L, 12L, CatenaryAssetType.PROFILE, from, to));
+        ResponseEntity<byte[]> progressFile = asUser(() -> reportClient.progressFile(3L, 12L, CatenaryAssetType.PROFILE, from, to,
+                ReportFormat.XLSX.parameter()));
+        MonthlyReportDto monthly = asUser(() -> reportClient.monthly(YearMonth.of(2026, 9), null));
+        ResponseEntity<byte[]> monthlyFile = asUser(() -> reportClient.monthlyFile(YearMonth.of(2026, 9), 3L, ReportFormat.PDF.parameter()));
+        ShiftReportDto shiftReport = asUser(() -> reportClient.shiftReport(UUID.fromString(SHIFT_ID)));
+        ResponseEntity<byte[]> shiftFile = asUser(() -> reportClient.shiftReportFile(UUID.fromString(SHIFT_ID), ReportFormat.XLSX.parameter()));
+
+        assertEquals(18, report.checkedAssets());
+        assertEquals(new BigDecimal("0.4500"), report.completionRatio());
+        assertEquals(from, report.from());
+        assertEquals(CatenaryAssetType.PROFILE, report.rows().getFirst().assetType());
+        assertEquals(CatenaryAssetType.UNKNOWN, report.rows().get(1).assetType());
+        assertEquals("progress-report-2026-09-30.xlsx", progressFile.getHeaders().getContentDisposition().getFilename());
+        assertEquals("PK", new String(progressFile.getBody(), StandardCharsets.UTF_8));
+        assertEquals(YearMonth.of(2026, 9), monthly.month());
+        assertEquals(new BigDecimal("240.00"), monthly.averageNetMinutesPerShift());
+        assertEquals("MAT-001", monthly.materials().getFirst().materialCode());
+        assertEquals(MediaType.APPLICATION_PDF, monthlyFile.getHeaders().getContentType());
+        assertEquals("monthly-report-2026-09.pdf", monthlyFile.getHeaders().getContentDisposition().getFilename());
+        assertEquals("SH-000001", shiftReport.shift().code());
+        assertEquals(List.of("RG-01", "RG-04"), shiftReport.rows().getFirst().taskTypeCodes());
+        assertEquals(List.of(), shiftReport.rows().getFirst().photoRefs(), "una lista a null se lee vacia");
+        assertEquals(MaintenanceTaskStatus.COMPLETED, shiftReport.rows().getFirst().status());
+        assertEquals("shift-report-SH-000001-2026-10-05.xlsx", shiftFile.getHeaders().getContentDisposition().getFilename());
         server.verify();
     }
 }

@@ -30,6 +30,11 @@ public final class MaintenanceFormats {
         return total == 0 ? "" : completed + "/" + total;
     }
 
+    /** Una fraccion del servicio ({@code 0.4500}) como porcentaje: {@code 45 %}. */
+    public static String percent(BigDecimal ratio) {
+        return ratio == null ? "" : ratio.movePointRight(2).stripTrailingZeros().toPlainString() + " %";
+    }
+
     public static String date(LocalDate date) {
         return Formats.date(date);
     }

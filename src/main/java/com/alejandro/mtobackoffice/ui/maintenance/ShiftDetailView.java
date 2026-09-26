@@ -43,7 +43,7 @@ import java.util.stream.Collectors;
  * La ficha de un turno: su cabecera (equipo, posesion, vias, ventana prevista y real, corte de
  * tension, minutos netos, seccionadores abiertos), los botones que su estado admite (modificar,
  * iniciar, asignar tareas, cerrar y cancelar, todos con {@code maintenance-write}) y las pestanas
- * de tareas y perfiles.
+ * de tareas, perfiles y el parte del turno (con su Excel y su PDF).
  */
 @Route(value = MaintenanceRoutes.SHIFTS + "/:" + ShiftDetailView.SHIFT_ID_PARAMETER, layout = MainLayout.class)
 @RolesAllowed(MaintenanceRoles.MAINTENANCE_READ)
@@ -52,6 +52,7 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
     public static final String SHIFT_ID_PARAMETER = "shiftId";
     static final String TASKS_TAB = "Tareas";
     static final String PROFILES_TAB = "Perfiles";
+    static final String REPORT_TAB = "Parte";
 
     private final MaintenanceClients clients;
     private final MaintenanceNames names;
@@ -122,6 +123,7 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
         panels.clear();
         addPanel(tabs, TASKS_TAB, new ShiftTasksPanel(this::shift, clients, catalogs, canWrite, canPickMaterials, this::reload));
         addPanel(tabs, PROFILES_TAB, new ShiftProfilesPanel(() -> shift.id(), clients));
+        addPanel(tabs, REPORT_TAB, new ShiftReportPanel(() -> shift.id(), clients));
         tabs.addSelectedChangeListener(change -> loadTab(tabs, change.getSelectedTab()));
         tabsHolder.removeAll();
         tabsHolder.add(tabs);

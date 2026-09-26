@@ -157,6 +157,16 @@ import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import com.alejandro.mtobackoffice.client.maintenance.ShiftClient;
 import com.alejandro.mtobackoffice.client.maintenance.DefectClient;
 import com.alejandro.mtobackoffice.client.maintenance.InspectionClient;
+import com.alejandro.mtobackoffice.client.maintenance.ReportClient;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MonthlyMaterialLineDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MonthlyReportDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ProgressReportDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ProgressRowDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftReportDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftReportRowDto;
+import com.github.mvysny.kaributesting.v10.DownloadKt;
+import java.time.YearMonth;
+import java.nio.charset.StandardCharsets;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CreateCorrectiveOrderRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CreateDefectFromInspectionRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectDto;
@@ -384,6 +394,8 @@ class ViewLayerTest {
     private InspectionClient inspectionClient;
     @MockitoBean
     private DefectClient defectClient;
+    @MockitoBean
+    private ReportClient reportClient;
 
     @BeforeEach
     void setUp() {
@@ -4576,5 +4588,134 @@ class ViewLayerTest {
         LocatorJ._setValue(comboWithId("order-stock-project"), new ProjectSummaryDto(other, "EP-5", "Paquete sur", true));
         click(OrderEditorDialog.SAVE_ID);
         verify(orderClient).update(ORDER1, new OrderUpdateRequest(null, null, null, null, null, null, null, null, null, null, null, null, other));
+    }
+
+    // --- Mantenimiento: informes -------------------------------------------------------------------
+
+    private static final byte[] XLSX = {80, 75, 3, 4};
+
+    private static ResponseEntity<byte[]> file(String name, byte[] body) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(name).build().toString())
+                .body(body);
+    }
+
+    private static Anchor anchorWithId(String id) {
+        return LocatorJ._get(Anchor.class, spec -> spec.withId(id));
+    }
+
+    private static String textOf(String id) {
+        return LocatorJ._get(Div.class, spec -> spec.withId(id)).getElement().getTextRecursively();
+    }
+
+    /**
+     * El avance: los filtros viajan como el servicio los lee (las fechas como el principio y el
+     * ultimo instante del dia), las cifras son las suyas con los nombres de paquete y via, la
+     * fraccion se pinta como porcentaje y los enlaces aparecen tras consultar. Un fallo se
+     * notifica y no deja enlaces.
+     */
+    @Test
+    void theProgressReportShowsTheServiceFiguresWithNamesAndItsFilesAppearAfterQuerying() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        stubReferencesForMaintenance();
+        Instant from = Formats.startOfDay(LocalDate.of(2026, 9, 1));
+        Instant to = Formats.endOfDay(LocalDate.of(2026, 9, 30));
+        ProgressRowDto row = new ProgressRowDto(3L, 12L, CatenaryAssetType.PROFILE, 40, 18, new BigDecimal("0.4500"), new BigDecimal("5.400"),
+                new BigDecimal("12.000"));
+        when(reportClient.progress(3L, 12L, CatenaryAssetType.PROFILE, from, to))
+                .thenReturn(new ProgressReportDto(from, to, 40, 18, new BigDecimal("0.4500"), new BigDecimal("5.400"), new BigDecimal("12.000"),
+                        List.of(row)));
+        when(reportClient.progress(null, null, null, null, null)).thenThrow(maintenanceError(503, null, null));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.REPORTS);
+        SideNavItem maintenance = LocatorJ._get(SideNavItem.class, spec -> spec.withLabel("Mantenimiento"));
+        assertTrue(maintenance.getItems().stream().map(SideNavItem::getLabel).toList().contains("Informes"));
+        click("progress-query");
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size());
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("El servicio no esta disponible ahora mismo. Intentalo mas tarde."));
+        assertTrue(LocatorJ._find(Anchor.class, spec -> spec.withId("progress-xlsx")).isEmpty(), "un fallo no deja enlaces");
+
+        LocatorJ._setValue(comboWithId("progress-package"), new RefItem(3L, "PAQ NORTE"));
+        LocatorJ._setValue(comboWithId("progress-track"), new RefItem(12L, "VIA 1 (PAQ NORTE)"));
+        LocatorJ._setValue(comboWithId("progress-type"), CatenaryAssetType.PROFILE);
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("progress-from")), LocalDate.of(2026, 9, 1));
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("progress-to")), LocalDate.of(2026, 9, 30));
+        click("progress-query");
+
+        assertEquals("18 de 40 activos revisados (45 %) · 5.4 de 12 km", textOf("progress-summary"));
+        assertEquals(List.of("PAQ NORTE", "VIA 1 (PAQ NORTE)", "Perfil", "18 de 40", "45 %", "5.4 de 12 km"),
+                GridKt._getFormattedRow(gridWithId("progress-grid"), 0));
+        assertEquals("Excel", anchorWithId("progress-xlsx").getText());
+        assertEquals("PDF", anchorWithId("progress-pdf").getText());
+    }
+
+    /**
+     * El mensual: los ultimos 24 meses con el actual elegido, el mes obligatorio antes de llamar,
+     * el resumen y los materiales del servicio, y un enlace que descarga lo consultado aunque
+     * despues cambien los filtros.
+     */
+    @Test
+    void theMonthlyReportOffersTheLastMonthsAndItsFilesDownloadWhatWasQueried() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        stubReferencesForMaintenance();
+        YearMonth current = YearMonth.now();
+        YearMonth last = current.minusMonths(1);
+        when(reportClient.monthly(last, 3L)).thenReturn(new MonthlyReportDto(last, 3L, 8, 6, 1, 1440, new BigDecimal("240.00"), 3, 45, 44,
+                new BigDecimal("2.900"), 5, 3, 2, List.of(new MonthlyMaterialLineDto(UUID.randomUUID(), "MAT-001", "m", new BigDecimal("12.500000")))));
+        byte[] pdf = "%PDF-1.7".getBytes(StandardCharsets.UTF_8);
+        when(reportClient.monthlyFile(last, 3L, "pdf")).thenReturn(file("monthly-report-" + last + ".pdf", pdf));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.REPORTS);
+        selectTab(1);
+        ComboBox<YearMonth> month = comboWithId("monthly-month");
+        assertEquals(current, month.getValue(), "el mes en curso por defecto");
+        List<String> months = ComboBoxKt.getSuggestions(month);
+        assertEquals(24, months.size(), "los ultimos 24 meses");
+        assertEquals(java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale.forLanguageTag("es")).format(last), months.get(1));
+        LocatorJ._setValue(month, null);
+        click("monthly-query");
+        assertTrue(month.isInvalid());
+        verify(reportClient, never()).monthly(any(), any());
+
+        LocatorJ._setValue(month, last);
+        LocatorJ._setValue(comboWithId("monthly-package"), new RefItem(3L, "PAQ NORTE"));
+        click("monthly-query");
+
+        String summary = textOf("monthly-summary");
+        assertTrue(summary.contains("Turnos: 8 planificados, 6 cerrados, 1 cancelados · 1440 min netos (240 por turno)"), summary);
+        assertTrue(summary.contains("Defectos: 5 detectados, 3 resueltos · Ordenes correctivas: 2"), summary);
+        assertEquals(List.of("MAT-001", "12.5", "m"), GridKt._getFormattedRow(gridWithId("monthly-materials-grid"), 0));
+        LocatorJ._setValue(comboWithId("monthly-package"), null);
+        assertArrayEquals(pdf, DownloadKt._download(anchorWithId("monthly-pdf")));
+        verify(reportClient).monthlyFile(last, 3L, "pdf");
+    }
+
+    /**
+     * El parte del turno: su pestana no pide nada hasta abrirse, enseña los recuentos y las filas
+     * del servicio, y su Excel se pide con el token de la persona desde esta aplicacion.
+     */
+    @Test
+    void theShiftReportTabShowsTheDailyReportAndServesItsFiles() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        stubReferencesForMaintenance();
+        ShiftDto shift = shiftOf(ShiftStatus.CLOSED);
+        ShiftReportRowDto row = new ShiftReportRowDto(1, TASK1, "MO-000001", 3L, 12L, "PRF-0001", "12-2.27", new BigDecimal("12.270"), "S-3",
+                List.of(), List.of("RG-01", "RG-04"), "Revision general", "DEF-000001", List.of("MAT-001 2 m"), null, null,
+                MaintenanceTaskStatus.COMPLETED, true, null, List.of());
+        when(reportClient.shiftReport(SHIFT1)).thenReturn(new ShiftReportDto(shift, 2, 1, 2, 1, 0, List.of(row)));
+        when(reportClient.shiftReportFile(SHIFT1, "xlsx")).thenReturn(file("shift-report-SH-000001-2026-10-05.xlsx", XLSX));
+
+        openShift(shift);
+        verify(reportClient, never()).shiftReport(any());
+        selectTab(2);
+
+        assertEquals("Tareas: 2 completadas, 1 pendientes · Perfiles revisados: 2 · Defectos: 1 encontrados, 0 resueltos",
+                textOf("shift-report-summary"));
+        assertEquals(List.of("1", "MO-000001", "12-2.27", "12.27", "RG-01, RG-04", "Revision general", "DEF-000001", "MAT-001 2 m", "Completada"),
+                GridKt._getFormattedRow(gridWithId("shift-report-grid"), 0));
+        assertArrayEquals(XLSX, DownloadKt._download(anchorWithId("shift-report-xlsx")));
+        verify(reportClient).shiftReportFile(SHIFT1, "xlsx");
+        assertEquals("PDF", anchorWithId("shift-report-pdf").getText());
     }
 }

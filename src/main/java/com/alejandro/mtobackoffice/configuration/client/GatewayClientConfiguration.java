@@ -15,6 +15,7 @@ import com.alejandro.mtobackoffice.client.maintenance.DefectClient;
 import com.alejandro.mtobackoffice.client.maintenance.InspectionClient;
 import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
+import com.alejandro.mtobackoffice.client.maintenance.ReportClient;
 import com.alejandro.mtobackoffice.client.maintenance.ShiftClient;
 import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
 import com.alejandro.mtobackoffice.client.stock.MaterialClient;
@@ -209,6 +210,11 @@ public class GatewayClientConfiguration {
     @Bean
     public DefectClient defectClient(RestClient gatewayRestClient) {
         return proxyFactory(gatewayRestClient).createClient(DefectClient.class);
+    }
+
+    @Bean
+    public ReportClient reportClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(ReportClient.class);
     }
 
     public static HttpServiceProxyFactory proxyFactory(RestClient restClient) {
