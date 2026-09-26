@@ -5,6 +5,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionKind;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionResult;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
@@ -85,7 +86,7 @@ public class InspectionEditorDialog extends Dialog {
         binder.forField(inspector).bind("inspector");
         binder.forField(kind).bind("inspectionKind");
         binder.forField(result).asRequired("El resultado es obligatorio").bind("result");
-        binder.forField(kp).withValidator(value -> creating || existing.kp() == null || value != null, MaintenanceUi.CANNOT_CLEAR).bind("kp");
+        binder.forField(kp).bind("kp");
         binder.forField(description).bind("description");
         binder.forField(detectedDefects).bind("detectedDefects");
         binder.forField(recommendedActions).bind("recommendedActions");
@@ -111,12 +112,12 @@ public class InspectionEditorDialog extends Dialog {
             if (existing == null) {
                 result = clients.inspections().create(form.toRequest(originOrder == null ? null : originOrder.id()));
             } else {
-                InspectionUpdateRequest request = form.toUpdateRequest(existing);
-                if (request.changesNothing()) {
+                MergePatch<InspectionUpdateRequest> patch = form.toPatch(existing);
+                if (patch.changesNothing()) {
                     close();
                     return;
                 }
-                result = clients.inspections().update(existing.id(), request);
+                result = clients.inspections().update(existing.id(), patch);
             }
             close();
             MaintenanceUi.success("Guardada " + result.code());

@@ -7,6 +7,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.AssetFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -14,8 +15,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.service.annotation.DeleteExchange;
 import org.springframework.web.service.annotation.GetExchange;
 import org.springframework.web.service.annotation.HttpExchange;
+import org.springframework.web.service.annotation.PatchExchange;
 import org.springframework.web.service.annotation.PostExchange;
-import org.springframework.web.service.annotation.PutExchange;
 
 import java.time.Instant;
 import java.util.List;
@@ -33,8 +34,8 @@ public interface AssetClient {
     @PostExchange
     AssetDto create(@RequestBody AssetRequest request);
 
-    @PutExchange("/{id}")
-    AssetDto update(@PathVariable("id") UUID id, @RequestBody AssetUpdateRequest request);
+    @PatchExchange(value = "/{id}", contentType = MergePatch.MEDIA_TYPE)
+    AssetDto update(@PathVariable("id") UUID id, @RequestBody MergePatch<AssetUpdateRequest> patch);
 
     @GetExchange("/{id}")
     AssetDto findById(@PathVariable("id") UUID id);

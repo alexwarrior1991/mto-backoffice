@@ -4,6 +4,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderStatus
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
 import com.alejandro.mtobackoffice.client.dto.stock.MaterialSummaryDto;
@@ -91,7 +92,7 @@ public class MaterialUsageDialog extends Dialog {
                             Objects.equals(overConsumption.getValue(), Boolean.TRUE.equals(existing.allowOverConsumption())) ? null
                                     : overConsumption.getValue());
                     if (!request.changesNothing()) {
-                        clients.orders().updateMaterial(order.id(), existing.id(), request);
+                        clients.orders().updateMaterial(order.id(), existing.id(), MergePatch.of(request, existing.version()));
                     }
                 }
                 close();

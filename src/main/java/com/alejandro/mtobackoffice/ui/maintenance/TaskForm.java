@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeDto;
@@ -43,25 +44,25 @@ public class TaskForm {
                 codes().isEmpty() ? null : codes(), withChecklist ? Boolean.TRUE : null);
     }
 
-    /** Solo lo que cambio; los tipos, si cambiaron, van enteros (sustituyen a los que tenia). */
-    public TaskUpdateRequest toUpdateRequest(TaskDto original) {
+    /**
+     * Lo que cambio, lo vaciado y la version leida; los tipos, si cambiaron, van enteros (sustituyen
+     * a los que tenia).
+     */
+    public MergePatch<TaskUpdateRequest> toPatch(TaskDto original) {
+        Changes changes = new Changes();
         List<String> codes = codes();
-        return new TaskUpdateRequest(
-                changed(description, original.description()),
-                changed(assignedUser, original.assignedUser()),
+        TaskUpdateRequest values = new TaskUpdateRequest(
+                changes.text("description", description, original.description()),
+                changes.text("assignedUser", assignedUser, original.assignedUser()),
                 Set.copyOf(codes).equals(Set.copyOf(original.taskTypeCodes())) ? null : codes,
-                changed(notes, original.notes()),
-                changed(defectsFound, original.defectsFound()),
+                changes.text("notes", notes, original.notes()),
+                changes.text("defectsFound", defectsFound, original.defectsFound()),
                 null);
+        return changes.patch(values, original.version());
     }
 
     private List<String> codes() {
         return taskTypeCodes.stream().map(TaskTypeDto::code).toList();
-    }
-
-    private static String changed(String value, String original) {
-        String current = value == null ? "" : value.trim();
-        return current.equals(orEmpty(original)) ? null : current;
     }
 
     private static String nullIfBlank(String value) {

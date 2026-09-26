@@ -17,7 +17,7 @@ public record ShiftDto(UUID id, String code, LocalDate shiftDate, TeamSummaryDto
                        PossessionType possessionType, Instant plannedStart, Instant plannedEnd, Instant actualStart, Instant actualEnd,
                        Instant voltageCutoffAt, Integer netWorkMinutes, List<AssetSummaryDto> blockingDisconnectors, String earthingPoints,
                        String parkingPlace, Long executionPackageId, List<Long> trackIds, BigDecimal startKp, BigDecimal endKp,
-                       String personnel, String measurementEquipment, ShiftStatus status, String observations, AuditDto audit) {
+                       String personnel, String measurementEquipment, ShiftStatus status, String observations, AuditDto audit, Long version) {
 
     public ShiftDto {
         blockingDisconnectors = blockingDisconnectors == null ? List.of() : List.copyOf(blockingDisconnectors);

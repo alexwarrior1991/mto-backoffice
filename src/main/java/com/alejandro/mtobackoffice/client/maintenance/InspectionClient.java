@@ -12,6 +12,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionResult;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,8 +20,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.service.annotation.GetExchange;
 import org.springframework.web.service.annotation.HttpExchange;
+import org.springframework.web.service.annotation.PatchExchange;
 import org.springframework.web.service.annotation.PostExchange;
-import org.springframework.web.service.annotation.PutExchange;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -36,11 +37,11 @@ public interface InspectionClient {
     @PostExchange
     InspectionDto create(@RequestBody InspectionRequest request);
 
-    @PutExchange("/{id}")
-    InspectionDto update(@PathVariable("id") UUID id, @RequestBody InspectionUpdateRequest request);
+    @PatchExchange(value = "/{id}", contentType = MergePatch.MEDIA_TYPE)
+    InspectionDto update(@PathVariable("id") UUID id, @RequestBody MergePatch<InspectionUpdateRequest> patch);
 
-    @PutExchange("/{id}/items/{itemId}")
-    InspectionDto updateItem(@PathVariable("id") UUID id, @PathVariable("itemId") UUID itemId, @RequestBody CheckItemUpdateRequest request);
+    @PatchExchange(value = "/{id}/items/{itemId}", contentType = MergePatch.MEDIA_TYPE)
+    InspectionDto updateItem(@PathVariable("id") UUID id, @PathVariable("itemId") UUID itemId, @RequestBody MergePatch<CheckItemUpdateRequest> patch);
 
     @GetExchange("/{id}")
     InspectionDto findById(@PathVariable("id") UUID id);

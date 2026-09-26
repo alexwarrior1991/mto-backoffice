@@ -182,6 +182,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.ResolveDefectRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.StockSyncStatus;
 import com.alejandro.mtobackoffice.ui.maintenance.MaterialUsageDialog;
 import com.alejandro.mtobackoffice.ui.maintenance.DefectDetailView;
@@ -3487,7 +3488,7 @@ class ViewLayerTest {
         TeamSummaryDto team = new TeamSummaryDto(TEAM1, "EQ-01", "Brigada norte", "Base Norte");
         return new OrderDto(id, code, "Revision tramo 12", null, MaintenanceOrderType.PREVENTIVE, status, MaintenancePriority.HIGH,
                 asset, packageId, trackId, null, new BigDecimal("12.100"), new BigDecimal("13.450"), LocalDate.of(2026, 9, 14), null, null,
-                team, "mantenimiento.tecnico", null, null, null, null, null, 10, 3, new BigDecimal("450"), 2, null);
+                team, "mantenimiento.tecnico", null, null, null, null, null, 10, 3, new BigDecimal("450"), 2, null, 3L);
     }
 
     @Test
@@ -3519,9 +3520,11 @@ class ViewLayerTest {
         return BackofficeApiException.of(HttpStatusCode.valueOf(status), problem, "corr-m9", null, "POST /api/maintenance/orders");
     }
 
-    /** Los 409 de mantenimiento son de estado, no de concurrencia: ninguno pide recargar. */
+    /** Los 409 de estado de mantenimiento no piden recargar; el {@code CON-001} de una version vieja, si. */
     @Test
     void maintenanceErrorsSayWhatBlocksTheOperation() {
+        assertEquals("Conflicto con otro cambio: recarga y vuelve a intentarlo.",
+                UiErrors.message(maintenanceError(409, "CON-001", "Maintenance order MO-000001 was changed by someone else")));
         assertEquals("El estado actual no permite esta operacion. Order MO-000001 cannot go from COMPLETED to PLANNED",
                 UiErrors.message(maintenanceError(409, "TRN-001", "Order MO-000001 cannot go from COMPLETED to PLANNED")));
         assertEquals("El turno no admite ese trabajo. Shift SH-000001 has partial possession; the task includes work that needs full track possession",
@@ -3635,13 +3638,13 @@ class ViewLayerTest {
     private static AssetDto syncedProfile(UUID id, String code, boolean enabledAtSource, boolean disabledLocally) {
         return new AssetDto(id, code, "12-2.27", CatenaryAssetType.PROFILE, null, 3L, 12L, 4L, new BigDecimal("12.270"),
                 new BigDecimal("12.270"), "501", "S-3", null, null, null, List.of(), "mto-configuration", "501",
-                enabledAtSource && !disabledLocally, enabledAtSource, disabledLocally, 180, null, Instant.parse("2026-10-01T00:00:00Z"), null);
+                enabledAtSource && !disabledLocally, enabledAtSource, disabledLocally, 180, null, Instant.parse("2026-10-01T00:00:00Z"), null, 7L);
     }
 
     private static AssetDto ownSection(UUID id, String code, boolean enabled) {
         return new AssetDto(id, code, "Tramo " + code, CatenaryAssetType.TRACK_SECTION, "Tramo propio", 3L, 12L, null,
                 new BigDecimal("12.100"), new BigDecimal("13.450"), null, null, TrackKind.MAIN, null, null, List.of(), null, null, enabled,
-                null, !enabled, null, null, null, null);
+                null, !enabled, null, null, null, null, 1L);
     }
 
     /** Los activos simulados, paginados como el servicio: una fila de mas en una pagina rompe el Grid. */
@@ -3745,14 +3748,10 @@ class ViewLayerTest {
                 spec -> spec.withId("asset-edit-" + ASSET_SYNCED)));
 
         assertTrue(LocatorJ._find(TextField.class, spec -> spec.withId("asset-name")).isEmpty(), "el nombre es de mto-configuration");
-        IntegerField interval = LocatorJ._get(IntegerField.class, spec -> spec.withId("asset-interval"));
-        LocatorJ._setValue(interval, null);
+        LocatorJ._setValue(LocatorJ._get(IntegerField.class, spec -> spec.withId("asset-interval")), null);
         LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(AssetEditorDialog.SAVE_ID)));
-        assertTrue(interval.isInvalid(), "un PUT parcial no puede vaciar un numero");
-
-        LocatorJ._setValue(interval, 90);
-        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(AssetEditorDialog.SAVE_ID)));
-        verify(assetClient).update(ASSET_SYNCED, new AssetUpdateRequest(null, null, null, 90, null, null, null, null, null, null));
+        verify(assetClient).update(ASSET_SYNCED, new MergePatch<>(new AssetUpdateRequest(null, null, null, null, null, null, null, null, null, null),
+                Set.of("preventiveIntervalDays"), 7L));
     }
 
     @Test
@@ -3773,7 +3772,7 @@ class ViewLayerTest {
 
         LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, AssetsView.ACTIONS_COLUMN), Button.class,
                 spec -> spec.withId("asset-enable-" + ASSET_OWN_OFF)));
-        verify(assetClient).update(ASSET_OWN_OFF, AssetUpdateRequest.enabled(true));
+        verify(assetClient).update(ASSET_OWN_OFF, MergePatch.of(AssetUpdateRequest.enabled(true), 1L));
         NotificationsKt.expectNotifications("Reactivado TS-0009 - Tramo TS-0009");
     }
 
@@ -3801,7 +3800,7 @@ class ViewLayerTest {
 
         LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, AssetsView.ACTIONS_COLUMN), Button.class,
                 spec -> spec.withId("asset-enable-" + ASSET_OFF_HERE)));
-        verify(assetClient).update(ASSET_OFF_HERE, AssetUpdateRequest.enabled(true));
+        verify(assetClient).update(ASSET_OFF_HERE, MergePatch.of(AssetUpdateRequest.enabled(true), 7L));
         NotificationsKt.expectNotifications("Reactivado PRF-0013 - 12-2.27");
     }
 
@@ -3861,14 +3860,14 @@ class ViewLayerTest {
                 base.executionPackageId(), base.trackId(), base.stationId(), base.startKp(), base.endKp(), base.plannedDate(),
                 base.actualStartDate(), base.actualEndDate(), base.team(), base.assignedUser(), base.closingNotes(), base.cancellationReason(),
                 base.originInspectionId(), base.originDefectId(), base.stockProjectId(), base.taskCount(), base.completedTaskCount(),
-                base.estimatedMinutes(), base.estimatedShifts(), base.audit());
+                base.estimatedMinutes(), base.estimatedShifts(), base.audit(), base.version());
     }
 
     private static TaskDto task(UUID id, int sequence, MaintenanceTaskStatus status) {
         AssetSummaryDto profile = new AssetSummaryDto(ASSET_SYNCED, "PRF-0001", "12-2.27", CatenaryAssetType.PROFILE, 12L,
                 new BigDecimal("12.270"), new BigDecimal("12.270"), "S-3", true);
         return new TaskDto(id, ORDER1, sequence, "Perfil 12-2.27", status, null, profile, null, null, null, null, null, List.of(),
-                List.of("RG-01"), List.of(), null);
+                List.of("RG-01"), List.of(), null, 2L);
     }
 
     private static List<TaskTypeDto> twoTaskTypes() {
@@ -4021,6 +4020,57 @@ class ViewLayerTest {
         assertFalse(LocatorJ._find(OrderTransitionDialog.class).isEmpty(), "el dialogo sigue abierto");
     }
 
+    /**
+     * Un editor de mantenimiento manda PATCH con lo cambiado, lo vaciado a {@code null} y la version
+     * leida: vaciar la fecha prevista y el equipo de una orden en borrador ya no es «no se puede
+     * vaciar». Si otra persona guardo antes, el 409 {@code CON-001} deja el dialogo abierto con lo
+     * escrito y pide recargar.
+     */
+    @Test
+    void anOrderEditorClearsWhatWasEmptiedAndAStaleVersionAsksToReload() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        when(orderClient.update(eq(ORDER1), any())).thenThrow(maintenanceError(409, "CON-001",
+                "Maintenance order MO-000001 was changed by someone else"));
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("order-edit");
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("order-planned-date")), null);
+        LocatorJ._setValue(comboWithId("order-team"), null);
+        click(OrderEditorDialog.SAVE_ID);
+
+        verify(orderClient).update(ORDER1, new MergePatch<>(new OrderUpdateRequest(null, null, null, null, null, null, null, null, null, null,
+                null, null, null), Set.of("plannedDate", "teamId"), 3L));
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Conflicto con otro cambio: recarga y vuelve a intentarlo."));
+        assertFalse(LocatorJ._find(OrderEditorDialog.class).isEmpty(), "el dialogo sigue abierto con lo escrito");
+    }
+
+    /**
+     * Sin {@code stock-read} el editor no ensena el proyecto de almacen de la orden ni puede nombrarlo,
+     * pero tampoco lo manda a vaciar: solo viaja lo que la persona cambio.
+     */
+    @Test
+    void anOrderEditedWithoutStockReadKeepsItsStockProject() {
+        loginAs("mantenimiento.sin-almacen", "ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_CONFIG_READ");
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        OrderDto draft = orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE);
+        OrderDto withProject = new OrderDto(draft.id(), draft.code(), draft.title(), draft.description(), draft.type(), draft.status(),
+                draft.priority(), draft.asset(), draft.executionPackageId(), draft.trackId(), draft.stationId(), draft.startKp(), draft.endKp(),
+                draft.plannedDate(), null, null, draft.team(), draft.assignedUser(), null, null, null, null,
+                UUID.fromString("3c3c3c3c-0000-4000-8000-000000000057"), 0, 0, BigDecimal.ZERO, 0, null, draft.version());
+        when(orderClient.update(eq(ORDER1), any())).thenReturn(withProject);
+        openOrder(withProject);
+
+        click("order-edit");
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("order-stock-project")).isEmpty(), "sin stock-read no se ofrece");
+        LocatorJ._setValue(comboWithId("order-priority"), MaintenancePriority.CRITICAL);
+        click(OrderEditorDialog.SAVE_ID);
+
+        verify(orderClient).update(ORDER1, MergePatch.of(new OrderUpdateRequest(null, null, MaintenancePriority.CRITICAL, null, null, null, null,
+                null, null, null, null, null, null), 3L));
+    }
+
     @Test
     void anOrderInProgressOnlyChangesWhatTheServiceAdmitsAndForceNeedsSupervise() {
         loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
@@ -4034,8 +4084,8 @@ class ViewLayerTest {
         assertTrue(LocatorJ._find(TextField.class, spec -> spec.withId("order-title")).isEmpty(), "en curso ya no se cambia el titulo");
         LocatorJ._setValue(comboWithId("order-priority"), MaintenancePriority.CRITICAL);
         click(OrderEditorDialog.SAVE_ID);
-        verify(orderClient).update(ORDER1, new OrderUpdateRequest(null, null, MaintenancePriority.CRITICAL, null, null, null, null, null, null,
-                null, null, null, null));
+        verify(orderClient).update(ORDER1, MergePatch.of(new OrderUpdateRequest(null, null, MaintenancePriority.CRITICAL, null, null, null, null,
+                null, null, null, null, null, null), 3L));
 
         click("order-complete");
         assertTrue(LocatorJ._find(Checkbox.class, spec -> spec.withId("order-transition-force")).isEmpty(), "force pide supervise");
@@ -4084,7 +4134,7 @@ class ViewLayerTest {
         LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("task-edit-" + TASK1)));
         LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("task-notes")), "Falta la llave");
         click(TaskEditorDialog.SAVE_ID);
-        verify(orderClient).updateTask(ORDER1, TASK1, new TaskUpdateRequest(null, null, null, "Falta la llave", null, null));
+        verify(orderClient).updateTask(ORDER1, TASK1, MergePatch.of(new TaskUpdateRequest(null, null, null, "Falta la llave", null, null), 2L));
 
         LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("task-cancel-" + TASK1)));
         LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("reason-text")), "Perfil desmontado");
@@ -4135,15 +4185,15 @@ class ViewLayerTest {
                 new BigDecimal("12.000"), new BigDecimal("12.000"), null, true);
         return new ShiftDto(SHIFT1, "SH-000001", LocalDate.of(2026, 10, 5), new TeamSummaryDto(TEAM1, "EQ-01", "Brigada norte", "Base Norte"),
                 "Base Norte", "DR-2", PossessionType.FULL, null, null, null, null, null, null, List.of(disconnector), null, null, 3L, List.of(12L),
-                new BigDecimal("12.000"), new BigDecimal("14.000"), null, null, status, null, null);
+                new BigDecimal("12.000"), new BigDecimal("14.000"), null, null, status, null, null, null);
     }
 
     private static TaskDto taskWithChecklist(MaintenanceTaskStatus status) {
         TaskDto base = task(TASK1, 1, status);
         CheckItemDto item = new CheckItemDto(ITEM1, "P-01", "Altura del hilo", "mm", new BigDecimal("5300"), new BigDecimal("5700"), true,
-                null, null, null, null, null, 1, false);
+                null, null, null, null, null, 1, false, 1L);
         return new TaskDto(base.id(), base.orderId(), base.sequence(), base.description(), base.status(), null, base.asset(), SHIFT1, null,
-                null, null, null, List.of(), base.taskTypeCodes(), List.of(item), null);
+                null, null, null, List.of(), base.taskTypeCodes(), List.of(item), null, null);
     }
 
     private void stubShifts(List<ShiftDto> all) {
@@ -4304,7 +4354,8 @@ class ViewLayerTest {
                 "La inspeccion o su checklist no admiten esta operacion. Item P-01 is out of range (5250 mm) and cannot be OK unless adjusted into range"));
         LocatorJ._setValue(comboWithId("check-result-" + ITEM1), CheckItemResult.DEFECT);
         click("check-save-" + ITEM1);
-        verify(orderClient).updateCheckItem(ORDER1, TASK1, ITEM1, new CheckItemUpdateRequest(new BigDecimal("5250"), null, null, CheckItemResult.DEFECT, null));
+        verify(orderClient).updateCheckItem(ORDER1, TASK1, ITEM1,
+                MergePatch.of(new CheckItemUpdateRequest(new BigDecimal("5250"), null, null, CheckItemResult.DEFECT, null), 1L));
         LocatorJ._get(com.vaadin.flow.component.dialog.Dialog.class).close();
 
         LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("shift-task-complete-" + TASK1)));
@@ -4364,16 +4415,16 @@ class ViewLayerTest {
 
     private static InspectionDto inspectionOf(InspectionResult result, UUID generatedDefect, UUID generatedOrder) {
         CheckItemDto item = new CheckItemDto(INSPECTION_ITEM, "P-01", "Altura del hilo", "mm", new BigDecimal("5300"), new BigDecimal("5700"),
-                true, null, null, null, null, null, 1, false);
+                true, null, null, null, null, null, 1, false, 1L);
         return new InspectionDto(INSPECTION1, "INS-000001", profileSummary(), 3L, 12L, null, new BigDecimal("12.270"), LocalDate.of(2026, 9, 20),
                 "ana", InspectionKind.TECHNICAL, null, result, null, "Pendola rota", null, generatedDefect, generatedOrder, null, null,
-                List.of(item), null);
+                List.of(item), null, null);
     }
 
     private static DefectDto defectOf(DefectStatus status) {
         return new DefectDto(DEFECT1, "DEF-000001", profileSummary(), INSPECTION1, null, DefectSeverity.HIGH, status, "Pendola rota", null,
                 Instant.parse("2026-09-20T00:00:00Z"), null, null, null, 3L, 12L, null, new BigDecimal("12.270"), new BigDecimal("12.270"), null,
-                null, null, null, null, List.of(), null);
+                null, null, null, null, List.of(), null, null);
     }
 
     private void openInspection(InspectionDto inspection) {
@@ -4469,7 +4520,7 @@ class ViewLayerTest {
         click("inspection-items");
         LocatorJ._setValue(comboWithId("check-result-" + INSPECTION_ITEM), CheckItemResult.OK);
         click("check-save-" + INSPECTION_ITEM);
-        verify(inspectionClient).updateItem(INSPECTION1, INSPECTION_ITEM, new CheckItemUpdateRequest(null, null, null, CheckItemResult.OK, null));
+        verify(inspectionClient).updateItem(INSPECTION1, INSPECTION_ITEM, MergePatch.of(new CheckItemUpdateRequest(null, null, null, CheckItemResult.OK, null), 1L));
     }
 
     @Test
@@ -4564,7 +4615,7 @@ class ViewLayerTest {
                 base.asset(), base.executionPackageId(), base.trackId(), base.stationId(), base.startKp(), base.endKp(), base.plannedDate(),
                 base.actualStartDate(), base.actualEndDate(), base.team(), base.assignedUser(), base.closingNotes(), base.cancellationReason(),
                 INSPECTION1, null, base.stockProjectId(), base.taskCount(), base.completedTaskCount(), base.estimatedMinutes(),
-                base.estimatedShifts(), base.audit());
+                base.estimatedShifts(), base.audit(), base.version());
         openOrder(fromInspection);
 
         verify(defectClient, never()).search(any(DefectFilter.class), anyInt(), anyInt(), anyList());
@@ -4595,7 +4646,7 @@ class ViewLayerTest {
         return new MaterialUsageDto(id, ORDER1, taskId, MAT1, "MAT-001", "Pendola", WH1, new BigDecimal("4.000000"),
                 status == StockSyncStatus.CONSUMED ? new BigDecimal("4.000000") : null, "ud", false,
                 status == StockSyncStatus.RESERVED || status == StockSyncStatus.CONSUMED ? UUID.randomUUID() : null, status,
-                status == StockSyncStatus.FAILED ? "Stock service unavailable" : status == StockSyncStatus.REJECTED ? REJECTION : null, null);
+                status == StockSyncStatus.FAILED ? "Stock service unavailable" : status == StockSyncStatus.REJECTED ? REJECTION : null, null, 2L);
     }
 
     private void stubMaterials(MaintenanceOrderStatus status, List<MaterialUsageDto> lines) {
@@ -4665,7 +4716,7 @@ class ViewLayerTest {
                 "lo previsto de una linea reservada no cambia: se quita y se registra otra vez");
         LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-consumed")), new BigDecimal("3"));
         click(MaterialUsageDialog.SAVE_ID);
-        verify(orderClient).updateMaterial(ORDER1, LINE_RESERVED, new MaterialUsageUpdateRequest(null, new BigDecimal("3"), null));
+        verify(orderClient).updateMaterial(ORDER1, LINE_RESERVED, MergePatch.of(new MaterialUsageUpdateRequest(null, new BigDecimal("3"), null), 2L));
 
         loginAs("mantenimiento.sin-almacen", "ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_CONFIG_READ");
         UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
@@ -4752,7 +4803,7 @@ class ViewLayerTest {
         OrderDto draft = orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE);
         OrderDto withProject = new OrderDto(draft.id(), draft.code(), draft.title(), draft.description(), draft.type(), draft.status(),
                 draft.priority(), draft.asset(), draft.executionPackageId(), draft.trackId(), draft.stationId(), draft.startKp(), draft.endKp(),
-                draft.plannedDate(), null, null, draft.team(), draft.assignedUser(), null, null, null, null, project, 0, 0, BigDecimal.ZERO, 0, null);
+                draft.plannedDate(), null, null, draft.team(), draft.assignedUser(), null, null, null, null, project, 0, 0, BigDecimal.ZERO, 0, null, draft.version());
         when(orderClient.update(eq(ORDER1), any())).thenReturn(withProject);
         UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
         openOrder(withProject);
@@ -4762,7 +4813,8 @@ class ViewLayerTest {
         assertEquals(project, this.<ProjectSummaryDto>comboWithId("order-stock-project").getValue().id(), "el editor parte del proyecto leido");
         LocatorJ._setValue(comboWithId("order-stock-project"), new ProjectSummaryDto(other, "EP-5", "Paquete sur", true));
         click(OrderEditorDialog.SAVE_ID);
-        verify(orderClient).update(ORDER1, new OrderUpdateRequest(null, null, null, null, null, null, null, null, null, null, null, null, other));
+        verify(orderClient).update(ORDER1, MergePatch.of(new OrderUpdateRequest(null, null, null, null, null, null, null, null, null, null, null, null,
+                other), 3L));
     }
 
     // --- Mantenimiento: informes -------------------------------------------------------------------

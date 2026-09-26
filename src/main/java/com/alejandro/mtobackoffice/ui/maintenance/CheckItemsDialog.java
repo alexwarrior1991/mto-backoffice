@@ -3,6 +3,7 @@ package com.alejandro.mtobackoffice.ui.maintenance;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemResult;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.ui.support.Formats;
@@ -20,6 +21,7 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.BigDecimalField;
 import com.vaadin.flow.component.textfield.TextField;
 
+import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -34,7 +36,7 @@ import java.util.function.BiFunction;
  */
 public class CheckItemsDialog extends Dialog {
 
-    private final BiFunction<UUID, CheckItemUpdateRequest, List<CheckItemDto>> save;
+    private final BiFunction<UUID, MergePatch<CheckItemUpdateRequest>, List<CheckItemDto>> save;
     private final Runnable changed;
     private final VerticalLayout rows = new VerticalLayout();
 
@@ -42,7 +44,7 @@ public class CheckItemsDialog extends Dialog {
      * @param save    guarda un punto y devuelve los puntos como quedaron
      * @param changed que hacer tras cada punto guardado
      */
-    public CheckItemsDialog(String title, List<CheckItemDto> items, BiFunction<UUID, CheckItemUpdateRequest, List<CheckItemDto>> save,
+    public CheckItemsDialog(String title, List<CheckItemDto> items, BiFunction<UUID, MergePatch<CheckItemUpdateRequest>, List<CheckItemDto>> save,
                             Runnable changed) {
         this.save = save;
         this.changed = changed;
@@ -57,7 +59,7 @@ public class CheckItemsDialog extends Dialog {
     /** El checklist de una tarea de una orden. */
     static CheckItemsDialog ofTask(UUID orderId, TaskDto task, MaintenanceClients clients, Runnable changed) {
         return new CheckItemsDialog("Checklist de la tarea " + task.sequence(), task.checkItems(),
-                (itemId, request) -> clients.orders().updateCheckItem(orderId, task.id(), itemId, request).checkItems(), changed);
+                (itemId, patch) -> clients.orders().updateCheckItem(orderId, task.id(), itemId, patch).checkItems(), changed);
     }
 
     private void paint(List<CheckItemDto> items) {
@@ -92,8 +94,8 @@ public class CheckItemsDialog extends Dialog {
         TextField notes = new TextField("Notas");
         notes.setId("check-notes-" + item.id());
         notes.setValue(item.notes() == null ? "" : item.notes());
-        Button save = new Button("Guardar", click -> save(item, new CheckItemUpdateRequest(measured.getValue(),
-                adjusted.getValue() ? Boolean.TRUE : null, after.getValue(), result.getValue(), TransitionForm.nullIfBlank(notes.getValue()))));
+        Button save = new Button("Guardar", click -> save(item, patchOf(item, measured.getValue(), adjusted.getValue(), after.getValue(),
+                result.getValue(), notes.getValue())));
         save.setId("check-save-" + item.id());
         save.addThemeVariants(ButtonVariant.LUMO_SMALL);
 
@@ -107,9 +109,26 @@ public class CheckItemsDialog extends Dialog {
         return row;
     }
 
-    private void save(CheckItemDto item, CheckItemUpdateRequest request) {
+    /**
+     * Lo que cambio del punto, lo vaciado y su version: vaciar la medida, el resultado o las notas los
+     * borra. Un resultado que esta version no conoce se pinta vacio y, si nadie lo toca, se queda como esta.
+     */
+    static MergePatch<CheckItemUpdateRequest> patchOf(CheckItemDto item, BigDecimal measured, boolean adjusted, BigDecimal after,
+                                                      CheckItemResult result, String notes) {
+        Changes changes = new Changes();
+        CheckItemResult shown = item.itemResult() == CheckItemResult.UNKNOWN ? null : item.itemResult();
+        CheckItemUpdateRequest values = new CheckItemUpdateRequest(
+                changes.number("measuredValue", measured, item.measuredValue()),
+                adjusted == Boolean.TRUE.equals(item.adjusted()) ? null : adjusted,
+                changes.number("valueAfterAdjustment", after, item.valueAfterAdjustment()),
+                changes.value("itemResult", result, shown),
+                changes.text("notes", notes, item.notes()));
+        return changes.patch(values, item.version());
+    }
+
+    private void save(CheckItemDto item, MergePatch<CheckItemUpdateRequest> patch) {
         try {
-            List<CheckItemDto> updated = save.apply(item.id(), request);
+            List<CheckItemDto> updated = save.apply(item.id(), patch);
             MaintenanceUi.success("Guardado " + item.code());
             paint(updated);
             changed.run();

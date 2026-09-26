@@ -3,6 +3,7 @@ package com.alejandro.mtobackoffice.ui.maintenance;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderUpdateRequest;
@@ -10,8 +11,6 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.stock.ProjectSummaryDto;
 
 import java.time.LocalDate;
-import java.util.Objects;
-import java.util.UUID;
 
 /**
  * Modelo mutable del editor de una orden, con las propiedades llamadas como los campos de la
@@ -44,7 +43,7 @@ public class OrderForm {
             form.setTeamId(dto.team());
             form.setAssignedUser(orEmpty(dto.assignedUser()));
             form.setClosingNotes(orEmpty(dto.closingNotes()));
-            form.setStockProjectId(names.project(dto.stockProjectId()));
+            form.setStockProjectId(names.projectRef(dto.stockProjectId()));
         }
         return form;
     }
@@ -55,37 +54,23 @@ public class OrderForm {
     }
 
     /**
-     * Solo lo que cambio. Con {@code full} (borrador o planificada) titulo, prevista, equipo y
-     * persona; si no, solo descripcion, prioridad y notas de cierre, que es lo unico que el servicio
-     * admite despues.
+     * Lo que cambio, lo vaciado y la version leida. Con {@code full} (borrador o planificada) titulo,
+     * prevista, equipo, persona y proyecto de almacen; si no, solo descripcion, prioridad y notas de
+     * cierre, que es lo unico que el servicio admite (y vacia) despues.
      */
-    public OrderUpdateRequest toUpdateRequest(OrderDto original, boolean full) {
-        return new OrderUpdateRequest(
-                full ? changed(title, original.title()) : null,
-                changed(description, original.description()),
+    public MergePatch<OrderUpdateRequest> toPatch(OrderDto original, boolean full) {
+        Changes changes = new Changes();
+        OrderUpdateRequest values = new OrderUpdateRequest(
+                full ? changes.text("title", title, original.title()) : null,
+                changes.text("description", description, original.description()),
                 priority == original.priority() ? null : priority,
-                full && !Objects.equals(plannedDate, original.plannedDate()) ? plannedDate : null,
-                full ? changedTeam(original) : null,
-                full ? changed(assignedUser, original.assignedUser()) : null,
-                full ? null : changed(closingNotes, original.closingNotes()),
+                full ? changes.value("plannedDate", plannedDate, original.plannedDate()) : null,
+                full ? changes.value("teamId", teamId == null ? null : teamId.id(), original.team() == null ? null : original.team().id()) : null,
+                full ? changes.text("assignedUser", assignedUser, original.assignedUser()) : null,
+                full ? null : changes.text("closingNotes", closingNotes, original.closingNotes()),
                 null, null, null, null, null,
-                full ? changedProject(original) : null);
-    }
-
-    private UUID changedTeam(OrderDto original) {
-        UUID current = teamId == null ? null : teamId.id();
-        UUID before = original.team() == null ? null : original.team().id();
-        return Objects.equals(current, before) ? null : current;
-    }
-
-    private UUID changedProject(OrderDto original) {
-        UUID current = stockProjectId == null ? null : stockProjectId.id();
-        return current == null || current.equals(original.stockProjectId()) ? null : current;
-    }
-
-    private static String changed(String value, String original) {
-        String current = value == null ? "" : value.trim();
-        return current.equals(orEmpty(original)) ? null : current;
+                full ? changes.value("stockProjectId", stockProjectId == null ? null : stockProjectId.id(), original.stockProjectId()) : null);
+        return changes.patch(values, original.version());
     }
 
     private static String nullIfBlank(String value) {

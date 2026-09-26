@@ -15,7 +15,7 @@ public record InspectionDto(UUID id, String code, AssetSummaryDto asset, Long ex
                             BigDecimal kp, LocalDate inspectionDate, String inspector, InspectionKind inspectionKind, UUID templateId,
                             InspectionResult result, String description, String detectedDefects, String recommendedActions,
                             UUID generatedDefectId, UUID generatedOrderId, UUID originOrderId, UUID shiftId, List<CheckItemDto> items,
-                            AuditDto audit) {
+                            AuditDto audit, Long version) {
 
     public InspectionDto {
         items = items == null ? List.of() : List.copyOf(items);

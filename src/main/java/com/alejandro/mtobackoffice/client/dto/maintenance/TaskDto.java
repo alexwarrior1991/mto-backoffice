@@ -9,7 +9,7 @@ import java.util.UUID;
 /** Una tarea de una orden: su numero en la orden, el activo (un perfil en un preventivo), los tipos de tarea y su checklist. */
 public record TaskDto(UUID id, UUID orderId, Integer sequence, String description, MaintenanceTaskStatus status, String assignedUser,
                       AssetSummaryDto asset, UUID shiftId, Instant startedAt, Instant completedAt, String defectsFound, String notes,
-                      List<String> photoRefs, List<String> taskTypeCodes, List<CheckItemDto> checkItems, AuditDto audit) {
+                      List<String> photoRefs, List<String> taskTypeCodes, List<CheckItemDto> checkItems, AuditDto audit, Long version) {
 
     public TaskDto {
         photoRefs = photoRefs == null ? List.of() : List.copyOf(photoRefs);

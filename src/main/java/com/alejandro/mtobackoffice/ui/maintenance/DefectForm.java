@@ -5,12 +5,12 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.DefectDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectSeverity;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Objects;
 import java.util.UUID;
 
 /** Modelo mutable del editor de un defecto, con las propiedades llamadas como los campos de la peticion. */
@@ -51,20 +51,18 @@ public class DefectForm {
                 repairPlannedDate, null);
     }
 
-    public DefectUpdateRequest toUpdateRequest(DefectDto original) {
-        return new DefectUpdateRequest(
+    /** Lo que cambio, lo vaciado y la version leida. */
+    public MergePatch<DefectUpdateRequest> toPatch(DefectDto original) {
+        Changes changes = new Changes();
+        DefectUpdateRequest values = new DefectUpdateRequest(
                 severity == original.severity() ? null : severity,
-                changed(description, original.description()),
-                changed(technicalNotes, original.technicalNotes()),
-                changed(correctionType, original.correctionType()),
-                changed(partsReplaced, original.partsReplaced()),
-                Objects.equals(repairPlannedDate, original.repairPlannedDate()) ? null : repairPlannedDate,
+                changes.text("description", description, original.description()),
+                changes.text("technicalNotes", technicalNotes, original.technicalNotes()),
+                changes.text("correctionType", correctionType, original.correctionType()),
+                changes.text("partsReplaced", partsReplaced, original.partsReplaced()),
+                changes.value("repairPlannedDate", repairPlannedDate, original.repairPlannedDate()),
                 null);
-    }
-
-    private static String changed(String value, String original) {
-        String current = value == null ? "" : value.trim();
-        return current.equals(orEmpty(original)) ? null : current;
+        return changes.patch(values, original.version());
     }
 
     private static String nullIfBlank(String value) {

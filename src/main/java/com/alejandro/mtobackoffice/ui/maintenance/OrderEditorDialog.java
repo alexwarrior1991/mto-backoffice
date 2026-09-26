@@ -3,6 +3,7 @@ package com.alejandro.mtobackoffice.ui.maintenance;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
@@ -88,21 +89,15 @@ public class OrderEditorDialog extends Dialog {
         }
         if (full) {
             binder.forField(title).asRequired("El titulo es obligatorio").bind("title");
-            binder.forField(plannedDate)
-                    .withValidator(date -> creating || existing.plannedDate() == null || date != null, MaintenanceUi.CANNOT_CLEAR)
-                    .bind("plannedDate");
-            binder.forField(team)
-                    .withValidator(selected -> creating || existing.team() == null || selected != null, MaintenanceUi.CANNOT_CLEAR)
-                    .bind("teamId");
+            binder.forField(plannedDate).bind("plannedDate");
+            binder.forField(team).bind("teamId");
             binder.forField(assignedUser).bind("assignedUser");
             layout.add(title, priority, plannedDate, team, assignedUser);
             if (names.readsStock()) {
                 ComboBox<ProjectSummaryDto> project = StockPickers.project("Proyecto de almacen", clients.projects());
                 project.setId("order-stock-project");
                 project.setHelperText("Vacio: el del paquete de ejecucion, al planificar");
-                binder.forField(project)
-                        .withValidator(selected -> creating || existing.stockProjectId() == null || selected != null, MaintenanceUi.CANNOT_CLEAR)
-                        .bind("stockProjectId");
+                binder.forField(project).bind("stockProjectId");
                 layout.add(project);
             }
         } else {
@@ -134,12 +129,12 @@ public class OrderEditorDialog extends Dialog {
             if (existing == null) {
                 result = clients.orders().create(form.toRequest());
             } else {
-                OrderUpdateRequest request = form.toUpdateRequest(existing, full);
-                if (request.changesNothing()) {
+                MergePatch<OrderUpdateRequest> patch = form.toPatch(existing, full);
+                if (patch.changesNothing()) {
                     close();
                     return;
                 }
-                result = clients.orders().update(existing.id(), request);
+                result = clients.orders().update(existing.id(), patch);
             }
             close();
             MaintenanceUi.success("Guardada " + result.code());

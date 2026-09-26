@@ -17,9 +17,6 @@ import java.util.List;
 /** Lo que repiten las pantallas de mantenimiento: botones de fila, confirmaciones y avisos. */
 final class MaintenanceUi {
 
-    /** Un PUT parcial no puede vaciar un numero ni una referencia: {@code null} es «no tocar». */
-    static final String CANNOT_CLEAR = "No se puede vaciar: el servicio conserva el valor si no se manda";
-
     private MaintenanceUi() {
     }
 

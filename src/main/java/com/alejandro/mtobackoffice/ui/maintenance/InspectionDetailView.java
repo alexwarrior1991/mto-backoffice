@@ -153,7 +153,7 @@ public class InspectionDetailView extends VerticalLayout implements BeforeEnterO
             if (!loaded.items().isEmpty()) {
                 buttons.add(link("inspection-items", "Contestar puntos", VaadinIcon.CHECK_SQUARE_O,
                         () -> new CheckItemsDialog("Puntos de " + loaded.code(), loaded.items(),
-                                (itemId, request) -> clients.inspections().updateItem(loaded.id(), itemId, request).items(), this::reload).open()));
+                                (itemId, patch) -> clients.inspections().updateItem(loaded.id(), itemId, patch).items(), this::reload).open()));
             }
         }
         boolean foundSomething = loaded.result() != null && loaded.result().foundSomething();

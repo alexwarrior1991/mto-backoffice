@@ -16,6 +16,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderRequest;
@@ -34,8 +35,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.service.annotation.DeleteExchange;
 import org.springframework.web.service.annotation.GetExchange;
 import org.springframework.web.service.annotation.HttpExchange;
+import org.springframework.web.service.annotation.PatchExchange;
 import org.springframework.web.service.annotation.PostExchange;
-import org.springframework.web.service.annotation.PutExchange;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -53,8 +54,9 @@ public interface OrderClient {
     @PostExchange
     OrderDto create(@RequestBody OrderRequest request);
 
-    @PutExchange("/{id}")
-    OrderDto update(@PathVariable("id") UUID id, @RequestBody OrderUpdateRequest request);
+    /** Lo cambiado, lo vaciado a null y la version leida (409 {@code CON-001} si otra persona guardo antes). */
+    @PatchExchange(value = "/{id}", contentType = MergePatch.MEDIA_TYPE)
+    OrderDto update(@PathVariable("id") UUID id, @RequestBody MergePatch<OrderUpdateRequest> patch);
 
     @GetExchange("/{id}")
     OrderDto findById(@PathVariable("id") UUID id);
@@ -130,8 +132,8 @@ public interface OrderClient {
     @PostExchange("/{id}/tasks/generate")
     GenerateTasksResultDto generateTasks(@PathVariable("id") UUID id, @RequestBody GenerateTasksRequest request);
 
-    @PutExchange("/{id}/tasks/{taskId}")
-    TaskDto updateTask(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @RequestBody TaskUpdateRequest request);
+    @PatchExchange(value = "/{id}/tasks/{taskId}", contentType = MergePatch.MEDIA_TYPE)
+    TaskDto updateTask(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @RequestBody MergePatch<TaskUpdateRequest> patch);
 
     @PostExchange("/{id}/tasks/{taskId}/cancel")
     TaskDto cancelTask(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @RequestBody ReasonRequest request);
@@ -144,9 +146,9 @@ public interface OrderClient {
     @PostExchange("/{id}/tasks/{taskId}/complete")
     TaskDto completeTask(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @RequestBody CompleteTaskRequest request);
 
-    @PutExchange("/{id}/tasks/{taskId}/check-items/{itemId}")
+    @PatchExchange(value = "/{id}/tasks/{taskId}/check-items/{itemId}", contentType = MergePatch.MEDIA_TYPE)
     TaskDto updateCheckItem(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @PathVariable("itemId") UUID itemId,
-                            @RequestBody CheckItemUpdateRequest request);
+                            @RequestBody MergePatch<CheckItemUpdateRequest> patch);
 
     // --- Lineas de material: se reservan al planificar, se consumen al completar, se liberan al cancelar ---
 
@@ -157,8 +159,9 @@ public interface OrderClient {
     @PostExchange("/{id}/materials")
     MaterialUsageDto registerMaterial(@PathVariable("id") UUID id, @RequestBody MaterialUsageRequest request);
 
-    @PutExchange("/{id}/materials/{usageId}")
-    MaterialUsageDto updateMaterial(@PathVariable("id") UUID id, @PathVariable("usageId") UUID usageId, @RequestBody MaterialUsageUpdateRequest request);
+    @PatchExchange(value = "/{id}/materials/{usageId}", contentType = MergePatch.MEDIA_TYPE)
+    MaterialUsageDto updateMaterial(@PathVariable("id") UUID id, @PathVariable("usageId") UUID usageId,
+                                    @RequestBody MergePatch<MaterialUsageUpdateRequest> patch);
 
     /**
      * Reintenta con mto-stock lo que toque por el estado de la orden, y en una orden abierta comprueba

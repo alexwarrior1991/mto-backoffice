@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeDto;
@@ -93,9 +94,9 @@ public class TaskEditorDialog extends Dialog {
                 TaskDto created = clients.orders().createTask(order.id(), form.toRequest());
                 MaintenanceUi.success("Tarea " + created.sequence() + " anadida a " + order.code());
             } else {
-                TaskUpdateRequest request = form.toUpdateRequest(existing);
-                if (!request.changesNothing()) {
-                    clients.orders().updateTask(order.id(), existing.id(), request);
+                MergePatch<TaskUpdateRequest> patch = form.toPatch(existing);
+                if (!patch.changesNothing()) {
+                    clients.orders().updateTask(order.id(), existing.id(), patch);
                     MaintenanceUi.success("Tarea " + existing.sequence() + " guardada");
                 }
             }

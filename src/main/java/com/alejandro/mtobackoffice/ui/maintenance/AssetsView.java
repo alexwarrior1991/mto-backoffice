@@ -6,6 +6,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
@@ -194,7 +195,7 @@ public class AssetsView extends VerticalLayout {
 
     private void enable(AssetDto asset) {
         try {
-            clients.assets().update(asset.id(), AssetUpdateRequest.enabled(true));
+            clients.assets().update(asset.id(), MergePatch.of(AssetUpdateRequest.enabled(true), asset.version()));
             MaintenanceUi.success("Reactivado " + asset.label());
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);

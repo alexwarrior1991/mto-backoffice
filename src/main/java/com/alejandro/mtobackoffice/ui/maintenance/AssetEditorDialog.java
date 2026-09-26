@@ -2,6 +2,7 @@ package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TrackKind;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
@@ -65,7 +66,6 @@ public class AssetEditorDialog extends Dialog {
             binder.forField(description).bind("description");
             binder.forField(interval)
                     .withValidator(days -> days == null || days > 0, "Tiene que ser mayor que cero")
-                    .withValidator(days -> existing.preventiveIntervalDays() == null || days != null, MaintenanceUi.CANNOT_CLEAR)
                     .bind("preventiveIntervalDays");
             layout.add(description, interval);
             layout.setColspan(description, 2);
@@ -115,13 +115,9 @@ public class AssetEditorDialog extends Dialog {
         }
         binder.forField(name).asRequired("El nombre es obligatorio").bind("name");
         binder.forField(description).bind("description");
-        binder.forField(executionPackage)
-                .withValidator(ref -> creating || existing.executionPackageId() == null || ref != null, MaintenanceUi.CANNOT_CLEAR)
-                .bind("executionPackageId");
+        binder.forField(executionPackage).bind("executionPackageId");
         binder.forField(track).asRequired("La via es obligatoria").bind("trackId");
-        binder.forField(station)
-                .withValidator(ref -> creating || existing.stationId() == null || ref != null, MaintenanceUi.CANNOT_CLEAR)
-                .bind("stationId");
+        binder.forField(station).bind("stationId");
         binder.forField(startKp).asRequired("El KP inicial es obligatorio").bind("startKp");
         Binder.Binding<AssetForm, BigDecimal> end = binder.forField(endKp).asRequired("El KP final es obligatorio")
                 .withValidator(kp -> startKp.getValue() == null || kp.compareTo(startKp.getValue()) > 0,
@@ -135,7 +131,6 @@ public class AssetEditorDialog extends Dialog {
         binder.forField(trackKind).asRequired("El tipo de via es obligatorio").bind("trackKind");
         binder.forField(interval)
                 .withValidator(days -> days == null || days > 0, "Tiene que ser mayor que cero")
-                .withValidator(days -> creating || existing.preventiveIntervalDays() == null || days != null, MaintenanceUi.CANNOT_CLEAR)
                 .bind("preventiveIntervalDays");
         layout.add(name, track, trackKind, startKp, endKp, executionPackage, station, interval, description);
         layout.setColspan(description, 2);
@@ -150,12 +145,12 @@ public class AssetEditorDialog extends Dialog {
             if (existing == null) {
                 result = clients.assets().create(form.toRequest());
             } else {
-                AssetUpdateRequest request = form.toUpdateRequest(existing);
-                if (request.changesNothing()) {
+                MergePatch<AssetUpdateRequest> patch = form.toPatch(existing);
+                if (patch.changesNothing()) {
                     close();
                     return;
                 }
-                result = clients.assets().update(existing.id(), request);
+                result = clients.assets().update(existing.id(), patch);
             }
             close();
             MaintenanceUi.success("Guardado " + result.label());

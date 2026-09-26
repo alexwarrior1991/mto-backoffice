@@ -400,10 +400,10 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   búsqueda; las listas de miembros de un perfil o de un rol van planas, sin total. La de `mto-stock`
   es el `Pageable` de Spring por parámetros (`page`, `size`, `sort=campo,asc`, solo atributos de la
   entidad) con la misma página anidada que configuración, y la de `mto-maintenance` también (lo
-  que el servicio calcula, como el próximo preventivo, no se ordena). Sus `PUT` son **parciales**
-  (`null` es «no tocar»): los formularios mandan solo lo que cambió, y un número, una fecha o una
-  referencia que tenían valor no se pueden vaciar. Los equipos son la excepción: su `PUT` es
-  completo. Los enumerados de mantenimiento toleran valores nuevos: uno que esta versión no conoce
+  que el servicio calcula, como el próximo preventivo, no se ordena). Sus modificaciones son un
+  **`PATCH` merge-patch** con la versión leída: los formularios mandan lo que cambió, lo que se
+  vació viaja a `null`, y si otra persona guardó antes, el servicio responde 409 `CON-001` y la
+  notificación pide recargar. Los equipos son la excepción: su `PUT` es completo. Los enumerados de mantenimiento toleran valores nuevos: uno que esta versión no conoce
   se lee como «Desconocido» en vez de romper la página. Los de almacén, historial y trabajos
   también (ver `CLAUDE.md`).
 - Errores: `ApiErrorDecoder` entiende el `application/problem+json` de `mto-configuration` (`code`,
