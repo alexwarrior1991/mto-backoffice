@@ -48,6 +48,25 @@ final class MaintenancePickers {
         return combo;
     }
 
+    /** Varios activos de un tipo, buscados en el servidor igual que {@link #asset}: los seccionadores de un turno. */
+    static MultiSelectComboBox<AssetSummaryDto> assets(String label, AssetClient assets, CatenaryAssetType type) {
+        MultiSelectComboBox<AssetSummaryDto> combo = new MultiSelectComboBox<>(label);
+        combo.setItemLabelGenerator(AssetSummaryDto::label);
+        combo.setClearButtonVisible(true);
+        combo.setPlaceholder("Escribe su nombre");
+        combo.setItems(query -> {
+            try {
+                String text = query.getFilter().orElse("");
+                return assets.search(new AssetFilter(type, null, null, null, true, text, null), query.getPage(), query.getPageSize(),
+                        BY_TRACK_AND_KP).content().stream().map(AssetDto::summary);
+            } catch (BackofficeApiException failure) {
+                UiErrors.show(failure);
+                return Stream.empty();
+            }
+        });
+        return combo;
+    }
+
     /** Los equipos activos; el valor leido de una orden se ve aunque el equipo ya este retirado. */
     static ComboBox<TeamSummaryDto> team(String label, Collection<TeamDto> activeTeams) {
         ComboBox<TeamSummaryDto> combo = new ComboBox<>(label);

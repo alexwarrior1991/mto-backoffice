@@ -24,6 +24,11 @@ public record OrderFilter(MaintenanceOrderStatus status, MaintenanceOrderType ty
         return new OrderFilter(null, null, null, assetId, null, null, null, null, null, null, null, null, null);
     }
 
+    /** Las de una via: donde buscar tareas para un turno que la recorre. */
+    public static OrderFilter onTrack(Long trackId) {
+        return new OrderFilter(null, null, null, null, null, trackId, null, null, null, null, null, null, null);
+    }
+
     private static String blankToNull(String text) {
         return text == null || text.isBlank() ? null : text.trim();
     }

@@ -6,6 +6,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.ReasonRequest;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
+import com.alejandro.mtobackoffice.configuration.security.StockRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPanel;
@@ -56,6 +57,7 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
     private final MaintenanceCatalogs catalogs;
     private final boolean canWrite;
     private final boolean canSupervise;
+    private final boolean canPickMaterials;
 
     private final H2 title = new H2();
     private final Span statusBadge = new Span();
@@ -78,6 +80,7 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
         this.catalogs = new MaintenanceCatalogs(clients.catalog());
         this.canWrite = authentication.hasRole(MaintenanceRoles.MAINTENANCE_WRITE);
         this.canSupervise = authentication.hasAllRoles(MaintenanceRoles.MAINTENANCE_WRITE, MaintenanceRoles.MAINTENANCE_SUPERVISE);
+        this.canPickMaterials = authentication.hasRole(StockRoles.STOCK_READ);
         setSizeFull();
         for (Span badge : List.of(statusBadge, typeBadge, priorityBadge)) {
             badge.getElement().getThemeList().add("badge");
@@ -120,7 +123,7 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
         TabSheet tabs = new TabSheet();
         tabs.setWidthFull();
         panels.clear();
-        addPanel(tabs, TASKS_TAB, new OrderTasksPanel(this::order, clients, catalogs, canWrite, this::reload));
+        addPanel(tabs, TASKS_TAB, new OrderTasksPanel(this::order, clients, catalogs, canWrite, canPickMaterials, this::reload));
         addPanel(tabs, HISTORY_TAB, new StatusHistoryPanel("order-history-grid", () -> clients.orders().history(order.id()),
                 status -> MaintenanceOrderStatus.of(status).label()));
         tabs.addSelectedChangeListener(change -> loadTab(tabs, change.getSelectedTab()));

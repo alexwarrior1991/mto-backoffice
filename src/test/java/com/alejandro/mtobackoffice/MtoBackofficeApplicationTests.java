@@ -4,6 +4,7 @@ import com.alejandro.mtobackoffice.client.configuration.LovClient;
 import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
 import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
+import com.alejandro.mtobackoffice.client.maintenance.ShiftClient;
 import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
 import com.alejandro.mtobackoffice.client.stock.MaterialClient;
 import com.alejandro.mtobackoffice.client.stock.MovementClient;
@@ -65,7 +66,8 @@ class MtoBackofficeApplicationTests {
                 AssemblyClient.class, MovementClient.class, ReservationClient.class)) {
             assertNotNull(context.getBean(stockClient), stockClient.getSimpleName());
         }
-        for (Class<?> maintenanceClient : List.of(OrderClient.class, AssetClient.class, MaintenanceCatalogClient.class, MaintenanceClients.class)) {
+        for (Class<?> maintenanceClient : List.of(OrderClient.class, AssetClient.class, MaintenanceCatalogClient.class, ShiftClient.class,
+                MaintenanceClients.class)) {
             assertNotNull(context.getBean(maintenanceClient), maintenanceClient.getSimpleName());
         }
         assertEquals(List.of("mto-configuration-api", "mto-users-api", "mto-stock-api", "mto-maintenance-api"),

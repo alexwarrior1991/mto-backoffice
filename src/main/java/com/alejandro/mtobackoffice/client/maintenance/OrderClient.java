@@ -3,8 +3,10 @@ package com.alejandro.mtobackoffice.client.maintenance;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssignOrderRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CommentRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CompleteOrderRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CompleteTaskRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.GenerateTasksRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.GenerateTasksResultDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderStatus;
@@ -16,6 +18,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.OrderRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.PlanOrderRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ReasonRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.StartTaskRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.StatusHistoryDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskRequest;
@@ -120,4 +123,16 @@ public interface OrderClient {
 
     @PostExchange("/{id}/tasks/{taskId}/cancel")
     TaskDto cancelTask(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @RequestBody ReasonRequest request);
+
+    /** Con la orden en curso y un turno en curso de su via, con posesion compatible. */
+    @PostExchange("/{id}/tasks/{taskId}/start")
+    TaskDto startTask(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @RequestBody StartTaskRequest request);
+
+    /** La fila del parte: defectos en linea, materiales usados, notas; el checklist tiene que estar contestado. */
+    @PostExchange("/{id}/tasks/{taskId}/complete")
+    TaskDto completeTask(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @RequestBody CompleteTaskRequest request);
+
+    @PutExchange("/{id}/tasks/{taskId}/check-items/{itemId}")
+    TaskDto updateCheckItem(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @PathVariable("itemId") UUID itemId,
+                            @RequestBody CheckItemUpdateRequest request);
 }

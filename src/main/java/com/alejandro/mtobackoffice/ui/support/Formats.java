@@ -37,6 +37,11 @@ public final class Formats {
         return dateTime == null ? null : dateTime.atZone(ZoneId.systemDefault()).toInstant();
     }
 
+    /** Para un {@code DateTimePicker}: el instante en la zona del servidor. */
+    public static LocalDateTime toLocalDateTime(Instant instant) {
+        return instant == null ? null : LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+    }
+
     /** El principio del dia, para un {@code dateFrom}. */
     public static Instant startOfDay(LocalDate date) {
         return date == null ? null : date.atStartOfDay(ZoneId.systemDefault()).toInstant();

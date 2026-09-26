@@ -154,6 +154,27 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
 import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
 import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
+import com.alejandro.mtobackoffice.client.maintenance.ShiftClient;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemResult;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CloseShiftRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CompleteTaskRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.DefectSeverity;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InlineDefectRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.PossessionType;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftFilter;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftStatus;
+import com.alejandro.mtobackoffice.client.dto.maintenance.StartShiftRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.StartTaskRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskMaterialRequest;
+import com.alejandro.mtobackoffice.ui.maintenance.AssignTasksDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.CompleteTaskDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.ShiftDetailView;
+import com.alejandro.mtobackoffice.ui.maintenance.ShiftEditorDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.ShiftTransitionDialog;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CompleteOrderRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.GenerateTasksRequest;
@@ -187,6 +208,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.TrackKind;
 import com.alejandro.mtobackoffice.ui.maintenance.AssetEditorDialog;
 import com.alejandro.mtobackoffice.ui.maintenance.AssetsView;
 import com.vaadin.flow.component.html.H3;
+import com.vaadin.flow.component.html.Paragraph;
 import com.alejandro.mtobackoffice.ui.maintenance.TeamEditorDialog;
 import com.alejandro.mtobackoffice.ui.maintenance.TeamsView;
 import com.alejandro.mtobackoffice.ui.support.Formats;
@@ -333,6 +355,8 @@ class ViewLayerTest {
     private AssetClient assetClient;
     @MockitoBean
     private MaintenanceCatalogClient maintenanceCatalogClient;
+    @MockitoBean
+    private ShiftClient shiftClient;
 
     @BeforeEach
     void setUp() {
@@ -741,6 +765,7 @@ class ViewLayerTest {
         when(maintenanceCatalogClient.teams()).thenReturn(List.of());
         when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(List.of());
         when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(List.of());
+        when(shiftClient.search(any(ShiftFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<ShiftDto>of(), 0, 50));
     }
 
     /** Un catalogo de almacen simulado: busca en codigo o nombre, filtra por estado y pagina por page/size como el servicio. */
@@ -3922,5 +3947,232 @@ class ViewLayerTest {
         verify(assetClient, atLeastOnce()).orders(eq(ASSET_OWN), eq(0), anyInt(), eq(List.of("createdAt,desc")));
         GridKt._clickItem(orders, 0, 1, false, false, false, false);
         LocatorJ._get(OrderDetailView.class);
+    }
+
+    // --- Mantenimiento: turnos y ejecucion ----------------------------------------------------------
+
+    private static final UUID SHIFT1 = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000031");
+    private static final UUID DISC1 = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000032");
+    private static final UUID ITEM1 = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000033");
+
+    private static ShiftDto shiftOf(ShiftStatus status) {
+        AssetSummaryDto disconnector = new AssetSummaryDto(DISC1, "DIS-0005", "HSA-NS5", CatenaryAssetType.DISCONNECTOR, 12L,
+                new BigDecimal("12.000"), new BigDecimal("12.000"), null, true);
+        return new ShiftDto(SHIFT1, "SH-000001", LocalDate.of(2026, 10, 5), new TeamSummaryDto(TEAM1, "EQ-01", "Brigada norte", "Base Norte"),
+                "Base Norte", "DR-2", PossessionType.FULL, null, null, null, null, null, null, List.of(disconnector), null, null, 3L, List.of(12L),
+                new BigDecimal("12.000"), new BigDecimal("14.000"), null, null, status, null, null);
+    }
+
+    private static TaskDto taskWithChecklist(MaintenanceTaskStatus status) {
+        TaskDto base = task(TASK1, 1, status);
+        CheckItemDto item = new CheckItemDto(ITEM1, "P-01", "Altura del hilo", "mm", new BigDecimal("5300"), new BigDecimal("5700"), true,
+                null, null, null, null, null, 1, false);
+        return new TaskDto(base.id(), base.orderId(), base.sequence(), base.description(), base.status(), null, base.asset(), SHIFT1, null,
+                null, null, null, List.of(), base.taskTypeCodes(), List.of(item), null);
+    }
+
+    private void stubShifts(List<ShiftDto> all) {
+        doAnswer(call -> page(all, call.getArgument(1), call.getArgument(2)))
+                .when(shiftClient).search(any(ShiftFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    private void openShift(ShiftDto shift) {
+        when(shiftClient.findById(shift.id())).thenReturn(shift);
+        UI.getCurrent().navigate(ShiftDetailView.class, ShiftDetailView.parametersOf(shift.id()));
+    }
+
+    @Test
+    void theShiftsAreFilteredInTheServerAndARowOpensItsDetail() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        stubReferencesForMaintenance();
+        when(maintenanceCatalogClient.teams()).thenReturn(List.of(new TeamDto(TEAM1, "EQ-01", "Brigada norte", null, null, true, Set.of(3L), null)));
+        stubShifts(List.of(shiftOf(ShiftStatus.IN_PROGRESS)));
+        when(shiftClient.findById(SHIFT1)).thenReturn(shiftOf(ShiftStatus.IN_PROGRESS));
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+
+        UI.getCurrent().navigate(MaintenanceRoutes.SHIFTS);
+        Grid<Object> grid = gridWithId("shifts-grid");
+        assertEquals(List.of("SH-000001", "05/10/2026", "EQ-01 - Brigada norte", "Total", "VIA 1 (PAQ NORTE)", "12 - 14", "En curso"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 7));
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("shifts-from")), LocalDate.of(2026, 10, 1));
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("shifts-to")), LocalDate.of(2026, 10, 31));
+        ComboBoxKt.selectByLabel(comboWithId("shifts-team"), "EQ-01 - Brigada norte");
+        LocatorJ._setValue(comboWithId("shifts-track"), new RefItem(12L, "VIA 1 (PAQ NORTE)"));
+        LocatorJ._setValue(comboWithId("shifts-package"), new RefItem(3L, "PAQ NORTE"));
+        LocatorJ._setValue(comboWithId("shifts-status"), ShiftStatus.IN_PROGRESS);
+        LocatorJ._setValue(comboWithId("shifts-possession"), PossessionType.FULL);
+        GridKt._size(grid);
+        verify(shiftClient, atLeastOnce()).search(eq(new ShiftFilter(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), TEAM1, 12L, 3L,
+                ShiftStatus.IN_PROGRESS, PossessionType.FULL)), eq(0), anyInt(), anyList());
+        assertFalse(hasButton("shift-create"));
+
+        GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        LocatorJ._get(H2.class, spec -> spec.withText("SH-000001 · 05/10/2026"));
+        assertFalse(hasButton("shift-edit") || hasButton("shift-close"), "quien solo lee no ve botones de escritura");
+    }
+
+    @Test
+    void aNewShiftNeedsATrackAndSendsItsDisconnectors() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        when(shiftClient.create(any())).thenReturn(shiftOf(ShiftStatus.PLANNED));
+        when(shiftClient.findById(SHIFT1)).thenReturn(shiftOf(ShiftStatus.PLANNED));
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+
+        UI.getCurrent().navigate(MaintenanceRoutes.SHIFTS);
+        click("shift-create");
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("shift-date")), LocalDate.of(2026, 10, 5));
+        LocatorJ._setValue(comboWithId("shift-possession"), PossessionType.FULL);
+        click(ShiftEditorDialog.SAVE_ID);
+        verify(shiftClient, never()).create(any());
+
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RefItem> tracks = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-tracks"));
+        assertTrue(tracks.isInvalid(), "al menos una via");
+        LocatorJ._setValue(tracks, Set.of(new RefItem(12L, "VIA 1 (PAQ NORTE)")));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<AssetSummaryDto> disconnectors = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-disconnectors"));
+        LocatorJ._setValue(disconnectors, Set.of(shiftOf(ShiftStatus.PLANNED).blockingDisconnectors().getFirst()));
+        click(ShiftEditorDialog.SAVE_ID);
+
+        verify(shiftClient).create(new ShiftRequest(LocalDate.of(2026, 10, 5), null, null, null, PossessionType.FULL, null, null, Set.of(DISC1),
+                null, null, null, Set.of(12L), null, null, null, null, null));
+        LocatorJ._get(ShiftDetailView.class);
+    }
+
+    @Test
+    void theShiftDetailOffersWhatItsStateAdmitsAndStartsAndClosesTheShift() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        when(shiftClient.start(eq(SHIFT1), any())).thenReturn(shiftOf(ShiftStatus.IN_PROGRESS));
+        when(shiftClient.close(eq(SHIFT1), any())).thenReturn(shiftOf(ShiftStatus.CLOSED));
+        openShift(shiftOf(ShiftStatus.PLANNED));
+
+        assertTrue(hasButton("shift-edit") && hasButton("shift-assign-tasks") && hasButton("shift-start") && hasButton("shift-cancel"));
+        assertFalse(hasButton("shift-close"));
+        click("shift-start");
+        click(ShiftTransitionDialog.CONFIRM_ID);
+        verify(shiftClient).start(SHIFT1, new StartShiftRequest(null, null));
+        assertEquals("En curso", spanText("shift-status"));
+        assertTrue(hasButton("shift-close"));
+        assertFalse(hasButton("shift-start"));
+
+        click("shift-close");
+        LocatorJ._setValue(LocatorJ._get(IntegerField.class, spec -> spec.withId("shift-transition-net-minutes")), 240);
+        click(ShiftTransitionDialog.CONFIRM_ID);
+        verify(shiftClient).close(SHIFT1, new CloseShiftRequest(null, null, 240, null));
+        assertEquals("Cerrado", spanText("shift-status"));
+        assertFalse(hasButton("shift-edit") || hasButton("shift-close") || hasButton("shift-cancel"), "un turno cerrado no ofrece nada");
+    }
+
+    /** El texto de un Span por su id. */
+    private static String spanText(String id) {
+        return LocatorJ._get(Span.class, spec -> spec.withId(id)).getText();
+    }
+
+    @Test
+    void assigningTasksReportsTheOnesTheServiceRefused() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        OrderDto open = orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE);
+        OrderDto done = order(UUID.randomUUID(), "MO-000002", MaintenanceOrderStatus.COMPLETED, 12L, 3L);
+        when(orderClient.search(eq(OrderFilter.onTrack(12L)), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(open, done), 0, 100));
+        TaskDto first = task(TASK1, 1, MaintenanceTaskStatus.PENDING);
+        TaskDto second = task(TASK2, 2, MaintenanceTaskStatus.PENDING);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of(first, second, task(UUID.randomUUID(), 3, MaintenanceTaskStatus.COMPLETED)));
+        when(shiftClient.assignTask(SHIFT1, TASK1)).thenReturn(first);
+        when(shiftClient.assignTask(SHIFT1, TASK2)).thenThrow(maintenanceError(409, "SHF-001",
+                "Shift SH-000001 has partial possession; the task includes work that needs full track possession"));
+        openShift(shiftOf(ShiftStatus.IN_PROGRESS));
+
+        click("shift-assign-tasks");
+        ComboBox<OrderDto> order = comboWithId("assign-tasks-order");
+        assertEquals(List.of("MO-000001 · Revision tramo 12 (en curso)"), ComboBoxKt.getSuggestions(order), "solo las ordenes abiertas de la via");
+        ComboBoxKt.selectByLabel(order, "MO-000001 · Revision tramo 12 (en curso)");
+        @SuppressWarnings("unchecked")
+        Grid<TaskDto> tasks = LocatorJ._get(Grid.class, spec -> spec.withId("assign-tasks-grid"));
+        assertEquals(2, GridKt._size(tasks), "solo las pendientes");
+        tasks.asMultiSelect().select(first, second);
+        click(AssignTasksDialog.ASSIGN_ID);
+
+        verify(shiftClient).assignTask(SHIFT1, TASK1);
+        verify(shiftClient).assignTask(SHIFT1, TASK2);
+        NotificationsKt.expectNotifications("Asignadas: 1. Rechazadas: tarea 2 (El turno no admite ese trabajo. Shift SH-000001 has partial "
+                + "possession; the task includes work that needs full track possession)");
+    }
+
+    @Test
+    void aTaskIsStartedCheckedAndCompletedInTheShiftWithItsDefectsAndMaterials() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of(taskWithChecklist(MaintenanceTaskStatus.PENDING)));
+        when(orderClient.findById(ORDER1)).thenReturn(orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE));
+        when(orderClient.startTask(eq(ORDER1), eq(TASK1), any())).thenReturn(taskWithChecklist(MaintenanceTaskStatus.IN_PROGRESS));
+        when(orderClient.updateCheckItem(eq(ORDER1), eq(TASK1), eq(ITEM1), any()))
+                .thenThrow(maintenanceError(422, "INS-001", "Item P-01 is out of range (5250 mm) and cannot be OK unless adjusted into range"))
+                .thenReturn(taskWithChecklist(MaintenanceTaskStatus.PENDING));
+        when(orderClient.completeTask(eq(ORDER1), eq(TASK1), any())).thenReturn(taskWithChecklist(MaintenanceTaskStatus.COMPLETED));
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        openShift(shiftOf(ShiftStatus.IN_PROGRESS));
+
+        Grid<Object> tasks = gridWithId("shift-tasks-grid");
+        assertEquals("MO-000001", GridKt._getFormattedRow(tasks, 0).getFirst(), "el codigo de la orden, pedido una vez");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("shift-task-start-" + TASK1)));
+        verify(orderClient).startTask(ORDER1, TASK1, new StartTaskRequest(SHIFT1, null));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("shift-task-checklist-" + TASK1)));
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("check-measured-" + ITEM1)), new BigDecimal("5250"));
+        LocatorJ._setValue(comboWithId("check-result-" + ITEM1), CheckItemResult.OK);
+        click("check-save-" + ITEM1);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText(
+                "La inspeccion o su checklist no admiten esta operacion. Item P-01 is out of range (5250 mm) and cannot be OK unless adjusted into range"));
+        LocatorJ._setValue(comboWithId("check-result-" + ITEM1), CheckItemResult.DEFECT);
+        click("check-save-" + ITEM1);
+        verify(orderClient).updateCheckItem(ORDER1, TASK1, ITEM1, new CheckItemUpdateRequest(new BigDecimal("5250"), null, null, CheckItemResult.DEFECT, null));
+        LocatorJ._get(com.vaadin.flow.component.dialog.Dialog.class).close();
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("shift-task-complete-" + TASK1)));
+        click("complete-task-defect-add");
+        LocatorJ._setValue(comboWithId("inline-defect-severity"), DefectSeverity.HIGH);
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("inline-defect-description")), "Pendola rota");
+        click("inline-defect-add");
+        click("complete-task-material-add");
+        MaterialSummaryDto material = new MaterialSummaryDto(MAT1, "MAT-001", "Pendola", "ud", true);
+        WarehouseSummaryDto warehouse = new WarehouseSummaryDto(WH1, "WH-000", "Central", true);
+        LocatorJ._setValue(comboWithId("material-line-material"), material);
+        LocatorJ._setValue(comboWithId("material-line-warehouse"), warehouse);
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-line-quantity")), new BigDecimal("2"));
+        click("material-line-add");
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("complete-task-work-complete")), false);
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("complete-task-repair-date")), LocalDate.of(2026, 10, 12));
+        click(CompleteTaskDialog.CONFIRM_ID);
+
+        verify(orderClient).completeTask(ORDER1, TASK1, new CompleteTaskRequest(SHIFT1, null, null, null, false, LocalDate.of(2026, 10, 12),
+                List.of(new InlineDefectRequest(DefectSeverity.HIGH, "Pendola rota", null, null, null)),
+                List.of(new TaskMaterialRequest(MAT1, null, WH1, new BigDecimal("2"), "ud")), null));
+        assertTrue(LocatorJ._find(CompleteTaskDialog.class).isEmpty());
+    }
+
+    @Test
+    void completingFromTheOrderPicksAnInProgressShiftOfItsTrackAndMaterialsNeedStockRead() {
+        loginAs("mantenimiento.sin-almacen", "ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_CONFIG_READ");
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of(task(TASK1, 1, MaintenanceTaskStatus.PENDING)));
+        when(shiftClient.search(eq(ShiftFilter.inProgressOn(12L)), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.of(shiftOf(ShiftStatus.IN_PROGRESS)), 0, 50));
+        when(orderClient.completeTask(eq(ORDER1), eq(TASK1), any())).thenReturn(task(TASK1, 1, MaintenanceTaskStatus.COMPLETED));
+        openOrder(orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("order-tasks-grid"), 0, "actions"), Button.class,
+                spec -> spec.withId("task-complete-" + TASK1)));
+        assertFalse(hasButton("complete-task-material-add"), "sin stock-read no se eligen materiales");
+        LocatorJ._get(Paragraph.class, spec -> spec.withText("Elegir materiales pide leer el almacen (stock-read)."));
+        click(CompleteTaskDialog.CONFIRM_ID);
+        verify(orderClient, never()).completeTask(any(), any(), any());
+
+        ComboBoxKt.selectByLabel(comboWithId("complete-task-shift"), "SH-000001 · 05/10/2026 · EQ-01 - Brigada norte");
+        click(CompleteTaskDialog.CONFIRM_ID);
+        verify(shiftClient, atLeastOnce()).search(eq(ShiftFilter.inProgressOn(12L)), eq(0), anyInt(), anyList());
+        verify(orderClient).completeTask(ORDER1, TASK1, new CompleteTaskRequest(SHIFT1, null, null, null, null, null, null, null, null));
     }
 }
