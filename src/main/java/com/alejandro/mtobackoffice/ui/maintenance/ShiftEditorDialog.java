@@ -2,6 +2,7 @@ package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.PossessionType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftUpdateRequest;
@@ -98,22 +99,17 @@ public class ShiftEditorDialog extends Dialog {
 
         binder.forField(shiftDate).asRequired("La fecha es obligatoria").bind("shiftDate");
         binder.forField(possession).asRequired("La posesion es obligatoria").bind("possessionType");
-        binder.forField(team).withValidator(keeps(existing == null || existing.team() == null), MaintenanceUi.CANNOT_CLEAR).bind("teamId");
+        binder.forField(team).bind("teamId");
         binder.forField(tracks).withValidator(selected -> !selected.isEmpty(), "Al menos una via").bind("trackIds");
-        binder.forField(executionPackage)
-                .withValidator(keeps(existing == null || existing.executionPackageId() == null), MaintenanceUi.CANNOT_CLEAR)
-                .bind("executionPackageId");
-        binder.forField(startKp).withValidator(keeps(existing == null || existing.startKp() == null), MaintenanceUi.CANNOT_CLEAR).bind("startKp");
+        binder.forField(executionPackage).bind("executionPackageId");
+        binder.forField(startKp).bind("startKp");
         Binder.Binding<ShiftForm, BigDecimal> end = binder.forField(endKp)
-                .withValidator(keeps(existing == null || existing.endKp() == null), MaintenanceUi.CANNOT_CLEAR)
                 .withValidator(kp -> kp == null || startKp.getValue() == null || kp.compareTo(startKp.getValue()) > 0,
                         "El KP final tiene que ser mayor que el inicial")
                 .bind("endKp");
         startKp.addValueChangeListener(change -> end.validate());
-        binder.forField(plannedStart)
-                .withValidator(keeps(existing == null || existing.plannedStart() == null), MaintenanceUi.CANNOT_CLEAR).bind("plannedStart");
+        binder.forField(plannedStart).bind("plannedStart");
         Binder.Binding<ShiftForm, LocalDateTime> finish = binder.forField(plannedEnd)
-                .withValidator(keeps(existing == null || existing.plannedEnd() == null), MaintenanceUi.CANNOT_CLEAR)
                 .withValidator(time -> time == null || plannedStart.getValue() == null || time.isAfter(plannedStart.getValue()),
                         "El fin previsto tiene que ser posterior al inicio")
                 .bind("plannedEnd");
@@ -143,10 +139,6 @@ public class ShiftEditorDialog extends Dialog {
     }
 
     /** Un valor que habia no se deja vaciar; {@code wasEmpty} dice si se puede. */
-    private static <T> com.vaadin.flow.function.SerializablePredicate<T> keeps(boolean wasEmpty) {
-        return value -> wasEmpty || value != null;
-    }
-
     private void save(ShiftDto existing, MaintenanceClients clients, Consumer<ShiftDto> saved) {
         if (!binder.writeBeanIfValid(form)) {
             return;
@@ -156,12 +148,12 @@ public class ShiftEditorDialog extends Dialog {
             if (existing == null) {
                 result = clients.shifts().create(form.toRequest());
             } else {
-                ShiftUpdateRequest request = form.toUpdateRequest(existing);
-                if (request.changesNothing()) {
+                MergePatch<ShiftUpdateRequest> patch = form.toPatch(existing);
+                if (patch.changesNothing()) {
                     close();
                     return;
                 }
-                result = clients.shifts().update(existing.id(), request);
+                result = clients.shifts().update(existing.id(), patch);
             }
             close();
             MaintenanceUi.success("Guardado " + result.code());

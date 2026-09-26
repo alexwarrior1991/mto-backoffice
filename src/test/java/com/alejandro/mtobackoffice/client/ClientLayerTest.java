@@ -139,6 +139,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.ResolveDefectRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.StockSyncStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CloseShiftRequest;
@@ -1557,6 +1558,40 @@ class ClientLayerTest {
     }
 
     /**
+     * Una modificacion de mantenimiento es un merge-patch: lo cambiado con su valor, lo vaciado a
+     * {@code null} y la version leida, y nada mas. Un campo a vaciar que el record no tiene se rechaza
+     * antes de llamar: un nombre mal escrito no vaciaria nada y no debe salir. El 409 {@code CON-001}
+     * de una version vieja llega con su codigo.
+     */
+    @Test
+    void aMergePatchCarriesWhatChangedWhatWasClearedAndTheVersionRead() {
+        OrderUpdateRequest nothing = new OrderUpdateRequest(null, null, null, null, null, null, null, null, null, null, null, null, null);
+        MergePatch<OrderUpdateRequest> patch = new MergePatch<>(new OrderUpdateRequest(null, null, MaintenancePriority.HIGH, null, null, null,
+                null, null, null, null, null, null, null), Set.of("teamId", "description"), 3L);
+        java.util.Map<String, Object> expected = new java.util.LinkedHashMap<>();
+        expected.put("priority", MaintenancePriority.HIGH);
+        expected.put("description", null);
+        expected.put("teamId", null);
+        expected.put("version", 3L);
+        assertEquals(expected, patch.body());
+        assertEquals(List.of("priority", "description", "teamId", "version"), List.copyOf(patch.body().keySet()),
+                "lo cambiado, lo vaciado por orden alfabetico y la version");
+        assertFalse(patch.changesNothing());
+        assertTrue(MergePatch.of(nothing, 3L).changesNothing(), "solo la version no es un cambio");
+        assertFalse(new MergePatch<>(nothing, Set.of("description"), 3L).changesNothing(), "vaciar si lo es");
+        assertThrows(IllegalArgumentException.class, () -> new MergePatch<>(nothing, Set.of("titel"), 3L));
+
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID)).andExpect(method(HttpMethod.PATCH))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":409,\"error\":\"CONFLICT\",\"message\":\"Maintenance order MO-000001 was changed by someone else\","
+                                + "\"errorCode\":\"CON-001\",\"validationErrors\":[]}"));
+        ConflictApiException stale = assertThrows(ConflictApiException.class,
+                () -> asUser(() -> orderClient.update(UUID.fromString(ORDER_ID), patch)));
+        assertEquals("CON-001", stale.getProblem().code());
+        server.verify();
+    }
+
+    /**
      * Los filtros viajan como el servicio los lee: el enumerado por su nombre, la fecha en ISO (sin
      * {@code @DateTimeFormat} saldria con el formato corto de la maquina), el texto en blanco no
      * viaja y el orden se repite. Un valor que esta version no conoce se lee como {@code UNKNOWN} y
@@ -1662,15 +1697,12 @@ class ClientLayerTest {
                 .andExpect(jsonPath("$.description").doesNotExist())
                 .andExpect(jsonPath("$.stationId").doesNotExist())
                 .andRespond(withSuccess(INSULATOR_JSON.replace("SI-0007", "TS-0002"), MediaType.APPLICATION_JSON));
-        server.expect(requestTo(MAINTENANCE + "/assets/" + ASSET_ID)).andExpect(method(HttpMethod.PUT))
-                .andExpect(jsonPath("$.preventiveIntervalDays").value(90))
-                .andExpect(jsonPath("$.description").value(""))
-                .andExpect(jsonPath("$.name").doesNotExist())
-                .andExpect(jsonPath("$.enabled").doesNotExist())
-                .andExpect(jsonPath("$.trackId").doesNotExist())
+        server.expect(requestTo(MAINTENANCE + "/assets/" + ASSET_ID)).andExpect(method(HttpMethod.PATCH)).andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"preventiveIntervalDays\":90,\"description\":null,\"stationId\":null,\"version\":4}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
                 .andRespond(withSuccess(INSULATOR_JSON, MediaType.APPLICATION_JSON));
-        server.expect(requestTo(MAINTENANCE + "/assets/" + ASSET_ID)).andExpect(method(HttpMethod.PUT))
-                .andExpect(content().json("{\"enabled\":true}", org.springframework.test.json.JsonCompareMode.STRICT))
+        server.expect(requestTo(MAINTENANCE + "/assets/" + ASSET_ID)).andExpect(method(HttpMethod.PATCH)).andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"enabled\":true,\"version\":4}", org.springframework.test.json.JsonCompareMode.STRICT))
                 .andRespond(withSuccess(INSULATOR_JSON, MediaType.APPLICATION_JSON));
         server.expect(requestTo(MAINTENANCE + "/assets/" + ASSET_ID)).andExpect(method(HttpMethod.DELETE))
                 .andRespond(withStatus(HttpStatus.NO_CONTENT));
@@ -1682,9 +1714,9 @@ class ClientLayerTest {
                 " AS ", Instant.parse("2026-10-01T22:00:00Z")), 0, 50, List.of("trackId,asc", "startKp,asc")));
         AssetDto created = asUser(() -> assetClient.create(new AssetRequest("TS-0002", "Tramo 13", null, 3L, 12L, null,
                 new BigDecimal("13.45"), new BigDecimal("14.2"), TrackKind.DIVERTED, null)));
-        asUser(() -> assetClient.update(UUID.fromString(ASSET_ID),
-                new AssetUpdateRequest(null, "", null, 90, null, null, null, null, null, null)));
-        asUser(() -> assetClient.update(UUID.fromString(ASSET_ID), AssetUpdateRequest.enabled(true)));
+        asUser(() -> assetClient.update(UUID.fromString(ASSET_ID), new MergePatch<>(
+                new AssetUpdateRequest(null, null, null, 90, null, null, null, null, null, null), Set.of("description", "stationId"), 4L)));
+        asUser(() -> assetClient.update(UUID.fromString(ASSET_ID), MergePatch.of(AssetUpdateRequest.enabled(true), 4L)));
         asUser(() -> {
             assetClient.disable(UUID.fromString(ASSET_ID));
             return null;
@@ -1771,8 +1803,8 @@ class ClientLayerTest {
                 .andExpect(content().json("{\"title\":\"Revision tramo 12\",\"type\":\"PREVENTIVE\",\"priority\":\"MEDIUM\",\"assetId\":\""
                         + ASSET_ID + "\"}", strict))
                 .andRespond(withSuccess(orderJson(ORDER_ID, "MO-000001", "DRAFT", "MEDIUM"), MediaType.APPLICATION_JSON));
-        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID)).andExpect(method(HttpMethod.PUT))
-                .andExpect(content().json("{\"priority\":\"HIGH\",\"plannedDate\":\"2026-10-05\"}", strict))
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID)).andExpect(method(HttpMethod.PATCH)).andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"priority\":\"HIGH\",\"plannedDate\":\"2026-10-05\",\"teamId\":null,\"version\":3}", strict))
                 .andRespond(withSuccess(orderJson(ORDER_ID, "MO-000001", "DRAFT", "HIGH"), MediaType.APPLICATION_JSON));
         server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID + "/plan")).andExpect(method(HttpMethod.POST))
                 .andExpect(content().json("{\"plannedDate\":\"2026-10-05\",\"comment\":\"noche del lunes\"}", strict))
@@ -1800,8 +1832,8 @@ class ClientLayerTest {
         UUID id = UUID.fromString(ORDER_ID);
         OrderDto created = asUser(() -> orderClient.create(new OrderRequest("Revision tramo 12", null, MaintenanceOrderType.PREVENTIVE,
                 MaintenancePriority.MEDIUM, UUID.fromString(ASSET_ID), null, null, null, null)));
-        asUser(() -> orderClient.update(id, new OrderUpdateRequest(null, null, MaintenancePriority.HIGH, LocalDate.of(2026, 10, 5), null, null,
-                null, null, null, null, null, null, null)));
+        asUser(() -> orderClient.update(id, new MergePatch<>(new OrderUpdateRequest(null, null, MaintenancePriority.HIGH, LocalDate.of(2026, 10, 5),
+                null, null, null, null, null, null, null, null, null), Set.of("teamId"), 3L)));
         OrderDto planned = asUser(() -> orderClient.plan(id, new PlanOrderRequest(LocalDate.of(2026, 10, 5), "noche del lunes")));
         asUser(() -> orderClient.assign(id, new AssignOrderRequest(UUID.fromString(TEAM_ID), null, null)));
         ConflictApiException refused = assertThrows(ConflictApiException.class, () -> asUser(() -> orderClient.start(id, new CommentRequest(null))));
@@ -1847,8 +1879,8 @@ class ClientLayerTest {
                 .andExpect(content().json(STRICT_EMPTY, strict))
                 .andRespond(withSuccess("{\"createdTasks\":14,\"skippedProfiles\":2,\"totalTasks\":16,\"estimatedMinutes\":720.0,\"estimatedShifts\":3}",
                         MediaType.APPLICATION_JSON));
-        server.expect(requestTo(tasks + "/" + TASK_ID)).andExpect(method(HttpMethod.PUT))
-                .andExpect(content().json("{\"taskTypeCodes\":[\"RG-01\"],\"notes\":\"Falta la llave\"}", strict))
+        server.expect(requestTo(tasks + "/" + TASK_ID)).andExpect(method(HttpMethod.PATCH)).andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"taskTypeCodes\":[\"RG-01\"],\"notes\":\"Falta la llave\",\"assignedUser\":null,\"version\":2}", strict))
                 .andRespond(withSuccess(taskJson("PENDING"), MediaType.APPLICATION_JSON));
         server.expect(requestTo(tasks + "/" + TASK_ID + "/cancel")).andExpect(method(HttpMethod.POST))
                 .andExpect(content().json("{\"reason\":\"Perfil desmontado\"}", strict))
@@ -1859,7 +1891,8 @@ class ClientLayerTest {
         List<TaskDto> listed = asUser(() -> orderClient.tasks(orderId));
         asUser(() -> orderClient.createTask(orderId, new TaskRequest("Revisar la mensula", UUID.fromString(ASSET_ID), null, List.of("RG-04"), true)));
         GenerateTasksResultDto generated = asUser(() -> orderClient.generateTasks(orderId, new GenerateTasksRequest(null, null)));
-        asUser(() -> orderClient.updateTask(orderId, taskId, new TaskUpdateRequest(null, null, List.of("RG-01"), "Falta la llave", null, null)));
+        asUser(() -> orderClient.updateTask(orderId, taskId, new MergePatch<>(new TaskUpdateRequest(null, null, List.of("RG-01"), "Falta la llave",
+                null, null), Set.of("assignedUser"), 2L)));
         TaskDto cancelled = asUser(() -> orderClient.cancelTask(orderId, taskId, new ReasonRequest("Perfil desmontado")));
 
         TaskDto task = listed.getFirst();
@@ -1909,8 +1942,8 @@ class ClientLayerTest {
                 .andExpect(content().json("{\"shiftDate\":\"2026-10-05\",\"possessionType\":\"PARTIAL\",\"trackIds\":[12],"
                         + "\"plannedStart\":\"2026-10-05T21:30:00Z\"}", strict))
                 .andRespond(withSuccess(shiftJson("PLANNED"), MediaType.APPLICATION_JSON));
-        server.expect(requestTo(shifts + "/" + SHIFT_ID)).andExpect(method(HttpMethod.PUT))
-                .andExpect(content().json("{\"trackIds\":[12,13],\"blockingDisconnectorIds\":[]}", strict))
+        server.expect(requestTo(shifts + "/" + SHIFT_ID)).andExpect(method(HttpMethod.PATCH)).andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"trackIds\":[12,13],\"blockingDisconnectorIds\":[],\"version\":5}", strict))
                 .andRespond(withSuccess(shiftJson("PLANNED"), MediaType.APPLICATION_JSON));
         server.expect(requestTo(shifts + "/" + SHIFT_ID + "/start")).andExpect(method(HttpMethod.POST))
                 .andExpect(content().json(STRICT_EMPTY, strict))
@@ -1935,8 +1968,8 @@ class ClientLayerTest {
                 12L, null, ShiftStatus.IN_PROGRESS, PossessionType.FULL), 0, 50, List.of("shiftDate,desc")));
         asUser(() -> shiftClient.create(new ShiftRequest(LocalDate.of(2026, 10, 5), null, null, null, PossessionType.PARTIAL,
                 Instant.parse("2026-10-05T21:30:00Z"), null, null, null, null, null, Set.of(12L), null, null, null, null, null)));
-        asUser(() -> shiftClient.update(id, new ShiftUpdateRequest(null, null, null, null, null, null, null, Set.of(), null, null, null,
-                new java.util.TreeSet<>(Set.of(12L, 13L)), null, null, null, null, null)));
+        asUser(() -> shiftClient.update(id, MergePatch.of(new ShiftUpdateRequest(null, null, null, null, null, null, null, Set.of(), null, null, null,
+                new java.util.TreeSet<>(Set.of(12L, 13L)), null, null, null, null, null), 5L)));
         ShiftDto started = asUser(() -> shiftClient.start(id, new StartShiftRequest(null, null)));
         ShiftDto closed = asUser(() -> shiftClient.close(id, new CloseShiftRequest(null, null, 240, "Sin incidencias")));
         ShiftDto cancelled = asUser(() -> shiftClient.cancel(id, new ReasonRequest("Lluvia")));
@@ -1966,8 +1999,8 @@ class ClientLayerTest {
         server.expect(requestTo(task + "/start")).andExpect(method(HttpMethod.POST))
                 .andExpect(content().json("{\"shiftId\":\"" + SHIFT_ID + "\"}", strict))
                 .andRespond(withSuccess(taskJson("IN_PROGRESS"), MediaType.APPLICATION_JSON));
-        server.expect(requestTo(task + "/check-items/2b3c4d5e-0000-4000-8000-000000000051")).andExpect(method(HttpMethod.PUT))
-                .andExpect(content().json("{\"measuredValue\":5250,\"itemResult\":\"OK\"}", strict))
+        server.expect(requestTo(task + "/check-items/2b3c4d5e-0000-4000-8000-000000000051")).andExpect(method(HttpMethod.PATCH)).andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"measuredValue\":5250,\"itemResult\":\"OK\",\"notes\":null,\"version\":1}", strict))
                 .andRespond(withStatus(HttpStatus.UNPROCESSABLE_CONTENT).contentType(MediaType.APPLICATION_JSON)
                         .body("{\"status\":422,\"error\":\"UNPROCESSABLE_CONTENT\",\"message\":\"Item P-01 is out of range (5250 mm) and cannot be OK unless adjusted into range\","
                                 + "\"errorCode\":\"INS-001\",\"validationErrors\":[]}"));
@@ -1981,8 +2014,8 @@ class ClientLayerTest {
         UUID taskId = UUID.fromString(TASK_ID);
         TaskDto started = asUser(() -> orderClient.startTask(orderId, taskId, new StartTaskRequest(UUID.fromString(SHIFT_ID), null)));
         ValidationApiException outOfRange = assertThrows(ValidationApiException.class, () -> asUser(() -> orderClient.updateCheckItem(orderId,
-                taskId, UUID.fromString("2b3c4d5e-0000-4000-8000-000000000051"), new CheckItemUpdateRequest(new BigDecimal("5250"), null, null,
-                        com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemResult.OK, null))));
+                taskId, UUID.fromString("2b3c4d5e-0000-4000-8000-000000000051"), new MergePatch<>(new CheckItemUpdateRequest(new BigDecimal("5250"),
+                        null, null, com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemResult.OK, null), Set.of("notes"), 1L))));
         TaskDto completed = asUser(() -> orderClient.completeTask(orderId, taskId, new CompleteTaskRequest(UUID.fromString(SHIFT_ID), null, null,
                 null, false, LocalDate.of(2026, 10, 12), List.of(new InlineDefectRequest(DefectSeverity.HIGH, "Pendola rota", null, null, null)),
                 List.of(new TaskMaterialRequest(UUID.fromString(MAT_ID), null, UUID.fromString(WH_ID), new BigDecimal("2"), "ud")), null)));
@@ -2028,11 +2061,11 @@ class ClientLayerTest {
                 .andExpect(content().json("{\"assetId\":\"" + ASSET_ID + "\",\"inspectionDate\":\"2026-09-20\",\"inspectionKind\":\"TECHNICAL\","
                         + "\"result\":\"MAJOR_DEFECT\",\"originOrderId\":\"" + ORDER_ID + "\"}", strict))
                 .andRespond(withSuccess(inspectionJson("MAJOR_DEFECT", null), MediaType.APPLICATION_JSON));
-        server.expect(requestTo(inspections + "/" + INSPECTION_ID)).andExpect(method(HttpMethod.PUT))
-                .andExpect(content().json("{\"result\":\"MINOR_DEFECT\"}", strict))
+        server.expect(requestTo(inspections + "/" + INSPECTION_ID)).andExpect(method(HttpMethod.PATCH)).andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"result\":\"MINOR_DEFECT\",\"kp\":null,\"version\":6}", strict))
                 .andRespond(withSuccess(inspectionJson("MINOR_DEFECT", null), MediaType.APPLICATION_JSON));
-        server.expect(requestTo(inspections + "/" + INSPECTION_ID + "/items/2b3c4d5e-0000-4000-8000-000000000072")).andExpect(method(HttpMethod.PUT))
-                .andExpect(content().json("{\"itemResult\":\"DEFECT\",\"notes\":\"Rota\"}", strict))
+        server.expect(requestTo(inspections + "/" + INSPECTION_ID + "/items/2b3c4d5e-0000-4000-8000-000000000072")).andExpect(method(HttpMethod.PATCH)).andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"itemResult\":\"DEFECT\",\"notes\":\"Rota\",\"version\":0}", strict))
                 .andRespond(withSuccess(inspectionJson("MINOR_DEFECT", null), MediaType.APPLICATION_JSON));
         server.expect(requestTo(inspections + "/" + INSPECTION_ID + "/create-defect")).andExpect(method(HttpMethod.POST))
                 .andExpect(content().json("{\"force\":true}", strict))
@@ -2046,10 +2079,11 @@ class ClientLayerTest {
                 LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), " ", UUID.fromString(ORDER_ID)), 0, 50, List.of("inspectionDate,desc")));
         asUser(() -> inspectionClient.create(new InspectionRequest(UUID.fromString(ASSET_ID), LocalDate.of(2026, 9, 20), null, InspectionKind.TECHNICAL,
                 InspectionResult.MAJOR_DEFECT, null, null, null, null, UUID.fromString(ORDER_ID), null)));
-        asUser(() -> inspectionClient.update(id, new InspectionUpdateRequest(null, null, null, InspectionResult.MINOR_DEFECT, null, null, null, null)));
+        asUser(() -> inspectionClient.update(id, new MergePatch<>(new InspectionUpdateRequest(null, null, null, InspectionResult.MINOR_DEFECT,
+                null, null, null, null), Set.of("kp"), 6L)));
         asUser(() -> inspectionClient.updateItem(id, UUID.fromString("2b3c4d5e-0000-4000-8000-000000000072"),
-                new com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest(null, null, null,
-                        com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemResult.DEFECT, "Rota")));
+                MergePatch.of(new com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest(null, null, null,
+                        com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemResult.DEFECT, "Rota"), 0L)));
         DefectDto defect = asUser(() -> inspectionClient.createDefect(id, new CreateDefectFromInspectionRequest(null, null, null, true)));
         OrderDto order = asUser(() -> inspectionClient.createCorrectiveOrder(id, new CreateCorrectiveOrderRequest(null, null, MaintenancePriority.HIGH,
                 null, null)));
@@ -2077,8 +2111,8 @@ class ClientLayerTest {
                 .andExpect(content().json("{\"assetId\":\"" + ASSET_ID + "\",\"severity\":\"HIGH\",\"description\":\"Pendola rota\",\"orderId\":\""
                         + ORDER_ID + "\"}", strict))
                 .andRespond(withSuccess(defectJson("IN_PROGRESS"), MediaType.APPLICATION_JSON));
-        server.expect(requestTo(defects + "/" + DEFECT_ID)).andExpect(method(HttpMethod.PUT))
-                .andExpect(content().json("{\"repairPlannedDate\":\"2026-10-12\"}", strict))
+        server.expect(requestTo(defects + "/" + DEFECT_ID)).andExpect(method(HttpMethod.PATCH)).andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"repairPlannedDate\":\"2026-10-12\",\"technicalNotes\":null,\"version\":7}", strict))
                 .andRespond(withSuccess(defectJson("OPEN"), MediaType.APPLICATION_JSON));
         server.expect(requestTo(defects + "/" + DEFECT_ID + "/link-order/" + ORDER_ID)).andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(""))
@@ -2102,7 +2136,8 @@ class ClientLayerTest {
                 DefectStatus.OPEN, null, null, 12L, null, Instant.parse("2026-09-01T00:00:00Z"), null), 0, 50, List.of("detectedAt,desc")));
         asUser(() -> defectClient.create(new DefectRequest(UUID.fromString(ASSET_ID), com.alejandro.mtobackoffice.client.dto.maintenance.DefectSeverity.HIGH,
                 "Pendola rota", null, null, null, UUID.fromString(ORDER_ID), null, null, null, null, null, null)));
-        asUser(() -> defectClient.update(id, new DefectUpdateRequest(null, null, null, null, null, LocalDate.of(2026, 10, 12), null)));
+        asUser(() -> defectClient.update(id, new MergePatch<>(new DefectUpdateRequest(null, null, null, null, null, LocalDate.of(2026, 10, 12), null),
+                Set.of("technicalNotes"), 7L)));
         DefectDto linked = asUser(() -> defectClient.linkOrder(id, UUID.fromString(ORDER_ID)));
         DefectDto resolved = asUser(() -> defectClient.resolve(id, new ResolveDefectRequest("Pendola cambiada", UUID.fromString(SHIFT_ID), null, null)));
         DefectDto closed = asUser(() -> defectClient.close(id, new ReasonRequest("Verificado")));
@@ -2143,8 +2178,8 @@ class ClientLayerTest {
                 .andExpect(content().json("{\"materialId\":\"" + MAT_ID + "\",\"warehouseId\":\"" + WH_ID + "\",\"plannedQuantity\":4,"
                         + "\"unit\":\"m\"}", strict))
                 .andRespond(withSuccess(lineJson("NOT_REQUESTED", null), MediaType.APPLICATION_JSON));
-        server.expect(requestTo(materials + "/" + LINE_ID)).andExpect(method(HttpMethod.PUT))
-                .andExpect(content().json("{\"consumedQuantity\":3}", strict))
+        server.expect(requestTo(materials + "/" + LINE_ID)).andExpect(method(HttpMethod.PATCH)).andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"consumedQuantity\":3,\"version\":2}", strict))
                 .andRespond(withSuccess(lineJson("RESERVED", null), MediaType.APPLICATION_JSON));
         server.expect(requestTo(materials + "/" + LINE_ID + "/sync")).andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(""))
@@ -2161,7 +2196,8 @@ class ClientLayerTest {
         List<MaterialUsageDto> lines = asUser(() -> orderClient.materials(orderId));
         asUser(() -> orderClient.registerMaterial(orderId, new MaterialUsageRequest(UUID.fromString(MAT_ID), null, UUID.fromString(WH_ID),
                 new BigDecimal("4"), "m", null, null)));
-        MaterialUsageDto updated = asUser(() -> orderClient.updateMaterial(orderId, lineId, new MaterialUsageUpdateRequest(null, new BigDecimal("3"), null)));
+        MaterialUsageDto updated = asUser(() -> orderClient.updateMaterial(orderId, lineId,
+                MergePatch.of(new MaterialUsageUpdateRequest(null, new BigDecimal("3"), null), 2L)));
         MaterialUsageDto synced = asUser(() -> orderClient.syncMaterial(orderId, lineId));
         asUser(() -> {
             orderClient.removeMaterial(orderId, lineId);

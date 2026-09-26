@@ -19,5 +19,5 @@ public record OrderDto(UUID id, String code, String title, String description, M
                        LocalDate plannedDate, Instant actualStartDate, Instant actualEndDate, TeamSummaryDto team,
                        String assignedUser, String closingNotes, String cancellationReason, UUID originInspectionId,
                        UUID originDefectId, UUID stockProjectId, int taskCount, int completedTaskCount,
-                       BigDecimal estimatedMinutes, int estimatedShifts, AuditDto audit) {
+                       BigDecimal estimatedMinutes, int estimatedShifts, AuditDto audit, Long version) {
 }

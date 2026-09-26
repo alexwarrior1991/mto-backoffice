@@ -13,7 +13,7 @@ import java.util.UUID;
 public record MaterialUsageDto(UUID id, UUID orderId, UUID taskId, UUID materialId, String materialCode, String materialDescriptionSnapshot,
                                UUID warehouseId, BigDecimal plannedQuantity, BigDecimal consumedQuantity, String unit,
                                Boolean allowOverConsumption, UUID stockReservationId, StockSyncStatus stockSyncStatus, String stockSyncError,
-                               AuditDto audit) {
+                               AuditDto audit, Long version) {
 
     public boolean isReserved() {
         return stockReservationId != null;

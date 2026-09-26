@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.DefectRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectSeverity;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ReasonRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ResolveDefectRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.StatusHistoryDto;
@@ -16,8 +17,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.service.annotation.GetExchange;
 import org.springframework.web.service.annotation.HttpExchange;
+import org.springframework.web.service.annotation.PatchExchange;
 import org.springframework.web.service.annotation.PostExchange;
-import org.springframework.web.service.annotation.PutExchange;
 
 import java.time.Instant;
 import java.util.List;
@@ -33,8 +34,8 @@ public interface DefectClient {
     @PostExchange
     DefectDto create(@RequestBody DefectRequest request);
 
-    @PutExchange("/{id}")
-    DefectDto update(@PathVariable("id") UUID id, @RequestBody DefectUpdateRequest request);
+    @PatchExchange(value = "/{id}", contentType = MergePatch.MEDIA_TYPE)
+    DefectDto update(@PathVariable("id") UUID id, @RequestBody MergePatch<DefectUpdateRequest> patch);
 
     @GetExchange("/{id}")
     DefectDto findById(@PathVariable("id") UUID id);

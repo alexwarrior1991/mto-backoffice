@@ -4,6 +4,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectSeverity;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
@@ -93,9 +94,7 @@ public class DefectEditorDialog extends Dialog {
         binder.forField(technicalNotes).bind("technicalNotes");
         binder.forField(correctionType).bind("correctionType");
         binder.forField(partsReplaced).bind("partsReplaced");
-        binder.forField(repairPlannedDate)
-                .withValidator(date -> creating || existing.repairPlannedDate() == null || date != null, MaintenanceUi.CANNOT_CLEAR)
-                .bind("repairPlannedDate");
+        binder.forField(repairPlannedDate).bind("repairPlannedDate");
         binder.readBean(form);
         layout.add(severity, repairPlannedDate, description, technicalNotes, correctionType, partsReplaced);
         layout.setColspan(description, 2);
@@ -117,12 +116,12 @@ public class DefectEditorDialog extends Dialog {
             if (existing == null) {
                 result = clients.defects().create(form.toRequest(order == null ? null : order.id()));
             } else {
-                DefectUpdateRequest request = form.toUpdateRequest(existing);
-                if (request.changesNothing()) {
+                MergePatch<DefectUpdateRequest> patch = form.toPatch(existing);
+                if (patch.changesNothing()) {
                     close();
                     return;
                 }
-                result = clients.defects().update(existing.id(), request);
+                result = clients.defects().update(existing.id(), patch);
             }
             close();
             MaintenanceUi.success("Guardado " + result.code());

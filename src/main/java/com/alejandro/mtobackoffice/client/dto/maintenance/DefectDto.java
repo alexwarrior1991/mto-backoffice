@@ -13,7 +13,7 @@ public record DefectDto(UUID id, String code, AssetSummaryDto asset, UUID inspec
                         DefectStatus status, String description, String technicalNotes, Instant detectedAt, Instant resolvedAt,
                         String resolutionNotes, String discardReason, Long executionPackageId, Long trackId, Long stationId,
                         BigDecimal startKp, BigDecimal endKp, String correctionType, String partsReplaced, UUID resolvedInShiftId,
-                        LocalDate repairPlannedDate, UUID foundInTaskId, List<String> photoRefs, AuditDto audit) {
+                        LocalDate repairPlannedDate, UUID foundInTaskId, List<String> photoRefs, AuditDto audit, Long version) {
 
     public DefectDto {
         photoRefs = photoRefs == null ? List.of() : List.copyOf(photoRefs);

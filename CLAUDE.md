@@ -90,9 +90,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   inspección—, `ShiftClient` —turnos, sus tareas y perfiles, asignar una tarea—, `InspectionClient`,
   `DefectClient` y `ReportClient` —cada informe en JSON y como fichero `ResponseEntity<byte[]>`—,
   todos con `revisions` salvo los catálogos y los informes; DTO como records en
-  `client/dto/maintenance`: filtros (`OrderFilter`, `AssetFilter`...), peticiones `*Request` y
-  `*UpdateRequest` parciales con `@JsonInclude(NON_NULL)` y enumerados tolerantes —ver las
-  reglas—). Los DTO
+  `client/dto/maintenance`: filtros (`OrderFilter`, `AssetFilter`...), peticiones `*Request`, las
+  modificaciones como `MergePatch<*UpdateRequest>` (lo cambiado, lo vaciado y la versión leída) y
+  enumerados tolerantes —ver las reglas—). Los DTO
   (`client/dto`): `LovDto` es un record con solo las claves que usa la UI (con `versionNumber`,
   que vuelve como se leyó) y `@JsonInclude(NON_NULL)`; los maestros (`client/dto/master`) son
   **clases mutables** que heredan de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo y los hijos
@@ -228,8 +228,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (`UiErrors` los dice así, no como «conflicto» ni «petición no válida»). Los dos 409 de
   `mto-configuration` tampoco se dicen igual: `CON-001` es una versión vieja («recarga y vuelve a
   intentarlo») y `BUS-002`, un valor único repetido o una entrada en uso, que recargar no arregla.
-  Los de `mto-maintenance` son de estado, no de concurrencia (el servicio no tiene bloqueo
-  optimista), y ninguno pide recargar: `TRN-001` (el estado no admite la transición), `SHF-001` (el
+  Los de estado de `mto-maintenance` no piden recargar: `TRN-001` (el estado no admite la transición), `SHF-001` (el
   turno no admite ese trabajo), `MAT-001` (la línea de material), `AST-001` (activo desactivado, o
   un dato que manda `mto-configuration`) y `AST-409`/`TEA-409` (código repetido); `INS-001` es un
   422 de la inspección y su checklist, y el 503 `STK-503`, el almacén caído al sincronizar o quitar
@@ -304,15 +303,19 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   va siempre **junto con** `maintenance-write` (`hasAllRoles`): cancelar una orden, completarla con
   `force` y resolver, cerrar o descartar un defecto; `force` ni se ve sin él. Tras guardar, la ficha
   pinta lo que devuelve el servicio o relee.
-- **Un `PUT` de mantenimiento es parcial y sin bloqueo optimista.** `null` es «no tocar», así que
-  cada `*Form.toUpdateRequest(original)` compara con lo leído y solo manda lo distinto (como
-  `UserForm`), y los `*UpdateRequest` llevan `@JsonInclude(NON_NULL)`. Un número, una fecha o una
-  referencia que tenían valor no se pueden vaciar: el campo lo dice (`MaintenanceUi.CANNOT_CLEAR`)
-  en vez de mandar un `null` que el servicio ignoraría. No hay `versionNumber`: gana el último. La
-  excepción son los equipos, cuyo `PUT` es completo (base y vehículo a `null` los borran) y por eso
-  `TeamRequest` no lleva `NON_NULL`. Un record de petición no lleva métodos `isX()`/`getX()`:
-  Jackson los serializa como propiedades (`isEmpty()` salió como `"empty":false`); por eso se llaman
-  `changesNothing()`.
+- **Una modificación de mantenimiento es un `PATCH` merge-patch con la versión leída.** Cada
+  `*Form.toPatch(original)` compara con lo leído (`Changes`) y arma un `MergePatch`
+  (`application/merge-patch+json`, RFC 7396): lo que cambió viaja con su valor, lo que se vació
+  viaja a `null` y lo demás no viaja. La `version` leída va siempre: si otra persona guardó antes,
+  el servicio responde 409 `CON-001` sin escribir nada, el diálogo sigue abierto con lo escrito y la
+  notificación pide recargar. Qué se puede vaciar lo decide el servicio (400 `VAL-001` si no); aquí
+  lo obligatorio lleva `asRequired` y nunca sale vacío. Un formulario nunca lee como vacía una
+  referencia que no sabe nombrar, porque la mandaría a vaciar: `MaintenanceNames.trackRef`,
+  `packageRef`, `stationRef` y `projectRef` devuelven `#id` sin nombre, nunca `null`. `MergePatch`
+  rechaza antes de llamar un campo a vaciar que su record no tiene. Los equipos son la excepción: su
+  `PUT` es completo (base y vehículo a `null` los borran) y por eso `TeamRequest` no lleva
+  `NON_NULL`. Un record de petición no lleva métodos `isX()`/`getX()`: Jackson los serializa como
+  propiedades (`isEmpty()` salió como `"empty":false`); por eso se llaman `changesNothing()`.
 - **Un activo sincronizado es de `mto-configuration`, pero su desactivación también es de
   mantenimiento.** Perfiles, seccionadores y aisladores llegan por datos maestros
   (`sourceService`); de ellos solo se ofrecen la descripción y el intervalo del preventivo, porque
@@ -470,8 +473,10 @@ su BOM y su disponibilidad, el historial tipado, el JSON de error de `mto-stock`
 tipo de apunte, un estado de reserva y una operación del historial desconocidos leídos como
 `UNKNOWN`; el
 mantenimiento: la lista de órdenes con sus filtros (enumerado por nombre, fecha ISO, `sort`
-repetido) y un valor desconocido leído como `UNKNOWN`, su JSON de error por alias, activos
-(búsqueda, alta, `PUT` parcial con solo lo cambiado, desactivar), catálogos y equipos enteros,
+repetido) y un valor desconocido leído como `UNKNOWN`, su JSON de error por alias, el merge-patch
+(lo cambiado, lo vaciado a `null` y la versión; un campo a vaciar que no existe, rechazado antes de
+llamar; el 409 `CON-001`), activos (búsqueda, alta, `PATCH` con lo cambiado y lo vaciado,
+desactivar), catálogos y equipos enteros,
 órdenes y sus transiciones con sus cuerpos, tareas (alta, generar, modificar, cancelar), turnos con
 sus conjuntos enteros, sus tareas y perfiles, ejecutar una tarea con su checklist, defectos y
 materiales, inspecciones y lo que generan, defectos y sus transiciones, líneas de material
@@ -535,10 +540,12 @@ una reserva desde cualquier fila; el mantenimiento: el grupo con las órdenes co
 perfil lee de los otros módulos, un rol de realm que no abre las vistas, los mensajes de sus
 códigos, nombres de vías y paquetes (y `#id` sin `config-read`, sin llamar a configuración), la
 descarga de un fichero; activos filtrados en el servidor, el alta de un tramo con su rango, el
-activo sincronizado que solo cambia descripción e intervalo y se desactiva aquí con su aviso, el estado
+activo sincronizado que solo cambia descripción e intervalo (y vacía el intervalo) y se desactiva aquí con su aviso, el estado
 que dice quién desactivó un activo y la reactivación solo de lo desactivado aquí, desactivar y
 reactivar un tramo,
-equipos enteros y catálogos de lectura; órdenes filtradas, el alta con su activo buscado, la ficha
+equipos enteros y catálogos de lectura; órdenes filtradas, el alta con su activo buscado, vaciar la
+fecha y el equipo con el `CON-001` de una versión vieja y el diálogo abierto, el proyecto de almacén
+que no se vacía sin `stock-read`, la ficha
 con lo que su estado admite, planificar y el `TRN-001` con el diálogo abierto, `force` solo con
 supervise, las tareas (añadir, generar, modificar, cancelar), el historial de estados; turnos
 filtrados, el alta con su vía y sus seccionadores, iniciar y cerrar, asignar tareas con las

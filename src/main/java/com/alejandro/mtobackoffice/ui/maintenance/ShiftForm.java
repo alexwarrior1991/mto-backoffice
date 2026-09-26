@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.PossessionType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftRequest;
@@ -10,7 +11,6 @@ import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -78,32 +78,34 @@ public class ShiftForm {
                 nullIfBlank(measurementEquipment), nullIfBlank(observations));
     }
 
-    /** Solo lo que cambio; vias y seccionadores, si cambiaron, van enteros (un conjunto vacio de seccionadores es «ninguno»). */
-    public ShiftUpdateRequest toUpdateRequest(ShiftDto original) {
+    /**
+     * Lo que cambio, lo vaciado y la version leida; vias y seccionadores, si cambiaron, van enteros
+     * (un conjunto vacio de seccionadores es «ninguno»).
+     */
+    public MergePatch<ShiftUpdateRequest> toPatch(ShiftDto original) {
+        Changes changes = new Changes();
         Set<UUID> disconnectors = disconnectorIds();
         Set<UUID> originalDisconnectors = original.blockingDisconnectors().stream().map(AssetSummaryDto::id).collect(Collectors.toSet());
         Set<Long> tracks = trackIdSet();
-        UUID team = teamId == null ? null : teamId.id();
-        UUID originalTeam = original.team() == null ? null : original.team().id();
-        Long packageId = executionPackageId == null ? null : executionPackageId.id();
-        return new ShiftUpdateRequest(
+        ShiftUpdateRequest values = new ShiftUpdateRequest(
                 Objects.equals(shiftDate, original.shiftDate()) ? null : shiftDate,
-                Objects.equals(team, originalTeam) ? null : team,
-                changed(baseName, original.baseName()),
-                changed(vehicle, original.vehicle()),
+                changes.value("teamId", teamId == null ? null : teamId.id(), original.team() == null ? null : original.team().id()),
+                changes.text("baseName", baseName, original.baseName()),
+                changes.text("vehicle", vehicle, original.vehicle()),
                 possessionType == original.possessionType() ? null : possessionType,
-                changedInstant(plannedStart, original.plannedStart()),
-                changedInstant(plannedEnd, original.plannedEnd()),
+                changes.value("plannedStart", Formats.toInstant(plannedStart), original.plannedStart()),
+                changes.value("plannedEnd", Formats.toInstant(plannedEnd), original.plannedEnd()),
                 disconnectors.equals(originalDisconnectors) ? null : disconnectors,
-                changed(earthingPoints, original.earthingPoints()),
-                changed(parkingPlace, original.parkingPlace()),
-                Objects.equals(packageId, original.executionPackageId()) ? null : packageId,
+                changes.text("earthingPoints", earthingPoints, original.earthingPoints()),
+                changes.text("parkingPlace", parkingPlace, original.parkingPlace()),
+                changes.value("executionPackageId", executionPackageId == null ? null : executionPackageId.id(), original.executionPackageId()),
                 tracks.equals(Set.copyOf(original.trackIds())) ? null : tracks,
-                sameNumber(startKp, original.startKp()) ? null : startKp,
-                sameNumber(endKp, original.endKp()) ? null : endKp,
-                changed(personnel, original.personnel()),
-                changed(measurementEquipment, original.measurementEquipment()),
-                changed(observations, original.observations()));
+                changes.number("startKp", startKp, original.startKp()),
+                changes.number("endKp", endKp, original.endKp()),
+                changes.text("personnel", personnel, original.personnel()),
+                changes.text("measurementEquipment", measurementEquipment, original.measurementEquipment()),
+                changes.text("observations", observations, original.observations()));
+        return changes.patch(values, original.version());
     }
 
     private Set<UUID> disconnectorIds() {
@@ -112,20 +114,6 @@ public class ShiftForm {
 
     private Set<Long> trackIdSet() {
         return trackIds.stream().map(RefItem::id).collect(Collectors.toCollection(TreeSet::new));
-    }
-
-    private static Instant changedInstant(LocalDateTime value, Instant original) {
-        Instant current = Formats.toInstant(value);
-        return Objects.equals(current, original) ? null : current;
-    }
-
-    private static boolean sameNumber(BigDecimal value, BigDecimal original) {
-        return value == null ? original == null : original != null && value.compareTo(original) == 0;
-    }
-
-    private static String changed(String value, String original) {
-        String current = value == null ? "" : value.trim();
-        return current.equals(orEmpty(original)) ? null : current;
     }
 
     private static String nullIfBlank(String value) {

@@ -115,6 +115,19 @@ public final class MaintenanceNames {
         return projects.computeIfAbsent(id, key -> fromStock(() -> stock.projects().findById(key).summary(), null));
     }
 
+    /**
+     * El proyecto para un formulario: el de mto-stock o, si no se puede nombrar (sin {@code stock-read},
+     * o el almacen no responde), uno con solo su id, como {@link #trackRef}. Nunca {@code null} para un
+     * id: un formulario que lo leyera vacio lo mandaria a vaciar.
+     */
+    public ProjectSummaryDto projectRef(UUID id) {
+        if (id == null) {
+            return null;
+        }
+        ProjectSummaryDto project = project(id);
+        return project != null ? project : new ProjectSummaryDto(id, idOf(id), null, null);
+    }
+
     public String projectName(UUID id) {
         ProjectSummaryDto project = project(id);
         return project != null ? project.label() : id == null ? "" : idOf(id);

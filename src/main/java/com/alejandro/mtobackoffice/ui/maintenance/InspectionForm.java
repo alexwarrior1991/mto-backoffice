@@ -6,6 +6,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionKind;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionResult;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -47,21 +48,19 @@ public class InspectionForm {
                 nullIfBlank(description), nullIfBlank(detectedDefects), nullIfBlank(recommendedActions), kp, originOrderId, null);
     }
 
-    public InspectionUpdateRequest toUpdateRequest(InspectionDto original) {
-        return new InspectionUpdateRequest(
+    /** Lo que cambio, lo vaciado y la version leida. */
+    public MergePatch<InspectionUpdateRequest> toPatch(InspectionDto original) {
+        Changes changes = new Changes();
+        InspectionUpdateRequest values = new InspectionUpdateRequest(
                 Objects.equals(inspectionDate, original.inspectionDate()) ? null : inspectionDate,
-                changed(inspector, original.inspector()),
+                changes.text("inspector", inspector, original.inspector()),
                 inspectionKind == original.inspectionKind() ? null : inspectionKind,
                 result == original.result() ? null : result,
-                changed(description, original.description()),
-                changed(detectedDefects, original.detectedDefects()),
-                changed(recommendedActions, original.recommendedActions()),
-                kp == null ? null : original.kp() != null && kp.compareTo(original.kp()) == 0 ? null : kp);
-    }
-
-    private static String changed(String value, String original) {
-        String current = value == null ? "" : value.trim();
-        return current.equals(orEmpty(original)) ? null : current;
+                changes.text("description", description, original.description()),
+                changes.text("detectedDefects", detectedDefects, original.detectedDefects()),
+                changes.text("recommendedActions", recommendedActions, original.recommendedActions()),
+                changes.number("kp", kp, original.kp()));
+        return changes.patch(values, original.version());
     }
 
     private static String nullIfBlank(String value) {

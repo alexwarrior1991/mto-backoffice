@@ -3,11 +3,11 @@ package com.alejandro.mtobackoffice.ui.maintenance;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TrackKind;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 
 import java.math.BigDecimal;
-import java.util.Objects;
 
 /**
  * Modelo mutable del editor de un activo. Sus propiedades se llaman como los campos de la peticion
@@ -51,41 +51,27 @@ public class AssetForm {
     }
 
     /**
-     * Solo lo que cambio respecto a lo leido: para el servicio {@code null} es «no tocar». Una
-     * descripcion vaciada viaja como cadena vacia; un numero o una referencia no se pueden vaciar
-     * (el editor no lo deja).
+     * Lo que cambio respecto a lo leido, lo vaciado y la version. De un activo sincronizado el editor
+     * solo toca la descripcion y el intervalo preventivo: lo demas sale igual y no viaja.
      */
-    public AssetUpdateRequest toUpdateRequest(AssetDto original) {
-        return new AssetUpdateRequest(
-                changed(name, original.name()),
-                changed(description, original.description()),
+    public MergePatch<AssetUpdateRequest> toPatch(AssetDto original) {
+        Changes changes = new Changes();
+        AssetUpdateRequest values = new AssetUpdateRequest(
+                changes.text("name", name, original.name()),
+                changes.text("description", description, original.description()),
                 null,
-                Objects.equals(preventiveIntervalDays, original.preventiveIntervalDays()) ? null : preventiveIntervalDays,
-                changedId(executionPackageId, original.executionPackageId()),
-                changedId(trackId, original.trackId()),
-                changedId(stationId, original.stationId()),
-                sameNumber(startKp, original.startKp()) ? null : startKp,
-                sameNumber(endKp, original.endKp()) ? null : endKp,
+                changes.value("preventiveIntervalDays", preventiveIntervalDays, original.preventiveIntervalDays()),
+                changes.value("executionPackageId", idOf(executionPackageId), original.executionPackageId()),
+                changes.value("trackId", idOf(trackId), original.trackId()),
+                changes.value("stationId", idOf(stationId), original.stationId()),
+                changes.number("startKp", startKp, original.startKp()),
+                changes.number("endKp", endKp, original.endKp()),
                 trackKind == original.trackKind() ? null : trackKind);
+        return changes.patch(values, original.version());
     }
 
     private static Long idOf(RefItem item) {
         return item == null ? null : item.id();
-    }
-
-    private static Long changedId(RefItem item, Long original) {
-        Long id = idOf(item);
-        return Objects.equals(id, original) ? null : id;
-    }
-
-    /** {@code 12.1} y {@code 12.100} son el mismo KP. */
-    private static boolean sameNumber(BigDecimal value, BigDecimal original) {
-        return value == null ? original == null : original != null && value.compareTo(original) == 0;
-    }
-
-    private static String changed(String value, String original) {
-        String current = value == null ? "" : value.trim();
-        return current.equals(orEmpty(original)) ? null : current;
     }
 
     private static String nullIfBlank(String value) {

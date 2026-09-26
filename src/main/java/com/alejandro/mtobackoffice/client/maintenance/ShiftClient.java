@@ -5,6 +5,7 @@ import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CloseShiftRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceTaskStatus;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.PossessionType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ReasonRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
@@ -20,8 +21,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.service.annotation.GetExchange;
 import org.springframework.web.service.annotation.HttpExchange;
+import org.springframework.web.service.annotation.PatchExchange;
 import org.springframework.web.service.annotation.PostExchange;
-import org.springframework.web.service.annotation.PutExchange;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -38,8 +39,8 @@ public interface ShiftClient {
     @PostExchange
     ShiftDto create(@RequestBody ShiftRequest request);
 
-    @PutExchange("/{id}")
-    ShiftDto update(@PathVariable("id") UUID id, @RequestBody ShiftUpdateRequest request);
+    @PatchExchange(value = "/{id}", contentType = MergePatch.MEDIA_TYPE)
+    ShiftDto update(@PathVariable("id") UUID id, @RequestBody MergePatch<ShiftUpdateRequest> patch);
 
     @GetExchange("/{id}")
     ShiftDto findById(@PathVariable("id") UUID id);

@@ -22,7 +22,7 @@ public record AssetDto(UUID id, String code, String name, CatenaryAssetType type
                        TrackKind trackKind, Long connectedTrackId, SectionInsulatorInstallation installationType,
                        List<AssetSwitchDto> switches, String sourceService, String sourceEntityId, Boolean enabled,
                        Boolean enabledAtSource, Boolean disabledLocally,
-                       Integer preventiveIntervalDays, Instant lastPreventiveCompletedAt, Instant nextPreventiveDueAt, AuditDto audit) {
+                       Integer preventiveIntervalDays, Instant lastPreventiveCompletedAt, Instant nextPreventiveDueAt, AuditDto audit, Long version) {
 
     public AssetDto {
         switches = switches == null ? List.of() : List.copyOf(switches);
