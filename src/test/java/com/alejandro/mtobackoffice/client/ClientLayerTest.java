@@ -135,6 +135,11 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionResult;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ResolveDefectRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.StockSyncStatus;
+import com.alejandro.mtobackoffice.client.error.ServiceUnavailableApiException;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CloseShiftRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CompleteTaskRequest;
@@ -2015,6 +2020,71 @@ class ClientLayerTest {
         assertEquals(DefectStatus.DISCARDED, discarded.status());
         assertEquals("OPEN", history.getFirst().newStatus());
         assertTrue(DefectStatus.OPEN.isPending() && !DefectStatus.CLOSED.isEditable());
+        server.verify();
+    }
+
+    private static final String LINE_ID = "2b3c4d5e-0000-4000-8000-000000000080";
+
+    private static String lineJson(String status, String error) {
+        return "{\"id\":\"" + LINE_ID + "\",\"orderId\":\"" + ORDER_ID + "\",\"taskId\":null,\"materialId\":\"" + MAT_ID + "\","
+                + "\"materialCode\":\"MAT-001\",\"materialDescriptionSnapshot\":\"Hilo de contacto\",\"warehouseId\":\"" + WH_ID + "\","
+                + "\"plannedQuantity\":4.000000,\"consumedQuantity\":null,\"unit\":\"m\",\"allowOverConsumption\":false,"
+                + "\"stockReservationId\":" + ("RESERVED".equals(status) ? "\"" + RES_ID + "\"" : "null") + ",\"stockSyncStatus\":\"" + status + "\","
+                + "\"stockSyncError\":" + (error == null ? "null" : "\"" + error + "\"") + ",\"audit\":null}";
+    }
+
+    /**
+     * Lineas de material: la lista, el alta sin lo vacio, la modificacion con solo lo cambiado,
+     * sincronizar y quitar sin cuerpo (204), y el 503 STK-503 de un almacen caido al quitarla.
+     */
+    @Test
+    void materialLinesAreRegisteredUpdatedSyncedAndRemoved() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String materials = MAINTENANCE + "/orders/" + ORDER_ID + "/materials";
+        server.expect(requestTo(materials)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[" + lineJson("FAILED", "Stock service unavailable") + "]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(materials)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"materialId\":\"" + MAT_ID + "\",\"warehouseId\":\"" + WH_ID + "\",\"plannedQuantity\":4,"
+                        + "\"unit\":\"m\"}", strict))
+                .andRespond(withSuccess(lineJson("NOT_REQUESTED", null), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(materials + "/" + LINE_ID)).andExpect(method(HttpMethod.PUT))
+                .andExpect(content().json("{\"consumedQuantity\":3}", strict))
+                .andRespond(withSuccess(lineJson("RESERVED", null), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(materials + "/" + LINE_ID + "/sync")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(""))
+                .andRespond(withSuccess(lineJson("RESERVED", null), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(materials + "/" + LINE_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(materials + "/" + LINE_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":503,\"error\":\"SERVICE_UNAVAILABLE\",\"message\":\"Stock service unavailable\",\"errorCode\":\"STK-503\","
+                                + "\"validationErrors\":[]}"));
+
+        UUID orderId = UUID.fromString(ORDER_ID);
+        UUID lineId = UUID.fromString(LINE_ID);
+        List<MaterialUsageDto> lines = asUser(() -> orderClient.materials(orderId));
+        asUser(() -> orderClient.registerMaterial(orderId, new MaterialUsageRequest(UUID.fromString(MAT_ID), null, UUID.fromString(WH_ID),
+                new BigDecimal("4"), "m", null, null)));
+        MaterialUsageDto updated = asUser(() -> orderClient.updateMaterial(orderId, lineId, new MaterialUsageUpdateRequest(null, new BigDecimal("3"), null)));
+        MaterialUsageDto synced = asUser(() -> orderClient.syncMaterial(orderId, lineId));
+        asUser(() -> {
+            orderClient.removeMaterial(orderId, lineId);
+            return null;
+        });
+        ServiceUnavailableApiException down = assertThrows(ServiceUnavailableApiException.class, () -> asUser(() -> {
+            orderClient.removeMaterial(orderId, lineId);
+            return null;
+        }));
+
+        MaterialUsageDto line = lines.getFirst();
+        assertEquals(StockSyncStatus.FAILED, line.stockSyncStatus());
+        assertEquals("Stock service unavailable", line.stockSyncError());
+        assertEquals("MAT-001 - Hilo de contacto", line.materialLabel());
+        assertFalse(line.isReserved());
+        assertTrue(updated.isReserved());
+        assertEquals(StockSyncStatus.RESERVED, synced.stockSyncStatus());
+        assertEquals("STK-503", down.getProblem().code());
+        assertEquals(503, down.getStatus().value());
         server.verify();
     }
 }

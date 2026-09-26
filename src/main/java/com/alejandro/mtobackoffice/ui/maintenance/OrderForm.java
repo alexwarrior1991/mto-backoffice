@@ -7,6 +7,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.stock.ProjectSummaryDto;
 
 import java.time.LocalDate;
 import java.util.Objects;
@@ -28,8 +29,10 @@ public class OrderForm {
     private TeamSummaryDto teamId;
     private String assignedUser = "";
     private String closingNotes = "";
+    private ProjectSummaryDto stockProjectId;
 
-    public static OrderForm of(OrderDto dto) {
+    /** @param names para el proyecto de almacen, que la orden guarda como id */
+    public static OrderForm of(OrderDto dto, MaintenanceNames names) {
         OrderForm form = new OrderForm();
         if (dto != null) {
             form.setTitle(orEmpty(dto.title()));
@@ -41,13 +44,14 @@ public class OrderForm {
             form.setTeamId(dto.team());
             form.setAssignedUser(orEmpty(dto.assignedUser()));
             form.setClosingNotes(orEmpty(dto.closingNotes()));
+            form.setStockProjectId(names.project(dto.stockProjectId()));
         }
         return form;
     }
 
     public OrderRequest toRequest() {
         return new OrderRequest(title.trim(), nullIfBlank(description), type, priority, assetId == null ? null : assetId.id(), plannedDate,
-                teamId == null ? null : teamId.id(), nullIfBlank(assignedUser), null);
+                teamId == null ? null : teamId.id(), nullIfBlank(assignedUser), stockProjectId == null ? null : stockProjectId.id());
     }
 
     /**
@@ -64,13 +68,19 @@ public class OrderForm {
                 full ? changedTeam(original) : null,
                 full ? changed(assignedUser, original.assignedUser()) : null,
                 full ? null : changed(closingNotes, original.closingNotes()),
-                null, null, null, null, null, null);
+                null, null, null, null, null,
+                full ? changedProject(original) : null);
     }
 
     private UUID changedTeam(OrderDto original) {
         UUID current = teamId == null ? null : teamId.id();
         UUID before = original.team() == null ? null : original.team().id();
         return Objects.equals(current, before) ? null : current;
+    }
+
+    private UUID changedProject(OrderDto original) {
+        UUID current = stockProjectId == null ? null : stockProjectId.id();
+        return current == null || current.equals(original.stockProjectId()) ? null : current;
     }
 
     private static String changed(String value, String original) {
@@ -148,6 +158,14 @@ public class OrderForm {
 
     public void setAssignedUser(String assignedUser) {
         this.assignedUser = assignedUser;
+    }
+
+    public ProjectSummaryDto getStockProjectId() {
+        return stockProjectId;
+    }
+
+    public void setStockProjectId(ProjectSummaryDto stockProjectId) {
+        this.stockProjectId = stockProjectId;
     }
 
     public String getClosingNotes() {

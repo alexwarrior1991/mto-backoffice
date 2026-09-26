@@ -6,8 +6,10 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.stock.ProjectSummaryDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
+import com.alejandro.mtobackoffice.ui.stock.StockPickers;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -42,10 +44,11 @@ public class OrderEditorDialog extends Dialog {
      * @param existing la orden a modificar, o {@code null} para un alta
      * @param saved    que hacer con la orden guardada
      */
-    public OrderEditorDialog(OrderDto existing, MaintenanceClients clients, MaintenanceCatalogs catalogs, Consumer<OrderDto> saved) {
+    public OrderEditorDialog(OrderDto existing, MaintenanceClients clients, MaintenanceCatalogs catalogs, MaintenanceNames names,
+                             Consumer<OrderDto> saved) {
         boolean creating = existing == null;
         boolean full = creating || existing.status().allowsFullUpdate();
-        this.form = OrderForm.of(existing);
+        this.form = OrderForm.of(existing, names);
         setHeaderTitle(creating ? "Nueva orden" : "Modificar " + existing.code());
         setCloseOnOutsideClick(false);
         setWidth("min(90vw, 720px)");
@@ -93,6 +96,15 @@ public class OrderEditorDialog extends Dialog {
                     .bind("teamId");
             binder.forField(assignedUser).bind("assignedUser");
             layout.add(title, priority, plannedDate, team, assignedUser);
+            if (names.readsStock()) {
+                ComboBox<ProjectSummaryDto> project = StockPickers.project("Proyecto de almacen", clients.projects());
+                project.setId("order-stock-project");
+                project.setHelperText("Vacio: el del paquete de ejecucion, al planificar");
+                binder.forField(project)
+                        .withValidator(selected -> creating || existing.stockProjectId() == null || selected != null, MaintenanceUi.CANNOT_CLEAR)
+                        .bind("stockProjectId");
+                layout.add(project);
+            }
         } else {
             add(new Paragraph("La orden esta " + existing.status().label().toLowerCase()
                     + ": ya solo se cambian la descripcion, la prioridad y las notas de cierre."));

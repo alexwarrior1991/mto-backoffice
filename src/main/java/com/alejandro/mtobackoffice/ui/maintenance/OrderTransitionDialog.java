@@ -7,6 +7,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.PlanOrderRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.client.error.ConflictApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
@@ -16,7 +17,9 @@ import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.datepicker.DatePicker;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.formlayout.FormLayout;
+import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.Paragraph;
+import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.binder.Binder;
@@ -54,6 +57,7 @@ public class OrderTransitionDialog extends Dialog {
 
     private final Binder<TransitionForm> binder = new Binder<>(TransitionForm.class);
     private final TransitionForm form = new TransitionForm();
+    private final boolean canForce;
 
     /**
      * @param canForce si se ofrece {@code force} al completar (write + supervise)
@@ -61,6 +65,7 @@ public class OrderTransitionDialog extends Dialog {
      */
     public OrderTransitionDialog(Kind kind, OrderDto order, MaintenanceClients clients, MaintenanceCatalogs catalogs, boolean canForce,
                                  Consumer<OrderDto> done) {
+        this.canForce = canForce;
         setHeaderTitle(kind.label() + " " + order.code());
         setCloseOnOutsideClick(false);
         FormLayout layout = new FormLayout();
@@ -139,6 +144,13 @@ public class OrderTransitionDialog extends Dialog {
             done.accept(result);
         } catch (ValidationApiException validation) {
             MaintenanceUi.showValidation(binder, validation);
+        } catch (ConflictApiException conflict) {
+            Notification notification = UiErrors.show(conflict);
+            if (kind == Kind.COMPLETE && "MAT-001".equals(conflict.getProblem().code())) {
+                notification.add(new Div(canForce
+                        ? "Sincroniza las lineas fallidas en la pestana Materiales, o marca completar aunque haya lineas sin sincronizar."
+                        : "Sincroniza las lineas fallidas en la pestana Materiales, o pide a quien supervisa que la complete igualmente."));
+            }
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }

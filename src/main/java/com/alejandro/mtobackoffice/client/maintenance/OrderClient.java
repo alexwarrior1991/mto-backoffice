@@ -12,6 +12,9 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.GenerateTasksResultDto
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderRequest;
@@ -27,6 +30,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.service.annotation.DeleteExchange;
 import org.springframework.web.service.annotation.GetExchange;
 import org.springframework.web.service.annotation.HttpExchange;
 import org.springframework.web.service.annotation.PostExchange;
@@ -135,4 +139,28 @@ public interface OrderClient {
     @PutExchange("/{id}/tasks/{taskId}/check-items/{itemId}")
     TaskDto updateCheckItem(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @PathVariable("itemId") UUID itemId,
                             @RequestBody CheckItemUpdateRequest request);
+
+    // --- Lineas de material: se reservan al planificar, se consumen al completar, se liberan al cancelar ---
+
+    @GetExchange("/{id}/materials")
+    List<MaterialUsageDto> materials(@PathVariable("id") UUID id);
+
+    /** Con la orden sin terminar; fuera de borrador se reserva al momento. */
+    @PostExchange("/{id}/materials")
+    MaterialUsageDto registerMaterial(@PathVariable("id") UUID id, @RequestBody MaterialUsageRequest request);
+
+    @PutExchange("/{id}/materials/{usageId}")
+    MaterialUsageDto updateMaterial(@PathVariable("id") UUID id, @PathVariable("usageId") UUID usageId, @RequestBody MaterialUsageUpdateRequest request);
+
+    /** Reintenta con mto-stock lo que toque por el estado de la orden; 503 {@code STK-503} si el almacen sigue sin responder. */
+    @PostExchange("/{id}/materials/{usageId}/sync")
+    MaterialUsageDto syncMaterial(@PathVariable("id") UUID id, @PathVariable("usageId") UUID usageId);
+
+    /**
+     * Quita la linea (204; pide {@code maintenance-delete}), liberando antes su reserva. Consumida o
+     * con la orden terminada, 409 {@code MAT-001}; con el almacen caido, 503 {@code STK-503} y la
+     * linea sigue.
+     */
+    @DeleteExchange("/{id}/materials/{usageId}")
+    void removeMaterial(@PathVariable("id") UUID id, @PathVariable("usageId") UUID usageId);
 }

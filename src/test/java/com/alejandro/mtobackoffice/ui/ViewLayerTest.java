@@ -169,6 +169,11 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionKind;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionResult;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ResolveDefectRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.StockSyncStatus;
+import com.alejandro.mtobackoffice.ui.maintenance.MaterialUsageDialog;
 import com.alejandro.mtobackoffice.ui.maintenance.DefectDetailView;
 import com.alejandro.mtobackoffice.ui.maintenance.DefectEditorDialog;
 import com.alejandro.mtobackoffice.ui.maintenance.InspectionDetailView;
@@ -3953,7 +3958,7 @@ class ViewLayerTest {
         OrderDto order = orderOf(MaintenanceOrderStatus.PLANNED, MaintenanceOrderType.PREVENTIVE);
         openOrder(order);
         verify(orderClient, never()).history(any());
-        selectTab(3);
+        selectTab(4);
         Grid<Object> history = gridWithId("order-history-grid");
         assertEquals(List.of("", "Borrador", "mantenimiento.tecnico", "Order created"),
                 List.of(GridKt._getFormattedRow(history, 0).get(1), GridKt._getFormattedRow(history, 0).get(2),
@@ -4305,7 +4310,7 @@ class ViewLayerTest {
         when(inspectionClient.updateItem(eq(INSPECTION1), eq(INSPECTION_ITEM), any())).thenReturn(created);
         openOrder(orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.INSPECTION));
 
-        selectTab(2);
+        selectTab(3);
         click("order-inspection-create");
         assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("inspection-asset")).isEmpty(), "el activo es el de la orden");
         LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("inspection-date")), LocalDate.of(2026, 9, 20));
@@ -4417,7 +4422,7 @@ class ViewLayerTest {
         openOrder(fromInspection);
 
         verify(defectClient, never()).search(any(DefectFilter.class), anyInt(), anyInt(), anyList());
-        selectTab(1);
+        selectTab(2);
         assertEquals("DEF-000001", GridKt._getFormattedRow(gridWithId("order-defects-grid"), 0).getFirst());
         click("order-defect-create");
         assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("defect-asset")).isEmpty(), "el activo es el de la orden");
@@ -4430,5 +4435,146 @@ class ViewLayerTest {
         when(inspectionClient.findById(INSPECTION1)).thenReturn(inspectionOf(InspectionResult.MAJOR_DEFECT, null, ORDER1));
         click("order-origin-inspection");
         LocatorJ._get(InspectionDetailView.class);
+    }
+
+    // --- Mantenimiento: lineas de material ----------------------------------------------------------
+
+    private static final UUID LINE_RESERVED = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000051");
+    private static final UUID LINE_FAILED = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000052");
+    private static final UUID LINE_CONSUMED = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000053");
+
+    private static MaterialUsageDto line(UUID id, StockSyncStatus status, UUID taskId) {
+        return new MaterialUsageDto(id, ORDER1, taskId, MAT1, "MAT-001", "Pendola", WH1, new BigDecimal("4.000000"),
+                status == StockSyncStatus.CONSUMED ? new BigDecimal("4.000000") : null, "ud", false,
+                status == StockSyncStatus.RESERVED || status == StockSyncStatus.CONSUMED ? UUID.randomUUID() : null, status,
+                status == StockSyncStatus.FAILED ? "Stock service unavailable" : null, null);
+    }
+
+    private void stubMaterials(MaintenanceOrderStatus status, List<MaterialUsageDto> lines) {
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of(task(TASK1, 1, MaintenanceTaskStatus.PENDING)));
+        when(orderClient.materials(ORDER1)).thenReturn(lines);
+        when(warehouseClient.findById(WH1)).thenReturn(warehouse(WH1, "WH-000", "Central", true));
+        openOrder(orderOf(status, MaintenanceOrderType.PREVENTIVE));
+        selectTab(1);
+    }
+
+    /** Los botones de una fila de materiales, sin el id de la linea. */
+    private static List<String> materialActions(Grid<Object> grid, int row) {
+        return LocatorJ._find(GridKt._getCellComponent(grid, row, "actions"), Button.class).stream()
+                .map(button -> button.getId().orElse("")).map(id -> id.replaceAll("-[0-9a-f]{8}-.*$", "")).toList();
+    }
+
+    @Test
+    void theMaterialsTabShowsTheLinesWithTheirWarehouseAndOffersWhatEachAdmits() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(line(LINE_RESERVED, StockSyncStatus.RESERVED, TASK1),
+                line(LINE_FAILED, StockSyncStatus.FAILED, null), line(LINE_CONSUMED, StockSyncStatus.CONSUMED, null)));
+
+        Grid<Object> grid = gridWithId("order-materials-grid");
+        assertEquals(List.of("MAT-001 - Pendola", "WH-000 - Central", "4 ud", "", "Tarea 1"), GridKt._getFormattedRow(grid, 0).subList(0, 5));
+        assertEquals("Stock service unavailable", ((Span) GridKt._getCellComponent(grid, 1, "status")).getTitle().orElse(""),
+                "el error de stock, en el tooltip del estado");
+        verify(warehouseClient, times(1)).findById(WH1);
+        assertEquals(List.of("material-edit", "material-remove"), materialActions(grid, 0));
+        assertEquals(List.of("material-edit", "material-sync", "material-remove"), materialActions(grid, 1));
+        assertEquals(List.of(), materialActions(grid, 2), "una linea consumida ya no se toca");
+        assertTrue(hasButton("material-add"));
+
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(line(LINE_FAILED, StockSyncStatus.FAILED, null)));
+        assertEquals(List.of(), materialActions(gridWithId("order-materials-grid"), 0));
+        assertFalse(hasButton("material-add"));
+    }
+
+    @Test
+    void aLineIsRegisteredFromStockAndAReservedLineOnlyChangesItsConsumption() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(orderClient.registerMaterial(eq(ORDER1), any())).thenReturn(line(LINE_RESERVED, StockSyncStatus.RESERVED, TASK1));
+        when(orderClient.updateMaterial(eq(ORDER1), eq(LINE_RESERVED), any())).thenReturn(line(LINE_RESERVED, StockSyncStatus.RESERVED, TASK1));
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(line(LINE_RESERVED, StockSyncStatus.RESERVED, TASK1)));
+
+        click("material-add");
+        LocatorJ._get(Paragraph.class, spec -> spec.withText("La orden ya esta planificada: la linea se reserva al momento en el almacen."));
+        LocatorJ._setValue(comboWithId("material-material"), new MaterialSummaryDto(MAT1, "MAT-001", "Pendola", "ud", true));
+        LocatorJ._setValue(comboWithId("material-warehouse"), new WarehouseSummaryDto(WH1, "WH-000", "Central", true));
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-planned")), new BigDecimal("4"));
+        ComboBoxKt.selectByLabel(comboWithId("material-task"), "1 · Perfil 12-2.27");
+        click(MaterialUsageDialog.SAVE_ID);
+        verify(orderClient).registerMaterial(ORDER1, new MaterialUsageRequest(MAT1, null, WH1, new BigDecimal("4"), "ud", TASK1, null));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("order-materials-grid"), 0, "actions"), Button.class,
+                spec -> spec.withId("material-edit-" + LINE_RESERVED)));
+        assertTrue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-planned")).isReadOnly(),
+                "lo previsto de una linea reservada no cambia: se quita y se registra otra vez");
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-consumed")), new BigDecimal("3"));
+        click(MaterialUsageDialog.SAVE_ID);
+        verify(orderClient).updateMaterial(ORDER1, LINE_RESERVED, new MaterialUsageUpdateRequest(null, new BigDecimal("3"), null));
+
+        loginAs("mantenimiento.sin-almacen", "ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_CONFIG_READ");
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of());
+        assertFalse(hasButton("material-add"));
+        LocatorJ._get(Paragraph.class, spec -> spec.withText("Anadir materiales pide leer el almacen (stock-read)."));
+    }
+
+    @Test
+    void removingAReservedLineWarnsAboutItsReservationAndAStockOutageIsNotified() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        doThrow(maintenanceError(503, "STK-503", "Stock service unavailable")).doNothing()
+                .when(orderClient).removeMaterial(ORDER1, LINE_RESERVED);
+        when(orderClient.syncMaterial(ORDER1, LINE_FAILED)).thenReturn(line(LINE_FAILED, StockSyncStatus.RESERVED, null));
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(line(LINE_RESERVED, StockSyncStatus.RESERVED, TASK1),
+                line(LINE_FAILED, StockSyncStatus.FAILED, null)));
+        Grid<Object> grid = gridWithId("order-materials-grid");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("material-remove-" + LINE_RESERVED)));
+        ConfirmDialog confirm = LocatorJ._get(ConfirmDialog.class);
+        assertTrue(confirm.getElement().getProperty("message", "").startsWith("Se libera antes su reserva en el almacen"),
+                "quitar una linea reservada libera su reserva");
+        ConfirmDialogKt._fireConfirm(confirm);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText(
+                "El almacen no responde: la linea de material se queda como estaba. Intentalo mas tarde. Stock service unavailable"));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("material-remove-" + LINE_RESERVED)));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(orderClient, times(2)).removeMaterial(ORDER1, LINE_RESERVED);
+
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, "actions"), Button.class, spec -> spec.withId("material-sync-" + LINE_FAILED)));
+        verify(orderClient).syncMaterial(ORDER1, LINE_FAILED);
+        NotificationsKt.expectNotifications("MAT-001: reservada");
+    }
+
+    @Test
+    void completingWithUnsyncedLinesSuggestsWhatToDoAndTheOrderCarriesItsStockProject() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        when(orderClient.complete(eq(ORDER1), any())).thenThrow(maintenanceError(409, "MAT-001",
+                "Order MO-000001 has 1 material line(s) not synchronized with stock; retry /sync or complete with force"));
+        openOrder(orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE));
+        click("order-complete");
+        click(OrderTransitionDialog.CONFIRM_ID);
+        Notification refused = NotificationsKt.getNotifications().getLast();
+        LocatorJ._get(refused, Div.class, spec -> spec.withText(
+                "Sincroniza las lineas fallidas en la pestana Materiales, o pide a quien supervisa que la complete igualmente."));
+
+        UUID project = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000054");
+        UUID other = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000055");
+        when(projectClient.findById(project)).thenReturn(new ProjectDto(project, "EP-3", "Paquete norte", true, "mto-configuration", true, null));
+        OrderDto draft = orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE);
+        OrderDto withProject = new OrderDto(draft.id(), draft.code(), draft.title(), draft.description(), draft.type(), draft.status(),
+                draft.priority(), draft.asset(), draft.executionPackageId(), draft.trackId(), draft.stationId(), draft.startKp(), draft.endKp(),
+                draft.plannedDate(), null, null, draft.team(), draft.assignedUser(), null, null, null, null, project, 0, 0, BigDecimal.ZERO, 0, null);
+        when(orderClient.update(eq(ORDER1), any())).thenReturn(withProject);
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        openOrder(withProject);
+        assertTrue(LocatorJ._get(Div.class, spec -> spec.withId("order-summary")).getElement().getTextRecursively()
+                .contains("Proyecto de almacen: EP-3 - Paquete norte"), "el proyecto, por su nombre en mto-stock");
+        click("order-edit");
+        assertEquals(project, this.<ProjectSummaryDto>comboWithId("order-stock-project").getValue().id(), "el editor parte del proyecto leido");
+        LocatorJ._setValue(comboWithId("order-stock-project"), new ProjectSummaryDto(other, "EP-5", "Paquete sur", true));
+        click(OrderEditorDialog.SAVE_ID);
+        verify(orderClient).update(ORDER1, new OrderUpdateRequest(null, null, null, null, null, null, null, null, null, null, null, null, other));
     }
 }

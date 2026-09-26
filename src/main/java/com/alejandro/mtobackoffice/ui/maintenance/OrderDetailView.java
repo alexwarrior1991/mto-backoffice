@@ -40,7 +40,8 @@ import java.util.UUID;
 /**
  * La ficha de una orden: su cabecera (activo, via, KP, equipo, avance y estimacion, que calcula el
  * servicio, y la inspeccion o el defecto de los que salio), los botones que su estado admite y
- * pestanas que piden sus datos al abrirse (tareas, defectos, inspecciones e historial de estados). Solo se ofrece lo que el estado admite (copiado de la maquina de estados
+ * pestanas que piden sus datos al abrirse (tareas, materiales, defectos, inspecciones e historial de
+ * estados). Solo se ofrece lo que el estado admite (copiado de la maquina de estados
  * del servicio), pero quien decide es el servicio: un {@code TRN-001} se notifica. Cancelar pide
  * {@code maintenance-supervise} ademas de {@code maintenance-write}.
  */
@@ -50,6 +51,7 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
 
     public static final String ORDER_ID_PARAMETER = "orderId";
     static final String TASKS_TAB = "Tareas";
+    static final String MATERIALS_TAB = "Materiales";
     static final String DEFECTS_TAB = "Defectos";
     static final String INSPECTIONS_TAB = "Inspecciones";
     static final String HISTORY_TAB = "Estados";
@@ -60,6 +62,7 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
     private final boolean canWrite;
     private final boolean canSupervise;
     private final boolean canPickMaterials;
+    private final boolean canDelete;
 
     private final H2 title = new H2();
     private final Span statusBadge = new Span();
@@ -83,6 +86,7 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
         this.canWrite = authentication.hasRole(MaintenanceRoles.MAINTENANCE_WRITE);
         this.canSupervise = authentication.hasAllRoles(MaintenanceRoles.MAINTENANCE_WRITE, MaintenanceRoles.MAINTENANCE_SUPERVISE);
         this.canPickMaterials = authentication.hasRole(StockRoles.STOCK_READ);
+        this.canDelete = authentication.hasRole(MaintenanceRoles.MAINTENANCE_DELETE);
         setSizeFull();
         for (Span badge : List.of(statusBadge, typeBadge, priorityBadge)) {
             badge.getElement().getThemeList().add("badge");
@@ -126,6 +130,7 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
         tabs.setWidthFull();
         panels.clear();
         addPanel(tabs, TASKS_TAB, new OrderTasksPanel(this::order, clients, catalogs, canWrite, canPickMaterials, this::reload));
+        addPanel(tabs, MATERIALS_TAB, new OrderMaterialsPanel(this::order, clients, names, canWrite, canDelete));
         addPanel(tabs, DEFECTS_TAB, new OrderDefectsPanel(this::order, clients, canWrite));
         addPanel(tabs, INSPECTIONS_TAB, new OrderInspectionsPanel(this::order, clients, canWrite, this::reload));
         addPanel(tabs, HISTORY_TAB, new StatusHistoryPanel("order-history-grid", () -> clients.orders().history(order.id()),
@@ -184,7 +189,8 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
                 "Inicio: " + orDash(Formats.dateTime(loaded.actualStartDate())),
                 "Fin: " + orDash(Formats.dateTime(loaded.actualEndDate()))));
         summary.add(line("Tareas: " + loaded.completedTaskCount() + " de " + loaded.taskCount() + " completadas",
-                "Estimacion: " + Formats.quantity(loaded.estimatedMinutes()) + " min en " + loaded.estimatedShifts() + " turnos"));
+                "Estimacion: " + Formats.quantity(loaded.estimatedMinutes()) + " min en " + loaded.estimatedShifts() + " turnos",
+                "Proyecto de almacen: " + (loaded.stockProjectId() == null ? "el del paquete, al planificar" : names.projectName(loaded.stockProjectId()))));
         if (loaded.closingNotes() != null && !loaded.closingNotes().isBlank()) {
             summary.add(line("Notas de cierre: " + loaded.closingNotes()));
         }
@@ -208,7 +214,7 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
         MaintenanceOrderStatus status = loaded.status();
         if (canWrite && status.isOpen()) {
             buttons.add(button("order-edit", "Modificar", VaadinIcon.EDIT,
-                    () -> new OrderEditorDialog(loaded, clients, catalogs, updated -> changed(updated)).open()));
+                    () -> new OrderEditorDialog(loaded, clients, catalogs, names, updated -> changed(updated)).open()));
         }
         if (canWrite && status.canPlan()) {
             buttons.add(transition(OrderTransitionDialog.Kind.PLAN, "order-plan", VaadinIcon.CALENDAR, loaded));

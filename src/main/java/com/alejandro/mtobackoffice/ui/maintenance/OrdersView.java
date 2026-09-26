@@ -113,7 +113,7 @@ public class OrdersView extends VerticalLayout {
         }
 
         Button create = new Button("Nueva orden", VaadinIcon.PLUS.create(),
-                click -> new OrderEditorDialog(null, clients, catalogs,
+                click -> new OrderEditorDialog(null, clients, catalogs, names,
                         created -> UI.getCurrent().navigate(OrderDetailView.class, OrderDetailView.parametersOf(created.id()))).open());
         create.setId("order-create");
         create.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
