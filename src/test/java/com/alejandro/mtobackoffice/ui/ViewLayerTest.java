@@ -1540,6 +1540,47 @@ class ViewLayerTest {
         verify(jobsClient, never()).list(anyInt(), anyInt(), any(), any());
     }
 
+    /**
+     * La lista ensena los trabajos de todas las familias, asi que un tipo o un estado que
+     * mto-configuration estrene llega antes que esta aplicacion: se pinta «Desconocido» y la lista
+     * sigue. Un tipo desconocido no tiene familia: no ofrece descarga y sus errores se ensenan como
+     * llegaron en la fila. Un estado desconocido cuenta como terminado y no se vuelve a consultar.
+     * Ninguno de los dos se ofrece como filtro.
+     */
+    @Test
+    void aJobOfAnUnknownTypeOrStatusIsListedWithoutWhatItCannotDo() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        UUID newType = UUID.fromString("6f1c0000-0000-4000-8000-000000000002");
+        UUID newStatus = UUID.fromString("6f1c0000-0000-4000-8000-000000000003");
+        stubJobHistory(List.of(
+                new JobDto(newType, JobType.UNKNOWN, JobStatus.COMPLETED, Instant.parse("2026-08-27T09:12:03Z"), null, null, null, null,
+                        10, 10, 8, 2, null, null, null),
+                new JobDto(newStatus, JobType.PROFILE_EXPORT, JobStatus.UNKNOWN, Instant.parse("2026-08-27T09:10:00Z"), null, null, 3L, "basic",
+                        10, 4, 4, 0, null, null, null)));
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        Grid<JobDto> grid = jobsGrid();
+        assertEquals(2, GridKt._size(grid));
+        assertEquals("Desconocido", GridKt._getFormattedRow(grid, 0).get(1), "el tipo");
+        assertEquals("Desconocido", GridKt._getFormattedRow(grid, 1).get(2), "el estado");
+        LocatorJ._get(Span.class, spec -> spec.withText("2 en el servicio, 0 en curso"));
+
+        Component unknownType = GridKt._getCellComponent(grid, 0, "actions");
+        assertTrue(LocatorJ._find(unknownType, Anchor.class).isEmpty(), "sin familia no hay a quien pedir el fichero");
+        LocatorJ._click(LocatorJ._get(unknownType, Button.class, spec -> spec.withId("errors-" + newType)));
+        LocatorJ._get(Dialog.class).close();
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 1, "actions"), Anchor.class).isEmpty(), "una exportacion solo se descarga completa");
+        verify(jobsClient, never()).profileJob(any());
+        verify(jobsClient, never()).lovJob(any());
+        verify(jobsClient, never()).republishJob(any());
+
+        assertFalse(ViewLayerTest.<JobType>combo("jobs-type").getListDataView().getItems().toList().contains(JobType.UNKNOWN));
+        assertFalse(ViewLayerTest.<JobStatus>combo("jobs-status").getListDataView().getItems().toList().contains(JobStatus.UNKNOWN));
+        clearInvocations(jobsClient);
+        LocatorJ._get(JobsView.class).pollOnce();
+        verify(jobsClient, never()).list(anyInt(), anyInt(), any(), any());
+    }
+
     @Test
     void aReaderCanOnlyExport() {
         loginAs("config.lector", "ROLE_CONFIG_READ");
@@ -2920,6 +2961,22 @@ class ViewLayerTest {
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("operation-output")).isEmpty());
     }
 
+    /** Un tipo de apunte que mto-stock estrene se pinta «Desconocido» y no se ofrece como filtro. */
+    @Test
+    void aMovementOfAnUnknownTypeIsListedButNotOfferedAsAFilter() {
+        loginAs("almacen.lector", "ROLE_STOCK_READ");
+        when(movementClient.search(any(), any(), any(), any(), any(), any(), any(), anyInt(), anyInt(), anyList()))
+                .thenAnswer(call -> page(List.of(movement(MovementType.UNKNOWN, "-3")), call.getArgument(7), call.getArgument(8)));
+
+        UI.getCurrent().navigate(StockRoutes.MOVEMENTS);
+
+        List<String> row = GridKt._getFormattedRow(gridWithId("movements-grid"), 0);
+        assertTrue(row.contains("Desconocido"), row.toString());
+        List<MovementType> offered = ViewLayerTest.<MovementType>combo("movements-type").getListDataView().getItems().toList();
+        assertEquals(MovementType.selectable(), offered);
+        assertFalse(offered.contains(MovementType.UNKNOWN));
+    }
+
     @Test
     void anEntryPostsMaterialWarehouseSupplierAndQuantity() {
         loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
@@ -3078,6 +3135,25 @@ class ViewLayerTest {
         grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("quantity"), SortDirection.DESCENDING)));
         GridKt._get(grid, 0);
         verify(reservationClient, atLeastOnce()).search(any(), any(), any(), any(), anyInt(), anyInt(), eq(List.of("quantity,desc")));
+    }
+
+    /**
+     * Un estado de reserva que mto-stock estrene se pinta «Desconocido»: como no es activa, su fila
+     * solo ofrece el historial, tambien a quien puede todo. Tampoco se ofrece como filtro.
+     */
+    @Test
+    void aReservationInAnUnknownStateOnlyOffersItsHistory() {
+        loginAs("almacen.responsable", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE", "ROLE_STOCK_DELETE");
+        UUID unknown = UUID.randomUUID();
+        stubReservations(reservation(unknown, ReservationStatus.UNKNOWN, "2"));
+
+        UI.getCurrent().navigate(StockRoutes.RESERVATIONS);
+        Grid<Object> grid = gridWithId("reservations-grid");
+
+        assertTrue(GridKt._getFormattedRow(grid, 0).contains("Desconocido"));
+        assertEquals(List.of("history-" + unknown), actionIds(grid, 0), "solo una reserva activa cambia");
+        assertFalse(ViewLayerTest.<ReservationStatus>combo("reservations-status").getListDataView().getItems().toList()
+                .contains(ReservationStatus.UNKNOWN));
     }
 
     @Test

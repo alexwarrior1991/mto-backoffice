@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -8,7 +9,7 @@ import java.util.List;
 public enum PossessionType {
     PARTIAL("Parcial"),
     FULL("Total"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -22,10 +23,10 @@ public enum PossessionType {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static PossessionType of(String value) {
-        return MaintenanceEnums.parse(PossessionType.class, value, UNKNOWN);
+        return ClientEnums.parse(PossessionType.class, value, UNKNOWN);
     }
 
     public static List<PossessionType> selectable() {
-        return MaintenanceEnums.selectable(PossessionType.class, UNKNOWN);
+        return ClientEnums.selectable(PossessionType.class, UNKNOWN);
     }
 }

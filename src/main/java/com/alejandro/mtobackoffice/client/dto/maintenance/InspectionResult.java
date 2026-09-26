@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -13,7 +14,7 @@ public enum InspectionResult {
     MINOR_DEFECT("Defecto leve"),
     MAJOR_DEFECT("Defecto grave"),
     UNSAFE("Insegura"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -32,10 +33,10 @@ public enum InspectionResult {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static InspectionResult of(String value) {
-        return MaintenanceEnums.parse(InspectionResult.class, value, UNKNOWN);
+        return ClientEnums.parse(InspectionResult.class, value, UNKNOWN);
     }
 
     public static List<InspectionResult> selectable() {
-        return MaintenanceEnums.selectable(InspectionResult.class, UNKNOWN);
+        return ClientEnums.selectable(InspectionResult.class, UNKNOWN);
     }
 }

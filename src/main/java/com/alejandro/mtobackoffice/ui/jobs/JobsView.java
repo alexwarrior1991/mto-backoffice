@@ -339,12 +339,12 @@ public class JobsView extends VerticalLayout {
 
     private Component listHeader() {
         typeFilter.setId("jobs-type");
-        typeFilter.setItems(JobType.values());
+        typeFilter.setItems(JobType.selectable());
         typeFilter.setItemLabelGenerator(JobType::label);
         typeFilter.setClearButtonVisible(true);
         typeFilter.addValueChangeListener(change -> firstPage());
         statusFilter.setId("jobs-status");
-        statusFilter.setItems(JobStatus.values());
+        statusFilter.setItems(JobStatus.selectable());
         statusFilter.setItemLabelGenerator(JobStatus::label);
         statusFilter.setClearButtonVisible(true);
         statusFilter.addValueChangeListener(change -> firstPage());
@@ -454,18 +454,21 @@ public class JobsView extends VerticalLayout {
 
     /**
      * Los metodos concretos del cliente y no sus {@code default} ({@code status}, {@code file}):
-     * un doble de la interfaz no ejecuta los {@code default}, y esta vista se prueba con uno.
+     * un doble de la interfaz no ejecuta los {@code default}, y esta vista se prueba con uno. Un
+     * trabajo de tipo desconocido no tiene familia a la que preguntar: se queda como se leyo, y
+     * solo cambia cuando cambia en la lista.
      */
     private JobDto statusOf(JobDto job) {
-        return switch (job.family()) {
+        return job.family().map(family -> switch (family) {
             case PROFILE_JOBS -> client.profileJob(job.id());
             case LOV_JOBS -> client.lovJob(job.id());
             case REPUBLISH -> client.republishJob(job.id());
-        };
+        }).orElse(job);
     }
 
+    /** Solo se llama con un trabajo descargable ({@link JobDto#isDownloadable()}), que tiene familia. */
     private ResponseEntity<byte[]> fileOf(JobDto job) {
-        return switch (job.family()) {
+        return switch (job.family().orElseThrow(() -> new IllegalArgumentException("Un trabajo de tipo desconocido no se descarga"))) {
             case PROFILE_JOBS -> client.profileJobFile(job.id());
             case LOV_JOBS -> client.lovJobFile(job.id());
             case REPUBLISH -> throw new IllegalArgumentException("Un republicado no produce fichero");

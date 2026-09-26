@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -13,7 +14,7 @@ public enum FunctionalGroup {
     TURNOUTS_AND_SWITCHES("Desvios y agujas"),
     DIAGNOSTICS("Diagnostico"),
     NONE("Sin grupo"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -27,10 +28,10 @@ public enum FunctionalGroup {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static FunctionalGroup of(String value) {
-        return MaintenanceEnums.parse(FunctionalGroup.class, value, UNKNOWN);
+        return ClientEnums.parse(FunctionalGroup.class, value, UNKNOWN);
     }
 
     public static List<FunctionalGroup> selectable() {
-        return MaintenanceEnums.selectable(FunctionalGroup.class, UNKNOWN);
+        return ClientEnums.selectable(FunctionalGroup.class, UNKNOWN);
     }
 }

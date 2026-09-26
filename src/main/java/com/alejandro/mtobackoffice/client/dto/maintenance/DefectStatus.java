@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -15,7 +16,7 @@ public enum DefectStatus {
     RESOLVED("Resuelto"),
     CLOSED("Cerrado"),
     DISCARDED("Descartado"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -39,10 +40,10 @@ public enum DefectStatus {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static DefectStatus of(String value) {
-        return MaintenanceEnums.parse(DefectStatus.class, value, UNKNOWN);
+        return ClientEnums.parse(DefectStatus.class, value, UNKNOWN);
     }
 
     public static List<DefectStatus> selectable() {
-        return MaintenanceEnums.selectable(DefectStatus.class, UNKNOWN);
+        return ClientEnums.selectable(DefectStatus.class, UNKNOWN);
     }
 }

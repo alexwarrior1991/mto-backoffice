@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -8,7 +9,7 @@ import java.util.List;
 public enum SectionInsulatorInstallation {
     TRACK_CONNECTION("Conexion entre vias"),
     IN_TRACK("En la via"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -22,10 +23,10 @@ public enum SectionInsulatorInstallation {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static SectionInsulatorInstallation of(String value) {
-        return MaintenanceEnums.parse(SectionInsulatorInstallation.class, value, UNKNOWN);
+        return ClientEnums.parse(SectionInsulatorInstallation.class, value, UNKNOWN);
     }
 
     public static List<SectionInsulatorInstallation> selectable() {
-        return MaintenanceEnums.selectable(SectionInsulatorInstallation.class, UNKNOWN);
+        return ClientEnums.selectable(SectionInsulatorInstallation.class, UNKNOWN);
     }
 }

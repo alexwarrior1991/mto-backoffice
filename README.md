@@ -399,7 +399,8 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   (`null` es «no tocar»): los formularios mandan solo lo que cambió, y un número, una fecha o una
   referencia que tenían valor no se pueden vaciar. Los equipos son la excepción: su `PUT` es
   completo. Los enumerados de mantenimiento toleran valores nuevos: uno que esta versión no conoce
-  se lee como «Desconocido» en vez de romper la página.
+  se lee como «Desconocido» en vez de romper la página. Los de almacén, historial y trabajos
+  también (ver `CLAUDE.md`).
 - Errores: `ApiErrorDecoder` entiende el `application/problem+json` de `mto-configuration` (`code`,
   `traceId`, `retryable`, `errors[{field,code,message}]`; sus dos 409 son `CON-001`, un
   `versionNumber` que ya no es el guardado y que se arregla recargando, y `BUS-002`, un valor único

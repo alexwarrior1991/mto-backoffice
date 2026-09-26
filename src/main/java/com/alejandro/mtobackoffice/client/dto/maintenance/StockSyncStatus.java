@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -11,7 +12,7 @@ public enum StockSyncStatus {
     CONSUMED("Consumida"),
     RELEASED("Liberada"),
     FAILED("Fallida"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -25,10 +26,10 @@ public enum StockSyncStatus {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static StockSyncStatus of(String value) {
-        return MaintenanceEnums.parse(StockSyncStatus.class, value, UNKNOWN);
+        return ClientEnums.parse(StockSyncStatus.class, value, UNKNOWN);
     }
 
     public static List<StockSyncStatus> selectable() {
-        return MaintenanceEnums.selectable(StockSyncStatus.class, UNKNOWN);
+        return ClientEnums.selectable(StockSyncStatus.class, UNKNOWN);
     }
 }

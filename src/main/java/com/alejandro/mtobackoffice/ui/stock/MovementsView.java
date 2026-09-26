@@ -69,7 +69,7 @@ public class MovementsView extends VerticalLayout {
         this.clients = new StockClients(materials, warehouses, suppliers, projects, movements, reservations, assemblies);
         setSizeFull();
         type.setId("movements-type");
-        type.setItems(MovementType.values());
+        type.setItems(MovementType.selectable());
         type.setItemLabelGenerator(MovementType::label);
         type.setClearButtonVisible(true);
         warehouse = StockPickers.warehouse("Almacen", warehouses);

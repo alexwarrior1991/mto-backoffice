@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -10,7 +11,7 @@ public enum CatenaryAssetType {
     PROFILE("Perfil"),
     DISCONNECTOR("Seccionador"),
     SECTION_INSULATOR("Aislador de seccion"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -24,10 +25,10 @@ public enum CatenaryAssetType {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static CatenaryAssetType of(String value) {
-        return MaintenanceEnums.parse(CatenaryAssetType.class, value, UNKNOWN);
+        return ClientEnums.parse(CatenaryAssetType.class, value, UNKNOWN);
     }
 
     public static List<CatenaryAssetType> selectable() {
-        return MaintenanceEnums.selectable(CatenaryAssetType.class, UNKNOWN);
+        return ClientEnums.selectable(CatenaryAssetType.class, UNKNOWN);
     }
 }

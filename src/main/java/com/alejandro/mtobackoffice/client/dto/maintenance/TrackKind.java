@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -8,7 +9,7 @@ import java.util.List;
 public enum TrackKind {
     MAIN("Principal"),
     DIVERTED("Desviada"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -22,10 +23,10 @@ public enum TrackKind {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static TrackKind of(String value) {
-        return MaintenanceEnums.parse(TrackKind.class, value, UNKNOWN);
+        return ClientEnums.parse(TrackKind.class, value, UNKNOWN);
     }
 
     public static List<TrackKind> selectable() {
-        return MaintenanceEnums.selectable(TrackKind.class, UNKNOWN);
+        return ClientEnums.selectable(TrackKind.class, UNKNOWN);
     }
 }

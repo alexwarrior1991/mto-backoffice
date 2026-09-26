@@ -54,6 +54,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -753,7 +754,7 @@ class ClientLayerTest {
         assertEquals(JOB_ID, job.id());
         assertEquals(JobType.PROFILE_IMPORT, job.type());
         assertEquals(JobStatus.PENDING, job.status());
-        assertEquals(JobFamily.PROFILE_JOBS, job.family());
+        assertEquals(Optional.of(JobFamily.PROFILE_JOBS), job.family());
         assertTrue(job.itemErrors().isEmpty(), "lo omitido llega vacio, no nulo");
         assertFalse(job.isDownloadable());
         server.verify();
@@ -848,6 +849,43 @@ class ClientLayerTest {
 
         PageResponse<JobDto> last = asUser(() -> jobsClient.list(2, 20, null, null));
         assertTrue(last.content().isEmpty());
+        server.verify();
+    }
+
+    /**
+     * La lista ensena los trabajos de todas las familias, asi que un tipo o un estado que
+     * mto-configuration estrene llega antes que esta aplicacion: se lee como {@code UNKNOWN} y no
+     * rompe la pagina. Un tipo desconocido no tiene familia, asi que ni se consulta por separado ni
+     * se descarga; un estado desconocido se da por terminado y deja de consultarse.
+     */
+    @Test
+    void aJobOfATypeOrStatusThisVersionDoesNotKnowIsReadAsUnknown() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/jobs?page=0&size=20"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"content":[{"id":"6f1c0000-0000-4000-8000-000000000001","type":"TRACK_EXPORT","status":"COMPLETED",
+                                     "processedItems":10,"successfulItems":10,"failedItems":0},
+                                    {"id":"6f1c0000-0000-4000-8000-000000000002","type":"PROFILE_EXPORT","status":"PAUSED",
+                                     "trackId":3,"processedItems":4,"successfulItems":4,"failedItems":0}],
+                         "page":{"size":20,"number":0,"totalElements":2,"totalPages":1}}
+                        """, MediaType.APPLICATION_JSON));
+
+        List<JobDto> jobs = asUser(() -> jobsClient.list(0, 20, null, null)).content();
+
+        JobDto newType = jobs.get(0);
+        assertEquals(JobType.UNKNOWN, newType.type());
+        assertEquals("Desconocido", newType.type().label());
+        assertTrue(newType.family().isEmpty());
+        assertFalse(newType.isDownloadable(), "sin familia no hay a quien pedir el fichero");
+        JobDto newStatus = jobs.get(1);
+        assertEquals(JobStatus.UNKNOWN, newStatus.status());
+        assertTrue(newStatus.isTerminal(), "un estado desconocido deja de consultarse");
+        assertFalse(newStatus.isDownloadable());
+        assertEquals(Optional.of(JobFamily.PROFILE_JOBS), newStatus.family());
+        assertFalse(JobType.selectable().contains(JobType.UNKNOWN));
+        assertEquals(6, JobType.selectable().size());
+        assertFalse(JobStatus.selectable().contains(JobStatus.UNKNOWN));
+        assertEquals(6, JobStatus.selectable().size());
         server.verify();
     }
 
@@ -1410,6 +1448,50 @@ class ClientLayerTest {
         assertNull(revision.entity().audit().createdBy(), "las columnas de auditoria no se auditan");
         assertEquals("BASELINE", reservation.content().getFirst().revision().source());
         assertEquals(ReservationStatus.ACTIVE, reservation.content().getFirst().entity().status());
+        server.verify();
+    }
+
+    /**
+     * Un valor que mto-stock estrene no rompe la pagina: el tipo de un apunte (tambien el del apunte
+     * enlazado), el estado de una reserva y la operacion de una revision se leen como
+     * {@code UNKNOWN}, que no se ofrece en ningun filtro. Una reserva desconocida no es activa, asi
+     * que su fila no ofrece acciones.
+     */
+    @Test
+    void aStockValueThisVersionDoesNotKnowIsReadAsUnknown() {
+        String returned = MOVEMENT.replace("\"type\":\"OUTPUT\"", "\"type\":\"RETURN_TO_SUPPLIER\"")
+                .replace("\"relatedMovement\":null", "\"relatedMovement\":{\"id\":\"1a2b3c4d-0000-4000-8000-00000000000b\",\"type\":\"RETURN_TO_SUPPLIER\","
+                        + "\"quantity\":3,\"occurredAt\":\"2026-09-10T10:00:00Z\",\"externalReference\":null}");
+        server.expect(requestTo(STOCK + "/movements?page=0&size=20&sort=occurredAt%2Cdesc")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(MOVEMENT + "," + returned, 0, 20, 2), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(STOCK + "/reservations?page=0&size=20&sort=reservedAt%2Cdesc")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("{\"id\":\"" + RES_ID + "\",\"material\":" + MATERIAL_SUMMARY + ",\"warehouse\":" + WAREHOUSE_SUMMARY
+                        + ",\"project\":null,\"quantity\":2,\"status\":\"EXPIRED\",\"reservedAt\":\"2026-09-10T10:00:00Z\",\"releasedAt\":null,"
+                        + "\"active\":false," + AUDIT + "}", 0, 20, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(STOCK + "/reservations/" + RES_ID + "/revisions?page=0&size=10")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("{\"revision\":{\"revision\":4,\"revisionAt\":\"2026-09-03T08:00:00Z\",\"operation\":\"RESTORED\","
+                        + "\"author\":\"almacen.responsable\",\"source\":\"HTTP\",\"correlationId\":\"c-2\"},\"entity\":null}", 0, 10, 1),
+                        MediaType.APPLICATION_JSON));
+
+        List<MovementDto> ledger = asUser(() -> movementClient.search(null, null, null, null, null, null, null, 0, 20, List.of("occurredAt,desc"))).content();
+        ReservationDto reservation = asUser(() -> reservationClient.search(null, null, null, null, 0, 20, List.of("reservedAt,desc"))).content().getFirst();
+        RevisionDto<ReservationDto> revision = asUser(() -> reservationClient.revisions(UUID.fromString(RES_ID), 0, 10)).content().getFirst();
+
+        assertEquals(MovementType.OUTPUT, ledger.get(0).type());
+        MovementDto unknown = ledger.get(1);
+        assertEquals(MovementType.UNKNOWN, unknown.type());
+        assertEquals("Desconocido", unknown.type().label());
+        assertEquals(0, unknown.type().sign(), "el signo de un tipo desconocido no se sabe; la cantidad con signo la da el servicio");
+        assertEquals(0, new BigDecimal("-3").compareTo(unknown.signedQuantity()));
+        assertEquals(MovementType.UNKNOWN, unknown.relatedMovement().type());
+        assertEquals(ReservationStatus.UNKNOWN, reservation.status());
+        assertFalse(reservation.isActive());
+        assertEquals(RevisionOperation.UNKNOWN, revision.revision().operation());
+        assertFalse(MovementType.selectable().contains(MovementType.UNKNOWN));
+        assertEquals(6, MovementType.selectable().size());
+        assertFalse(ReservationStatus.selectable().contains(ReservationStatus.UNKNOWN));
+        assertEquals(4, ReservationStatus.selectable().size());
+        assertEquals(List.of(RevisionOperation.CREATED, RevisionOperation.UPDATED, RevisionOperation.DELETED), RevisionOperation.selectable());
         server.verify();
     }
 

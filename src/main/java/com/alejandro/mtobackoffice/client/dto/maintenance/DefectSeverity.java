@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -10,7 +11,7 @@ public enum DefectSeverity {
     MEDIUM("Media"),
     HIGH("Alta"),
     CRITICAL("Critica"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -24,10 +25,10 @@ public enum DefectSeverity {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static DefectSeverity of(String value) {
-        return MaintenanceEnums.parse(DefectSeverity.class, value, UNKNOWN);
+        return ClientEnums.parse(DefectSeverity.class, value, UNKNOWN);
     }
 
     public static List<DefectSeverity> selectable() {
-        return MaintenanceEnums.selectable(DefectSeverity.class, UNKNOWN);
+        return ClientEnums.selectable(DefectSeverity.class, UNKNOWN);
     }
 }
