@@ -46,9 +46,10 @@ import java.util.stream.Stream;
  * Los activos de catenaria, paginados y filtrados en el servidor. Un tramo de via se da de alta
  * aqui y se modifica entero; perfiles, seccionadores y aisladores llegan de mto-configuration y
  * aqui solo cambian descripcion e intervalo preventivo. Desactivar es un {@code DELETE}
- * ({@code maintenance-delete}) y reactivar, una modificacion ({@code maintenance-write}); las dos,
- * solo en tramos propios: el {@code enabled} de un activo sincronizado lo vuelve a escribir el
- * siguiente evento de mto-configuration.
+ * ({@code maintenance-delete}) y reactivar, una modificacion con {@code enabled=true}
+ * ({@code maintenance-write}), en cualquier activo: lo que decide mantenimiento no lo deshace ningun
+ * evento de datos maestros. Solo se reactiva lo que se desactivo aqui, y no si mto-configuration lo
+ * tiene desactivado (el servicio responderia 409 {@code AST-001}). El estado dice quien lo desactivo.
  */
 @Route(value = MaintenanceRoutes.ASSETS, layout = MainLayout.class)
 @PageTitle("Activos")
@@ -137,7 +138,7 @@ public class AssetsView extends VerticalLayout {
                 .setHeader("Intervalo").setKey("interval").setSortProperty("preventiveIntervalDays").setSortable(true).setAutoWidth(true);
         grid.addColumn(asset -> Formats.dateTime(asset.nextPreventiveDueAt())).setHeader("Proximo preventivo").setKey("nextPreventive")
                 .setAutoWidth(true);
-        grid.addColumn(asset -> asset.isEnabled() ? "Activo" : "Desactivado").setHeader("Estado").setKey("enabled")
+        grid.addColumn(MaintenanceFormats::assetState).setHeader("Estado").setKey("enabled")
                 .setSortProperty("enabled").setSortable(true).setAutoWidth(true);
         grid.addColumn(asset -> asset.isSynchronized() ? "mto-configuration" : "Mantenimiento").setHeader("Origen").setKey("source")
                 .setAutoWidth(true);
@@ -162,20 +163,23 @@ public class AssetsView extends VerticalLayout {
             actions.add(MaintenanceUi.rowButton("asset-edit-" + asset.id(), VaadinIcon.EDIT, "Modificar",
                     click -> new AssetEditorDialog(asset, clients, names, this::refresh).open()));
         }
-        if (!asset.isSynchronized()) {
-            if (asset.isEnabled() && canDelete) {
-                Button disable = MaintenanceUi.rowButton("asset-disable-" + asset.id(), VaadinIcon.BAN, "Desactivar",
-                        click -> MaintenanceUi.confirm("Desactivar " + asset.label(),
-                                "Deja de admitir trabajo nuevo; las ordenes que tiene no cambian. Se puede reactivar.", "Desactivar",
-                                () -> disable(asset)));
-                disable.addThemeVariants(ButtonVariant.LUMO_ERROR);
-                actions.add(disable);
-            } else if (!asset.isEnabled() && canWrite) {
-                actions.add(MaintenanceUi.rowButton("asset-enable-" + asset.id(), VaadinIcon.CHECK_CIRCLE, "Reactivar",
-                        click -> enable(asset)));
-            }
+        if (!asset.isDisabledLocally() && canDelete) {
+            Button disable = MaintenanceUi.rowButton("asset-disable-" + asset.id(), VaadinIcon.BAN, "Desactivar",
+                    click -> MaintenanceUi.confirm("Desactivar " + asset.label(), disableWarning(asset), "Desactivar",
+                            () -> disable(asset)));
+            disable.addThemeVariants(ButtonVariant.LUMO_ERROR);
+            actions.add(disable);
+        } else if (asset.isDisabledLocally() && !asset.isDisabledAtSource() && canWrite) {
+            actions.add(MaintenanceUi.rowButton("asset-enable-" + asset.id(), VaadinIcon.CHECK_CIRCLE, "Reactivar",
+                    click -> enable(asset)));
         }
         return actions;
+    }
+
+    /** Uno sincronizado sigue desactivado aunque mto-configuration lo mande activo: es lo que lo diferencia de antes. */
+    private static String disableWarning(AssetDto asset) {
+        String survives = asset.isSynchronized() ? " Sigue desactivado aunque mto-configuration lo mande activo." : "";
+        return "Deja de admitir trabajo nuevo; las ordenes que tiene no cambian." + survives + " Se puede reactivar.";
     }
 
     private void disable(AssetDto asset) {

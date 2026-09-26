@@ -313,12 +313,17 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `TeamRequest` no lleva `NON_NULL`. Un record de petición no lleva métodos `isX()`/`getX()`:
   Jackson los serializa como propiedades (`isEmpty()` salió como `"empty":false`); por eso se llaman
   `changesNothing()`.
-- **Un activo sincronizado es de `mto-configuration`.** Perfiles, seccionadores y aisladores llegan
-  por datos maestros (`sourceService`); de ellos solo se ofrecen la descripción y el intervalo del
-  preventivo, porque cualquier otro campo es 409 `AST-001`. Su `enabled` se enseña pero no se
-  ofrece: el siguiente evento de datos maestros lo pisaría. Solo un tramo de vía propio se
-  desactiva (`DELETE`, con `maintenance-delete` y confirmación) y se reactiva (un `PUT` con
-  `enabled=true`, con `maintenance-write`).
+- **Un activo sincronizado es de `mto-configuration`, pero su desactivación también es de
+  mantenimiento.** Perfiles, seccionadores y aisladores llegan por datos maestros
+  (`sourceService`); de ellos solo se ofrecen la descripción y el intervalo del preventivo, porque
+  cualquier otro campo es 409 `AST-001`. `enabled` lo deciden dos voces que el servicio guarda por
+  separado: `enabledAtSource` (lo que dice `mto-configuration`, `null` en un tramo propio) y
+  `disabledLocally` (lo que decidió mantenimiento, que ningún evento deshace); el estado dice quién
+  lo desactivó (`MaintenanceFormats.assetState`). Cualquier activo se desactiva aquí (`DELETE`, con
+  `maintenance-delete` y confirmación; la de un sincronizado avisa de que sobrevive a los datos
+  maestros), también uno que el origen ya tenía desactivado, para que siga así cuando lo reactive.
+  Se reactiva (un `PUT` con `enabled=true`, con `maintenance-write`) solo lo que se desactivó aquí
+  y el origen tiene activo: si no, el servicio responde 409 `AST-001` y no se ofrece.
 - **Los nombres de otros servicios se piden a su servicio.** `mto-maintenance` solo guarda ids de
   vías, estaciones y paquetes (`mto-configuration`) y de materiales, almacenes y proyectos
   (`mto-stock`); `MaintenanceNames` los nombra con el token de la persona (vías, estaciones y
@@ -530,7 +535,9 @@ una reserva desde cualquier fila; el mantenimiento: el grupo con las órdenes co
 perfil lee de los otros módulos, un rol de realm que no abre las vistas, los mensajes de sus
 códigos, nombres de vías y paquetes (y `#id` sin `config-read`, sin llamar a configuración), la
 descarga de un fichero; activos filtrados en el servidor, el alta de un tramo con su rango, el
-activo sincronizado que solo cambia descripción e intervalo, desactivar y reactivar un tramo,
+activo sincronizado que solo cambia descripción e intervalo y se desactiva aquí con su aviso, el estado
+que dice quién desactivó un activo y la reactivación solo de lo desactivado aquí, desactivar y
+reactivar un tramo,
 equipos enteros y catálogos de lectura; órdenes filtradas, el alta con su activo buscado, la ficha
 con lo que su estado admite, planificar y el `TRN-001` con el diálogo abierto, `force` solo con
 supervise, las tareas (añadir, generar, modificar, cancelar), el historial de estados; turnos

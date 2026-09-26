@@ -1637,6 +1637,7 @@ class ClientLayerTest {
             + "\"switches\":[{\"id\":\"2b3c4d5e-0000-4000-8000-00000000000a\",\"code\":\"W31\",\"kp\":12.410,\"turnoutDenominator\":9,"
             + "\"turnoutRate\":\"1:9\",\"trackId\":13,\"enabled\":false}],"
             + "\"sourceService\":\"mto-configuration\",\"sourceEntityId\":\"77\",\"sourceSequenceNumber\":41,\"enabled\":true,"
+            + "\"enabledAtSource\":true,\"disabledLocally\":false,"
             + "\"preventiveIntervalDays\":180,\"lastPreventiveCompletedAt\":null,\"nextPreventiveDueAt\":\"2026-10-01T00:00:00Z\",\"audit\":null}";
 
     /**
@@ -1650,7 +1651,9 @@ class ClientLayerTest {
                         + "&page=0&size=50&sort=trackId%2Casc&sort=startKp%2Casc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage(INSULATOR_JSON + "," + INSULATOR_JSON.replace("SECTION_INSULATOR", "CANTILEVER")
-                        .replace(ASSET_ID, "2b3c4d5e-0000-4000-8000-00000000000b"), 0, 50, 2), MediaType.APPLICATION_JSON));
+                        .replace(ASSET_ID, "2b3c4d5e-0000-4000-8000-00000000000b")
+                        .replace("\"enabled\":true,\"enabledAtSource\":true,\"disabledLocally\":false",
+                                "\"enabled\":false,\"enabledAtSource\":false,\"disabledLocally\":true"), 0, 50, 2), MediaType.APPLICATION_JSON));
         server.expect(requestTo(MAINTENANCE + "/assets")).andExpect(method(HttpMethod.POST))
                 .andExpect(jsonPath("$.code").value("TS-0002"))
                 .andExpect(jsonPath("$.trackId").value(12))
@@ -1695,6 +1698,11 @@ class ClientLayerTest {
         assertFalse(insulator.switches().getFirst().enabled(), "una aguja dada de baja sigue apareciendo, marcada");
         assertEquals(Instant.parse("2026-10-01T00:00:00Z"), insulator.nextPreventiveDueAt());
         assertEquals(CatenaryAssetType.UNKNOWN, page.content().get(1).type());
+        assertFalse(insulator.isDisabledAtSource() || insulator.isDisabledLocally());
+        AssetDto disabled = page.content().get(1);
+        assertFalse(disabled.isEnabled());
+        assertTrue(disabled.isDisabledAtSource(), "mto-configuration lo tiene desactivado");
+        assertTrue(disabled.isDisabledLocally(), "y mantenimiento tambien");
         assertEquals("TS-0002", created.code());
         assertEquals(MaintenanceOrderStatus.COMPLETED, orders.content().getFirst().status());
         assertTrue(AssetUpdateRequest.enabled(false).equals(new AssetUpdateRequest(null, null, false, null, null, null, null, null, null, null)));

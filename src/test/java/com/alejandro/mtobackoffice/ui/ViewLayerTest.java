@@ -3620,20 +3620,28 @@ class ViewLayerTest {
     private static final UUID ASSET_SYNCED = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000010");
     private static final UUID ASSET_OWN = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000011");
     private static final UUID ASSET_OWN_OFF = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000012");
+    private static final UUID ASSET_OFF_HERE = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000013");
+    private static final UUID ASSET_OFF_AT_SOURCE = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000014");
+    private static final UUID ASSET_OFF_BOTH = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000015");
     private static final String[] MAINTENANCE_TECHNICIAN = {"ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_CONFIG_READ", "ROLE_STOCK_READ"};
     private static final String[] MAINTENANCE_MANAGER = {"ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_MAINTENANCE_DELETE",
             "ROLE_MAINTENANCE_SUPERVISE", "ROLE_CONFIG_READ", "ROLE_STOCK_READ"};
 
     private static AssetDto syncedProfile() {
-        return new AssetDto(ASSET_SYNCED, "PRF-0001", "12-2.27", CatenaryAssetType.PROFILE, null, 3L, 12L, 4L, new BigDecimal("12.270"),
-                new BigDecimal("12.270"), "501", "S-3", null, null, null, List.of(), "mto-configuration", "501", true, 180, null,
-                Instant.parse("2026-10-01T00:00:00Z"), null);
+        return syncedProfile(ASSET_SYNCED, "PRF-0001", true, false);
+    }
+
+    /** Un perfil de mto-configuration: activo solo si el origen lo tiene activo y aqui nadie lo desactivo. */
+    private static AssetDto syncedProfile(UUID id, String code, boolean enabledAtSource, boolean disabledLocally) {
+        return new AssetDto(id, code, "12-2.27", CatenaryAssetType.PROFILE, null, 3L, 12L, 4L, new BigDecimal("12.270"),
+                new BigDecimal("12.270"), "501", "S-3", null, null, null, List.of(), "mto-configuration", "501",
+                enabledAtSource && !disabledLocally, enabledAtSource, disabledLocally, 180, null, Instant.parse("2026-10-01T00:00:00Z"), null);
     }
 
     private static AssetDto ownSection(UUID id, String code, boolean enabled) {
         return new AssetDto(id, code, "Tramo " + code, CatenaryAssetType.TRACK_SECTION, "Tramo propio", 3L, 12L, null,
                 new BigDecimal("12.100"), new BigDecimal("13.450"), null, null, TrackKind.MAIN, null, null, List.of(), null, null, enabled,
-                null, null, null, null);
+                null, !enabled, null, null, null, null);
     }
 
     /** Los activos simulados, paginados como el servicio: una fila de mas en una pagina rompe el Grid. */
@@ -3712,19 +3720,29 @@ class ViewLayerTest {
         assertTrue(LocatorJ._find(AssetEditorDialog.class).isEmpty());
     }
 
-    /** Un activo de mto-configuration solo cambia descripcion e intervalo, manda solo lo cambiado y no ofrece desactivarse. */
+    /**
+     * Un activo de mto-configuration solo cambia descripcion e intervalo y manda solo lo cambiado.
+     * Desactivarlo aqui avisa de que sobrevive a los datos maestros.
+     */
     @Test
-    void aSynchronizedAssetOnlyChangesDescriptionAndIntervalAndCannotBeDisabledHere() {
+    void aSynchronizedAssetOnlyChangesDescriptionAndIntervalAndItsDisablingSurvivesMasterData() {
         loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
         stubReferencesForMaintenance();
         stubAssets(List.of(syncedProfile()));
         when(assetClient.update(any(), any())).thenReturn(syncedProfile());
 
         UI.getCurrent().navigate(MaintenanceRoutes.ASSETS);
-        Component actions = GridKt._getCellComponent(gridWithId("assets-grid"), 0, AssetsView.ACTIONS_COLUMN);
-        assertTrue(LocatorJ._find(actions, Button.class, spec -> spec.withId("asset-disable-" + ASSET_SYNCED)).isEmpty(),
-                "el enabled de un activo sincronizado lo reescribe el siguiente evento");
-        LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withId("asset-edit-" + ASSET_SYNCED)));
+        Grid<Object> grid = gridWithId("assets-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, AssetsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("asset-disable-" + ASSET_SYNCED)));
+        ConfirmDialog confirm = LocatorJ._get(ConfirmDialog.class);
+        assertTrue(confirm.getElement().getProperty("message", "").contains("Sigue desactivado aunque mto-configuration lo mande activo."),
+                "lo que se decide aqui no lo deshace el siguiente evento");
+        ConfirmDialogKt._fireConfirm(confirm);
+        verify(assetClient).disable(ASSET_SYNCED);
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, AssetsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("asset-edit-" + ASSET_SYNCED)));
 
         assertTrue(LocatorJ._find(TextField.class, spec -> spec.withId("asset-name")).isEmpty(), "el nombre es de mto-configuration");
         IntegerField interval = LocatorJ._get(IntegerField.class, spec -> spec.withId("asset-interval"));
@@ -3757,6 +3775,41 @@ class ViewLayerTest {
                 spec -> spec.withId("asset-enable-" + ASSET_OWN_OFF)));
         verify(assetClient).update(ASSET_OWN_OFF, AssetUpdateRequest.enabled(true));
         NotificationsKt.expectNotifications("Reactivado TS-0009 - Tramo TS-0009");
+    }
+
+    /**
+     * El estado dice quien desactivo un activo sincronizado. Solo se reactiva lo que se desactivo
+     * aqui y el origen tiene activo; lo desactivado en mto-configuration se puede desactivar tambien
+     * aqui, para que siga asi cuando el origen lo reactive, pero no reactivar (409 {@code AST-001}).
+     */
+    @Test
+    void aSynchronizedAssetSaysWhoDisabledItAndIsOnlyReactivatedIfItWasDisabledHere() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        stubReferencesForMaintenance();
+        stubAssets(List.of(syncedProfile(ASSET_OFF_HERE, "PRF-0013", true, true), syncedProfile(ASSET_OFF_AT_SOURCE, "PRF-0014", false, false),
+                syncedProfile(ASSET_OFF_BOTH, "PRF-0015", false, true)));
+        when(assetClient.update(any(), any())).thenReturn(syncedProfile(ASSET_OFF_HERE, "PRF-0013", true, false));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ASSETS);
+        Grid<Object> grid = gridWithId("assets-grid");
+        assertTrue(GridKt._getFormattedRow(grid, 0).contains("Desactivado aqui"));
+        assertTrue(GridKt._getFormattedRow(grid, 1).contains("Desactivado en configuracion"));
+        assertTrue(GridKt._getFormattedRow(grid, 2).contains("Desactivado aqui y en configuracion"));
+        assertEquals(List.of("asset-enable"), assetStateActions(grid, 0), "desactivado aqui: se reactiva aqui");
+        assertEquals(List.of("asset-disable"), assetStateActions(grid, 1), "desactivado en el origen: se puede decidir que siga asi");
+        assertEquals(List.of(), assetStateActions(grid, 2), "reactivarlo seria 409 AST-001 mientras el origen no lo reactive");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, AssetsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("asset-enable-" + ASSET_OFF_HERE)));
+        verify(assetClient).update(ASSET_OFF_HERE, AssetUpdateRequest.enabled(true));
+        NotificationsKt.expectNotifications("Reactivado PRF-0013 - 12-2.27");
+    }
+
+    /** Los botones de desactivar y reactivar de una fila de activos, sin el id. */
+    private static List<String> assetStateActions(Grid<Object> grid, int row) {
+        return LocatorJ._find(GridKt._getCellComponent(grid, row, AssetsView.ACTIONS_COLUMN), Button.class).stream()
+                .map(button -> button.getId().orElse("")).filter(id -> id.startsWith("asset-disable-") || id.startsWith("asset-enable-"))
+                .map(id -> id.replaceAll("-[0-9a-f]{8}-.*$", "")).toList();
     }
 
     @Test

@@ -10,6 +10,7 @@ import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.icon.VaadinIcon;
 
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -60,7 +61,7 @@ final class MaintenanceHistory {
 
     static String asset(AssetDto asset) {
         return join(asset.name(), label(MaintenanceFormats.kpRange(asset.startKp(), asset.endKp()), range -> range.isEmpty() ? null : "KP " + range),
-                asset.isEnabled() ? "activo" : "desactivado",
+                MaintenanceFormats.assetState(asset).toLowerCase(Locale.ROOT),
                 label(asset.preventiveIntervalDays(), days -> "preventivo cada " + days + " dias"), asset.description());
     }
 

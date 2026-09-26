@@ -7,8 +7,9 @@ import java.math.BigDecimal;
 /**
  * Modificacion parcial: {@code null} es «no tocar», asi que solo viaja lo que cambio. Sin bloqueo
  * optimista: lo ultimo que llega gana. En un activo sincronizado solo valen {@code description},
- * {@code enabled} y {@code preventiveIntervalDays}; {@code enabled} de esos no se ofrece, porque el
- * siguiente evento de mto-configuration lo vuelve a escribir.
+ * {@code enabled} y {@code preventiveIntervalDays}. {@code enabled=true} deshace la desactivacion
+ * hecha aqui (409 {@code AST-001} si mto-configuration lo tiene desactivado); desactivar va por el
+ * {@code DELETE}, que pide {@code maintenance-delete} como {@code enabled=false}.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record AssetUpdateRequest(String name, String description, Boolean enabled, Integer preventiveIntervalDays,

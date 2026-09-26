@@ -192,7 +192,9 @@ Séptimo repositorio del dominio, hermano e independiente de
   tiene el grupo «Mantenimiento», cuyo nodo es la lista de órdenes (`mantenimiento`). M1 trae los
   **activos** (`mantenimiento/activos`: la lista filtrada en el servidor; el alta de un tramo de vía
   propio y, en un activo sincronizado desde `mto-configuration`, solo la descripción y el intervalo
-  del preventivo) y los catálogos de **equipos**, **tipos de tarea** y **plantillas de inspección**. M2
+  del preventivo; desde que `mto-maintenance` separa lo que dice configuración de lo que decide
+  mantenimiento, cualquier activo se desactiva aquí, la decisión sobrevive a los datos maestros y el
+  estado dice quién lo desactivó) y los catálogos de **equipos**, **tipos de tarea** y **plantillas de inspección**. M2
   trae las **órdenes** (la lista filtrada y la ficha `mantenimiento/ordenes/{id}` con su cabecera,
   los botones que su estado admite —planificar, asignar, iniciar, completar y cancelar— y sus
   **tareas**, añadidas a mano o generadas, una por perfil del tramo). M3 trae los **turnos** (lista,
@@ -269,8 +271,8 @@ Las pantallas de mantenimiento (fase 8) siguen los permisos de `mto-maintenance-
 | Ver todo: listas, fichas, informes (y sus ficheros) e historial | `maintenance-read` |
 | Nombres y desplegables de vías, estaciones y paquetes | además, `config-read` de `mto-configuration-api` |
 | Nombres y desplegables de materiales, almacenes y proyectos; añadir una línea de material | además, `stock-read` de `mto-stock-api` |
-| Altas, modificaciones, transiciones ordinarias, ejecutar tareas, reactivar un tramo | `maintenance-write` |
-| Desactivar un tramo propio, quitar una línea de material | `maintenance-delete` |
+| Altas, modificaciones, transiciones ordinarias, ejecutar tareas, reactivar un activo desactivado aquí | `maintenance-write` |
+| Desactivar un activo (también uno sincronizado), quitar una línea de material | `maintenance-delete` |
 | Cancelar una orden, completarla con `force`; resolver, cerrar o descartar un defecto | `maintenance-write` **y** `maintenance-supervise` |
 
 Los tres perfiles de mantenimiento del realm llevan `config-read` y `stock-read`, así que quien los
