@@ -2,6 +2,7 @@ package com.alejandro.mtobackoffice.client.dto.jobs;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -35,8 +36,9 @@ public record JobDto(
         itemErrors = itemErrors == null ? List.of() : List.copyOf(itemErrors);
     }
 
-    public JobFamily family() {
-        return type.family();
+    /** La familia a la que se pregunta por el trabajo; vacia si su tipo es desconocido. */
+    public Optional<JobFamily> family() {
+        return type == null ? Optional.empty() : type.family();
     }
 
     public boolean isTerminal() {
@@ -46,10 +48,10 @@ public record JobDto(
     /**
      * Una exportacion solo se descarga completa; una importacion tambien cuando termino con
      * errores por fila, porque su fichero es el informe de esos errores. El republicado no
-     * produce fichero.
+     * produce fichero, ni un trabajo de tipo desconocido, que no tiene familia a la que pedirlo.
      */
     public boolean isDownloadable() {
-        if (type == null || status == null || !type.family().producesFile()) {
+        if (status == null || !family().map(JobFamily::producesFile).orElse(false)) {
             return false;
         }
         return switch (type) {

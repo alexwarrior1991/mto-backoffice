@@ -67,6 +67,10 @@ public final class UiErrors {
             // defecto que no hay que registrar...). Es un 422 sin campos, pero dice algo mas concreto.
             case ValidationApiException inspection when "INS-001".equals(inspection.getProblem().code()) ->
                     "La inspeccion o su checklist no admiten esta operacion." + detail(exception);
+            // mto-maintenance: mto-stock ha dicho que no al sincronizar una linea de material (un material
+            // o un almacen retirado...). La linea queda rechazada, con el motivo que viene en el detalle.
+            case ValidationApiException stock when "STK-422".equals(stock.getProblem().code()) ->
+                    "El almacen ha rechazado la operacion." + detail(exception);
             // Un 422 sin errores por campo es una regla de negocio (mto-stock: reserva no activa, conjunto
             // sin lista de materiales, almacen inactivo...): la peticion esta bien, la operacion no cabe.
             case ValidationApiException business when business.getStatus().value() == 422 && !business.getProblem().hasFieldErrors() ->

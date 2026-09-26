@@ -201,7 +201,10 @@ Séptimo repositorio del dominio, hermano e independiente de
   el material gastado. M4 trae las **inspecciones** (con sus puntos y lo que generan: un defecto y
   una orden correctiva, idempotentes) y los **defectos** (vincular a una orden, resolver, cerrar y
   descartar). M5 trae las **líneas de material** de una orden: se reservan en `mto-stock` al
-  planificarla, se sincronizan si el almacén no respondió y se quitan liberando su reserva. M6 trae
+  planificarla, se sincronizan si el almacén no respondió y se quitan liberando su reserva (desde
+  que `mto-maintenance` distingue un almacén caído de uno que dice que no, una línea rechazada
+  enseña el motivo y se reintenta igual, y una reservada se comprueba por si Almacén liberó su
+  reserva). M6 trae
   los **informes** (`mantenimiento/informes`: el avance del preventivo y el resumen de un mes, y el
   parte diario en la ficha del turno), cada uno en pantalla y como Excel o PDF descargados a través
   de esta aplicación. M7 cierra con el **historial**: el botón «Historial» de cada ficha y de cada
@@ -399,7 +402,8 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   (`null` es «no tocar»): los formularios mandan solo lo que cambió, y un número, una fecha o una
   referencia que tenían valor no se pueden vaciar. Los equipos son la excepción: su `PUT` es
   completo. Los enumerados de mantenimiento toleran valores nuevos: uno que esta versión no conoce
-  se lee como «Desconocido» en vez de romper la página.
+  se lee como «Desconocido» en vez de romper la página. Los de almacén, historial y trabajos
+  también (ver `CLAUDE.md`).
 - Errores: `ApiErrorDecoder` entiende el `application/problem+json` de `mto-configuration` (`code`,
   `traceId`, `retryable`, `errors[{field,code,message}]`; sus dos 409 son `CON-001`, un
   `versionNumber` que ya no es el guardado y que se arregla recargando, y `BUS-002`, un valor único

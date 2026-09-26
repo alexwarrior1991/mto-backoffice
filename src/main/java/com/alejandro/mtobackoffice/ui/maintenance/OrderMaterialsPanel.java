@@ -28,11 +28,13 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 /**
- * Las lineas de material de una orden y como van con mto-stock (el error, si fallo, en el tooltip
- * del estado). Con la orden sin terminar: anadir (write + {@code stock-read}), modificar (write) y
- * quitar (delete; ni consumidas), que libera antes la reserva. Sincronizar (write) reintenta con el
- * almacen una linea fallida, o una sin pedir fuera de borrador; si el almacen sigue caido, el
- * servicio responde 503 {@code STK-503} y la linea se queda como estaba.
+ * Las lineas de material de una orden y como van con mto-stock (el error o el motivo del rechazo, en
+ * el tooltip del estado). Con la orden sin terminar: anadir (write + {@code stock-read}), modificar
+ * (write) y quitar (delete; ni consumidas), que libera antes la reserva. Sincronizar (write) reintenta
+ * con el almacen una linea fallida o rechazada, o una sin pedir fuera de borrador, y en una orden
+ * abierta comprueba una reservada, por si Almacen libero su reserva. Si el almacen sigue caido, el
+ * servicio responde 503 {@code STK-503}; si dice que no, 409 {@code STK-001} o 422 {@code STK-422};
+ * en los tres casos la linea guarda lo que paso y se relee.
  */
 class OrderMaterialsPanel extends LazyPanel {
 
@@ -95,9 +97,12 @@ class OrderMaterialsPanel extends LazyPanel {
             actions.add(MaintenanceUi.rowButton("material-edit-" + line.id(), VaadinIcon.EDIT, "Modificar",
                     click -> new MaterialUsageDialog(current, line, openTasks(), clients, this::reload).open()));
         }
-        boolean retryable = status == StockSyncStatus.FAILED || (status == StockSyncStatus.NOT_REQUESTED && orderStatus != MaintenanceOrderStatus.DRAFT);
-        if (canWrite && retryable) {
-            actions.add(MaintenanceUi.rowButton("material-sync-" + line.id(), VaadinIcon.REFRESH, "Sincronizar con el almacen", click -> sync(line)));
+        boolean retryable = (status != null && status.isSyncFailed())
+                || (status == StockSyncStatus.NOT_REQUESTED && orderStatus != MaintenanceOrderStatus.DRAFT);
+        boolean checkable = status == StockSyncStatus.RESERVED && orderOpen;
+        if (canWrite && (retryable || checkable)) {
+            actions.add(MaintenanceUi.rowButton("material-sync-" + line.id(), VaadinIcon.REFRESH,
+                    checkable ? "Comprobar la reserva en el almacen" : "Sincronizar con el almacen", click -> sync(line)));
         }
         if (canDelete && orderOpen && status != StockSyncStatus.CONSUMED) {
             Button remove = MaintenanceUi.rowButton("material-remove-" + line.id(), VaadinIcon.TRASH, "Quitar", click -> MaintenanceUi.confirm(

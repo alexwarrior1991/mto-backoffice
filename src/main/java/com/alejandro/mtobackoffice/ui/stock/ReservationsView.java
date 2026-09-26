@@ -81,7 +81,7 @@ public class ReservationsView extends VerticalLayout {
         this.canCancel = authentication.hasRole(StockRoles.STOCK_DELETE);
         setSizeFull();
         status.setId("reservations-status");
-        status.setItems(ReservationStatus.values());
+        status.setItems(ReservationStatus.selectable());
         status.setItemLabelGenerator(ReservationStatus::label);
         status.setClearButtonVisible(true);
         status.setValue(ReservationStatus.ACTIVE);

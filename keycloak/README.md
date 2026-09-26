@@ -54,12 +54,14 @@ de realm creado con el nombre de un permiso no concede nada.
 ## Cómo cargarlo
 
 En local lo hace `mto-platform/keycloak/apply-partials.sh` (con `--no-dev-users` no aplica el
-secreto). El fichero no lleva `ifResourceExists`: el script lo aplica con `OVERWRITE`.
+secreto). La parcial no lleva `ifResourceExists`: el script la importa con `OVERWRITE`.
 
-Después de aplicar el `-dev.json`, conviene comprobar en la consola (Clients → `mto-backoffice`)
-que el cliente conserva el redirect URI, el post-logout y los cinco mappers: `partialImport` con
-`OVERWRITE` reescribe el cliente, y el `-dev.json` solo trae `clientId` y `secret`. Si no fuera
-así, el `-dev.json` tendría que llevar el cliente completo.
+El `-dev.json` no se importa tal cual. Solo trae `clientId` y `secret`, y una importación con
+`OVERWRITE` sustituiría el cliente entero; el script pone el secreto sobre el cliente ya importado
+(un `GET` del cliente y un `PUT` con el secreto), así que el cliente conserva el redirect URI, el
+post-logout y los cinco mappers. Hasta mto-platform#14 no era así, y en local el login del
+backoffice no podía funcionar. Ahora el CI de `mto-platform` lo comprueba sobre un Keycloak de
+verdad (`scripts/check_applied_realm.py`): ya no hace falta mirarlo en la consola.
 
 En un entorno desplegado: importar la parcial, poner el redirect URI real en lugar de `localhost:8085`
 y copiar el secreto de Clients → `mto-backoffice` → *Credentials* a `KEYCLOAK_CLIENT_SECRET`.

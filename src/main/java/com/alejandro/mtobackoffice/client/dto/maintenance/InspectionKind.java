@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -8,7 +9,7 @@ import java.util.List;
 public enum InspectionKind {
     VISUAL("Visual"),
     TECHNICAL("Tecnica"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -22,10 +23,10 @@ public enum InspectionKind {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static InspectionKind of(String value) {
-        return MaintenanceEnums.parse(InspectionKind.class, value, UNKNOWN);
+        return ClientEnums.parse(InspectionKind.class, value, UNKNOWN);
     }
 
     public static List<InspectionKind> selectable() {
-        return MaintenanceEnums.selectable(InspectionKind.class, UNKNOWN);
+        return ClientEnums.selectable(InspectionKind.class, UNKNOWN);
     }
 }

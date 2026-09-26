@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -9,7 +10,7 @@ public enum CheckItemResult {
     OK("Correcto"),
     DEFECT("Defecto"),
     NOT_APPLICABLE("No aplica"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -23,10 +24,10 @@ public enum CheckItemResult {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static CheckItemResult of(String value) {
-        return MaintenanceEnums.parse(CheckItemResult.class, value, UNKNOWN);
+        return ClientEnums.parse(CheckItemResult.class, value, UNKNOWN);
     }
 
     public static List<CheckItemResult> selectable() {
-        return MaintenanceEnums.selectable(CheckItemResult.class, UNKNOWN);
+        return ClientEnums.selectable(CheckItemResult.class, UNKNOWN);
     }
 }

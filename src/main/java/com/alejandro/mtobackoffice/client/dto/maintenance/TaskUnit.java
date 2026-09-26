@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -11,7 +12,7 @@ public enum TaskUnit {
     KM("Kilometro"),
     DEFECT("Defecto"),
     PROFILE("Perfil"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -25,10 +26,10 @@ public enum TaskUnit {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static TaskUnit of(String value) {
-        return MaintenanceEnums.parse(TaskUnit.class, value, UNKNOWN);
+        return ClientEnums.parse(TaskUnit.class, value, UNKNOWN);
     }
 
     public static List<TaskUnit> selectable() {
-        return MaintenanceEnums.selectable(TaskUnit.class, UNKNOWN);
+        return ClientEnums.selectable(TaskUnit.class, UNKNOWN);
     }
 }

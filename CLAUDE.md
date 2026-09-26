@@ -80,7 +80,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   bajo mínimo y libro por material) y `AssemblyClient` (además disponibilidad) resolviendo el
   genérico contra la subinterfaz; `MovementClient` (entradas, salidas, ajustes, transferencias y
   el libro) y `ReservationClient` (alta, modificación, cancelar con un `DELETE` que devuelve
-  cuerpo, liberar, consumir); DTO como records en `client/dto/stock`, con enumerados con etiqueta;
+  cuerpo, liberar, consumir); DTO como records en `client/dto/stock`, con enumerados con etiqueta
+  y tolerantes —ver las reglas—;
   el historial usa `RevisionDto<T>`, `RevisionMetadataDto`, `RevisionOperation` y `AuditDto`, que
   viven en `client/dto` porque mantenimiento los comparte); `client/maintenance` (la API de
   `mto-maintenance` bajo `/api/maintenance`: `OrderClient` —órdenes, sus transiciones, su historial
@@ -90,15 +91,16 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `DefectClient` y `ReportClient` —cada informe en JSON y como fichero `ResponseEntity<byte[]>`—,
   todos con `revisions` salvo los catálogos y los informes; DTO como records en
   `client/dto/maintenance`: filtros (`OrderFilter`, `AssetFilter`...), peticiones `*Request` y
-  `*UpdateRequest` parciales con `@JsonInclude(NON_NULL)`, enumerados tolerantes —ver las reglas—
-  y `MaintenanceEnums`, que los lee). Los DTO
+  `*UpdateRequest` parciales con `@JsonInclude(NON_NULL)` y enumerados tolerantes —ver las
+  reglas—). Los DTO
   (`client/dto`): `LovDto` es un record con solo las claves que usa la UI (con `versionNumber`,
   que vuelve como se leyó) y `@JsonInclude(NON_NULL)`; los maestros (`client/dto/master`) son
   **clases mutables** que heredan de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo y los hijos
   tipados que los editores gestionan (`CantileverDto` con su `SteadyArmDto` 1:1,
   `SectionInsulatorSwitchDto`; `DisconnectorDto` trae además `profileCode`/`profileKp`, solo de
   salida); `PageResponse<T>` con la forma `{content, page}`; los trabajos (`client/dto/jobs`:
-  `JobDto`, la unión de las tres respuestas del servicio, `JobStatus`, `JobType`, `UploadedFile`). Los
+  `JobDto`, la unión de las tres respuestas del servicio, `JobStatus`, `JobType`, `UploadedFile`);
+  `ClientEnums`, lo que comparten los enumerados tolerantes (`parse` y `selectable`). Los
   errores en `client/error` (`ApiProblem`, `ApiErrorDecoder` y la jerarquía
   `BackofficeApiException`, con `TooManyRequestsApiException` llevando el cuerpo del 429).
 - `ui` — `MainLayout` (AppLayout; el menú lo dan las vistas anotadas con `@Menu`, filtradas por
@@ -231,7 +233,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   turno no admite ese trabajo), `MAT-001` (la línea de material), `AST-001` (activo desactivado, o
   un dato que manda `mto-configuration`) y `AST-409`/`TEA-409` (código repetido); `INS-001` es un
   422 de la inspección y su checklist, y el 503 `STK-503`, el almacén caído al sincronizar o quitar
-  una línea, que se queda como estaba.
+  una línea, que se queda como estaba. Al sincronizar, el almacén también puede decir que no: 409
+  `STK-001` sin existencias, que se dice como en almacén, o 422 `STK-422` por otro motivo («el
+  almacén ha rechazado la operación», con el motivo de stock).
 - **La paginación es la forma DTO** `{content, page:{size,number,totalElements,totalPages}}`, fijada
   en `mto-configuration` con `spring.data.web.pageable.serialization-mode: via_dto` y pinada allí
   por test. `PageResponse<T>` la lee (y tolera `first`/`last` de stock y maintenance). La API de
@@ -327,14 +331,26 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (`maintenance-delete`) libera antes su reserva en `mto-stock`; no se ofrece en una línea
   consumida ni en una orden terminada (`MAT-001`), la confirmación avisa de la liberación, y con el
   almacén caído (503 `STK-503`) la línea se queda como estaba. «Sincronizar» reintenta una línea
-  `FAILED` (o sin pedir fuera de borrador). Lo previsto de una línea reservada no se ofrece: el
+  `FAILED` (el almacén no respondió) o `REJECTED` (dijo que no; el motivo, en el tooltip del estado),
+  o sin pedir fuera de borrador, también con la orden terminada, porque el servicio la liquida al
+  reintentar; con la orden abierta, además, comprueba una `RESERVED` («Comprobar la reserva en el
+  almacén»): si Almacén liberó su reserva, el servicio pide otra. Lo previsto de una línea reservada no se ofrece: el
   servicio no lo cambia. Un `MAT-001` al completar la orden sugiere sincronizar o, con
   `maintenance-supervise`, completar con `force`.
-- **Los enumerados de mantenimiento toleran lo desconocido.** Cada uno lleva `UNKNOWN`
+- **Los enumerados que se leen de un servicio toleran lo desconocido.** Son los de
+  mantenimiento, los de almacén (`MovementType`, `ReservationStatus`), el del historial
+  (`RevisionOperation`) y los de los trabajos (`JobStatus`, `JobType`). Cada uno lleva `UNKNOWN`
   («Desconocido»), un `@JsonCreator(mode = DELEGATING) of(String)` que delega en
-  `MaintenanceEnums.parse` y `selectable()` sin `UNKNOWN` para los desplegables: un valor nuevo en
-  el servicio se lee como desconocido en vez de romper la página entera. No se toca el mapper
-  global.
+  `ClientEnums.parse` y `selectable()` sin `UNKNOWN` para los desplegables: un valor nuevo en el
+  servicio se lee como desconocido en vez de romper la página entera, que además fallaría sin
+  aviso, porque ese fallo de lectura no es un `BackofficeApiException`. Lo desconocido no abre
+  nada: una reserva `UNKNOWN` no es activa; un trabajo en un estado `UNKNOWN` se da por terminado,
+  para no consultarlo sin fin; y uno de un tipo `UNKNOWN` no tiene familia, así que ni se consulta
+  por separado ni se descarga. No se toca el mapper global. Quedan fuera, a propósito, los que solo
+  viajan en peticiones (`AdjustmentDirection`, `RequiredAction`, `ReportFormat`) y el de los
+  maestros de `mto-configuration` (`SectionInsulatorInstallationType`): el maestro se devuelve
+  entero, y un `UNKNOWN` volvería al servicio como un valor que no existe; tolerarlo exigiría
+  guardar la cadena original.
 - **Un `LocalDate` en un `@HttpExchange` lleva `@DateTimeFormat(iso = DATE)`** (y un `YearMonth`,
   `pattern = "yyyy-MM"`): sin él sale con el formato corto de la máquina y el servicio responde 400.
   Los `Instant` viajan en ISO sin nada, con `:` codificado.
@@ -436,7 +452,8 @@ parámetros de página y orden del `/filter`, `extras` e hijos a
 `null` en un `PUT`, referencias a catálogo como `{id, code}`, las ménsulas tipadas con su brazo y
 el seccionador 1:1 en un `PUT`, el esquema de una vía con sus records anidados; los trabajos: la importación como parte multipart con `dryRun` en
 la query, el 429 con el trabajo rechazado y el `Retry-After`, la lista paginada con sus filtros,
-el estado por familia y el fichero con sus cabeceras, qué es descargable; los usuarios: la
+el estado por familia y el fichero con sus cabeceras, qué es descargable, un tipo o un estado
+desconocidos leídos como `UNKNOWN`; los usuarios: la
 búsqueda `first/max` con su total, atributos repetidos, alta 201 sin la contraseña en el `toString`,
 `PUT` parcial y `PATCH` de activo, el `DELETE` con cuerpo de los roles, perfiles, sesiones,
 credenciales, contraseña y correo, miembros sin total, catálogos, y el `problem+json` de
@@ -444,14 +461,17 @@ credenciales, contraseña y correo, miembros sin total, catálogos, y el `proble
 catálogos, alta y modificación con `active`, el proyecto sincronizado, existencias y libro de un
 material, los cuatro movimientos en sus rutas y la transferencia con dos apuntes, la reserva
 cancelada con un `DELETE` con cuerpo y liberada o consumida con `POST` sin cuerpo, el conjunto con
-su BOM y su disponibilidad, el historial tipado y el JSON de error de `mto-stock` por alias; el
+su BOM y su disponibilidad, el historial tipado, el JSON de error de `mto-stock` por alias, y un
+tipo de apunte, un estado de reserva y una operación del historial desconocidos leídos como
+`UNKNOWN`; el
 mantenimiento: la lista de órdenes con sus filtros (enumerado por nombre, fecha ISO, `sort`
 repetido) y un valor desconocido leído como `UNKNOWN`, su JSON de error por alias, activos
 (búsqueda, alta, `PUT` parcial con solo lo cambiado, desactivar), catálogos y equipos enteros,
 órdenes y sus transiciones con sus cuerpos, tareas (alta, generar, modificar, cancelar), turnos con
 sus conjuntos enteros, sus tareas y perfiles, ejecutar una tarea con su checklist, defectos y
 materiales, inspecciones y lo que generan, defectos y sus transiciones, líneas de material
-(quitar con 204 y el 503 `STK-503`), los informes en JSON y como fichero con su nombre, y el
+(quitar con 204 y el 503 `STK-503`; la rechazada con su motivo, y el 422 `STK-422` o el 409
+`STK-001` al sincronizarla), los informes en JSON y como fichero con su nombre, y el
 historial de cada recurso con el 404 de un activo sin revisiones),
 `SecurityLayerTest` (mapeo de roles de los cuatro clientes con el sinónimo cualificado, un cliente
 no listado no aporta nada, un rol de realm `users-read`, `stock-read` o `maintenance-read` nunca
@@ -474,7 +494,8 @@ al lado del poste); los trabajos: subir y
 lanzar una importación, el progreso llegando por `pollOnce()` + `UI.access()` hasta el enlace de
 descarga y el botón de errores (que pide el detalle), el 429 apuntado como rechazado con su aviso,
 un trabajo propio fuera de la página seguido por su familia, la lista paginada y filtrada en el
-servicio, los lanzadores según permisos; los usuarios: el grupo «Usuarios» del menú y su ausencia
+servicio, los lanzadores según permisos, un tipo o un estado desconocidos sin descarga, sin
+detalle pedido y sin consultas, y los filtros sin «Desconocido»; los usuarios: el grupo «Usuarios» del menú y su ausencia
 sin `users-read`, un rol de realm que no abre la vista, la lista paginada con `first`/`max` y
 filtrada en el servicio, la exclusión entre búsqueda y atributo, los controles según permisos,
 alta con contraseña temporal y acciones, errores del servicio campo a campo, modificación con
@@ -495,11 +516,12 @@ a campo, el proyecto sincronizado sin botón de modificar, el editor de material
 existencias: cifras y libro de un material en un almacén, la lista bajo mínimo que sigue al almacén
 y cuya fila elige el material, el libro filtrado en el servicio, la entrada con su proveedor, la
 salida sin stock con su mensaje, la transferencia que exige otro almacén, el ajuste solo con
-`stock-adjust`; las reservas: la lista filtrada y ordenada en el servicio con las acciones solo en
+`stock-adjust`, un tipo de apunte desconocido pintado pero no ofrecido como filtro; las reservas:
+la lista filtrada y ordenada en el servicio con las acciones solo en
 las filas activas y cancelar solo con `stock-delete`, lectura sin acciones, el alta con su proyecto
 obligatorio, la modificación sin tocar el material, liberar, cancelar y consumir confirmados y el
-422 `RES-001` notificado, y la salida desde una reserva con material, almacén y cantidad fijos y su
-`reservationId`; los conjuntos: la lista con sus líneas y la disponibilidad ofrecida a quien solo
+422 `RES-001` notificado, la salida desde una reserva con material, almacén y cantidad fijos y su
+`reservationId`, y una reserva en un estado desconocido con solo el historial; los conjuntos: la lista con sus líneas y la disponibilidad ofrecida a quien solo
 lee, la disponibilidad por almacén con el componente que limita, el alta con sus líneas (la lista
 vacía rechazada antes de llamar, la línea sin material ni cantidad, el material repetido
 sustituido) y la modificación con la lista entera y `active`; el historial: paginado y la más
@@ -517,7 +539,8 @@ rechazadas resumidas, ejecutar una tarea con su checklist, sus defectos y su mat
 desde la orden eligiendo un turno en curso de su vía; inspecciones con su defecto (`force` si es
 leve) y su orden correctiva, o los enlaces a ellos, y sus puntos contestados; defectos vinculados,
 resueltos y descartados con sus motivos, los de una orden; las líneas de material con su almacén y
-lo que admite cada una, el alta desde el almacén, quitar una reservada con su aviso y el almacén
+lo que admite cada una (la reservada se comprueba; la rechazada, con su motivo, se reintenta y dice
+por qué el almacén vuelve a decir que no), el alta desde el almacén, quitar una reservada con su aviso y el almacén
 caído notificado, el `MAT-001` al completar y el proyecto de almacén de la orden; los informes (el
 avance con sus nombres y porcentaje, el mensual con sus 24 meses, las descargas de punta a punta
 con el `_download` de Karibu, y el parte del turno en su pestaña); el historial de cada ficha y el

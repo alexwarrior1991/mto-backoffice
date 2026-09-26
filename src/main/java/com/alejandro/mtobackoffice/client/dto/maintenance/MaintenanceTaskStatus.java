@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -10,7 +11,7 @@ public enum MaintenanceTaskStatus {
     IN_PROGRESS("En curso"),
     COMPLETED("Completada"),
     CANCELLED("Cancelada"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -29,10 +30,10 @@ public enum MaintenanceTaskStatus {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static MaintenanceTaskStatus of(String value) {
-        return MaintenanceEnums.parse(MaintenanceTaskStatus.class, value, UNKNOWN);
+        return ClientEnums.parse(MaintenanceTaskStatus.class, value, UNKNOWN);
     }
 
     public static List<MaintenanceTaskStatus> selectable() {
-        return MaintenanceEnums.selectable(MaintenanceTaskStatus.class, UNKNOWN);
+        return ClientEnums.selectable(MaintenanceTaskStatus.class, UNKNOWN);
     }
 }

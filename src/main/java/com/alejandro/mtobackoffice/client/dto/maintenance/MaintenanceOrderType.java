@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -10,7 +11,7 @@ public enum MaintenanceOrderType {
     CORRECTIVE("Correctiva"),
     INSPECTION("Inspeccion"),
     URGENT("Urgente"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -24,10 +25,10 @@ public enum MaintenanceOrderType {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static MaintenanceOrderType of(String value) {
-        return MaintenanceEnums.parse(MaintenanceOrderType.class, value, UNKNOWN);
+        return ClientEnums.parse(MaintenanceOrderType.class, value, UNKNOWN);
     }
 
     public static List<MaintenanceOrderType> selectable() {
-        return MaintenanceEnums.selectable(MaintenanceOrderType.class, UNKNOWN);
+        return ClientEnums.selectable(MaintenanceOrderType.class, UNKNOWN);
     }
 }

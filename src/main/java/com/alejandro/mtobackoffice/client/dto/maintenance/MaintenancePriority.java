@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.ClientEnums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
@@ -10,7 +11,7 @@ public enum MaintenancePriority {
     MEDIUM("Media"),
     HIGH("Alta"),
     CRITICAL("Critica"),
-    UNKNOWN(MaintenanceEnums.UNKNOWN_LABEL);
+    UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
 
@@ -24,10 +25,10 @@ public enum MaintenancePriority {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static MaintenancePriority of(String value) {
-        return MaintenanceEnums.parse(MaintenancePriority.class, value, UNKNOWN);
+        return ClientEnums.parse(MaintenancePriority.class, value, UNKNOWN);
     }
 
     public static List<MaintenancePriority> selectable() {
-        return MaintenanceEnums.selectable(MaintenancePriority.class, UNKNOWN);
+        return ClientEnums.selectable(MaintenancePriority.class, UNKNOWN);
     }
 }
