@@ -5,6 +5,8 @@ import com.alejandro.mtobackoffice.client.configuration.ExecutionPackageClient;
 import com.alejandro.mtobackoffice.client.configuration.StationClient;
 import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
+import com.alejandro.mtobackoffice.client.maintenance.DefectClient;
+import com.alejandro.mtobackoffice.client.maintenance.InspectionClient;
 import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import com.alejandro.mtobackoffice.client.maintenance.ShiftClient;
@@ -21,6 +23,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public record MaintenanceClients(OrderClient orders, AssetClient assets, MaintenanceCatalogClient catalog, ShiftClient shifts,
+                                 InspectionClient inspections, DefectClient defects,
                                  ExecutionPackageClient packages, StationClient stations, TrackClient tracks,
                                  BusinessEntityClient companies, MaterialClient materials, WarehouseClient warehouses,
                                  ProjectClient projects) {

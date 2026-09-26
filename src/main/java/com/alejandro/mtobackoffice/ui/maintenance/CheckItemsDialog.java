@@ -21,41 +21,53 @@ import com.vaadin.flow.component.textfield.BigDecimalField;
 import com.vaadin.flow.component.textfield.TextField;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
+import java.util.function.BiFunction;
 
 /**
- * El checklist de una tarea abierta, punto a punto: medida, ajuste, valor tras el ajuste, resultado
- * y notas. Cada punto se guarda por separado y se repinta con lo que devuelve el servicio, que es
- * quien dice si quedo fuera de rango y quien rechaza un OK fuera de rango sin ajustar (422
- * {@code INS-001}). Para completar la tarea, los puntos con medida tienen que tener resultado.
+ * Un checklist punto a punto (el de una tarea abierta o el de una inspeccion): medida, ajuste, valor
+ * tras el ajuste, resultado y notas. Cada punto se guarda por separado y se repinta con lo que
+ * devuelve el servicio, que es quien dice si quedo fuera de rango y quien rechaza un OK fuera de
+ * rango sin ajustar (422 {@code INS-001}). Para completar una tarea, los puntos con medida tienen
+ * que tener resultado.
  */
 public class CheckItemsDialog extends Dialog {
 
-    private final UUID orderId;
-    private final MaintenanceClients clients;
+    private final BiFunction<UUID, CheckItemUpdateRequest, List<CheckItemDto>> save;
     private final Runnable changed;
     private final VerticalLayout rows = new VerticalLayout();
 
-    public CheckItemsDialog(UUID orderId, TaskDto task, MaintenanceClients clients, Runnable changed) {
-        this.orderId = orderId;
-        this.clients = clients;
+    /**
+     * @param save    guarda un punto y devuelve los puntos como quedaron
+     * @param changed que hacer tras cada punto guardado
+     */
+    public CheckItemsDialog(String title, List<CheckItemDto> items, BiFunction<UUID, CheckItemUpdateRequest, List<CheckItemDto>> save,
+                            Runnable changed) {
+        this.save = save;
         this.changed = changed;
-        setHeaderTitle("Checklist de la tarea " + task.sequence());
+        setHeaderTitle(title);
         setWidth("min(95vw, 980px)");
         rows.setPadding(false);
         add(rows);
-        paint(task);
+        paint(items);
         getFooter().add(new Button("Cerrar", click -> close()));
     }
 
-    private void paint(TaskDto task) {
-        rows.removeAll();
-        task.checkItems().stream()
-                .sorted(Comparator.comparing((CheckItemDto item) -> item.orderIndex() == null ? Integer.MAX_VALUE : item.orderIndex()))
-                .forEach(item -> rows.add(row(task, item)));
+    /** El checklist de una tarea de una orden. */
+    static CheckItemsDialog ofTask(UUID orderId, TaskDto task, MaintenanceClients clients, Runnable changed) {
+        return new CheckItemsDialog("Checklist de la tarea " + task.sequence(), task.checkItems(),
+                (itemId, request) -> clients.orders().updateCheckItem(orderId, task.id(), itemId, request).checkItems(), changed);
     }
 
-    private Div row(TaskDto task, CheckItemDto item) {
+    private void paint(List<CheckItemDto> items) {
+        rows.removeAll();
+        items.stream()
+                .sorted(Comparator.comparing((CheckItemDto item) -> item.orderIndex() == null ? Integer.MAX_VALUE : item.orderIndex()))
+                .forEach(item -> rows.add(row(item)));
+    }
+
+    private Div row(CheckItemDto item) {
         String range = item.minValue() == null && item.maxValue() == null ? ""
                 : " (" + Formats.quantity(item.minValue()) + " - " + Formats.quantity(item.maxValue())
                 + (item.unit() == null ? "" : " " + item.unit()) + ")";
@@ -80,7 +92,7 @@ public class CheckItemsDialog extends Dialog {
         TextField notes = new TextField("Notas");
         notes.setId("check-notes-" + item.id());
         notes.setValue(item.notes() == null ? "" : item.notes());
-        Button save = new Button("Guardar", click -> save(task, item, new CheckItemUpdateRequest(measured.getValue(),
+        Button save = new Button("Guardar", click -> save(item, new CheckItemUpdateRequest(measured.getValue(),
                 adjusted.getValue() ? Boolean.TRUE : null, after.getValue(), result.getValue(), TransitionForm.nullIfBlank(notes.getValue()))));
         save.setId("check-save-" + item.id());
         save.addThemeVariants(ButtonVariant.LUMO_SMALL);
@@ -95,9 +107,9 @@ public class CheckItemsDialog extends Dialog {
         return row;
     }
 
-    private void save(TaskDto task, CheckItemDto item, CheckItemUpdateRequest request) {
+    private void save(CheckItemDto item, CheckItemUpdateRequest request) {
         try {
-            TaskDto updated = clients.orders().updateCheckItem(orderId, task.id(), item.id(), request);
+            List<CheckItemDto> updated = save.apply(item.id(), request);
             MaintenanceUi.success("Guardado " + item.code());
             paint(updated);
             changed.run();

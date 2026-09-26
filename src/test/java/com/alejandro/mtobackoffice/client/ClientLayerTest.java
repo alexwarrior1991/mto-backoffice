@@ -119,6 +119,22 @@ import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
 import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import com.alejandro.mtobackoffice.client.maintenance.ShiftClient;
+import com.alejandro.mtobackoffice.client.maintenance.DefectClient;
+import com.alejandro.mtobackoffice.client.maintenance.InspectionClient;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CreateCorrectiveOrderRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CreateDefectFromInspectionRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.DefectDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.DefectFilter;
+import com.alejandro.mtobackoffice.client.dto.maintenance.DefectRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.DefectStatus;
+import com.alejandro.mtobackoffice.client.dto.maintenance.DefectUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionFilter;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionKind;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionResult;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ResolveDefectRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CloseShiftRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CompleteTaskRequest;
@@ -208,6 +224,8 @@ class ClientLayerTest {
     private AssetClient assetClient;
     private MaintenanceCatalogClient maintenanceCatalogClient;
     private ShiftClient shiftClient;
+    private InspectionClient inspectionClient;
+    private DefectClient defectClient;
 
     @BeforeEach
     void setUp() {
@@ -239,6 +257,8 @@ class ClientLayerTest {
         assetClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(AssetClient.class);
         maintenanceCatalogClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(MaintenanceCatalogClient.class);
         shiftClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ShiftClient.class);
+        inspectionClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(InspectionClient.class);
+        defectClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(DefectClient.class);
     }
 
     @AfterEach
@@ -1869,6 +1889,132 @@ class ClientLayerTest {
         assertEquals(MaintenanceTaskStatus.IN_PROGRESS, started.status());
         assertEquals("INS-001", outOfRange.getProblem().code());
         assertEquals(MaintenanceTaskStatus.COMPLETED, completed.status());
+        server.verify();
+    }
+
+    private static final String INSPECTION_ID = "2b3c4d5e-0000-4000-8000-000000000070";
+    private static final String DEFECT_ID = "2b3c4d5e-0000-4000-8000-000000000071";
+
+    private static String inspectionJson(String result, String generatedDefect) {
+        return "{\"id\":\"" + INSPECTION_ID + "\",\"code\":\"INS-000001\",\"asset\":{\"id\":\"" + ASSET_ID + "\",\"code\":\"PRF-0001\","
+                + "\"name\":\"12-2.27\",\"type\":\"PROFILE\",\"trackId\":12,\"startKp\":12.270,\"endKp\":12.270,\"sectioning\":null,\"enabled\":true},"
+                + "\"executionPackageId\":3,\"trackId\":12,\"stationId\":null,\"kp\":12.270,\"inspectionDate\":\"2026-09-20\",\"inspector\":\"ana\","
+                + "\"inspectionKind\":\"TECHNICAL\",\"templateId\":null,\"result\":\"" + result + "\",\"description\":null,\"detectedDefects\":\"Pendola rota\","
+                + "\"recommendedActions\":null,\"generatedDefectId\":" + (generatedDefect == null ? "null" : "\"" + generatedDefect + "\"")
+                + ",\"generatedOrderId\":null,\"originOrderId\":\"" + ORDER_ID + "\",\"shiftId\":null,\"items\":[],\"audit\":null}";
+    }
+
+    private static String defectJson(String status) {
+        return "{\"id\":\"" + DEFECT_ID + "\",\"code\":\"DEF-000001\",\"asset\":{\"id\":\"" + ASSET_ID + "\",\"code\":\"PRF-0001\","
+                + "\"name\":\"12-2.27\",\"type\":\"PROFILE\",\"trackId\":12,\"startKp\":12.270,\"endKp\":12.270,\"sectioning\":null,\"enabled\":true},"
+                + "\"inspectionId\":\"" + INSPECTION_ID + "\",\"orderId\":null,\"severity\":\"HIGH\",\"status\":\"" + status + "\","
+                + "\"description\":\"Pendola rota\",\"technicalNotes\":null,\"detectedAt\":\"2026-09-20T00:00:00Z\",\"resolvedAt\":null,"
+                + "\"resolutionNotes\":null,\"discardReason\":null,\"executionPackageId\":3,\"trackId\":12,\"stationId\":null,\"startKp\":12.270,"
+                + "\"endKp\":12.270,\"correctionType\":null,\"partsReplaced\":null,\"resolvedInShiftId\":null,\"repairPlannedDate\":null,"
+                + "\"foundInTaskId\":null,\"photoRefs\":[],\"audit\":null}";
+    }
+
+    /** Inspecciones: busqueda con fechas ISO y orden de origen, alta, modificacion, un punto y lo que generan (idempotente). */
+    @Test
+    void inspectionsAreSearchedCreatedAndGenerateTheirDefectAndOrder() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String inspections = MAINTENANCE + "/inspections";
+        server.expect(requestTo(inspections + "?result=MAJOR_DEFECT&inspectionFrom=2026-09-01&inspectionTo=2026-09-30&originOrderId=" + ORDER_ID
+                        + "&page=0&size=50&sort=inspectionDate%2Cdesc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(inspectionJson("MAJOR_DEFECT", null), 0, 50, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(inspections)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"assetId\":\"" + ASSET_ID + "\",\"inspectionDate\":\"2026-09-20\",\"inspectionKind\":\"TECHNICAL\","
+                        + "\"result\":\"MAJOR_DEFECT\",\"originOrderId\":\"" + ORDER_ID + "\"}", strict))
+                .andRespond(withSuccess(inspectionJson("MAJOR_DEFECT", null), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(inspections + "/" + INSPECTION_ID)).andExpect(method(HttpMethod.PUT))
+                .andExpect(content().json("{\"result\":\"MINOR_DEFECT\"}", strict))
+                .andRespond(withSuccess(inspectionJson("MINOR_DEFECT", null), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(inspections + "/" + INSPECTION_ID + "/items/2b3c4d5e-0000-4000-8000-000000000072")).andExpect(method(HttpMethod.PUT))
+                .andExpect(content().json("{\"itemResult\":\"DEFECT\",\"notes\":\"Rota\"}", strict))
+                .andRespond(withSuccess(inspectionJson("MINOR_DEFECT", null), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(inspections + "/" + INSPECTION_ID + "/create-defect")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"force\":true}", strict))
+                .andRespond(withSuccess(defectJson("OPEN"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(inspections + "/" + INSPECTION_ID + "/create-corrective-order")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"priority\":\"HIGH\"}", strict))
+                .andRespond(withSuccess(orderJson(ORDER_ID, "MO-000002", "DRAFT", "HIGH"), MediaType.APPLICATION_JSON));
+
+        UUID id = UUID.fromString(INSPECTION_ID);
+        PageResponse<InspectionDto> page = asUser(() -> inspectionClient.search(new InspectionFilter(InspectionResult.MAJOR_DEFECT, null, null, null,
+                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), " ", UUID.fromString(ORDER_ID)), 0, 50, List.of("inspectionDate,desc")));
+        asUser(() -> inspectionClient.create(new InspectionRequest(UUID.fromString(ASSET_ID), LocalDate.of(2026, 9, 20), null, InspectionKind.TECHNICAL,
+                InspectionResult.MAJOR_DEFECT, null, null, null, null, UUID.fromString(ORDER_ID), null)));
+        asUser(() -> inspectionClient.update(id, new InspectionUpdateRequest(null, null, null, InspectionResult.MINOR_DEFECT, null, null, null, null)));
+        asUser(() -> inspectionClient.updateItem(id, UUID.fromString("2b3c4d5e-0000-4000-8000-000000000072"),
+                new com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest(null, null, null,
+                        com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemResult.DEFECT, "Rota")));
+        DefectDto defect = asUser(() -> inspectionClient.createDefect(id, new CreateDefectFromInspectionRequest(null, null, null, true)));
+        OrderDto order = asUser(() -> inspectionClient.createCorrectiveOrder(id, new CreateCorrectiveOrderRequest(null, null, MaintenancePriority.HIGH,
+                null, null)));
+
+        InspectionDto inspection = page.content().getFirst();
+        assertEquals(InspectionKind.TECHNICAL, inspection.inspectionKind());
+        assertEquals(UUID.fromString(ORDER_ID), inspection.originOrderId());
+        assertTrue(inspection.result().foundSomething());
+        assertFalse(InspectionResult.OK.foundSomething());
+        assertEquals("DEF-000001", defect.code());
+        assertEquals("MO-000002", order.code());
+        server.verify();
+    }
+
+    /** Defectos: busqueda por instantes, alta, modificacion y sus transiciones con sus cuerpos; vincular es un POST sin cuerpo. */
+    @Test
+    void defectsAreSearchedCreatedAndMovedThroughTheirStates() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String defects = MAINTENANCE + "/defects";
+        server.expect(requestTo(defects + "?severity=HIGH&status=OPEN&trackId=12&detectedFrom=2026-09-01T00%3A00%3A00Z&page=0&size=50"
+                        + "&sort=detectedAt%2Cdesc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(defectJson("OPEN"), 0, 50, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(defects)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"assetId\":\"" + ASSET_ID + "\",\"severity\":\"HIGH\",\"description\":\"Pendola rota\",\"orderId\":\""
+                        + ORDER_ID + "\"}", strict))
+                .andRespond(withSuccess(defectJson("IN_PROGRESS"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(defects + "/" + DEFECT_ID)).andExpect(method(HttpMethod.PUT))
+                .andExpect(content().json("{\"repairPlannedDate\":\"2026-10-12\"}", strict))
+                .andRespond(withSuccess(defectJson("OPEN"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(defects + "/" + DEFECT_ID + "/link-order/" + ORDER_ID)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(""))
+                .andRespond(withSuccess(defectJson("IN_PROGRESS"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(defects + "/" + DEFECT_ID + "/resolve")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"resolutionNotes\":\"Pendola cambiada\",\"resolvedInShiftId\":\"" + SHIFT_ID + "\"}", strict))
+                .andRespond(withSuccess(defectJson("RESOLVED"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(defects + "/" + DEFECT_ID + "/close")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"reason\":\"Verificado\"}", strict))
+                .andRespond(withSuccess(defectJson("CLOSED"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(defects + "/" + DEFECT_ID + "/discard")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"reason\":\"Duplicado\"}", strict))
+                .andRespond(withSuccess(defectJson("DISCARDED"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(defects + "/" + DEFECT_ID + "/history")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[{\"id\":\"2b3c4d5e-0000-4000-8000-000000000073\",\"previousStatus\":null,\"newStatus\":\"OPEN\","
+                        + "\"changedAt\":\"2026-09-20T08:00:00Z\",\"changedBy\":\"ana\",\"comment\":\"Created from inspection INS-000001\"}]",
+                        MediaType.APPLICATION_JSON));
+
+        UUID id = UUID.fromString(DEFECT_ID);
+        PageResponse<DefectDto> page = asUser(() -> defectClient.search(new DefectFilter(com.alejandro.mtobackoffice.client.dto.maintenance.DefectSeverity.HIGH,
+                DefectStatus.OPEN, null, null, 12L, null, Instant.parse("2026-09-01T00:00:00Z"), null), 0, 50, List.of("detectedAt,desc")));
+        asUser(() -> defectClient.create(new DefectRequest(UUID.fromString(ASSET_ID), com.alejandro.mtobackoffice.client.dto.maintenance.DefectSeverity.HIGH,
+                "Pendola rota", null, null, null, UUID.fromString(ORDER_ID), null, null, null, null, null, null)));
+        asUser(() -> defectClient.update(id, new DefectUpdateRequest(null, null, null, null, null, LocalDate.of(2026, 10, 12), null)));
+        DefectDto linked = asUser(() -> defectClient.linkOrder(id, UUID.fromString(ORDER_ID)));
+        DefectDto resolved = asUser(() -> defectClient.resolve(id, new ResolveDefectRequest("Pendola cambiada", UUID.fromString(SHIFT_ID), null, null)));
+        DefectDto closed = asUser(() -> defectClient.close(id, new ReasonRequest("Verificado")));
+        DefectDto discarded = asUser(() -> defectClient.discard(id, new ReasonRequest("Duplicado")));
+        List<StatusHistoryDto> history = asUser(() -> defectClient.history(id));
+
+        assertEquals(UUID.fromString(INSPECTION_ID), page.content().getFirst().inspectionId());
+        assertEquals(DefectStatus.IN_PROGRESS, linked.status());
+        assertEquals(DefectStatus.RESOLVED, resolved.status());
+        assertEquals(DefectStatus.CLOSED, closed.status());
+        assertEquals(DefectStatus.DISCARDED, discarded.status());
+        assertEquals("OPEN", history.getFirst().newStatus());
+        assertTrue(DefectStatus.OPEN.isPending() && !DefectStatus.CLOSED.isEditable());
         server.verify();
     }
 }

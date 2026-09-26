@@ -85,7 +85,7 @@ class ShiftTasksPanel extends LazyPanel {
         }
         if (!task.checkItems().isEmpty()) {
             actions.add(MaintenanceUi.rowButton("shift-task-checklist-" + task.id(), VaadinIcon.CHECK_SQUARE_O, "Checklist",
-                    click -> new CheckItemsDialog(task.orderId(), task, clients, this::changed).open()));
+                    click -> CheckItemsDialog.ofTask(task.orderId(), task, clients, this::changed).open()));
         }
         if (working) {
             actions.add(MaintenanceUi.rowButton("shift-task-complete-" + task.id(), VaadinIcon.CHECK, "Completar",

@@ -82,7 +82,7 @@ class OrderTasksPanel extends LazyPanel {
                     click -> new TaskEditorDialog(current, task, clients, catalogs, this::changed).open()));
             if (!task.checkItems().isEmpty()) {
                 actions.add(MaintenanceUi.rowButton("task-checklist-" + task.id(), VaadinIcon.CHECK_SQUARE_O, "Checklist",
-                        click -> new CheckItemsDialog(current.id(), task, clients, this::changed).open()));
+                        click -> CheckItemsDialog.ofTask(current.id(), task, clients, this::changed).open()));
             }
             if (current.status() != null && current.status().canComplete()) {
                 // Desde la orden no hay turno: se elige entre los en curso de la via de la tarea.

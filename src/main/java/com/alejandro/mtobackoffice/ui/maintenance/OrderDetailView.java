@@ -39,8 +39,8 @@ import java.util.UUID;
 
 /**
  * La ficha de una orden: su cabecera (activo, via, KP, equipo, avance y estimacion, que calcula el
- * servicio), los botones que su estado admite y pestanas que piden sus datos al abrirse (tareas e
- * historial de estados). Solo se ofrece lo que el estado admite (copiado de la maquina de estados
+ * servicio, y la inspeccion o el defecto de los que salio), los botones que su estado admite y
+ * pestanas que piden sus datos al abrirse (tareas, defectos, inspecciones e historial de estados). Solo se ofrece lo que el estado admite (copiado de la maquina de estados
  * del servicio), pero quien decide es el servicio: un {@code TRN-001} se notifica. Cancelar pide
  * {@code maintenance-supervise} ademas de {@code maintenance-write}.
  */
@@ -50,6 +50,8 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
 
     public static final String ORDER_ID_PARAMETER = "orderId";
     static final String TASKS_TAB = "Tareas";
+    static final String DEFECTS_TAB = "Defectos";
+    static final String INSPECTIONS_TAB = "Inspecciones";
     static final String HISTORY_TAB = "Estados";
 
     private final MaintenanceClients clients;
@@ -124,6 +126,8 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
         tabs.setWidthFull();
         panels.clear();
         addPanel(tabs, TASKS_TAB, new OrderTasksPanel(this::order, clients, catalogs, canWrite, canPickMaterials, this::reload));
+        addPanel(tabs, DEFECTS_TAB, new OrderDefectsPanel(this::order, clients, canWrite));
+        addPanel(tabs, INSPECTIONS_TAB, new OrderInspectionsPanel(this::order, clients, canWrite, this::reload));
         addPanel(tabs, HISTORY_TAB, new StatusHistoryPanel("order-history-grid", () -> clients.orders().history(order.id()),
                 status -> MaintenanceOrderStatus.of(status).label()));
         tabs.addSelectedChangeListener(change -> loadTab(tabs, change.getSelectedTab()));
@@ -193,6 +197,14 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
     private void paintButtons(OrderDto loaded) {
         buttons.removeAll();
         buttons.add(new Button("Volver a la lista", VaadinIcon.ARROW_LEFT.create(), click -> UI.getCurrent().navigate(OrdersView.class)));
+        if (loaded.originInspectionId() != null) {
+            buttons.add(button("order-origin-inspection", "Inspeccion de origen", VaadinIcon.CLIPBOARD_CHECK,
+                    () -> UI.getCurrent().navigate(InspectionDetailView.class, InspectionDetailView.parametersOf(loaded.originInspectionId()))));
+        }
+        if (loaded.originDefectId() != null) {
+            buttons.add(button("order-origin-defect", "Defecto de origen", VaadinIcon.WARNING,
+                    () -> UI.getCurrent().navigate(DefectDetailView.class, DefectDetailView.parametersOf(loaded.originDefectId()))));
+        }
         MaintenanceOrderStatus status = loaded.status();
         if (canWrite && status.isOpen()) {
             buttons.add(button("order-edit", "Modificar", VaadinIcon.EDIT,

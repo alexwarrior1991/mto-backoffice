@@ -155,6 +155,24 @@ import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
 import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import com.alejandro.mtobackoffice.client.maintenance.ShiftClient;
+import com.alejandro.mtobackoffice.client.maintenance.DefectClient;
+import com.alejandro.mtobackoffice.client.maintenance.InspectionClient;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CreateCorrectiveOrderRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.CreateDefectFromInspectionRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.DefectDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.DefectFilter;
+import com.alejandro.mtobackoffice.client.dto.maintenance.DefectRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.DefectStatus;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionFilter;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionKind;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionResult;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ResolveDefectRequest;
+import com.alejandro.mtobackoffice.ui.maintenance.DefectDetailView;
+import com.alejandro.mtobackoffice.ui.maintenance.DefectEditorDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.InspectionDetailView;
+import com.alejandro.mtobackoffice.ui.maintenance.InspectionEditorDialog;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemResult;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest;
@@ -357,6 +375,10 @@ class ViewLayerTest {
     private MaintenanceCatalogClient maintenanceCatalogClient;
     @MockitoBean
     private ShiftClient shiftClient;
+    @MockitoBean
+    private InspectionClient inspectionClient;
+    @MockitoBean
+    private DefectClient defectClient;
 
     @BeforeEach
     void setUp() {
@@ -766,6 +788,8 @@ class ViewLayerTest {
         when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(List.of());
         when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(List.of());
         when(shiftClient.search(any(ShiftFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<ShiftDto>of(), 0, 50));
+        when(inspectionClient.search(any(InspectionFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<InspectionDto>of(), 0, 50));
+        when(defectClient.search(any(DefectFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<DefectDto>of(), 0, 50));
     }
 
     /** Un catalogo de almacen simulado: busca en codigo o nombre, filtra por estado y pagina por page/size como el servicio. */
@@ -3929,7 +3953,7 @@ class ViewLayerTest {
         OrderDto order = orderOf(MaintenanceOrderStatus.PLANNED, MaintenanceOrderType.PREVENTIVE);
         openOrder(order);
         verify(orderClient, never()).history(any());
-        selectTab(1);
+        selectTab(3);
         Grid<Object> history = gridWithId("order-history-grid");
         assertEquals(List.of("", "Borrador", "mantenimiento.tecnico", "Order created"),
                 List.of(GridKt._getFormattedRow(history, 0).get(1), GridKt._getFormattedRow(history, 0).get(2),
@@ -4174,5 +4198,237 @@ class ViewLayerTest {
         click(CompleteTaskDialog.CONFIRM_ID);
         verify(shiftClient, atLeastOnce()).search(eq(ShiftFilter.inProgressOn(12L)), eq(0), anyInt(), anyList());
         verify(orderClient).completeTask(ORDER1, TASK1, new CompleteTaskRequest(SHIFT1, null, null, null, null, null, null, null, null));
+    }
+
+    // --- Mantenimiento: inspecciones y defectos -----------------------------------------------------
+
+    private static final UUID INSPECTION1 = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000041");
+    private static final UUID DEFECT1 = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000042");
+    private static final UUID INSPECTION_ITEM = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000043");
+
+    private static AssetSummaryDto profileSummary() {
+        return new AssetSummaryDto(ASSET_SYNCED, "PRF-0001", "12-2.27", CatenaryAssetType.PROFILE, 12L, new BigDecimal("12.270"),
+                new BigDecimal("12.270"), "S-3", true);
+    }
+
+    private static InspectionDto inspectionOf(InspectionResult result, UUID generatedDefect, UUID generatedOrder) {
+        CheckItemDto item = new CheckItemDto(INSPECTION_ITEM, "P-01", "Altura del hilo", "mm", new BigDecimal("5300"), new BigDecimal("5700"),
+                true, null, null, null, null, null, 1, false);
+        return new InspectionDto(INSPECTION1, "INS-000001", profileSummary(), 3L, 12L, null, new BigDecimal("12.270"), LocalDate.of(2026, 9, 20),
+                "ana", InspectionKind.TECHNICAL, null, result, null, "Pendola rota", null, generatedDefect, generatedOrder, null, null,
+                List.of(item), null);
+    }
+
+    private static DefectDto defectOf(DefectStatus status) {
+        return new DefectDto(DEFECT1, "DEF-000001", profileSummary(), INSPECTION1, null, DefectSeverity.HIGH, status, "Pendola rota", null,
+                Instant.parse("2026-09-20T00:00:00Z"), null, null, null, 3L, 12L, null, new BigDecimal("12.270"), new BigDecimal("12.270"), null,
+                null, null, null, null, List.of(), null);
+    }
+
+    private void openInspection(InspectionDto inspection) {
+        when(inspectionClient.findById(inspection.id())).thenReturn(inspection);
+        UI.getCurrent().navigate(InspectionDetailView.class, InspectionDetailView.parametersOf(inspection.id()));
+    }
+
+    private void openDefect(DefectDto defect) {
+        when(defectClient.findById(defect.id())).thenReturn(defect);
+        when(defectClient.history(defect.id())).thenReturn(List.of());
+        UI.getCurrent().navigate(DefectDetailView.class, DefectDetailView.parametersOf(defect.id()));
+    }
+
+    @Test
+    void theInspectionsAreFilteredAndADetailOffersToCreateWhatItFoundOrLinksToIt() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        doAnswer(call -> page(List.of(inspectionOf(InspectionResult.MAJOR_DEFECT, null, null)), call.getArgument(1), call.getArgument(2)))
+                .when(inspectionClient).search(any(InspectionFilter.class), anyInt(), anyInt(), anyList());
+        when(inspectionClient.findById(INSPECTION1)).thenReturn(inspectionOf(InspectionResult.MAJOR_DEFECT, null, null));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.INSPECTIONS);
+        Grid<Object> grid = gridWithId("inspections-grid");
+        LocatorJ._setValue(comboWithId("inspections-result"), InspectionResult.MAJOR_DEFECT);
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("inspections-from")), LocalDate.of(2026, 9, 1));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("inspections-inspector")), "ana");
+        GridKt._size(grid);
+        verify(inspectionClient, atLeastOnce()).search(eq(new InspectionFilter(InspectionResult.MAJOR_DEFECT, null, null, null,
+                LocalDate.of(2026, 9, 1), null, "ana", null)), eq(0), anyInt(), anyList());
+        GridKt._clickItem(grid, 0, 1, false, false, false, false);
+
+        LocatorJ._get(InspectionDetailView.class);
+        assertTrue(hasButton("inspection-create-defect") && hasButton("inspection-create-order"));
+        assertFalse(hasButton("inspection-defect-link") || hasButton("inspection-order-link"));
+        assertEquals("P-01", GridKt._getFormattedRow(gridWithId("inspection-items-grid"), 0).getFirst());
+
+        UI.getCurrent().navigate(MaintenanceRoutes.INSPECTIONS);
+        openInspection(inspectionOf(InspectionResult.MAJOR_DEFECT, DEFECT1, ORDER1));
+        assertTrue(hasButton("inspection-defect-link") && hasButton("inspection-order-link"), "lo generado se enlaza, no se vuelve a ofrecer");
+        assertFalse(hasButton("inspection-create-defect") || hasButton("inspection-create-order"));
+        when(defectClient.findById(DEFECT1)).thenReturn(defectOf(DefectStatus.OPEN));
+        click("inspection-defect-link");
+        LocatorJ._get(DefectDetailView.class);
+
+        UI.getCurrent().navigate(MaintenanceRoutes.INSPECTIONS);
+        openInspection(inspectionOf(InspectionResult.OK, null, null));
+        assertFalse(hasButton("inspection-create-defect") || hasButton("inspection-create-order"), "una inspeccion correcta no genera nada");
+    }
+
+    @Test
+    void anInspectionCreatesItsDefectWithForceWhenMinorAndItsOrderOpensTheOrder() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(inspectionClient.createDefect(eq(INSPECTION1), any())).thenReturn(defectOf(DefectStatus.OPEN));
+        when(inspectionClient.createCorrectiveOrder(eq(INSPECTION1), any())).thenReturn(orderOf(MaintenanceOrderStatus.DRAFT,
+                MaintenanceOrderType.CORRECTIVE));
+        when(orderClient.findById(ORDER1)).thenReturn(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.CORRECTIVE));
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        openInspection(inspectionOf(InspectionResult.MINOR_DEFECT, null, null));
+
+        click("inspection-create-defect");
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("inspection-defect-force")), true);
+        click("inspection-defect-confirm");
+        verify(inspectionClient).createDefect(INSPECTION1, new CreateDefectFromInspectionRequest(null, null, null, true));
+        verify(inspectionClient, atLeast(2)).findById(INSPECTION1);
+
+        click("inspection-create-order");
+        LocatorJ._setValue(comboWithId("inspection-order-priority"), MaintenancePriority.HIGH);
+        click("inspection-order-confirm");
+        verify(inspectionClient).createCorrectiveOrder(INSPECTION1, new CreateCorrectiveOrderRequest(null, null, MaintenancePriority.HIGH, null, null));
+        LocatorJ._get(OrderDetailView.class);
+    }
+
+    @Test
+    void anInspectionIsCreatedFromAnInspectionOrderAndItsItemsAreAnswered() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        InspectionDto created = inspectionOf(InspectionResult.OK, null, null);
+        when(inspectionClient.create(any())).thenReturn(created);
+        when(inspectionClient.findById(INSPECTION1)).thenReturn(created);
+        when(inspectionClient.updateItem(eq(INSPECTION1), eq(INSPECTION_ITEM), any())).thenReturn(created);
+        openOrder(orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.INSPECTION));
+
+        selectTab(2);
+        click("order-inspection-create");
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("inspection-asset")).isEmpty(), "el activo es el de la orden");
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("inspection-date")), LocalDate.of(2026, 9, 20));
+        click(InspectionEditorDialog.SAVE_ID);
+        verify(inspectionClient).create(new InspectionRequest(ASSET1, LocalDate.of(2026, 9, 20), null, InspectionKind.VISUAL, InspectionResult.OK,
+                null, null, null, null, ORDER1, null));
+        verify(inspectionClient, atLeastOnce()).search(eq(InspectionFilter.ofOrder(ORDER1)), eq(0), anyInt(), anyList());
+
+        openInspection(created);
+        click("inspection-items");
+        LocatorJ._setValue(comboWithId("check-result-" + INSPECTION_ITEM), CheckItemResult.OK);
+        click("check-save-" + INSPECTION_ITEM);
+        verify(inspectionClient).updateItem(INSPECTION1, INSPECTION_ITEM, new CheckItemUpdateRequest(null, null, null, CheckItemResult.OK, null));
+    }
+
+    @Test
+    void theDefectsAreFilteredAndTheDetailOffersWhatItsStateAdmits() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        doAnswer(call -> page(List.of(defectOf(DefectStatus.OPEN)), call.getArgument(1), call.getArgument(2)))
+                .when(defectClient).search(any(DefectFilter.class), anyInt(), anyInt(), anyList());
+        when(defectClient.findById(DEFECT1)).thenReturn(defectOf(DefectStatus.OPEN));
+        when(defectClient.history(DEFECT1)).thenReturn(List.of(new StatusHistoryDto(UUID.randomUUID(), null, "OPEN",
+                Instant.parse("2026-09-20T08:00:00Z"), "ana", "Created from inspection INS-000001")));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.DEFECTS);
+        Grid<Object> grid = gridWithId("defects-grid");
+        LocatorJ._setValue(comboWithId("defects-severity"), DefectSeverity.HIGH);
+        LocatorJ._setValue(comboWithId("defects-status"), DefectStatus.OPEN);
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("defects-from")), LocalDate.of(2026, 9, 1));
+        GridKt._size(grid);
+        verify(defectClient, atLeastOnce()).search(eq(new DefectFilter(DefectSeverity.HIGH, DefectStatus.OPEN, null, null, null, null,
+                Formats.startOfDay(LocalDate.of(2026, 9, 1)), null)), eq(0), anyInt(), anyList());
+        GridKt._clickItem(grid, 0, 1, false, false, false, false);
+
+        LocatorJ._get(DefectDetailView.class);
+        assertEquals("Abierto", GridKt._getFormattedRow(gridWithId("defect-history-grid"), 0).get(2));
+        assertTrue(hasButton("defect-edit") && hasButton("defect-link-order") && hasButton("defect-inspection-link"));
+        assertFalse(hasButton("defect-resolve") || hasButton("defect-discard"), "resolver y descartar piden supervise");
+
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        UI.getCurrent().navigate(MaintenanceRoutes.DEFECTS);
+        openDefect(defectOf(DefectStatus.OPEN));
+        assertTrue(hasButton("defect-resolve") && hasButton("defect-discard"));
+        assertFalse(hasButton("defect-close"));
+        UI.getCurrent().navigate(MaintenanceRoutes.DEFECTS);
+        openDefect(defectOf(DefectStatus.RESOLVED));
+        assertTrue(hasButton("defect-close") && hasButton("defect-edit"));
+        assertFalse(hasButton("defect-resolve") || hasButton("defect-discard") || hasButton("defect-link-order"));
+    }
+
+    @Test
+    void aDefectIsLinkedResolvedAndDiscardedWithItsReasons() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        OrderDto open = orderOf(MaintenanceOrderStatus.PLANNED, MaintenanceOrderType.CORRECTIVE);
+        when(orderClient.search(eq(OrderFilter.onTrack(12L)), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.of(open, order(UUID.randomUUID(), "MO-000009", MaintenanceOrderStatus.CANCELLED, 12L, 3L)), 0, 100));
+        when(shiftClient.search(eq(new ShiftFilter(null, null, null, 12L, null, null, null)), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.of(shiftOf(ShiftStatus.CLOSED)), 0, 50));
+        when(defectClient.linkOrder(DEFECT1, ORDER1)).thenReturn(defectOf(DefectStatus.IN_PROGRESS));
+        when(defectClient.resolve(eq(DEFECT1), any()))
+                .thenThrow(maintenanceError(409, "TRN-001", "Defect DEF-000001 is linked to order MO-000001 which is PLANNED"))
+                .thenReturn(defectOf(DefectStatus.RESOLVED));
+        when(defectClient.discard(eq(DEFECT1), any())).thenReturn(defectOf(DefectStatus.DISCARDED));
+        openDefect(defectOf(DefectStatus.OPEN));
+
+        click("defect-link-order");
+        ComboBox<OrderDto> order = comboWithId("defect-link-order");
+        assertEquals(List.of("MO-000001 · Revision tramo 12 (planificada)"), ComboBoxKt.getSuggestions(order), "solo las abiertas de su via");
+        ComboBoxKt.selectByLabel(order, "MO-000001 · Revision tramo 12 (planificada)");
+        click("defect-link-confirm");
+        verify(defectClient).linkOrder(DEFECT1, ORDER1);
+        assertEquals("En curso", spanText("defect-status"));
+
+        click("defect-resolve");
+        click("defect-resolve-confirm");
+        verify(defectClient, never()).resolve(any(), any());
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("defect-resolve-notes")), "Pendola cambiada");
+        click("defect-resolve-confirm");
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText(
+                "El estado actual no permite esta operacion. Defect DEF-000001 is linked to order MO-000001 which is PLANNED"));
+        ComboBoxKt.selectByLabel(comboWithId("defect-resolve-shift"), "SH-000001 · 05/10/2026");
+        click("defect-resolve-confirm");
+        verify(defectClient).resolve(DEFECT1, new ResolveDefectRequest("Pendola cambiada", SHIFT1, null, null));
+        assertEquals("Resuelto", spanText("defect-status"));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.DEFECTS);
+        openDefect(defectOf(DefectStatus.OPEN));
+        click("defect-discard");
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("reason-text")), "Duplicado");
+        click("reason-confirm");
+        verify(defectClient).discard(DEFECT1, new ReasonRequest("Duplicado"));
+        assertEquals("Descartado", spanText("defect-status"));
+    }
+
+    @Test
+    void anOrderListsItsDefectsCreatesOneLinkedToItAndLinksToItsOrigin() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        when(defectClient.search(eq(DefectFilter.ofOrder(ORDER1)), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.of(defectOf(DefectStatus.IN_PROGRESS)), 0, 100));
+        when(defectClient.create(any())).thenReturn(defectOf(DefectStatus.IN_PROGRESS));
+        OrderDto base = orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.CORRECTIVE);
+        OrderDto fromInspection = new OrderDto(base.id(), base.code(), base.title(), base.description(), base.type(), base.status(), base.priority(),
+                base.asset(), base.executionPackageId(), base.trackId(), base.stationId(), base.startKp(), base.endKp(), base.plannedDate(),
+                base.actualStartDate(), base.actualEndDate(), base.team(), base.assignedUser(), base.closingNotes(), base.cancellationReason(),
+                INSPECTION1, null, base.stockProjectId(), base.taskCount(), base.completedTaskCount(), base.estimatedMinutes(),
+                base.estimatedShifts(), base.audit());
+        openOrder(fromInspection);
+
+        verify(defectClient, never()).search(any(DefectFilter.class), anyInt(), anyInt(), anyList());
+        selectTab(1);
+        assertEquals("DEF-000001", GridKt._getFormattedRow(gridWithId("order-defects-grid"), 0).getFirst());
+        click("order-defect-create");
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("defect-asset")).isEmpty(), "el activo es el de la orden");
+        LocatorJ._setValue(comboWithId("defect-severity"), DefectSeverity.HIGH);
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("defect-description")), "Pendola rota");
+        click(DefectEditorDialog.SAVE_ID);
+        verify(defectClient).create(new DefectRequest(ASSET1, DefectSeverity.HIGH, "Pendola rota", null, null, null, ORDER1, null, null, null,
+                null, null, null));
+
+        when(inspectionClient.findById(INSPECTION1)).thenReturn(inspectionOf(InspectionResult.MAJOR_DEFECT, null, ORDER1));
+        click("order-origin-inspection");
+        LocatorJ._get(InspectionDetailView.class);
     }
 }
