@@ -151,7 +151,27 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
+import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
+import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
+import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.AssetFilter;
+import com.alejandro.mtobackoffice.client.dto.maintenance.AssetRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.AssetUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.FunctionalGroup;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateItemDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskUnit;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TeamDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TeamRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TrackKind;
+import com.alejandro.mtobackoffice.ui.maintenance.AssetEditorDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.AssetsView;
+import com.vaadin.flow.component.html.H3;
+import com.alejandro.mtobackoffice.ui.maintenance.TeamEditorDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.TeamsView;
+import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.maintenance.MaintenanceRoutes;
 import com.alejandro.mtobackoffice.ui.maintenance.OrdersView;
 import com.alejandro.mtobackoffice.ui.support.Downloads;
@@ -291,6 +311,10 @@ class ViewLayerTest {
     private ReservationClient reservationClient;
     @MockitoBean
     private OrderClient orderClient;
+    @MockitoBean
+    private AssetClient assetClient;
+    @MockitoBean
+    private MaintenanceCatalogClient maintenanceCatalogClient;
 
     @BeforeEach
     void setUp() {
@@ -695,6 +719,10 @@ class ViewLayerTest {
         when(materialClient.movements(any(), any(), any(), any(), any(), anyInt(), anyInt(), anyList())).thenReturn(page(List.<MovementDto>of(), 0, 50));
         when(movementClient.search(any(), any(), any(), any(), any(), any(), any(), anyInt(), anyInt(), anyList())).thenReturn(page(List.<MovementDto>of(), 0, 50));
         when(orderClient.search(any(OrderFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<OrderDto>of(), 0, 50));
+        when(assetClient.search(any(AssetFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<AssetDto>of(), 0, 50));
+        when(maintenanceCatalogClient.teams()).thenReturn(List.of());
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(List.of());
+        when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(List.of());
     }
 
     /** Un catalogo de almacen simulado: busca en codigo o nombre, filtra por estado y pagina por page/size como el servicio. */
@@ -3391,7 +3419,7 @@ class ViewLayerTest {
         assertTrue(row.contains("#12") && row.contains("#3"), row.toString());
         verify(trackClient, never()).filter(anyInt(), anyInt(), anyList(), anyMap());
         verify(executionPackageClient, never()).filter(anyInt(), anyInt(), anyList(), anyMap());
-        assertTrue(LocatorJ._find(com.vaadin.flow.component.notification.Notification.class).isEmpty(), "ninguna notificacion de 403");
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "ninguna notificacion de 403");
     }
 
     /** Lo que sirve un enlace de descarga: el cuerpo con el nombre y el tipo del servicio, o su estado si falla. */
@@ -3421,5 +3449,186 @@ class ViewLayerTest {
         Anchor link = Downloads.link("report-xlsx", "Excel", "avance.xlsx", () -> ResponseEntity.ok().body(xlsx));
         assertEquals("report-xlsx", link.getId().orElseThrow());
         assertEquals("Excel", link.getText());
+    }
+
+    // --- Mantenimiento: activos y catalogos -------------------------------------------------------
+
+    private static final UUID ASSET_SYNCED = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000010");
+    private static final UUID ASSET_OWN = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000011");
+    private static final UUID ASSET_OWN_OFF = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000012");
+    private static final String[] MAINTENANCE_TECHNICIAN = {"ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_CONFIG_READ", "ROLE_STOCK_READ"};
+    private static final String[] MAINTENANCE_MANAGER = {"ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_MAINTENANCE_DELETE",
+            "ROLE_MAINTENANCE_SUPERVISE", "ROLE_CONFIG_READ", "ROLE_STOCK_READ"};
+
+    private static AssetDto syncedProfile() {
+        return new AssetDto(ASSET_SYNCED, "PRF-0001", "12-2.27", CatenaryAssetType.PROFILE, null, 3L, 12L, 4L, new BigDecimal("12.270"),
+                new BigDecimal("12.270"), "501", "S-3", null, null, null, List.of(), "mto-configuration", "501", true, 180, null,
+                Instant.parse("2026-10-01T00:00:00Z"), null);
+    }
+
+    private static AssetDto ownSection(UUID id, String code, boolean enabled) {
+        return new AssetDto(id, code, "Tramo " + code, CatenaryAssetType.TRACK_SECTION, "Tramo propio", 3L, 12L, null,
+                new BigDecimal("12.100"), new BigDecimal("13.450"), null, null, TrackKind.MAIN, null, null, List.of(), null, null, enabled,
+                null, null, null, null);
+    }
+
+    /** Los activos simulados, paginados como el servicio: una fila de mas en una pagina rompe el Grid. */
+    private void stubAssets(List<AssetDto> all) {
+        doAnswer(call -> page(all, call.getArgument(1), call.getArgument(2)))
+                .when(assetClient).search(any(AssetFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    private void stubReferencesForMaintenance() {
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(executionPackage(3L, "PAQ NORTE"), executionPackage(5L, "PAQ SUR")), 0, 1000));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(track(12L, "VIA 1", true, 3L, List.of())), 0, 1000));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> ComboBox<T> comboWithId(String id) {
+        return LocatorJ._get(ComboBox.class, spec -> spec.withId(id));
+    }
+
+    @Test
+    void theAssetsAreFilteredInTheServerAndAReaderSeesNoWriteControl() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        stubReferencesForMaintenance();
+        stubAssets(List.of(syncedProfile()));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ASSETS);
+
+        Grid<Object> grid = gridWithId("assets-grid");
+        List<String> row = GridKt._getFormattedRow(grid, 0);
+        assertEquals(List.of("PRF-0001", "12-2.27", "Perfil", "VIA 1 (PAQ NORTE)", "12.27", "PAQ NORTE", "S-3", "180 d",
+                Formats.dateTime(Instant.parse("2026-10-01T00:00:00Z")), "Activo", "mto-configuration"), row.subList(0, 11));
+        verify(assetClient, atLeastOnce()).search(eq(AssetFilter.NONE), eq(0), anyInt(), eq(List.of("trackId,asc", "startKp,asc")));
+
+        LocatorJ._setValue(comboWithId("assets-type"), CatenaryAssetType.PROFILE);
+        LocatorJ._setValue(comboWithId("assets-track"), new RefItem(12L, "VIA 1 (PAQ NORTE)"));
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("assets-state")), EnabledFilter.ENABLED);
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("assets-name")), "12-2");
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("assets-due")), LocalDate.of(2026, 10, 31));
+        GridKt._size(grid);
+        verify(assetClient, atLeastOnce()).search(eq(new AssetFilter(CatenaryAssetType.PROFILE, 12L, null, null, true, "12-2",
+                Formats.endOfDay(LocalDate.of(2026, 10, 31)))), eq(0), anyInt(), anyList());
+
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("asset-create")).isEmpty(), "sin write no hay alta");
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, AssetsView.ACTIONS_COLUMN), Button.class).isEmpty(),
+                "quien solo lee no ve ni modificar ni desactivar");
+    }
+
+    @Test
+    void aTrackSectionIsCreatedWithItsReferencesAndABadRangeOrARepeatedCodeStaysInTheDialog() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        when(assetClient.create(any())).thenThrow(maintenanceError(409, "AST-409", "Catenary asset code 'TS-0002' is already in use"))
+                .thenReturn(ownSection(ASSET_OWN, "TS-0002", true));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ASSETS);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("asset-create")));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("asset-code")), "TS-0002");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("asset-name")), "Tramo 13");
+        LocatorJ._setValue(comboWithId("asset-track"), new RefItem(12L, "VIA 1 (PAQ NORTE)"));
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("asset-start-kp")), new BigDecimal("13.45"));
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("asset-end-kp")), new BigDecimal("13.00"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(AssetEditorDialog.SAVE_ID)));
+
+        verify(assetClient, never()).create(any());
+        assertTrue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("asset-end-kp")).isInvalid(), "el KP final va despues del inicial");
+
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("asset-end-kp")), new BigDecimal("14.2"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(AssetEditorDialog.SAVE_ID)));
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText("Ya existe otro con ese codigo."));
+        assertFalse(LocatorJ._find(AssetEditorDialog.class).isEmpty(), "el dialogo sigue abierto con lo escrito");
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(AssetEditorDialog.SAVE_ID)));
+        verify(assetClient, times(2)).create(new AssetRequest("TS-0002", "Tramo 13", null, null, 12L, null, new BigDecimal("13.45"),
+                new BigDecimal("14.2"), TrackKind.MAIN, null));
+        assertTrue(LocatorJ._find(AssetEditorDialog.class).isEmpty());
+    }
+
+    /** Un activo de mto-configuration solo cambia descripcion e intervalo, manda solo lo cambiado y no ofrece desactivarse. */
+    @Test
+    void aSynchronizedAssetOnlyChangesDescriptionAndIntervalAndCannotBeDisabledHere() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        stubReferencesForMaintenance();
+        stubAssets(List.of(syncedProfile()));
+        when(assetClient.update(any(), any())).thenReturn(syncedProfile());
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ASSETS);
+        Component actions = GridKt._getCellComponent(gridWithId("assets-grid"), 0, AssetsView.ACTIONS_COLUMN);
+        assertTrue(LocatorJ._find(actions, Button.class, spec -> spec.withId("asset-disable-" + ASSET_SYNCED)).isEmpty(),
+                "el enabled de un activo sincronizado lo reescribe el siguiente evento");
+        LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withId("asset-edit-" + ASSET_SYNCED)));
+
+        assertTrue(LocatorJ._find(TextField.class, spec -> spec.withId("asset-name")).isEmpty(), "el nombre es de mto-configuration");
+        IntegerField interval = LocatorJ._get(IntegerField.class, spec -> spec.withId("asset-interval"));
+        LocatorJ._setValue(interval, null);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(AssetEditorDialog.SAVE_ID)));
+        assertTrue(interval.isInvalid(), "un PUT parcial no puede vaciar un numero");
+
+        LocatorJ._setValue(interval, 90);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(AssetEditorDialog.SAVE_ID)));
+        verify(assetClient).update(ASSET_SYNCED, new AssetUpdateRequest(null, null, null, 90, null, null, null, null, null, null));
+    }
+
+    @Test
+    void anOwnTrackSectionIsDisabledWithConfirmationAndReactivatedByUpdatingIt() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        stubReferencesForMaintenance();
+        stubAssets(List.of(ownSection(ASSET_OWN, "TS-0001", true), ownSection(ASSET_OWN_OFF, "TS-0009", false)));
+        when(assetClient.update(any(), any())).thenReturn(ownSection(ASSET_OWN_OFF, "TS-0009", true));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ASSETS);
+        Grid<Object> grid = gridWithId("assets-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, AssetsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("asset-disable-" + ASSET_OWN)));
+        verify(assetClient, never()).disable(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(assetClient).disable(ASSET_OWN);
+        NotificationsKt.expectNotifications("Desactivado TS-0001 - Tramo TS-0001");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, AssetsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("asset-enable-" + ASSET_OWN_OFF)));
+        verify(assetClient).update(ASSET_OWN_OFF, AssetUpdateRequest.enabled(true));
+        NotificationsKt.expectNotifications("Reactivado TS-0009 - Tramo TS-0009");
+    }
+
+    @Test
+    void teamsAreWrittenWholeAndTaskTypesAndTemplatesAreOnlyRead() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        TeamDto team = new TeamDto(TEAM1, "EQ-01", "Brigada norte", "Base Norte", "DR-2", true, Set.of(3L, 5L), null);
+        when(maintenanceCatalogClient.teams()).thenReturn(List.of(team));
+        when(maintenanceCatalogClient.updateTeam(any(), any())).thenReturn(team);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(List.of(new TaskTypeDto(UUID.randomUUID(), "RG-04",
+                "Revision del hilo de contacto", FunctionalGroup.OVERHEAD_CONDUCTORS, new BigDecimal("12.50"), TaskUnit.SPAN, null, true, false,
+                true, 4)));
+        when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(List.of(
+                new InspectionTemplateDto(UUID.randomUUID(), CatenaryAssetType.PROFILE, 1, "Perfil", false, List.of()),
+                new InspectionTemplateDto(UUID.randomUUID(), CatenaryAssetType.PROFILE, 2, "Perfil", true, List.of(
+                        new InspectionTemplateItemDto(UUID.randomUUID(), "P-01", "Altura del hilo", "mm", new BigDecimal("5300"),
+                                new BigDecimal("5700"), true, 1)))));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.TEAMS);
+        assertEquals(List.of("EQ-01", "Brigada norte", "Base Norte", "DR-2", "PAQ NORTE, PAQ SUR", "Activo"),
+                GridKt._getFormattedRow(gridWithId("teams-grid"), 0).subList(0, 6));
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("teams-grid"), 0, TeamsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("team-edit-" + TEAM1)));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("team-base")), "");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(TeamEditorDialog.SAVE_ID)));
+        verify(maintenanceCatalogClient).updateTeam(TEAM1, new TeamRequest("EQ-01", "Brigada norte", null, "DR-2", true,
+                new java.util.TreeSet<>(Set.of(3L, 5L))));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.TASK_TYPES);
+        assertEquals(List.of("RG-04", "Revision del hilo de contacto", "Conductores aereos", "Vano", "12.5", "", "Si", "No", "Si"),
+                GridKt._getFormattedRow(gridWithId("task-types-grid"), 0));
+        LocatorJ._setValue(comboWithId("task-types-group"), FunctionalGroup.OVERHEAD_CONDUCTORS);
+        verify(maintenanceCatalogClient).taskTypes(FunctionalGroup.OVERHEAD_CONDUCTORS, null, null);
+
+        UI.getCurrent().navigate(MaintenanceRoutes.TEMPLATES);
+        assertEquals(2, GridKt._size(gridWithId("templates-grid")));
+        LocatorJ._get(H3.class, spec -> spec.withText("Puntos de Perfil (version 2)"));
+        assertEquals(List.of("P-01", "Altura del hilo", "Si", "mm", "5300", "5700"), GridKt._getFormattedRow(gridWithId("template-items-grid"), 0));
     }
 }

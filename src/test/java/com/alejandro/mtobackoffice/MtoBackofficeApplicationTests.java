@@ -1,6 +1,8 @@
 package com.alejandro.mtobackoffice;
 
 import com.alejandro.mtobackoffice.client.configuration.LovClient;
+import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
+import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
 import com.alejandro.mtobackoffice.client.stock.MaterialClient;
@@ -63,8 +65,9 @@ class MtoBackofficeApplicationTests {
                 AssemblyClient.class, MovementClient.class, ReservationClient.class)) {
             assertNotNull(context.getBean(stockClient), stockClient.getSimpleName());
         }
-        assertNotNull(context.getBean(OrderClient.class));
-        assertNotNull(context.getBean(MaintenanceClients.class));
+        for (Class<?> maintenanceClient : List.of(OrderClient.class, AssetClient.class, MaintenanceCatalogClient.class, MaintenanceClients.class)) {
+            assertNotNull(context.getBean(maintenanceClient), maintenanceClient.getSimpleName());
+        }
         assertEquals(List.of("mto-configuration-api", "mto-users-api", "mto-stock-api", "mto-maintenance-api"),
                 context.getBean(KeycloakProperties.class).rolesClientIds(), "los cuatro clientes cuyos roles son permisos");
         ClientRegistration keycloak = context.getBean(ClientRegistrationRepository.class).findByRegistrationId("keycloak");

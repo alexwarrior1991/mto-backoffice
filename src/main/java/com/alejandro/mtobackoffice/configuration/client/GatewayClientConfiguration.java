@@ -10,6 +10,8 @@ import com.alejandro.mtobackoffice.client.configuration.SectionInsulatorClient;
 import com.alejandro.mtobackoffice.client.configuration.StationClient;
 import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
+import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
+import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
 import com.alejandro.mtobackoffice.client.stock.MaterialClient;
@@ -179,6 +181,16 @@ public class GatewayClientConfiguration {
     @Bean
     public OrderClient orderClient(RestClient gatewayRestClient) {
         return proxyFactory(gatewayRestClient).createClient(OrderClient.class);
+    }
+
+    @Bean
+    public AssetClient assetClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(AssetClient.class);
+    }
+
+    @Bean
+    public MaintenanceCatalogClient maintenanceCatalogClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(MaintenanceCatalogClient.class);
     }
 
     public static HttpServiceProxyFactory proxyFactory(RestClient restClient) {

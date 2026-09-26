@@ -53,6 +53,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -114,7 +115,21 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderFilter;
+import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
+import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
+import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.AssetFilter;
+import com.alejandro.mtobackoffice.client.dto.maintenance.AssetRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.AssetUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.FunctionalGroup;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.SectionInsulatorInstallation;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskUnit;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TeamDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TeamRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TrackKind;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesRegex;
 import static org.hamcrest.Matchers.nullValue;
@@ -160,6 +175,8 @@ class ClientLayerTest {
     private MovementClient movementClient;
     private ReservationClient reservationClient;
     private OrderClient orderClient;
+    private AssetClient assetClient;
+    private MaintenanceCatalogClient maintenanceCatalogClient;
 
     @BeforeEach
     void setUp() {
@@ -188,6 +205,8 @@ class ClientLayerTest {
         movementClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(MovementClient.class);
         reservationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ReservationClient.class);
         orderClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(OrderClient.class);
+        assetClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(AssetClient.class);
+        maintenanceCatalogClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(MaintenanceCatalogClient.class);
     }
 
     @AfterEach
@@ -1464,6 +1483,124 @@ class ClientLayerTest {
         assertEquals("corr-m1", sort.getReference());
         assertEquals("ORD-404", missing.getProblem().code());
         assertTrue(missing.getProblem().detail().contains("was not found"));
+        server.verify();
+    }
+
+    private static final String INSULATOR_JSON = "{\"id\":\"" + ASSET_ID + "\",\"code\":\"SI-0007\",\"name\":\"AS-7\",\"type\":\"SECTION_INSULATOR\","
+            + "\"description\":null,\"executionPackageId\":3,\"trackId\":12,\"stationId\":4,\"startKp\":12.400,\"endKp\":12.400,"
+            + "\"profileSourceId\":null,\"sectioning\":null,\"trackKind\":null,\"connectedTrackId\":13,\"installationType\":\"TRACK_CONNECTION\","
+            + "\"switches\":[{\"id\":\"2b3c4d5e-0000-4000-8000-00000000000a\",\"code\":\"W31\",\"kp\":12.410,\"turnoutDenominator\":9,"
+            + "\"turnoutRate\":\"1:9\",\"trackId\":13,\"enabled\":false}],"
+            + "\"sourceService\":\"mto-configuration\",\"sourceEntityId\":\"77\",\"sourceSequenceNumber\":41,\"enabled\":true,"
+            + "\"preventiveIntervalDays\":180,\"lastPreventiveCompletedAt\":null,\"nextPreventiveDueAt\":\"2026-10-01T00:00:00Z\",\"audit\":null}";
+
+    /**
+     * Activos: la busqueda con sus filtros (el instante en ISO), el alta de un tramo sin lo vacio,
+     * la modificacion parcial con solo lo que cambio, la reactivacion, la baja con un DELETE sin
+     * cuerpo y las ordenes de un activo. Un tipo que esta version no conoce se lee como UNKNOWN.
+     */
+    @Test
+    void assetsAreSearchedCreatedPartiallyUpdatedAndDisabled() {
+        server.expect(requestTo(MAINTENANCE + "/assets?type=SECTION_INSULATOR&trackId=12&enabled=true&name=AS&preventiveDueBefore=2026-10-01T22%3A00%3A00Z"
+                        + "&page=0&size=50&sort=trackId%2Casc&sort=startKp%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(INSULATOR_JSON + "," + INSULATOR_JSON.replace("SECTION_INSULATOR", "CANTILEVER")
+                        .replace(ASSET_ID, "2b3c4d5e-0000-4000-8000-00000000000b"), 0, 50, 2), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/assets")).andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.code").value("TS-0002"))
+                .andExpect(jsonPath("$.trackId").value(12))
+                .andExpect(jsonPath("$.startKp").value(13.45))
+                .andExpect(jsonPath("$.trackKind").value("DIVERTED"))
+                .andExpect(jsonPath("$.description").doesNotExist())
+                .andExpect(jsonPath("$.stationId").doesNotExist())
+                .andRespond(withSuccess(INSULATOR_JSON.replace("SI-0007", "TS-0002"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/assets/" + ASSET_ID)).andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.preventiveIntervalDays").value(90))
+                .andExpect(jsonPath("$.description").value(""))
+                .andExpect(jsonPath("$.name").doesNotExist())
+                .andExpect(jsonPath("$.enabled").doesNotExist())
+                .andExpect(jsonPath("$.trackId").doesNotExist())
+                .andRespond(withSuccess(INSULATOR_JSON, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/assets/" + ASSET_ID)).andExpect(method(HttpMethod.PUT))
+                .andExpect(content().json("{\"enabled\":true}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(INSULATOR_JSON, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/assets/" + ASSET_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(MAINTENANCE + "/assets/" + ASSET_ID + "/orders?page=0&size=20&sort=createdAt%2Cdesc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(orderJson(ORDER_ID, "MO-000001", "COMPLETED", "LOW"), 0, 20, 1), MediaType.APPLICATION_JSON));
+
+        PageResponse<AssetDto> page = asUser(() -> assetClient.search(new AssetFilter(CatenaryAssetType.SECTION_INSULATOR, 12L, null, null, true,
+                " AS ", Instant.parse("2026-10-01T22:00:00Z")), 0, 50, List.of("trackId,asc", "startKp,asc")));
+        AssetDto created = asUser(() -> assetClient.create(new AssetRequest("TS-0002", "Tramo 13", null, 3L, 12L, null,
+                new BigDecimal("13.45"), new BigDecimal("14.2"), TrackKind.DIVERTED, null)));
+        asUser(() -> assetClient.update(UUID.fromString(ASSET_ID),
+                new AssetUpdateRequest(null, "", null, 90, null, null, null, null, null, null)));
+        asUser(() -> assetClient.update(UUID.fromString(ASSET_ID), AssetUpdateRequest.enabled(true)));
+        asUser(() -> {
+            assetClient.disable(UUID.fromString(ASSET_ID));
+            return null;
+        });
+        PageResponse<OrderDto> orders = asUser(() -> assetClient.orders(UUID.fromString(ASSET_ID), 0, 20, List.of("createdAt,desc")));
+
+        AssetDto insulator = page.content().getFirst();
+        assertTrue(insulator.isSynchronized());
+        assertEquals(SectionInsulatorInstallation.TRACK_CONNECTION, insulator.installationType());
+        assertEquals("W31 1:9", insulator.switches().getFirst().label());
+        assertFalse(insulator.switches().getFirst().enabled(), "una aguja dada de baja sigue apareciendo, marcada");
+        assertEquals(Instant.parse("2026-10-01T00:00:00Z"), insulator.nextPreventiveDueAt());
+        assertEquals(CatenaryAssetType.UNKNOWN, page.content().get(1).type());
+        assertEquals("TS-0002", created.code());
+        assertEquals(MaintenanceOrderStatus.COMPLETED, orders.content().getFirst().status());
+        assertTrue(AssetUpdateRequest.enabled(false).equals(new AssetUpdateRequest(null, null, false, null, null, null, null, null, null, null)));
+        server.verify();
+    }
+
+    /**
+     * Los catalogos: equipos (el PUT es completo, asi que base y vehiculo vaciados viajan como
+     * null), tipos de tarea filtrados por grupo y plantillas con sus puntos.
+     */
+    @Test
+    void maintenanceCataloguesAreReadAndTeamsAreWrittenWhole() {
+        String team = "{\"id\":\"" + TEAM_ID + "\",\"code\":\"EQ-01\",\"name\":\"Brigada norte\",\"baseName\":\"Base Norte\","
+                + "\"vehicle\":\"DR-2\",\"active\":true,\"executionPackageIds\":[3,5],\"audit\":null}";
+        server.expect(requestTo(MAINTENANCE + "/teams")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[" + team + "]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/teams")).andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.code").value("EQ-02"))
+                .andExpect(jsonPath("$.executionPackageIds[0]").value(3))
+                .andRespond(withSuccess(team.replace("EQ-01", "EQ-02"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/teams/" + TEAM_ID)).andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.baseName").value(nullValue()))
+                .andExpect(jsonPath("$.vehicle").value(nullValue()))
+                .andExpect(jsonPath("$.active").value(false))
+                .andRespond(withSuccess(team, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/task-types?functionalGroup=OVERHEAD_CONDUCTORS")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[{\"id\":\"2b3c4d5e-0000-4000-8000-000000000020\",\"code\":\"RG-04\",\"description\":\"Revision del hilo de contacto\","
+                        + "\"functionalGroup\":\"OVERHEAD_CONDUCTORS\",\"standardMinutesPerUnit\":12.50,\"unit\":\"SPAN\",\"fixedMinutes\":null,"
+                        + "\"requiresFullPossession\":true,\"diagnostic\":false,\"active\":true,\"orderIndex\":4}]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/inspection-templates")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[{\"id\":\"2b3c4d5e-0000-4000-8000-000000000030\",\"assetType\":\"PROFILE\",\"version\":2,"
+                        + "\"name\":\"Perfil\",\"active\":true,\"items\":[{\"id\":\"2b3c4d5e-0000-4000-8000-000000000031\",\"code\":\"P-01\","
+                        + "\"label\":\"Altura del hilo\",\"unit\":\"mm\",\"minValue\":5300,\"maxValue\":5700,\"requiresMeasure\":true,\"orderIndex\":1}]}]",
+                        MediaType.APPLICATION_JSON));
+
+        List<TeamDto> teams = asUser(() -> maintenanceCatalogClient.teams());
+        TeamDto created = asUser(() -> maintenanceCatalogClient.createTeam(new TeamRequest("EQ-02", "Brigada sur", null, null, true,
+                new java.util.TreeSet<>(Set.of(3L)))));
+        asUser(() -> maintenanceCatalogClient.updateTeam(UUID.fromString(TEAM_ID), new TeamRequest("EQ-01", "Brigada norte", null, null, false,
+                Set.of(3L, 5L))));
+        List<TaskTypeDto> types = asUser(() -> maintenanceCatalogClient.taskTypes(FunctionalGroup.OVERHEAD_CONDUCTORS, null, null));
+        List<InspectionTemplateDto> templates = asUser(() -> maintenanceCatalogClient.inspectionTemplates());
+
+        assertEquals(Set.of(3L, 5L), teams.getFirst().executionPackageIds());
+        assertEquals("EQ-01 - Brigada norte", teams.getFirst().label());
+        assertEquals("EQ-02", created.code());
+        assertEquals(TaskUnit.SPAN, types.getFirst().unit());
+        assertTrue(types.getFirst().requiresFullPossession());
+        assertEquals(new BigDecimal("12.50"), types.getFirst().standardMinutesPerUnit());
+        assertEquals(CatenaryAssetType.PROFILE, templates.getFirst().assetType());
+        assertEquals(new BigDecimal("5300"), templates.getFirst().items().getFirst().minValue());
         server.verify();
     }
 }

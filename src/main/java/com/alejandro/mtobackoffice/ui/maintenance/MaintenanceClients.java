@@ -4,6 +4,8 @@ import com.alejandro.mtobackoffice.client.configuration.BusinessEntityClient;
 import com.alejandro.mtobackoffice.client.configuration.ExecutionPackageClient;
 import com.alejandro.mtobackoffice.client.configuration.StationClient;
 import com.alejandro.mtobackoffice.client.configuration.TrackClient;
+import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
+import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import org.springframework.stereotype.Component;
 
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Component;
  * parametros que crece con cada pantalla; cada cliente sigue siendo su propio bean.
  */
 @Component
-public record MaintenanceClients(OrderClient orders, ExecutionPackageClient packages, StationClient stations,
-                                 TrackClient tracks, BusinessEntityClient companies) {
+public record MaintenanceClients(OrderClient orders, AssetClient assets, MaintenanceCatalogClient catalog,
+                                 ExecutionPackageClient packages, StationClient stations, TrackClient tracks,
+                                 BusinessEntityClient companies) {
 }

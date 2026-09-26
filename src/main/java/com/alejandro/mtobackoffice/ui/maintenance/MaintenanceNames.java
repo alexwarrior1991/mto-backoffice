@@ -46,6 +46,22 @@ public final class MaintenanceNames {
         return configuration == null ? idOf(id) : configuration.packageName(id);
     }
 
+    /**
+     * La via como opcion de un desplegable: la del catalogo si esta, y si no (sin
+     * {@code config-read}, o una via que ya no existe) una con el id, para que el valor leido se vea.
+     */
+    public RefItem trackRef(Long id) {
+        return refOf(id, configuration == null ? null : configuration.trackRef(id).orElse(null));
+    }
+
+    public RefItem stationRef(Long id) {
+        return refOf(id, configuration == null ? null : configuration.stationRef(id).orElse(null));
+    }
+
+    public RefItem packageRef(Long id) {
+        return refOf(id, configuration == null ? null : configuration.packageRef(id).orElse(null));
+    }
+
     /** Para un filtro o un desplegable; vacio sin {@code config-read}. */
     public List<RefItem> tracks() {
         return configuration == null ? List.of() : configuration.tracks();
@@ -57,6 +73,13 @@ public final class MaintenanceNames {
 
     public List<RefItem> stations() {
         return configuration == null ? List.of() : configuration.stations();
+    }
+
+    private static RefItem refOf(Long id, RefItem found) {
+        if (id == null) {
+            return null;
+        }
+        return found != null ? found : new RefItem(id, idOf(id));
     }
 
     private static String idOf(Object id) {
