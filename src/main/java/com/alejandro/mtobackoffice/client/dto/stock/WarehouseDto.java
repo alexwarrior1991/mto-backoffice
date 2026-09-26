@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.stock;
 
+import com.alejandro.mtobackoffice.client.dto.AuditDto;
 import java.util.UUID;
 
 public record WarehouseDto(UUID id, String code, String name, Boolean active, AuditDto audit) {

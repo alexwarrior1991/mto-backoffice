@@ -1,40 +1,38 @@
 package com.alejandro.mtobackoffice.ui.stock;
 
+import com.alejandro.mtobackoffice.ui.support.Formats;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 
-/** Como se pintan cantidades y fechas del almacen; las fechas, en la zona del servidor. */
+/** Como se pintan cantidades y fechas del almacen: lo comun a todos los modulos, en {@link Formats}. */
 public final class StockFormats {
-
-    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault());
 
     private StockFormats() {
     }
 
     /** Sin ceros de relleno: el servicio guarda seis decimales y devuelve {@code 10.000000}. */
     public static String quantity(BigDecimal value) {
-        return value == null ? "" : value.stripTrailingZeros().toPlainString();
+        return Formats.quantity(value);
     }
 
     public static String dateTime(Instant instant) {
-        return instant == null ? "" : DATE_TIME.format(instant);
+        return Formats.dateTime(instant);
     }
 
     public static Instant toInstant(LocalDateTime dateTime) {
-        return dateTime == null ? null : dateTime.atZone(ZoneId.systemDefault()).toInstant();
+        return Formats.toInstant(dateTime);
     }
 
     /** El principio del dia, para un {@code dateFrom}. */
     public static Instant startOfDay(LocalDate date) {
-        return date == null ? null : date.atStartOfDay(ZoneId.systemDefault()).toInstant();
+        return Formats.startOfDay(date);
     }
 
     /** El ultimo instante del dia, para un {@code dateTo} inclusivo. */
     public static Instant endOfDay(LocalDate date) {
-        return date == null ? null : date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().minusMillis(1);
+        return Formats.endOfDay(date);
     }
 }

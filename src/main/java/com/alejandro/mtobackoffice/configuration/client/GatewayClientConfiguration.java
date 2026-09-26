@@ -10,6 +10,13 @@ import com.alejandro.mtobackoffice.client.configuration.SectionInsulatorClient;
 import com.alejandro.mtobackoffice.client.configuration.StationClient;
 import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
+import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
+import com.alejandro.mtobackoffice.client.maintenance.DefectClient;
+import com.alejandro.mtobackoffice.client.maintenance.InspectionClient;
+import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
+import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
+import com.alejandro.mtobackoffice.client.maintenance.ReportClient;
+import com.alejandro.mtobackoffice.client.maintenance.ShiftClient;
 import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
 import com.alejandro.mtobackoffice.client.stock.MaterialClient;
 import com.alejandro.mtobackoffice.client.stock.MovementClient;
@@ -173,6 +180,41 @@ public class GatewayClientConfiguration {
     @Bean
     public UsersClient usersClient(RestClient gatewayRestClient) {
         return proxyFactory(gatewayRestClient).createClient(UsersClient.class);
+    }
+
+    @Bean
+    public OrderClient orderClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(OrderClient.class);
+    }
+
+    @Bean
+    public AssetClient assetClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(AssetClient.class);
+    }
+
+    @Bean
+    public MaintenanceCatalogClient maintenanceCatalogClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(MaintenanceCatalogClient.class);
+    }
+
+    @Bean
+    public ShiftClient shiftClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(ShiftClient.class);
+    }
+
+    @Bean
+    public InspectionClient inspectionClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(InspectionClient.class);
+    }
+
+    @Bean
+    public DefectClient defectClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(DefectClient.class);
+    }
+
+    @Bean
+    public ReportClient reportClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(ReportClient.class);
     }
 
     public static HttpServiceProxyFactory proxyFactory(RestClient restClient) {

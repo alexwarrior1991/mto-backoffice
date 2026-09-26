@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.configuration.security.UserRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
+import com.alejandro.mtobackoffice.ui.support.LazyPanel;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;

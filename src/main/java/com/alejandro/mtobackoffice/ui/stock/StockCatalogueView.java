@@ -6,6 +6,7 @@ import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.stock.StockCatalogueClient;
 import com.alejandro.mtobackoffice.configuration.security.StockRoles;
 import com.alejandro.mtobackoffice.ui.master.EnabledFilter;
+import com.alejandro.mtobackoffice.ui.support.RevisionsDialog;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.ClickEvent;
 import com.vaadin.flow.component.Component;

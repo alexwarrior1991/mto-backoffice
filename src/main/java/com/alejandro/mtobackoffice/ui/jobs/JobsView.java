@@ -19,6 +19,7 @@ import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.master.ReferenceCatalog;
+import com.alejandro.mtobackoffice.ui.support.Downloads;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.component.Component;
@@ -55,11 +56,9 @@ import com.vaadin.flow.theme.lumo.LumoUtility;
 import jakarta.annotation.security.RolesAllowed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import tools.jackson.databind.ObjectMapper;
 
-import java.io.ByteArrayInputStream;
 import java.time.Duration;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -568,23 +567,10 @@ public class JobsView extends VerticalLayout {
      * navegador en la misma respuesta: el navegador nunca habla con el gateway.
      */
     private Anchor downloadLink(JobDto job) {
-        DownloadHandler handler = DownloadHandler.fromInputStream(event -> download(job), job.suggestedFileName());
-        Anchor anchor = new Anchor(handler, "Descargar");
-        anchor.setId("download-" + job.id());
-        return anchor;
+        return Downloads.link("download-" + job.id(), "Descargar", job.suggestedFileName(), () -> fileOf(job));
     }
 
     DownloadResponse download(JobDto job) {
-        try {
-            ResponseEntity<byte[]> file = fileOf(job);
-            byte[] body = file.getBody() == null ? new byte[0] : file.getBody();
-            String fileName = Optional.ofNullable(file.getHeaders().getContentDisposition().getFilename()).orElse(job.suggestedFileName());
-            String contentType = Optional.ofNullable(file.getHeaders().getContentType()).map(MediaType::toString)
-                    .orElse(MediaType.APPLICATION_OCTET_STREAM_VALUE);
-            return new DownloadResponse(new ByteArrayInputStream(body), fileName, contentType, body.length);
-        } catch (BackofficeApiException failure) {
-            LOGGER.warn("No se ha podido descargar el fichero del trabajo {}: {}", job.id(), failure.getMessage());
-            return DownloadResponse.error(failure.getStatus().value());
-        }
+        return Downloads.response(() -> fileOf(job), job.suggestedFileName());
     }
 }

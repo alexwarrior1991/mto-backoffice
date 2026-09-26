@@ -22,13 +22,15 @@ import java.util.stream.Stream;
  * rol.</p>
  *
  * <p>Se leen los roles de <b>varios</b> clientes ({@code app.keycloak.roles-client-ids}): los de
- * {@code mto-configuration-api} para las pantallas de configuracion y los de {@code mto-users-api}
- * para el modulo de usuarios. Cada rol sale dos veces: como {@code ROLE_<ROL>}, que es lo que
- * comprueban las vistas, y como {@code ROLE_CLIENT_<CLIENTE>_<ROL>}, cualificado por su cliente.
- * Que un {@code users-read} de un cliente no se confunda con uno de otro depende de que los
- * clientes leidos no compartan nombres de rol ({@code config-*} y {@code lov-manage} frente a
- * {@code users-*}); {@code SecurityLayerTest} lo comprueba. Los clientes del token que no esten en
- * la lista no aportan nada.</p>
+ * {@code mto-configuration-api} para las pantallas de configuracion, y los de {@code mto-users-api},
+ * {@code mto-stock-api} y {@code mto-maintenance-api} para los modulos de usuarios, almacen y
+ * mantenimiento. Cada rol sale dos veces: como {@code ROLE_<ROL>}, que es lo que comprueban las
+ * vistas, y como {@code ROLE_CLIENT_<CLIENTE>_<ROL>}, cualificado por su cliente. Que un
+ * {@code users-read} de un cliente no se confunda con uno de otro depende de que los clientes
+ * leidos no compartan nombres de rol ({@code config-*} y {@code lov-manage}, {@code users-*},
+ * {@code stock-*}, {@code maintenance-*}); {@code SecurityLayerTest} lo comprueba. Los
+ * {@code ops-*} si se repiten en todos, y por eso ninguna vista los comprueba. Los clientes del
+ * token que no esten en la lista no aportan nada.</p>
  */
 public final class KeycloakRoleMapper {
 

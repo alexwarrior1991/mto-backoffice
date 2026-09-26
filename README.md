@@ -2,8 +2,9 @@
 
 Backoffice web del dominio `MTO` (gestión de infraestructura ferroviaria de catenaria). Es la
 primera línea de frontend del dominio: una aplicación **Spring Boot 4.1 / Java 25 + Vaadin Flow 25**
-para el trabajo de gestión (catálogos, maestros de infraestructura, importaciones), pensada para un
-equipo con perfil Java y solo con licencias libres (Vaadin core, Apache 2.0).
+para el trabajo de gestión (catálogos, maestros de infraestructura, importaciones, usuarios, almacén
+y mantenimiento), pensada para un equipo con perfil Java y solo con licencias libres (Vaadin core,
+Apache 2.0).
 
 ```
 Navegador  ⇄  mto-backoffice (Vaadin, :8085)  ⇄  mto-gateway (:8090)  ⇄  mto-configuration (:8081)
@@ -20,7 +21,7 @@ Séptimo repositorio del dominio, hermano e independiente de
 [`mto-maintenance`](../mto-maintenance), [`mto-users`](../mto-users) y
 [`mto-gateway`](../mto-gateway); la infraestructura local es de [`mto-platform`](../mto-platform).
 
-## Estado: fase 7
+## Estado: fase 8
 
 - **Fase 0**: circuito completo con lo mínimo. Cliente `mto-backoffice` en el realm, login OIDC,
   marco con menú filtrado por roles y la pantalla de inicio con el diagnóstico del token.
@@ -165,6 +166,51 @@ Séptimo repositorio del dominio, hermano e independiente de
   existía), la referencia de correlación y una línea con cómo quedó la fila. Sin revisiones el
   servicio responde 404 y la pantalla dice «sin historial todavía», no un error.
 
+- **Fase 7**: el **esquema de una vía**, desde el botón «Esquema» de cada fila de *Infraestructura ›
+  Vías* (también para quien solo lee): una ventana con la vía como una línea recta y, sobre ella, un
+  poste por perfil a distancia uniforme, en el orden físico de la vía, con su código encima y su KP
+  debajo, el tipo de poste y el estado, los seccionamientos, sus ménsulas como brazos (con el tipo,
+  hacia el lado que dice `railPoleDistance`) y su seccionador; los aisladores de sección van sobre
+  la línea, colocados entre los dos perfiles vecinos por KP, con sus agujas; las estaciones de la
+  vía, en la cabecera; el detalle de cada elemento, al pasar por encima. Es esquemático a propósito:
+  no es el layout CAD. Lo que se dibuja es la proyección que `mto-configuration` devuelve en **una
+  llamada** (`GET /tracks/{id}/schematic`, añadido allí para esto y **cacheado en Redis**, con solo
+  lo que el dibujo necesita): la pantalla no ordena ni calcula nada, reparte los postes y escapa el
+  texto antes de convertirlo en SVG.
+
+- **Fase 8**: el módulo **Mantenimiento** sobre `mto-maintenance`: activos de catenaria, órdenes con
+  sus tareas, turnos nocturnos, inspecciones, defectos, las líneas de material que se reservan en
+  el almacén, informes con su Excel y su PDF, e historial. Antes de las pantallas, `mto-maintenance`
+  ganó lo que la pantalla necesitaba (su PR previo): quitar una línea de material (liberando su
+  reserva), 400/405 donde daba 500, y que los perfiles de mantenimiento lean configuración y almacén
+  (`config-read` y `stock-read` en sus composites, para los nombres de vías, paquetes, materiales,
+  almacenes y proyectos). M0 deja la base: los roles de `mto-maintenance-api` se leen del access
+  token junto a los de los otros tres clientes, el JSON de error del servicio (el de `mto-stock`,
+  con `path` y `method` de más) se lee por los mismos alias y sus códigos se dicen por lo que
+  significan (`TRN-001`, el estado no lo admite; `SHF-001`, el turno no admite ese trabajo;
+  `MAT-001`, la línea de material; `AST-001`, un dato que manda `mto-configuration`...), y el menú
+  tiene el grupo «Mantenimiento», cuyo nodo es la lista de órdenes (`mantenimiento`). M1 trae los
+  **activos** (`mantenimiento/activos`: la lista filtrada en el servidor; el alta de un tramo de vía
+  propio y, en un activo sincronizado desde `mto-configuration`, solo la descripción y el intervalo
+  del preventivo) y los catálogos de **equipos**, **tipos de tarea** y **plantillas de inspección**. M2
+  trae las **órdenes** (la lista filtrada y la ficha `mantenimiento/ordenes/{id}` con su cabecera,
+  los botones que su estado admite —planificar, asignar, iniciar, completar y cancelar— y sus
+  **tareas**, añadidas a mano o generadas, una por perfil del tramo). M3 trae los **turnos** (lista,
+  ficha, iniciar, cerrar, cancelar, asignarles tareas de una orden de su vía) y la **ejecución**:
+  iniciar una tarea en un turno, contestar su checklist y completarla con los defectos encontrados y
+  el material gastado. M4 trae las **inspecciones** (con sus puntos y lo que generan: un defecto y
+  una orden correctiva, idempotentes) y los **defectos** (vincular a una orden, resolver, cerrar y
+  descartar). M5 trae las **líneas de material** de una orden: se reservan en `mto-stock` al
+  planificarla, se sincronizan si el almacén no respondió y se quitan liberando su reserva. M6 trae
+  los **informes** (`mantenimiento/informes`: el avance del preventivo y el resumen de un mes, y el
+  parte diario en la ficha del turno), cada uno en pantalla y como Excel o PDF descargados a través
+  de esta aplicación. M7 cierra con el **historial**: el botón «Historial» de cada ficha y de cada
+  fila de activos abre las revisiones que guarda el servicio, como en almacén; un activo que solo ha
+  llegado por datos maestros no tiene ninguna (allí es SQL nativo) y se dice «sin historial».
+  Todo el módulo sigue una regla: la pantalla solo ofrece lo que el estado de la fila admite (copiado
+  de las máquinas de estado del servicio para no ofrecer lo que va a fallar), y quien decide es el
+  servicio; si otra persona cambió el estado entre medias, llega su `TRN-001` y se notifica.
+
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|
 | Exportar perfiles, consultar, descargar | `config-read` |
@@ -211,20 +257,25 @@ método HTTP (`GET` lee, `POST`/`PUT` escriben, `DELETE` cancela) y ninguno impl
 | Ajustes de inventario | `stock-write` **y** `stock-adjust` |
 | Cancelar una reserva | `stock-delete` |
 
+Las pantallas de mantenimiento (fase 8) siguen los permisos de `mto-maintenance-api`: `GET` lee,
+`POST`/`PUT` escriben, `DELETE` borra, y `maintenance-supervise` se exige **además** de
+`maintenance-write` para lo que cierra o anula el trabajo de otros:
+
+| Acción en mantenimiento | Roles |
+|---|---|
+| Ver todo: listas, fichas, informes (y sus ficheros) e historial | `maintenance-read` |
+| Nombres y desplegables de vías, estaciones y paquetes | además, `config-read` de `mto-configuration-api` |
+| Nombres y desplegables de materiales, almacenes y proyectos; añadir una línea de material | además, `stock-read` de `mto-stock-api` |
+| Altas, modificaciones, transiciones ordinarias, ejecutar tareas, reactivar un tramo | `maintenance-write` |
+| Desactivar un tramo propio, quitar una línea de material | `maintenance-delete` |
+| Cancelar una orden, completarla con `force`; resolver, cerrar o descartar un defecto | `maintenance-write` **y** `maintenance-supervise` |
+
+Los tres perfiles de mantenimiento del realm llevan `config-read` y `stock-read`, así que quien los
+tiene ve también Infraestructura, Catálogos, Trabajos y Almacén, en lectura.
+
 Esconder un botón es cortesía: la guarda real es `@RolesAllowed` en la vista y el 403 del servicio.
 Con los usuarios de desarrollo, `config.responsable` (`mto-admin`) lo ve todo; `config.editor`
 (`mto-editor`) ve los catálogos pero no puede tocarlos: le falta `lov-manage`, a propósito.
-- **Fase 7**: el **esquema de una vía**, desde el botón «Esquema» de cada fila de *Infraestructura ›
-  Vías* (también para quien solo lee): una ventana con la vía como una línea recta y, sobre ella, un
-  poste por perfil a distancia uniforme, en el orden físico de la vía, con su código encima y su KP
-  debajo, el tipo de poste y el estado, los seccionamientos, sus ménsulas como brazos (con el tipo,
-  hacia el lado que dice `railPoleDistance`) y su seccionador; los aisladores de sección van sobre
-  la línea, colocados entre los dos perfiles vecinos por KP, con sus agujas; las estaciones de la
-  vía, en la cabecera; el detalle de cada elemento, al pasar por encima. Es esquemático a propósito:
-  no es el layout CAD. Lo que se dibuja es la proyección que `mto-configuration` devuelve en **una
-  llamada** (`GET /tracks/{id}/schematic`, añadido allí para esto y **cacheado en Redis**, con solo
-  lo que el dibujo necesita): la pantalla no ordena ni calcula nada, reparte los postes y escapa el
-  texto antes de convertirlo en SVG.
 
 ## Requisitos
 
@@ -241,7 +292,9 @@ cd ../mto-backoffice
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
-`http://localhost:8085` redirige a Keycloak; entra con un usuario de desarrollo (contraseña `local`):
+`http://localhost:8085` redirige a Keycloak; entra con un usuario de desarrollo (contraseña `local`).
+El módulo de mantenimiento necesita `mto-maintenance` y `mto-stock` levantados además de
+`mto-configuration` y el gateway (`--profile all` los trae todos):
 
 | usuario | perfil | lo que ve |
 |---|---|---|
@@ -254,6 +307,9 @@ cd ../mto-backoffice
 | `usuarios.responsable` | `mto-users-admin` | el módulo Usuarios entero (fase 5); nada de configuración |
 | `usuarios.gestor` | `mto-users-manager` | Usuarios, todo menos borrar |
 | `usuarios.lector` | `mto-users-viewer` | Usuarios en solo lectura |
+| `mantenimiento.lector` | `mto-maintenance-viewer` | Mantenimiento en solo lectura (con los informes y sus ficheros); configuración y almacén en lectura |
+| `mantenimiento.tecnico` | `mto-maintenance-technician` | Mantenimiento: órdenes, tareas, turnos, inspecciones, defectos y material, sin cancelar, `force`, quitar ni resolver |
+| `mantenimiento.responsable` | `mto-maintenance-manager` | el módulo Mantenimiento entero (fase 8) |
 
 La pantalla **Inicio** muestra el principal, las autoridades y las cinco audiencias del access token
 (`mto-configuration-api`, `mto-stock-api`, `mto-maintenance-api`, `mto-users-api`, `mto-gateway-api`):
@@ -268,7 +324,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 | `KEYCLOAK_ISSUER_URI` | Realm que emite los tokens | `http://auth.mto.local:8082/realms/mto` |
 | `KEYCLOAK_CLIENT_ID` | Cliente confidencial de esta aplicación | `mto-backoffice` |
 | `KEYCLOAK_CLIENT_SECRET` | Su secreto | vacío (`dev`: el local; `prod`: obligatorio) |
-| `KEYCLOAK_ROLES_CLIENT_IDS` | Clientes cuyos roles del access token son los permisos (lista por comas) | `mto-configuration-api,mto-users-api,mto-stock-api` |
+| `KEYCLOAK_ROLES_CLIENT_IDS` | Clientes cuyos roles del access token son los permisos (lista por comas) | `mto-configuration-api,mto-users-api,mto-stock-api,mto-maintenance-api` |
 | `MTO_GATEWAY_URL` | El gateway | `http://localhost:8090` |
 | `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP | `2s` / `15s` |
 
@@ -280,13 +336,15 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 - Cliente **confidencial** `mto-backoffice` (Authorization Code con secreto) declarado en
   `keycloak/mto-backoffice-partial-import.json`, con los mismos cinco audience mapper que
   `mto-frontend`, que queda intacto y reservado a una futura SPA. Detalle en `keycloak/README.md`.
-- Los permisos son roles de **cliente** de tres clientes: `mto-configuration-api` (`config-read`,
+- Los permisos son roles de **cliente** de cuatro clientes: `mto-configuration-api` (`config-read`,
   `config-write`, `config-delete`, `config-import`, `lov-manage`, `config-audit`) para las
   pantallas de configuración, `mto-users-api` (`users-read`, `users-write`, `users-delete`,
   `users-roles-write`, `users-password-reset`, `users-profiles-write`, `users-sessions-write`,
-  `users-credentials-write`) para el módulo de usuarios y `mto-stock-api` (`stock-read`,
-  `stock-write`, `stock-delete`, `stock-adjust`) para el de almacén. Llegan como `ROLE_CONFIG_READ`,
-  `ROLE_USERS_READ`, `ROLE_STOCK_READ`... y se comprueban con `@RolesAllowed` en cada vista; cada
+  `users-credentials-write`) para el módulo de usuarios, `mto-stock-api` (`stock-read`,
+  `stock-write`, `stock-delete`, `stock-adjust`) para el de almacén y `mto-maintenance-api`
+  (`maintenance-read`, `maintenance-write`, `maintenance-delete`, `maintenance-supervise`) para el
+  de mantenimiento. Llegan como `ROLE_CONFIG_READ`, `ROLE_USERS_READ`, `ROLE_STOCK_READ`,
+  `ROLE_MAINTENANCE_READ`... y se comprueban con `@RolesAllowed` en cada vista; cada
   uno sale además cualificado por su cliente (`ROLE_CLIENT_MTO_USERS_API_USERS_READ`). Que un rol
   de un cliente no se confunda con uno de otro depende de que sus nombres no se solapen, cosa que
   `SecurityLayerTest` comprueba. Los roles de realm (`mto-admin`, `mto-users-manager`...) llegan
@@ -323,7 +381,8 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 ## Cómo se habla con la API
 
 - Un `RestClient` hacia el gateway (`/api/configuration/**` → `/api/v1/configuration/**`,
-  `/api/users/**` → `/api/v1/users/**`, `/api/stock/**` → `/api/v1/inventory/**`) con el Bearer de la persona y un `X-Correlation-Id` nuevo
+  `/api/users/**` → `/api/v1/users/**`, `/api/stock/**` → `/api/v1/inventory/**`,
+  `/api/maintenance/**` → `/api/v1/maintenance/**`) con el Bearer de la persona y un `X-Correlation-Id` nuevo
   por llamada, que el gateway acepta y propaga: el mismo id sale en el log del gateway, en el del
   servicio y en la notificación de error que ve la persona.
 - Interfaces declarativas `@HttpExchange` escritas a mano, pantalla a pantalla (`client/`). Nada de
@@ -335,7 +394,12 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   de Keycloak: `first`/`max` (`max` ≤ 200) y una página `{content, first, max, total}` solo en la
   búsqueda; las listas de miembros de un perfil o de un rol van planas, sin total. La de `mto-stock`
   es el `Pageable` de Spring por parámetros (`page`, `size`, `sort=campo,asc`, solo atributos de la
-  entidad) con la misma página anidada que configuración.
+  entidad) con la misma página anidada que configuración, y la de `mto-maintenance` también (lo
+  que el servicio calcula, como el próximo preventivo, no se ordena). Sus `PUT` son **parciales**
+  (`null` es «no tocar»): los formularios mandan solo lo que cambió, y un número, una fecha o una
+  referencia que tenían valor no se pueden vaciar. Los equipos son la excepción: su `PUT` es
+  completo. Los enumerados de mantenimiento toleran valores nuevos: uno que esta versión no conoce
+  se lee como «Desconocido» en vez de romper la página.
 - Errores: `ApiErrorDecoder` entiende el `application/problem+json` de `mto-configuration` (`code`,
   `traceId`, `retryable`, `errors[{field,code,message}]`; sus dos 409 son `CON-001`, un
   `versionNumber` que ya no es el guardado y que se arregla recargando, y `BUS-002`, un valor único
@@ -343,7 +407,8 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   `correlationId`, `validationErrors[{field,message}]`, `Retry-After` en su 503), el JSON de error
   de `mto-stock` (no es `problem+json`: `error`, `message`, `errorCode`, `correlationId`,
   `validationErrors[{field,message}]`; 409 `STK-001` es falta de stock y un 422 sin campos es una
-  regla de negocio), el 401/403 del gateway (solo `correlationId`) y el 503 de su circuit breaker
+  regla de negocio), el de `mto-maintenance` (el mismo, con `path` y `method` de más; sus 409 son
+  de estado, no de concurrencia, y ninguno pide recargar), el 401/403 del gateway (solo `correlationId`) y el 503 de su circuit breaker
   (`Retry-After`, `service`), y los convierte en `NotFoundApiException`, `ValidationApiException`, `ForbiddenApiException`,
   `SessionExpiredApiException`, `ConflictApiException` o `ServiceUnavailableApiException`.
 

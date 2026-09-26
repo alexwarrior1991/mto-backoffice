@@ -1,11 +1,11 @@
 package com.alejandro.mtobackoffice.client.stock;
 
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
+import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationDto;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationRequest;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationStatus;
 import com.alejandro.mtobackoffice.client.dto.stock.ReservationUpdateRequest;
-import com.alejandro.mtobackoffice.client.dto.stock.RevisionDto;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;

@@ -48,10 +48,11 @@ app:
     client-secret: ${KEYCLOAK_CLIENT_SECRET:}
     # Clientes cuyos roles se leen del access token (resource_access) para las autoridades ROLE_*:
     # los permisos de las pantallas de configuracion (mto-configuration-api: config-read,
-    # config-write...), los del modulo de usuarios (mto-users-api: users-read, users-write...) y los
-    # del modulo de almacen (mto-stock-api: stock-read, stock-write, stock-delete, stock-adjust).
+    # config-write...), los del modulo de usuarios (mto-users-api: users-read, users-write...), los
+    # del modulo de almacen (mto-stock-api: stock-read, stock-write, stock-delete, stock-adjust) y
+    # los del de mantenimiento (mto-maintenance-api: maintenance-read, -write, -delete, -supervise).
     # Sus nombres de rol no se solapan, y SecurityLayerTest lo comprueba; ver KeycloakRoleMapper.
-    roles-client-ids: ${KEYCLOAK_ROLES_CLIENT_IDS:mto-configuration-api,mto-users-api,mto-stock-api}
+    roles-client-ids: ${KEYCLOAK_ROLES_CLIENT_IDS:mto-configuration-api,mto-users-api,mto-stock-api,mto-maintenance-api}
   gateway:
     # Toda llamada sale hacia el gateway, nunca directamente a un servicio: /api/configuration/**
     # es la ruta publica que el gateway reescribe a /api/v1/configuration/**.

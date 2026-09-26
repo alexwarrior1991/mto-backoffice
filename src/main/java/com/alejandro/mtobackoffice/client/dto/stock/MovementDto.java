@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.dto.stock;
 
+import com.alejandro.mtobackoffice.client.dto.AuditDto;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;

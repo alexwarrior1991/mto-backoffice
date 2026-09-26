@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Aplicación **Spring Boot 4.1 / Java 25 + Vaadin Flow 25** que consume las APIs del dominio a través
 de `mto-gateway` con el token de la persona, servidor a servidor. Es un **cliente**: sin base de
 datos, sin broker, sin lógica de negocio. Lo que una pantalla necesita y la API no da bien se
-arregla en el servicio (`mto-configuration`), no aquí. `README.md` es la referencia funcional y
+arregla en el servicio (`mto-configuration`, `mto-users`, `mto-stock` o `mto-maintenance`), no aquí. `README.md` es la referencia funcional y
 operativa; `keycloak/README.md`, la del cliente OIDC en el realm.
 
 ⚠️ `mto-configuration`, `mto-stock`, `mto-maintenance`, `mto-users` y `mto-gateway` son **repos
@@ -52,8 +52,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (claims → `ROLE_*` para los clientes de `app.keycloak.roles-client-ids`, más el sinónimo
   `ROLE_CLIENT_<CLIENTE>_*`), `BackofficeUser` (el usuario con las audiencias del access token),
   `CurrentPrincipal` (nombre del principal desde cualquier hilo), `PrincipalSessionRecorder`,
-  `SecurityRoles`, `UserRoles` y `StockRoles` (los permisos de `mto-configuration-api`, de
-  `mto-users-api` y de `mto-stock-api`),
+  `SecurityRoles`, `UserRoles`, `StockRoles` y `MaintenanceRoles` (los permisos de
+  `mto-configuration-api`, `mto-users-api`, `mto-stock-api` y `mto-maintenance-api`),
   `SecurityAuthorityPrefixes`, `JwtClaimNames`, `KeycloakProperties`.
 - `configuration/client` — `GatewayClientConfiguration` (un `RestClient` hacia el gateway con dos
   interceptores, `BearerTokenInterceptor` y `CorrelationIdInterceptor`, y `ApiErrorDecoder` como
@@ -80,8 +80,18 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   bajo mínimo y libro por material) y `AssemblyClient` (además disponibilidad) resolviendo el
   genérico contra la subinterfaz; `MovementClient` (entradas, salidas, ajustes, transferencias y
   el libro) y `ReservationClient` (alta, modificación, cancelar con un `DELETE` que devuelve
-  cuerpo, liberar, consumir); DTO como records en `client/dto/stock`, con `RevisionDto<T>` para el
-  historial y enumerados con etiqueta). Los DTO
+  cuerpo, liberar, consumir); DTO como records en `client/dto/stock`, con enumerados con etiqueta;
+  el historial usa `RevisionDto<T>`, `RevisionMetadataDto`, `RevisionOperation` y `AuditDto`, que
+  viven en `client/dto` porque mantenimiento los comparte); `client/maintenance` (la API de
+  `mto-maintenance` bajo `/api/maintenance`: `OrderClient` —órdenes, sus transiciones, su historial
+  de estados, sus tareas, que solo existen dentro de una orden o de un turno, y sus líneas de
+  material—, `AssetClient`, `MaintenanceCatalogClient` —equipos, tipos de tarea, plantillas de
+  inspección—, `ShiftClient` —turnos, sus tareas y perfiles, asignar una tarea—, `InspectionClient`,
+  `DefectClient` y `ReportClient` —cada informe en JSON y como fichero `ResponseEntity<byte[]>`—,
+  todos con `revisions` salvo los catálogos y los informes; DTO como records en
+  `client/dto/maintenance`: filtros (`OrderFilter`, `AssetFilter`...), peticiones `*Request` y
+  `*UpdateRequest` parciales con `@JsonInclude(NON_NULL)`, enumerados tolerantes —ver las reglas—
+  y `MaintenanceEnums`, que los lee). Los DTO
   (`client/dto`): `LovDto` es un record con solo las claves que usa la UI (con `versionNumber`,
   que vuelve como se leyó) y `@JsonInclude(NON_NULL)`; los maestros (`client/dto/master`) son
   **clases mutables** que heredan de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo y los hijos
@@ -92,8 +102,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   errores en `client/error` (`ApiProblem`, `ApiErrorDecoder` y la jerarquía
   `BackofficeApiException`, con `TooManyRequestsApiException` llevando el cuerpo del 429).
 - `ui` — `MainLayout` (AppLayout; el menú lo dan las vistas anotadas con `@Menu`, filtradas por
-  `AccessAnnotationChecker`; las rutas con prefijo conocido (`infraestructura/*`, `usuarios/*`) se
-  agrupan por prefijo (`MainLayout.GROUPS`), una entrada cuya ruta es el propio prefijo es el
+  `AccessAnnotationChecker`; las rutas con prefijo conocido (`infraestructura/*`, `usuarios/*`,
+  `almacen/*`, `mantenimiento/*`) se agrupan por prefijo (`MainLayout.GROUPS`), una entrada cuya ruta es el propio prefijo es el
   nodo del grupo, y los catálogos se listan a mano porque su vista lleva el recurso en la ruta),
   `ui/views/HomeView`,
   `ui/lov` (`LovCrudView` en `catalogos/:resource`, `LovEditorDialog` con `Binder` sobre el modelo
@@ -113,8 +123,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `first`/`max`; `UserEditorDialog`, el `Binder` sobre el modelo mutable `UserForm`, cuyas
   propiedades se llaman como los campos del servicio para `ServerValidation`; `UserAttributes`,
   los atributos como texto `clave=valor` por línea; `UserDetailView` en `usuarios/:userId`, la
-  ficha con su cabecera, su botonera por permiso y un `TabSheet` de paneles `LazyPanel`, que
-  piden sus datos la primera vez que se abren: `UserProfilesPanel`, `UserRolesPanel`,
+  ficha con su cabecera, su botonera por permiso y un `TabSheet` de paneles `LazyPanel` (en
+  `ui/support`), que piden sus datos la primera vez que se abren: `UserProfilesPanel`, `UserRolesPanel`,
   `UserSessionsPanel` (normales y offline) y `UserCredentialsPanel`; `ResetPasswordDialog` y
   `ExecuteActionsEmailDialog`, cada uno con su `Binder` sobre un `Form` con los nombres del
   servicio; `TakeOut`, las tres llamadas de «sacar a la persona» en su orden, parando en el
@@ -138,12 +148,36 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `almacen/conjuntos`, un catálogo más cuyo editor (`AssemblyEditorDialog`) lleva la lista de
   materiales entera en `BomEditor` y cuya fila ofrece, también a quien solo lee,
   `AssemblyAvailabilityDialog`, la disponibilidad por almacén que calcula el servicio;
-  `RevisionsDialog<D>`, el historial de cualquier fila de almacén (paginado, la más reciente
-  primero; el 404 es «sin historial»), abierto desde el botón de historial que cada catálogo y
-  cada reserva ofrecen a quien puede leer; `StockClients` y `StockFormats`), `ui/support` (`UiErrors`: excepción →
+  el historial de cada fila, en `RevisionsDialog`, abierto desde el botón de historial que cada
+  catálogo y cada reserva ofrecen a quien puede leer; `StockClients` y `StockFormats`),
+  `ui/maintenance` (`MaintenanceRoutes`, las rutas bajo `mantenimiento`; `MaintenanceClients`, los
+  clientes de sus pantallas, de mantenimiento y de los otros dos servicios; `MaintenanceNames`, los
+  nombres de lo que el servicio solo guarda como id —vías, estaciones y paquetes de
+  `mto-configuration`, almacenes y proyectos de `mto-stock`—; `OrdersView` en `mantenimiento`, la
+  entrada «Mantenimiento» del menú y el nodo del grupo, y `OrderDetailView` en
+  `mantenimiento/ordenes/:orderId`, la ficha con los botones que su estado admite
+  (`OrderTransitionDialog`, un `Kind` por transición; `ReasonDialog` para cancelar) y pestañas
+  `LazyPanel`: `OrderTasksPanel` (con `TaskEditorDialog` y `GenerateTasksDialog`),
+  `OrderMaterialsPanel` (`MaterialUsageDialog`), `OrderDefectsPanel`, `OrderInspectionsPanel` y
+  `StatusHistoryPanel`; `AssetsView` en `mantenimiento/activos` (con `AssetOrdersDialog`);
+  `ShiftsView` y `ShiftDetailView` en `mantenimiento/turnos` (`ShiftTransitionDialog`,
+  `AssignTasksDialog`, `ShiftTasksPanel`, `ShiftProfilesPanel` y `ShiftReportPanel`, el parte);
+  `CompleteTaskDialog`, completar una tarea con sus defectos en línea y el material gastado, y
+  `CheckItemsDialog`, el checklist de una tarea o de una inspección; `InspectionsView` e
+  `InspectionDetailView` (`InspectionOutcomeDialogs`: el defecto y la orden correctiva que genera),
+  `DefectsView` y `DefectDetailView` (`DefectTransitionDialogs`); `ReportsView` en
+  `mantenimiento/informes`; `TeamsView`, `TaskTypesView` e `InspectionTemplatesView`, los
+  catálogos; un `*EditorDialog` con `Binder` sobre un `*Form` mutable por recurso, cuyas
+  propiedades se llaman como los campos de la petición para `ServerValidation`;
+  `MaintenanceHistory`, el botón «Historial» y la línea de cada recurso en `RevisionsDialog`;
+  `MaintenanceUi`, `MaintenancePickers`, `MaintenanceCatalogs` y `MaintenanceFormats`, lo
+  compartido), `ui/support` (`UiErrors`: excepción →
   `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`;
   `OffsetPager`: anteriores/siguientes para una lista `first`/`max` sin total, donde una página
-  llena es la única señal de que hay más).
+  llena es la única señal de que hay más; `RevisionsDialog<D>`, el historial de cualquier fila
+  (paginado, la más reciente primero; el 404 es «sin historial»); `LazyPanel`, la pestaña que
+  pide sus datos al abrirse; `Downloads`, el fichero de un servicio servido a través de esta
+  aplicación con `DownloadHandler`; `Formats`, cantidades y fechas).
 - `configuration/vaadin` — `BackofficeSystemMessages`, los mensajes de sistema de Vaadin en
   castellano y con el aviso de sesión caducada apagado (recarga → login → SSO).
 
@@ -159,12 +193,13 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   access token.
 - **Los roles de realm se emiten solo como `ROLE_REALM_*`, nunca como `ROLE_*`.** Los permisos que
   comprueban las vistas (`@RolesAllowed("CONFIG_READ")`, `@RolesAllowed("USERS_READ")`) son roles
-  de **cliente** de `mto-configuration-api`, `mto-users-api` y `mto-stock-api`
-  (`app.keycloak.roles-client-ids`).
+  de **cliente** de `mto-configuration-api`, `mto-users-api`, `mto-stock-api` y
+  `mto-maintenance-api` (`app.keycloak.roles-client-ids`).
   Si un rol de realm se emitiera con `ROLE_`, quien administre el realm podría crear un rol llamado
   como un permiso y concederlo a cualquiera (`SecurityLayerTest`). El mapeo emite `ROLE_X` para
-  los tres clientes, así que sus nombres de rol no pueden solaparse (`config-*` y `lov-manage`,
-  `users-*` y `stock-*`; `SecurityLayerTest` lo comprueba), y además `ROLE_CLIENT_<CLIENTE>_X`.
+  los cuatro clientes, así que sus nombres de rol no pueden solaparse (`config-*` y `lov-manage`,
+  `users-*`, `stock-*` y `maintenance-*`; `SecurityLayerTest` lo comprueba), y además
+  `ROLE_CLIENT_<CLIENTE>_X`.
 - **Sin descubrimiento OIDC en el arranque.** `KeycloakClientRegistrations` deriva los endpoints del
   issuer y añade `end_session_endpoint` a los metadatos; con `issuer-uri` en YAML la aplicación no
   arrancaría sin Keycloak, y con él tampoco arrancarían los tests de contexto. El JWK Set se pide al
@@ -183,20 +218,30 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   cinco formatos que llegan (el `problem+json` de `mto-configuration` con `code`/`traceId`/`errors`,
   el de `mto-users` con `errorCode`/`validationErrors[{field,message}]` —alias en `ApiProblem`, sin
   código por campo—, el JSON de `mto-stock`, que no es `problem+json` y trae `error` y `message`
-  —alias en `title` y `detail`—, el 401/403 del gateway solo con `correlationId`, y el 503 del
+  —alias en `title` y `detail`— y que `mto-maintenance` manda igual, con `path` y `method` de más,
+  el 401/403 del gateway solo con `correlationId`, y el 503 del
   fallback del gateway con `Retry-After` y `service`) y las vistas solo conocen
   `BackofficeApiException` y sus subclases. Un 502 no es transitorio y su notificación lleva el
   detalle; un 409 `STK-001` es falta de stock y un 422 sin errores por campo es una regla de negocio
   (`UiErrors` los dice así, no como «conflicto» ni «petición no válida»). Los dos 409 de
   `mto-configuration` tampoco se dicen igual: `CON-001` es una versión vieja («recarga y vuelve a
   intentarlo») y `BUS-002`, un valor único repetido o una entrada en uso, que recargar no arregla.
+  Los de `mto-maintenance` son de estado, no de concurrencia (el servicio no tiene bloqueo
+  optimista), y ninguno pide recargar: `TRN-001` (el estado no admite la transición), `SHF-001` (el
+  turno no admite ese trabajo), `MAT-001` (la línea de material), `AST-001` (activo desactivado, o
+  un dato que manda `mto-configuration`) y `AST-409`/`TEA-409` (código repetido); `INS-001` es un
+  422 de la inspección y su checklist, y el 503 `STK-503`, el almacén caído al sincronizar o quitar
+  una línea, que se queda como estaba.
 - **La paginación es la forma DTO** `{content, page:{size,number,totalElements,totalPages}}`, fijada
   en `mto-configuration` con `spring.data.web.pageable.serialization-mode: via_dto` y pinada allí
   por test. `PageResponse<T>` la lee (y tolera `first`/`last` de stock y maintenance). La API de
   usuarios pagina al estilo de Keycloak (`first`/`max` con `max` ≤ 200, `UsersPage<T>`), y las
   listas de miembros de un perfil o de un rol no traen total. La de almacén es el `Pageable` de
   Spring por parámetros (`page`, `size`, `sort=campo,asc`; solo atributos de la entidad, o el
-  servicio responde 500) con la misma página anidada, que `PageResponse<T>` ya lee.
+  servicio responde 500) con la misma página anidada, que `PageResponse<T>` ya lee. La de
+  mantenimiento es la misma (un `sort` desconocido allí es 400 `REQ-400`), y lo que el servicio
+  calcula (el próximo preventivo, el avance de una orden) no se ordena. Sus listas anidadas (tareas
+  de una orden o de un turno, líneas de material, equipos, tipos de tarea) llegan enteras.
 - **Un usuario se modifica con lo que cambió, y la lista se pide como la pide Keycloak.** El
   `PUT /api/users/{id}` de `mto-users` es parcial: `null` es «no tocar» y la cadena vacía, «vaciar»,
   así que `UserForm.toUpdateRequest(original)` compara con lo leído y solo manda lo distinto; el
@@ -233,14 +278,72 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `GET /assemblies/{id}/availability?warehouseId` (el almacén es obligatorio porque el stock es
   por almacén): aquí no se divide nada. La disponibilidad es una consulta, así que la fila la
   ofrece con `stock-read`.
-- **El historial de almacén es el de Envers en `mto-stock`.** `GET /{recurso}/{id}/revisions`
-  (materiales, almacenes, proveedores, proyectos, conjuntos y reservas), paginado y la más reciente
-  primero, con `source` (`HTTP`, `MESSAGING`, `SYSTEM` o `BASELINE`, la foto inicial) y
+- **El historial de almacén es el de Envers en `mto-stock`, y el de mantenimiento, el de
+  `mto-maintenance`, con la misma forma.** `GET /{recurso}/{id}/revisions` (materiales, almacenes,
+  proveedores, proyectos, conjuntos y reservas; activos, órdenes, turnos, inspecciones y defectos),
+  paginado y la más reciente primero, con `source` (`HTTP`, `MESSAGING`, `SYSTEM` o `BASELINE`, la foto inicial) y
   `correlationId` tal cual; `entity.audit` viene vacío a propósito y no se enseña. Sin revisiones
   el servicio responde 404 y `RevisionsDialog` lo dice como «sin historial todavía», no como error.
   Que un proyecto cambiado por un evento de datos maestros no deje revisión es del servicio (allí
-  es SQL nativo), y se enseña lo que hay. La columna de acciones existe siempre: el historial es
-  lectura, como la lista.
+  es SQL nativo), y se enseña lo que hay; lo mismo un activo de mantenimiento que solo ha llegado
+  por datos maestros, que no tiene ninguna y da 404. La columna de acciones existe siempre: el
+  historial es lectura, como la lista. En mantenimiento lo abre el botón «Historial» de cada ficha
+  (y de cada fila de activos), y `MaintenanceHistory` pone la línea de cada recurso. No es la
+  pestaña «Estados» de una orden o un defecto: esa es `/history`, las transiciones con su
+  comentario, que el servicio guarda aparte.
+- **En mantenimiento, una transición solo se ofrece en su estado de origen, y la decide el
+  servicio.** Los estados de cada recurso (`MaintenanceOrderStatus.canPlan`/`canAssign`/`canStart`/
+  `canComplete`, `ShiftStatus.canStart`/`canClose`, `DefectStatus.isPending`...) están copiados de
+  las máquinas de estado del servicio solo para no ofrecer lo que va a fallar; no se reimplementa
+  ninguna otra regla. Si el estado cambió entre medias, llega su 409 `TRN-001` y se notifica con el
+  diálogo abierto. Cada transición es su llamada, con su cuerpo, y no se funden. `maintenance-supervise`
+  va siempre **junto con** `maintenance-write` (`hasAllRoles`): cancelar una orden, completarla con
+  `force` y resolver, cerrar o descartar un defecto; `force` ni se ve sin él. Tras guardar, la ficha
+  pinta lo que devuelve el servicio o relee.
+- **Un `PUT` de mantenimiento es parcial y sin bloqueo optimista.** `null` es «no tocar», así que
+  cada `*Form.toUpdateRequest(original)` compara con lo leído y solo manda lo distinto (como
+  `UserForm`), y los `*UpdateRequest` llevan `@JsonInclude(NON_NULL)`. Un número, una fecha o una
+  referencia que tenían valor no se pueden vaciar: el campo lo dice (`MaintenanceUi.CANNOT_CLEAR`)
+  en vez de mandar un `null` que el servicio ignoraría. No hay `versionNumber`: gana el último. La
+  excepción son los equipos, cuyo `PUT` es completo (base y vehículo a `null` los borran) y por eso
+  `TeamRequest` no lleva `NON_NULL`. Un record de petición no lleva métodos `isX()`/`getX()`:
+  Jackson los serializa como propiedades (`isEmpty()` salió como `"empty":false`); por eso se llaman
+  `changesNothing()`.
+- **Un activo sincronizado es de `mto-configuration`.** Perfiles, seccionadores y aisladores llegan
+  por datos maestros (`sourceService`); de ellos solo se ofrecen la descripción y el intervalo del
+  preventivo, porque cualquier otro campo es 409 `AST-001`. Su `enabled` se enseña pero no se
+  ofrece: el siguiente evento de datos maestros lo pisaría. Solo un tramo de vía propio se
+  desactiva (`DELETE`, con `maintenance-delete` y confirmación) y se reactiva (un `PUT` con
+  `enabled=true`, con `maintenance-write`).
+- **Los nombres de otros servicios se piden a su servicio.** `mto-maintenance` solo guarda ids de
+  vías, estaciones y paquetes (`mto-configuration`) y de materiales, almacenes y proyectos
+  (`mto-stock`); `MaintenanceNames` los nombra con el token de la persona (vías, estaciones y
+  paquetes una vez por pantalla, almacenes y proyectos por id y recordados mientras vive). Sin
+  `config-read` o sin `stock-read` no llama a ese servicio (respondería 403): pinta `#id` y deja
+  vacíos sus desplegables. Los tres perfiles de mantenimiento del realm llevan `config-read` y
+  `stock-read` para esto (lo declara `mto-maintenance`), así que sus personas ven también
+  Infraestructura, Catálogos, Trabajos y Almacén, en lectura.
+- **Una línea de material se quita, no se cancela.** `DELETE /orders/{id}/materials/{lineId}`
+  (`maintenance-delete`) libera antes su reserva en `mto-stock`; no se ofrece en una línea
+  consumida ni en una orden terminada (`MAT-001`), la confirmación avisa de la liberación, y con el
+  almacén caído (503 `STK-503`) la línea se queda como estaba. «Sincronizar» reintenta una línea
+  `FAILED` (o sin pedir fuera de borrador). Lo previsto de una línea reservada no se ofrece: el
+  servicio no lo cambia. Un `MAT-001` al completar la orden sugiere sincronizar o, con
+  `maintenance-supervise`, completar con `force`.
+- **Los enumerados de mantenimiento toleran lo desconocido.** Cada uno lleva `UNKNOWN`
+  («Desconocido»), un `@JsonCreator(mode = DELEGATING) of(String)` que delega en
+  `MaintenanceEnums.parse` y `selectable()` sin `UNKNOWN` para los desplegables: un valor nuevo en
+  el servicio se lee como desconocido en vez de romper la página entera. No se toca el mapper
+  global.
+- **Un `LocalDate` en un `@HttpExchange` lleva `@DateTimeFormat(iso = DATE)`** (y un `YearMonth`,
+  `pattern = "yyyy-MM"`): sin él sale con el formato corto de la máquina y el servicio responde 400.
+  Los `Instant` viajan en ISO sin nada, con `:` codificado.
+- **Un informe se ve en pantalla y su fichero se descarga a través de esta aplicación.**
+  `ReportClient` pide cada informe por su ruta en JSON (lo que se pinta, con los nombres) o con
+  `format=xlsx|pdf` como fichero, que `Downloads` sirve con `DownloadHandler` (primera regla). Los
+  enlaces aparecen tras consultar y descargan esa consulta, fijada en un record, aunque luego
+  cambien los filtros: exportan lo que se ve. Las cifras son del servicio: el avance llega como
+  fracción (`0.4500`) y solo se pinta como porcentaje; aquí no se suma nada.
 - **«Sacar a la persona» son tres llamadas en ese orden, y no se funden en una.** Desactivar
   solo bloquea el siguiente login, cerrar las sesiones no toca las offline y un token offline
   sobrevive a las dos cosas hasta que se revoca: es lo que el README de `mto-users` deja
@@ -341,10 +444,19 @@ credenciales, contraseña y correo, miembros sin total, catálogos, y el `proble
 catálogos, alta y modificación con `active`, el proyecto sincronizado, existencias y libro de un
 material, los cuatro movimientos en sus rutas y la transferencia con dos apuntes, la reserva
 cancelada con un `DELETE` con cuerpo y liberada o consumida con `POST` sin cuerpo, el conjunto con
-su BOM y su disponibilidad, el historial tipado y el JSON de error de `mto-stock` por alias),
-`SecurityLayerTest` (mapeo de roles de los tres clientes con el sinónimo cualificado, un cliente no
-listado no aporta nada, un rol de realm `users-read` o `stock-read` nunca abre el módulo,
-`SecurityRoles`, `UserRoles` y `StockRoles` coinciden con el realm y son disjuntos, registro OIDC sin descubrimiento, roles desde
+su BOM y su disponibilidad, el historial tipado y el JSON de error de `mto-stock` por alias; el
+mantenimiento: la lista de órdenes con sus filtros (enumerado por nombre, fecha ISO, `sort`
+repetido) y un valor desconocido leído como `UNKNOWN`, su JSON de error por alias, activos
+(búsqueda, alta, `PUT` parcial con solo lo cambiado, desactivar), catálogos y equipos enteros,
+órdenes y sus transiciones con sus cuerpos, tareas (alta, generar, modificar, cancelar), turnos con
+sus conjuntos enteros, sus tareas y perfiles, ejecutar una tarea con su checklist, defectos y
+materiales, inspecciones y lo que generan, defectos y sus transiciones, líneas de material
+(quitar con 204 y el 503 `STK-503`), los informes en JSON y como fichero con su nombre, y el
+historial de cada recurso con el 404 de un activo sin revisiones),
+`SecurityLayerTest` (mapeo de roles de los cuatro clientes con el sinónimo cualificado, un cliente
+no listado no aporta nada, un rol de realm `users-read`, `stock-read` o `maintenance-read` nunca
+abre el módulo, `SecurityRoles`, `UserRoles`, `StockRoles` y `MaintenanceRoles` coinciden con el
+realm y son disjuntos, registro OIDC sin descubrimiento, roles desde
 el access token, `CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
 de la ruta y su filtro local, menú por roles, controles de escritura ocultos sin permiso, alta por
 diálogo, errores del servicio campo a campo, la modificación con la versión leída y la siguiente
@@ -392,6 +504,24 @@ lee, la disponibilidad por almacén con el componente que limita, el alta con su
 vacía rechazada antes de llamar, la línea sin material ni cantidad, el material repetido
 sustituido) y la modificación con la lista entera y `active`; el historial: paginado y la más
 reciente primero con cómo quedó la fila, el 404 como «sin historial» sin notificación, y el de
-una reserva desde cualquier fila) y
-`MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway; redirección al login;
-sonda de salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.
+una reserva desde cualquier fila; el mantenimiento: el grupo con las órdenes como nodo y lo que el
+perfil lee de los otros módulos, un rol de realm que no abre las vistas, los mensajes de sus
+códigos, nombres de vías y paquetes (y `#id` sin `config-read`, sin llamar a configuración), la
+descarga de un fichero; activos filtrados en el servidor, el alta de un tramo con su rango, el
+activo sincronizado que solo cambia descripción e intervalo, desactivar y reactivar un tramo,
+equipos enteros y catálogos de lectura; órdenes filtradas, el alta con su activo buscado, la ficha
+con lo que su estado admite, planificar y el `TRN-001` con el diálogo abierto, `force` solo con
+supervise, las tareas (añadir, generar, modificar, cancelar), el historial de estados; turnos
+filtrados, el alta con su vía y sus seccionadores, iniciar y cerrar, asignar tareas con las
+rechazadas resumidas, ejecutar una tarea con su checklist, sus defectos y su material, completar
+desde la orden eligiendo un turno en curso de su vía; inspecciones con su defecto (`force` si es
+leve) y su orden correctiva, o los enlaces a ellos, y sus puntos contestados; defectos vinculados,
+resueltos y descartados con sus motivos, los de una orden; las líneas de material con su almacén y
+lo que admite cada una, el alta desde el almacén, quitar una reservada con su aviso y el almacén
+caído notificado, el `MAT-001` al completar y el proyecto de almacén de la orden; los informes (el
+avance con sus nombres y porcentaje, el mensual con sus 24 meses, las descargas de punta a punta
+con el `_download` de Karibu, y el parte del turno en su pestaña); el historial de cada ficha y el
+de un activo sin revisiones) y
+`MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway, con los clientes de
+cada servicio y los cuatro clientes cuyos roles son permisos; redirección al login; sonda de
+salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.

@@ -19,7 +19,8 @@ import java.util.List;
  *       codigo por error (que cae en {@code errors});</li>
  *   <li>mto-stock: no es problem+json sino {@code application/json} con {@code error} (el nombre del
  *       estado, que cae en {@code title}), {@code message} (cae en {@code detail}), {@code errorCode},
- *       {@code correlationId} (eco de la cabecera, o nulo) y {@code validationErrors} como mto-users.</li>
+ *       {@code correlationId} (eco de la cabecera, o nulo) y {@code validationErrors} como mto-users;</li>
+ *   <li>mto-maintenance: la misma forma que mto-stock, con {@code path} y {@code method} de mas.</li>
  * </ul>
  * Todo es nullable y lo desconocido se ignora, asi que un campo nuevo en cualquiera de ellos no
  * rompe la decodificacion.

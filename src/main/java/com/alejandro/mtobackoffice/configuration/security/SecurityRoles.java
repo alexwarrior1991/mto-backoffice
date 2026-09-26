@@ -8,7 +8,8 @@ package com.alejandro.mtobackoffice.configuration.security;
  * guion bajo: {@code config-read} llega como {@code ROLE_CONFIG_READ}. Esta aplicacion no declara
  * roles propios: ensena o esconde lo que el servicio va a permitir o negar. Un rol que se anade
  * aqui sin existir alli no lo tiene nadie y la pantalla desaparece del menu para todos. Los del
- * modulo de usuarios, roles de cliente de {@code mto-users-api}, viven en {@link UserRoles}.</p>
+ * modulo de usuarios, roles de cliente de {@code mto-users-api}, viven en {@link UserRoles}; los de
+ * almacen, en {@link StockRoles}, y los de mantenimiento, en {@link MaintenanceRoles}.</p>
  */
 public final class SecurityRoles {
 
