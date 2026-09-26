@@ -10,10 +10,19 @@ Dos ficheros, que aplica `mto-platform/keycloak/apply-partials.sh` en su sitio d
 ## Qué hay dentro
 
 Un solo cliente, y sin roles: los permisos que comprueba el backoffice son los roles de cliente de
-`mto-configuration-api` (`config-read`, `config-write`, `config-delete`, `config-import`,
-`lov-manage`, `config-audit`), que declara `mto-configuration`, y los de `mto-users-api`
-(`users-read`, `users-write`, `users-delete`, `users-roles-write`, `users-password-reset`,
-`users-profiles-write`, `users-sessions-write`, `users-credentials-write`), que declara `mto-users`.
+cuatro clientes, cada uno declarado por su servicio (`app.keycloak.roles-client-ids`):
+
+| Cliente | Roles | Lo declara |
+|---|---|---|
+| `mto-configuration-api` | `config-read`, `config-write`, `config-delete`, `config-import`, `lov-manage`, `config-audit` | `mto-configuration` |
+| `mto-users-api` | `users-read`, `users-write`, `users-delete`, `users-roles-write`, `users-password-reset`, `users-profiles-write`, `users-sessions-write`, `users-credentials-write` | `mto-users` |
+| `mto-stock-api` | `stock-read`, `stock-write`, `stock-delete`, `stock-adjust` | `mto-stock` |
+| `mto-maintenance-api` | `maintenance-read`, `maintenance-write`, `maintenance-delete`, `maintenance-supervise` | `mto-maintenance` |
+
+Los perfiles de realm que reúnen esos roles también son de cada servicio. Los tres de
+mantenimiento (`mto-maintenance-viewer`, `-technician` y `-manager`) llevan además `config-read` y
+`stock-read`, porque sus pantallas nombran vías, paquetes, materiales, almacenes y proyectos que
+`mto-maintenance` solo guarda como id; sin ellos, el backoffice pintaría `#id`.
 
 | Cliente | Tipo | Para qué |
 |---|---|---|

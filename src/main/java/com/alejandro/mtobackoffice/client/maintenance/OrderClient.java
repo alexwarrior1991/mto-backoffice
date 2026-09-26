@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.client.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
+import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssignOrderRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest;
@@ -57,6 +58,13 @@ public interface OrderClient {
 
     @GetExchange("/{id}")
     OrderDto findById(@PathVariable("id") UUID id);
+
+    /**
+     * El historial de Envers, la revision mas reciente primero ({@code page} desde 0). Sin ninguna
+     * revision el servicio responde 404: {@code RevisionsDialog} lo dice como «sin historial».
+     */
+    @GetExchange("/{id}/revisions")
+    PageResponse<RevisionDto<OrderDto>> revisions(@PathVariable("id") UUID id, @RequestParam("page") int page, @RequestParam("size") int size);
 
     /**
      * Las fechas van con {@code @DateTimeFormat}: sin el, el conversor por defecto escribiria un

@@ -3597,8 +3597,9 @@ class ViewLayerTest {
                 Formats.endOfDay(LocalDate.of(2026, 10, 31)))), eq(0), anyInt(), anyList());
 
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("asset-create")).isEmpty(), "sin write no hay alta");
-        assertEquals(List.of("asset-orders-" + ASSET_SYNCED), LocatorJ._find(GridKt._getCellComponent(grid, 0, AssetsView.ACTIONS_COLUMN),
-                Button.class).stream().map(button -> button.getId().orElse("")).toList(), "quien solo lee ve las ordenes, no modificar ni desactivar");
+        assertEquals(List.of("asset-orders-" + ASSET_SYNCED, "asset-history-" + ASSET_SYNCED),
+                LocatorJ._find(GridKt._getCellComponent(grid, 0, AssetsView.ACTIONS_COLUMN), Button.class).stream()
+                        .map(button -> button.getId().orElse("")).toList(), "quien solo lee ve las ordenes y el historial, no modificar ni desactivar");
     }
 
     @Test
@@ -4717,5 +4718,91 @@ class ViewLayerTest {
         assertArrayEquals(XLSX, DownloadKt._download(anchorWithId("shift-report-xlsx")));
         verify(reportClient).shiftReportFile(SHIFT1, "xlsx");
         assertEquals("PDF", anchorWithId("shift-report-pdf").getText());
+    }
+
+    // --- Mantenimiento: historial ------------------------------------------------------------------
+
+    /** Abre el historial desde el boton de la ficha y devuelve su tabla; lo cierra quien llama. */
+    private static Grid<Object> openHistory(String buttonId) {
+        click(buttonId);
+        return gridWithId("revisions-grid");
+    }
+
+    /**
+     * El historial de una orden: paginado en el servicio, la revision mas reciente primero, con quien,
+     * por que camino y como quedo la orden. Turnos, inspecciones y defectos lo ofrecen igual desde su
+     * ficha, tambien a quien solo lee, cada uno con su linea.
+     */
+    @Test
+    void theHistoryOfAnOrderIsPagedNewestFirstAndEveryDetailOffersItsOwn() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        stubReferencesForMaintenance();
+        List<RevisionDto<OrderDto>> orderHistory = List.of(
+                revision(2, RevisionOperation.UPDATED, "mantenimiento.tecnico", "HTTP", orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE)),
+                revision(1, RevisionOperation.CREATED, "mantenimiento.responsable", "HTTP", orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE)));
+        when(orderClient.revisions(eq(ORDER1), anyInt(), anyInt())).thenAnswer(call -> page(orderHistory, call.getArgument(1), call.getArgument(2)));
+        when(shiftClient.revisions(eq(SHIFT1), anyInt(), anyInt()))
+                .thenReturn(page(List.of(revision(3, RevisionOperation.UPDATED, "mantenimiento.tecnico", "HTTP", shiftOf(ShiftStatus.CLOSED))), 0, 20));
+        when(inspectionClient.revisions(eq(INSPECTION1), anyInt(), anyInt())).thenReturn(page(List.of(
+                revision(4, RevisionOperation.UPDATED, "ana", "HTTP", inspectionOf(InspectionResult.MINOR_DEFECT, null, null))), 0, 20));
+        when(defectClient.revisions(eq(DEFECT1), anyInt(), anyInt()))
+                .thenReturn(page(List.of(revision(5, RevisionOperation.CREATED, null, "SYSTEM", defectOf(DefectStatus.OPEN))), 0, 20));
+
+        openOrder(orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE));
+        Grid<Object> grid = openHistory("order-history");
+        assertEquals(2, GridKt._size(grid));
+        LocatorJ._get(LocatorJ._get(Dialog.class), Span.class, spec -> spec.withText("2 revisiones, la mas reciente primero"));
+        List<String> newest = GridKt._getFormattedRow(grid, 0);
+        assertTrue(newest.containsAll(List.of("2", "Modificacion", "mantenimiento.tecnico", "HTTP", "corr-2",
+                "Revision tramo 12 · En curso · prioridad Alta · plan 14/09/2026 · EQ-01 · mantenimiento.tecnico")), newest.toString());
+        List<String> first = GridKt._getFormattedRow(grid, 1);
+        assertTrue(first.containsAll(List.of("1", "Alta", "mantenimiento.responsable",
+                "Revision tramo 12 · Borrador · prioridad Alta · plan 14/09/2026 · EQ-01 · mantenimiento.tecnico")), first.toString());
+        verify(orderClient, atLeastOnce()).revisions(eq(ORDER1), eq(0), anyInt());
+        LocatorJ._get(Dialog.class).close();
+
+        openShift(shiftOf(ShiftStatus.CLOSED));
+        assertTrue(GridKt._getFormattedRow(openHistory("shift-history"), 0).contains("Cerrado · 05/10/2026 · EQ-01 · ocupacion Total"));
+        LocatorJ._get(Dialog.class).close();
+
+        openInspection(inspectionOf(InspectionResult.MINOR_DEFECT, null, null));
+        assertTrue(GridKt._getFormattedRow(openHistory("inspection-history"), 0).contains("Tecnica · 20/09/2026 · ana · Defecto leve"));
+        LocatorJ._get(Dialog.class).close();
+
+        openDefect(defectOf(DefectStatus.OPEN));
+        List<String> defect = GridKt._getFormattedRow(openHistory("defect-history"), 0);
+        assertTrue(defect.containsAll(List.of("Alta", "SYSTEM", "Alta · Abierto")), defect.toString());
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
+    }
+
+    /**
+     * Un activo que solo ha llegado por datos maestros no tiene revisiones (alli es SQL nativo): el
+     * 404 es «sin historial todavia», sin notificacion. Un tramo propio si las tiene, con su linea.
+     */
+    @Test
+    void anAssetOnlyKnownFromMasterDataHasNoHistoryYetAndAnOwnSectionDoes() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        stubReferencesForMaintenance();
+        AssetDto own = ownSection(ASSET_OWN, "TS-0002", true);
+        stubAssets(List.of(syncedProfile(), own));
+        when(assetClient.revisions(eq(ASSET_SYNCED), anyInt(), anyInt()))
+                .thenThrow(maintenanceError(404, "APP-404", "CatenaryAsset not found: " + ASSET_SYNCED));
+        when(assetClient.revisions(eq(ASSET_OWN), anyInt(), anyInt()))
+                .thenReturn(page(List.of(revision(6, RevisionOperation.UPDATED, "mantenimiento.tecnico", "HTTP", own)), 0, 20));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ASSETS);
+        Grid<Object> assets = gridWithId("assets-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(assets, 0, AssetsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("asset-history-" + ASSET_SYNCED)));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._get(dialog, Span.class, spec -> spec.withId("revisions-empty"));
+        assertTrue(LocatorJ._find(dialog, Grid.class).isEmpty(), "sin revisiones no hay tabla");
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "un 404 aqui es «sin historial», no un error");
+        dialog.close();
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(assets, 1, AssetsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("asset-history-" + ASSET_OWN)));
+        List<String> row = GridKt._getFormattedRow(gridWithId("revisions-grid"), 0);
+        assertTrue(row.contains("Tramo TS-0002 · KP 12.1 - 13.45 · activo · Tramo propio"), row.toString());
     }
 }

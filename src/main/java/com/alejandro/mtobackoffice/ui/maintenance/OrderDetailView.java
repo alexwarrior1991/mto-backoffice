@@ -203,6 +203,8 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
     private void paintButtons(OrderDto loaded) {
         buttons.removeAll();
         buttons.add(new Button("Volver a la lista", VaadinIcon.ARROW_LEFT.create(), click -> UI.getCurrent().navigate(OrdersView.class)));
+        buttons.add(MaintenanceHistory.button("order-history", loaded.code(), (page, size) -> clients.orders().revisions(loaded.id(), page, size),
+                MaintenanceHistory::order));
         if (loaded.originInspectionId() != null) {
             buttons.add(button("order-origin-inspection", "Inspeccion de origen", VaadinIcon.CLIPBOARD_CHECK,
                     () -> UI.getCurrent().navigate(InspectionDetailView.class, InspectionDetailView.parametersOf(loaded.originInspectionId()))));

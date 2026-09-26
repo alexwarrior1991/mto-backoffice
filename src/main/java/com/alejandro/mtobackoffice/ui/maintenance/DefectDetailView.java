@@ -134,6 +134,8 @@ public class DefectDetailView extends VerticalLayout implements BeforeEnterObser
     private void paintButtons(DefectDto loaded) {
         buttons.removeAll();
         buttons.add(new Button("Volver a la lista", VaadinIcon.ARROW_LEFT.create(), click -> UI.getCurrent().navigate(DefectsView.class)));
+        buttons.add(MaintenanceHistory.button("defect-history", loaded.code(), (page, size) -> clients.defects().revisions(loaded.id(), page, size),
+                MaintenanceHistory::defect));
         if (loaded.inspectionId() != null) {
             buttons.add(button("defect-inspection-link", "Ver la inspeccion", VaadinIcon.CLIPBOARD_CHECK,
                     () -> UI.getCurrent().navigate(InspectionDetailView.class, InspectionDetailView.parametersOf(loaded.inspectionId()))));

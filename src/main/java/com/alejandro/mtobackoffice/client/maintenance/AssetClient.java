@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.client.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
+import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetRequest;
@@ -37,6 +38,13 @@ public interface AssetClient {
 
     @GetExchange("/{id}")
     AssetDto findById(@PathVariable("id") UUID id);
+
+    /**
+     * El historial de Envers, la revision mas reciente primero ({@code page} desde 0). Sin ninguna
+     * revision el servicio responde 404: {@code RevisionsDialog} lo dice como «sin historial».
+     */
+    @GetExchange("/{id}/revisions")
+    PageResponse<RevisionDto<AssetDto>> revisions(@PathVariable("id") UUID id, @RequestParam("page") int page, @RequestParam("size") int size);
 
     @GetExchange
     PageResponse<AssetDto> search(@RequestParam(value = "type", required = false) CatenaryAssetType type,

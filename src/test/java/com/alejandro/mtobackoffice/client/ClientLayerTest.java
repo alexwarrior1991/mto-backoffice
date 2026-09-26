@@ -109,7 +109,6 @@ import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
 import com.alejandro.mtobackoffice.client.dto.users.UsersPage;
 import com.alejandro.mtobackoffice.client.error.ConflictApiException;
-import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderType;
@@ -140,7 +139,6 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.StockSyncStatus;
-import com.alejandro.mtobackoffice.client.error.ServiceUnavailableApiException;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CloseShiftRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CompleteTaskRequest;
@@ -2164,6 +2162,58 @@ class ClientLayerTest {
         assertEquals(List.of(), shiftReport.rows().getFirst().photoRefs(), "una lista a null se lee vacia");
         assertEquals(MaintenanceTaskStatus.COMPLETED, shiftReport.rows().getFirst().status());
         assertEquals("shift-report-SH-000001-2026-10-05.xlsx", shiftFile.getHeaders().getContentDisposition().getFilename());
+        server.verify();
+    }
+
+    private static String maintenanceRevision(long number, String operation, String source, String entity) {
+        return "{\"revision\":{\"revision\":" + number + ",\"revisionAt\":\"2026-10-06T05:00:00Z\",\"operation\":\"" + operation + "\","
+                + "\"author\":\"mantenimiento.tecnico\",\"source\":\"" + source + "\",\"correlationId\":\"c-" + number + "\"},\"entity\":" + entity + "}";
+    }
+
+    /**
+     * El historial de cada recurso de mantenimiento, con la foto tipada (el generico se resuelve en
+     * cada interfaz) y la mas reciente primero tal como llega. Un activo que solo ha llegado por datos
+     * maestros no tiene ninguna revision, y el servicio responde 404.
+     */
+    @Test
+    void maintenanceRevisionsComeTypedForEachResourceAndNoneIsANotFound() {
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID + "/revisions?page=0&size=20")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(maintenanceRevision(7, "UPDATED", "HTTP", orderJson(ORDER_ID, "MO-000001", "IN_PROGRESS", "HIGH"))
+                        + "," + maintenanceRevision(2, "CREATED", "HTTP", orderJson(ORDER_ID, "MO-000001", "DRAFT", "MEDIUM")), 0, 20, 2),
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/shifts/" + SHIFT_ID + "/revisions?page=0&size=20")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(maintenanceRevision(9, "UPDATED", "HTTP", shiftJson("CLOSED")), 0, 20, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/inspections/" + INSPECTION_ID + "/revisions?page=0&size=20")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(maintenanceRevision(4, "UPDATED", "HTTP", inspectionJson("MINOR_DEFECT", DEFECT_ID)), 0, 20, 1),
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/defects/" + DEFECT_ID + "/revisions?page=0&size=20")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(maintenanceRevision(5, "UPDATED", "SYSTEM", defectJson("RESOLVED")), 0, 20, 1),
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/assets/" + ASSET_ID + "/revisions?page=0&size=20")).andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":404,\"error\":\"NOT_FOUND\",\"message\":\"CatenaryAsset not found: " + ASSET_ID + "\","
+                                + "\"errorCode\":\"APP-404\",\"validationErrors\":[]}"));
+
+        PageResponse<RevisionDto<OrderDto>> orders = asUser(() -> orderClient.revisions(UUID.fromString(ORDER_ID), 0, 20));
+        PageResponse<RevisionDto<ShiftDto>> shifts = asUser(() -> shiftClient.revisions(UUID.fromString(SHIFT_ID), 0, 20));
+        PageResponse<RevisionDto<InspectionDto>> inspections = asUser(() -> inspectionClient.revisions(UUID.fromString(INSPECTION_ID), 0, 20));
+        PageResponse<RevisionDto<DefectDto>> defects = asUser(() -> defectClient.revisions(UUID.fromString(DEFECT_ID), 0, 20));
+        NotFoundApiException none = assertThrows(NotFoundApiException.class,
+                () -> asUser(() -> assetClient.revisions(UUID.fromString(ASSET_ID), 0, 20)));
+
+        assertEquals(2, orders.page().totalElements());
+        RevisionDto<OrderDto> newest = orders.content().getFirst();
+        assertEquals(7, newest.revision().revision());
+        assertEquals(RevisionOperation.UPDATED, newest.revision().operation());
+        assertEquals("c-7", newest.revision().correlationId());
+        assertEquals(MaintenanceOrderStatus.IN_PROGRESS, newest.entity().status());
+        assertEquals(MaintenanceOrderStatus.DRAFT, orders.content().get(1).entity().status());
+        assertEquals(RevisionOperation.CREATED, orders.content().get(1).revision().operation());
+        assertEquals(ShiftStatus.CLOSED, shifts.content().getFirst().entity().status());
+        assertEquals(InspectionResult.MINOR_DEFECT, inspections.content().getFirst().entity().result());
+        assertEquals("SYSTEM", defects.content().getFirst().revision().source());
+        assertEquals(DefectStatus.RESOLVED, defects.content().getFirst().entity().status());
+        assertEquals("APP-404", none.getProblem().code());
         server.verify();
     }
 }

@@ -141,6 +141,8 @@ public class InspectionDetailView extends VerticalLayout implements BeforeEnterO
     private void paintButtons(InspectionDto loaded) {
         buttons.removeAll();
         buttons.add(new Button("Volver a la lista", VaadinIcon.ARROW_LEFT.create(), click -> UI.getCurrent().navigate(InspectionsView.class)));
+        buttons.add(MaintenanceHistory.button("inspection-history", loaded.code(),
+                (page, size) -> clients.inspections().revisions(loaded.id(), page, size), MaintenanceHistory::inspection));
         if (loaded.originOrderId() != null) {
             buttons.add(link("inspection-origin-order", "Orden de origen", VaadinIcon.WRENCH,
                     () -> UI.getCurrent().navigate(OrderDetailView.class, OrderDetailView.parametersOf(loaded.originOrderId()))));

@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.client.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
+import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectRequest;
@@ -37,6 +38,13 @@ public interface DefectClient {
 
     @GetExchange("/{id}")
     DefectDto findById(@PathVariable("id") UUID id);
+
+    /**
+     * El historial de Envers, la revision mas reciente primero ({@code page} desde 0). Sin ninguna
+     * revision el servicio responde 404: {@code RevisionsDialog} lo dice como «sin historial».
+     */
+    @GetExchange("/{id}/revisions")
+    PageResponse<RevisionDto<DefectDto>> revisions(@PathVariable("id") UUID id, @RequestParam("page") int page, @RequestParam("size") int size);
 
     @GetExchange
     PageResponse<DefectDto> search(@RequestParam(value = "severity", required = false) DefectSeverity severity,

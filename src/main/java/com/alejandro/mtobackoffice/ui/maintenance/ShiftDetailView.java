@@ -188,6 +188,8 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
     private void paintButtons(ShiftDto loaded) {
         buttons.removeAll();
         buttons.add(new Button("Volver a la lista", VaadinIcon.ARROW_LEFT.create(), click -> UI.getCurrent().navigate(ShiftsView.class)));
+        buttons.add(MaintenanceHistory.button("shift-history", loaded.code(), (page, size) -> clients.shifts().revisions(loaded.id(), page, size),
+                MaintenanceHistory::shift));
         ShiftStatus status = loaded.status();
         if (!canWrite || status == null) {
             return;
