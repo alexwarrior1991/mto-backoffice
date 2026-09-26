@@ -5,13 +5,18 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
 
-/** Como va una linea de material con mto-stock: sin pedir (borrador), reservada, consumida, liberada o fallida (se reintenta con sincronizar). */
+/**
+ * Como va una linea de material con mto-stock: sin pedir (borrador), reservada, consumida, liberada,
+ * fallida (el almacen no respondio) o rechazada (dijo que no; el motivo viene en
+ * {@code stockSyncError}). Las dos ultimas se reintentan con sincronizar.
+ */
 public enum StockSyncStatus {
     NOT_REQUESTED("Sin pedir"),
     RESERVED("Reservada"),
     CONSUMED("Consumida"),
     RELEASED("Liberada"),
     FAILED("Fallida"),
+    REJECTED("Rechazada"),
     UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;
@@ -22,6 +27,11 @@ public enum StockSyncStatus {
 
     public String label() {
         return label;
+    }
+
+    /** Lo que stock no llego a hacer, porque no respondio o porque dijo que no: bloquea completar la orden salvo con {@code force}. */
+    public boolean isSyncFailed() {
+        return this == FAILED || this == REJECTED;
     }
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)

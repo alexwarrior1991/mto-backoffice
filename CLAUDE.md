@@ -233,7 +233,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   turno no admite ese trabajo), `MAT-001` (la línea de material), `AST-001` (activo desactivado, o
   un dato que manda `mto-configuration`) y `AST-409`/`TEA-409` (código repetido); `INS-001` es un
   422 de la inspección y su checklist, y el 503 `STK-503`, el almacén caído al sincronizar o quitar
-  una línea, que se queda como estaba.
+  una línea, que se queda como estaba. Al sincronizar, el almacén también puede decir que no: 409
+  `STK-001` sin existencias, que se dice como en almacén, o 422 `STK-422` por otro motivo («el
+  almacén ha rechazado la operación», con el motivo de stock).
 - **La paginación es la forma DTO** `{content, page:{size,number,totalElements,totalPages}}`, fijada
   en `mto-configuration` con `spring.data.web.pageable.serialization-mode: via_dto` y pinada allí
   por test. `PageResponse<T>` la lee (y tolera `first`/`last` de stock y maintenance). La API de
@@ -329,7 +331,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (`maintenance-delete`) libera antes su reserva en `mto-stock`; no se ofrece en una línea
   consumida ni en una orden terminada (`MAT-001`), la confirmación avisa de la liberación, y con el
   almacén caído (503 `STK-503`) la línea se queda como estaba. «Sincronizar» reintenta una línea
-  `FAILED` (o sin pedir fuera de borrador). Lo previsto de una línea reservada no se ofrece: el
+  `FAILED` (el almacén no respondió) o `REJECTED` (dijo que no; el motivo, en el tooltip del estado),
+  o sin pedir fuera de borrador, también con la orden terminada, porque el servicio la liquida al
+  reintentar; con la orden abierta, además, comprueba una `RESERVED` («Comprobar la reserva en el
+  almacén»): si Almacén liberó su reserva, el servicio pide otra. Lo previsto de una línea reservada no se ofrece: el
   servicio no lo cambia. Un `MAT-001` al completar la orden sugiere sincronizar o, con
   `maintenance-supervise`, completar con `force`.
 - **Los enumerados que se leen de un servicio toleran lo desconocido.** Son los de
@@ -465,7 +470,8 @@ repetido) y un valor desconocido leído como `UNKNOWN`, su JSON de error por ali
 órdenes y sus transiciones con sus cuerpos, tareas (alta, generar, modificar, cancelar), turnos con
 sus conjuntos enteros, sus tareas y perfiles, ejecutar una tarea con su checklist, defectos y
 materiales, inspecciones y lo que generan, defectos y sus transiciones, líneas de material
-(quitar con 204 y el 503 `STK-503`), los informes en JSON y como fichero con su nombre, y el
+(quitar con 204 y el 503 `STK-503`; la rechazada con su motivo, y el 422 `STK-422` o el 409
+`STK-001` al sincronizarla), los informes en JSON y como fichero con su nombre, y el
 historial de cada recurso con el 404 de un activo sin revisiones),
 `SecurityLayerTest` (mapeo de roles de los cuatro clientes con el sinónimo cualificado, un cliente
 no listado no aporta nada, un rol de realm `users-read`, `stock-read` o `maintenance-read` nunca
@@ -533,7 +539,8 @@ rechazadas resumidas, ejecutar una tarea con su checklist, sus defectos y su mat
 desde la orden eligiendo un turno en curso de su vía; inspecciones con su defecto (`force` si es
 leve) y su orden correctiva, o los enlaces a ellos, y sus puntos contestados; defectos vinculados,
 resueltos y descartados con sus motivos, los de una orden; las líneas de material con su almacén y
-lo que admite cada una, el alta desde el almacén, quitar una reservada con su aviso y el almacén
+lo que admite cada una (la reservada se comprueba; la rechazada, con su motivo, se reintenta y dice
+por qué el almacén vuelve a decir que no), el alta desde el almacén, quitar una reservada con su aviso y el almacén
 caído notificado, el `MAT-001` al completar y el proyecto de almacén de la orden; los informes (el
 avance con sus nombres y porcentaje, el mensual con sus 24 meses, las descargas de punta a punta
 con el `_download` de Karibu, y el parte del turno en su pestaña); el historial de cada ficha y el

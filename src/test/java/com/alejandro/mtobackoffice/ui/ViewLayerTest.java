@@ -3537,6 +3537,10 @@ class ViewLayerTest {
                 UiErrors.message(maintenanceError(422, "INS-001", "Inspection INS-000001 is OK: there is no defect to record")));
         assertEquals("El almacen no responde: la linea de material se queda como estaba. Intentalo mas tarde. Stock service unavailable",
                 UiErrors.message(maintenanceError(503, "STK-503", "Stock service unavailable")));
+        assertEquals("El almacen ha rechazado la operacion. mto-stock rejected 'reserve' with 422 MAT-001: Material MAT-001 is inactive",
+                UiErrors.message(maintenanceError(422, "STK-422", "mto-stock rejected 'reserve' with 422 MAT-001: Material MAT-001 is inactive")));
+        assertEquals("No hay stock disponible suficiente. mto-stock rejected 'reserve' with 409 STK-001: Insufficient stock",
+                UiErrors.message(maintenanceError(409, "STK-001", "mto-stock rejected 'reserve' with 409 STK-001: Insufficient stock")));
         assertEquals("El servicio no esta disponible ahora mismo. Intentalo mas tarde.",
                 UiErrors.message(maintenanceError(503, null, null)), "el 503 del gateway sigue siendo el de siempre");
     }
@@ -4531,12 +4535,14 @@ class ViewLayerTest {
     private static final UUID LINE_RESERVED = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000051");
     private static final UUID LINE_FAILED = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000052");
     private static final UUID LINE_CONSUMED = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000053");
+    private static final UUID LINE_REJECTED = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000056");
+    private static final String REJECTION = "mto-stock rejected 'reserve' with 422 WH-001: Warehouse WH-000 is inactive";
 
     private static MaterialUsageDto line(UUID id, StockSyncStatus status, UUID taskId) {
         return new MaterialUsageDto(id, ORDER1, taskId, MAT1, "MAT-001", "Pendola", WH1, new BigDecimal("4.000000"),
                 status == StockSyncStatus.CONSUMED ? new BigDecimal("4.000000") : null, "ud", false,
                 status == StockSyncStatus.RESERVED || status == StockSyncStatus.CONSUMED ? UUID.randomUUID() : null, status,
-                status == StockSyncStatus.FAILED ? "Stock service unavailable" : null, null);
+                status == StockSyncStatus.FAILED ? "Stock service unavailable" : status == StockSyncStatus.REJECTED ? REJECTION : null, null);
     }
 
     private void stubMaterials(MaintenanceOrderStatus status, List<MaterialUsageDto> lines) {
@@ -4557,16 +4563,24 @@ class ViewLayerTest {
     void theMaterialsTabShowsTheLinesWithTheirWarehouseAndOffersWhatEachAdmits() {
         loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
         stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(line(LINE_RESERVED, StockSyncStatus.RESERVED, TASK1),
-                line(LINE_FAILED, StockSyncStatus.FAILED, null), line(LINE_CONSUMED, StockSyncStatus.CONSUMED, null)));
+                line(LINE_FAILED, StockSyncStatus.FAILED, null), line(LINE_CONSUMED, StockSyncStatus.CONSUMED, null),
+                line(LINE_REJECTED, StockSyncStatus.REJECTED, null)));
 
         Grid<Object> grid = gridWithId("order-materials-grid");
         assertEquals(List.of("MAT-001 - Pendola", "WH-000 - Central", "4 ud", "", "Tarea 1"), GridKt._getFormattedRow(grid, 0).subList(0, 5));
         assertEquals("Stock service unavailable", ((Span) GridKt._getCellComponent(grid, 1, "status")).getTitle().orElse(""),
                 "el error de stock, en el tooltip del estado");
+        Span rejected = (Span) GridKt._getCellComponent(grid, 3, "status");
+        assertEquals("Rechazada", rejected.getText());
+        assertEquals(REJECTION, rejected.getTitle().orElse(""), "el motivo del almacen, en el tooltip del estado");
         verify(warehouseClient, times(1)).findById(WH1);
-        assertEquals(List.of("material-edit", "material-remove"), materialActions(grid, 0));
+        assertEquals(List.of("material-edit", "material-sync", "material-remove"), materialActions(grid, 0),
+                "una reservada se comprueba: Almacen puede haber liberado su reserva");
+        assertEquals("Comprobar la reserva en el almacen", LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class,
+                spec -> spec.withId("material-sync-" + LINE_RESERVED)).getTooltip().getText());
         assertEquals(List.of("material-edit", "material-sync", "material-remove"), materialActions(grid, 1));
         assertEquals(List.of(), materialActions(grid, 2), "una linea consumida ya no se toca");
+        assertEquals(List.of("material-edit", "material-sync", "material-remove"), materialActions(grid, 3), "una rechazada se reintenta");
         assertTrue(hasButton("material-add"));
 
         loginAs("mantenimiento.lector", MAINTENANCE_READER);
@@ -4635,6 +4649,37 @@ class ViewLayerTest {
         NotificationsKt.expectNotifications("MAT-001: reservada");
     }
 
+    /**
+     * Sincronizar una linea que el almacen rechaza dice por que (409 {@code STK-001} sin existencias,
+     * 422 {@code STK-422} por otro motivo) y relee: la linea queda rechazada con ese motivo. En una
+     * orden terminada, una rechazada se sigue ofreciendo, porque el servicio la liquida al reintentar.
+     */
+    @Test
+    void syncingARejectedLineSaysWhyStockSaidNoAndRereadsTheLine() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(orderClient.syncMaterial(ORDER1, LINE_REJECTED))
+                .thenThrow(maintenanceError(422, "STK-422", REJECTION))
+                .thenThrow(maintenanceError(409, "STK-001", "mto-stock rejected 'reserve' with 409 STK-001: Insufficient stock"));
+        stubMaterials(MaintenanceOrderStatus.IN_PROGRESS, List.of(line(LINE_REJECTED, StockSyncStatus.REJECTED, null)));
+        Grid<Object> grid = gridWithId("order-materials-grid");
+        clearInvocations(orderClient);
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("material-sync-" + LINE_REJECTED)));
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText("El almacen ha rechazado la operacion. " + REJECTION));
+        verify(orderClient).materials(ORDER1);
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("material-sync-" + LINE_REJECTED)));
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText(
+                "No hay stock disponible suficiente. mto-stock rejected 'reserve' with 409 STK-001: Insufficient stock"));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        stubMaterials(MaintenanceOrderStatus.COMPLETED, List.of(line(LINE_REJECTED, StockSyncStatus.REJECTED, null),
+                line(LINE_RESERVED, StockSyncStatus.RESERVED, null)));
+        Grid<Object> completed = gridWithId("order-materials-grid");
+        assertEquals(List.of("material-sync"), materialActions(completed, 0), "terminada la orden, solo queda reintentar");
+        assertEquals(List.of(), materialActions(completed, 1), "una reservada solo se comprueba con la orden abierta");
+    }
+
     @Test
     void completingWithUnsyncedLinesSuggestsWhatToDoAndTheOrderCarriesItsStockProject() {
         loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
@@ -4646,7 +4691,7 @@ class ViewLayerTest {
         click(OrderTransitionDialog.CONFIRM_ID);
         Notification refused = NotificationsKt.getNotifications().getLast();
         LocatorJ._get(refused, Div.class, spec -> spec.withText(
-                "Sincroniza las lineas fallidas en la pestana Materiales, o pide a quien supervisa que la complete igualmente."));
+                "Sincroniza las lineas fallidas o rechazadas en la pestana Materiales, o pide a quien supervisa que la complete igualmente."));
 
         UUID project = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000054");
         UUID other = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000055");

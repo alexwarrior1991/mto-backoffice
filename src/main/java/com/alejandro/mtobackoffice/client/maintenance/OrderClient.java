@@ -160,7 +160,12 @@ public interface OrderClient {
     @PutExchange("/{id}/materials/{usageId}")
     MaterialUsageDto updateMaterial(@PathVariable("id") UUID id, @PathVariable("usageId") UUID usageId, @RequestBody MaterialUsageUpdateRequest request);
 
-    /** Reintenta con mto-stock lo que toque por el estado de la orden; 503 {@code STK-503} si el almacen sigue sin responder. */
+    /**
+     * Reintenta con mto-stock lo que toque por el estado de la orden, y en una orden abierta comprueba
+     * tambien una linea reservada (si Almacen libero su reserva, pide otra). Si el almacen sigue sin
+     * responder, 503 {@code STK-503}; si dice que no, 409 {@code STK-001} sin existencias o 422
+     * {@code STK-422} por otro motivo. En los tres casos la linea guarda lo que paso.
+     */
     @PostExchange("/{id}/materials/{usageId}/sync")
     MaterialUsageDto syncMaterial(@PathVariable("id") UUID id, @PathVariable("usageId") UUID usageId);
 

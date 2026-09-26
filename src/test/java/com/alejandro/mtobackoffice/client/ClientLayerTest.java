@@ -2177,6 +2177,44 @@ class ClientLayerTest {
     }
 
     /**
+     * Una linea que el almacen rechazo llega {@code REJECTED} con el motivo de stock, y sincronizarla
+     * otra vez responde con su codigo: 422 {@code STK-422} si dice que no por otro motivo, 409
+     * {@code STK-001} si faltan existencias. Fallida y rechazada son las dos lo que stock no hizo.
+     */
+    @Test
+    void aRejectedLineCarriesStocksReasonAndSyncingItAgainAnswersWithItsCode() {
+        String materials = MAINTENANCE + "/orders/" + ORDER_ID + "/materials";
+        String reason = "mto-stock rejected 'reserve' with 422 WH-001: Warehouse WH-001 is inactive";
+        server.expect(requestTo(materials)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[" + lineJson("REJECTED", reason) + "]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(materials + "/" + LINE_ID + "/sync")).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":422,\"error\":\"UNPROCESSABLE_ENTITY\",\"message\":\"" + reason + "\",\"errorCode\":\"STK-422\","
+                                + "\"validationErrors\":[]}"));
+        server.expect(requestTo(materials + "/" + LINE_ID + "/sync")).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":409,\"error\":\"CONFLICT\",\"message\":\"mto-stock rejected 'reserve' with 409 STK-001: Insufficient stock\","
+                                + "\"errorCode\":\"STK-001\",\"validationErrors\":[]}"));
+
+        UUID orderId = UUID.fromString(ORDER_ID);
+        UUID lineId = UUID.fromString(LINE_ID);
+        MaterialUsageDto line = asUser(() -> orderClient.materials(orderId)).getFirst();
+        ValidationApiException rejected = assertThrows(ValidationApiException.class, () -> asUser(() -> orderClient.syncMaterial(orderId, lineId)));
+        ConflictApiException noStock = assertThrows(ConflictApiException.class, () -> asUser(() -> orderClient.syncMaterial(orderId, lineId)));
+
+        assertEquals(StockSyncStatus.REJECTED, line.stockSyncStatus());
+        assertEquals(reason, line.stockSyncError());
+        assertTrue(StockSyncStatus.REJECTED.isSyncFailed());
+        assertTrue(StockSyncStatus.FAILED.isSyncFailed());
+        assertFalse(StockSyncStatus.RESERVED.isSyncFailed());
+        assertEquals("STK-422", rejected.getProblem().code());
+        assertFalse(rejected.getProblem().hasFieldErrors());
+        assertEquals(reason, rejected.getProblem().detail());
+        assertEquals("STK-001", noStock.getProblem().code());
+        server.verify();
+    }
+
+    /**
      * Informes: el JSON y el fichero de cada uno por la misma ruta, que se distinguen por
      * {@code format}. Los instantes del avance van en ISO, el mes como {@code 2026-09} y el fichero
      * vuelve con su nombre y su tipo. El avance es una fraccion (0.4500) y se lee tal cual; un tipo

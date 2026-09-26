@@ -148,8 +148,8 @@ public class OrderTransitionDialog extends Dialog {
             Notification notification = UiErrors.show(conflict);
             if (kind == Kind.COMPLETE && "MAT-001".equals(conflict.getProblem().code())) {
                 notification.add(new Div(canForce
-                        ? "Sincroniza las lineas fallidas en la pestana Materiales, o marca completar aunque haya lineas sin sincronizar."
-                        : "Sincroniza las lineas fallidas en la pestana Materiales, o pide a quien supervisa que la complete igualmente."));
+                        ? "Sincroniza las lineas fallidas o rechazadas en la pestana Materiales, o marca completar aunque haya lineas sin sincronizar."
+                        : "Sincroniza las lineas fallidas o rechazadas en la pestana Materiales, o pide a quien supervisa que la complete igualmente."));
             }
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
