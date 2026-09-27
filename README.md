@@ -206,7 +206,9 @@ Séptimo repositorio del dominio, hermano e independiente de
   planificarla, se sincronizan si el almacén no respondió y se quitan liberando su reserva (desde
   que `mto-maintenance` distingue un almacén caído de uno que dice que no, una línea rechazada
   enseña el motivo y se reintenta igual, y una reservada se comprueba por si Almacén liberó su
-  reserva). M6 trae
+  reserva; una línea cuya reserva o salida se quedó sin respuesta lo dice, se reintenta sola cada
+  5 minutos y, mientras tanto, no ofrece cambiar sus cantidades, quitarla si es una salida ni el
+  proyecto de almacén de la orden). M6 trae
   los **informes** (`mantenimiento/informes`: el avance del preventivo y el resumen de un mes, y el
   parte diario en la ficha del turno), cada uno en pantalla y como Excel o PDF descargados a través
   de esta aplicación. M7 cierra con el **historial**: el botón «Historial» de cada ficha y de cada

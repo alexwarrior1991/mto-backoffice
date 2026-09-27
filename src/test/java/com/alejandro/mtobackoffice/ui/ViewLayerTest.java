@@ -216,6 +216,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.GenerateTasksResultDto
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceTaskStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.StockRequestType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.PlanOrderRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ReasonRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.StatusHistoryDto;
@@ -4646,7 +4647,15 @@ class ViewLayerTest {
         return new MaterialUsageDto(id, ORDER1, taskId, MAT1, "MAT-001", "Pendola", WH1, new BigDecimal("4.000000"),
                 status == StockSyncStatus.CONSUMED ? new BigDecimal("4.000000") : null, "ud", false,
                 status == StockSyncStatus.RESERVED || status == StockSyncStatus.CONSUMED ? UUID.randomUUID() : null, status,
-                status == StockSyncStatus.FAILED ? "Stock service unavailable" : status == StockSyncStatus.REJECTED ? REJECTION : null, null, 2L);
+                status == StockSyncStatus.FAILED ? "Stock service unavailable" : status == StockSyncStatus.REJECTED ? REJECTION : null, null, null, 2L);
+    }
+
+    private static final UUID LINE_OUTPUT = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000058");
+
+    /** Una linea fallida que mando esa peticion al almacen y se quedo sin respuesta. */
+    private static MaterialUsageDto inDoubt(UUID id, StockRequestType request) {
+        return new MaterialUsageDto(id, ORDER1, null, MAT1, "MAT-001", "Pendola", WH1, new BigDecimal("4.000000"), null, "ud", false, null,
+                StockSyncStatus.FAILED, (request == StockRequestType.OUTPUT ? "consume" : "reserve") + ": Read timed out", request, null, 2L);
     }
 
     private void stubMaterials(MaintenanceOrderStatus status, List<MaterialUsageDto> lines) {
@@ -4782,6 +4791,66 @@ class ViewLayerTest {
         Grid<Object> completed = gridWithId("order-materials-grid");
         assertEquals(List.of("material-sync"), materialActions(completed, 0), "terminada la orden, solo queda reintentar");
         assertEquals(List.of(), materialActions(completed, 1), "una reservada solo se comprueba con la orden abierta");
+    }
+
+    /**
+     * Una linea con una peticion al almacen sin respuesta lo dice en su estado, y solo ofrece lo que el
+     * servicio acepta mientras tanto: ni lo previsto ni lo consumido, que viajan en ella, ni quitarla
+     * si es una salida, porque el material quiza ya salio. Sincronizar y admitir consumir de mas, si.
+     */
+    @Test
+    void aLineWaitingForTheWarehouseSaysSoAndOnlyOffersWhatTheServiceAccepts() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        when(orderClient.updateMaterial(eq(ORDER1), eq(LINE_FAILED), any())).thenReturn(inDoubt(LINE_FAILED, StockRequestType.RESERVATION));
+        stubMaterials(MaintenanceOrderStatus.IN_PROGRESS, List.of(inDoubt(LINE_FAILED, StockRequestType.RESERVATION),
+                inDoubt(LINE_OUTPUT, StockRequestType.OUTPUT)));
+        Grid<Object> grid = gridWithId("order-materials-grid");
+
+        Span reserving = (Span) GridKt._getCellComponent(grid, 0, "status");
+        assertEquals("Fallida · Reserva sin respuesta", reserving.getText());
+        assertTrue(reserving.getTitle().orElse("").startsWith("reserve: Read timed out. El almacen no contesto: se reintenta sola cada 5 minutos"),
+                reserving.getTitle().orElse(""));
+        assertEquals("Fallida · Salida sin respuesta", ((Span) GridKt._getCellComponent(grid, 1, "status")).getText());
+        assertEquals(List.of("material-edit", "material-sync", "material-remove"), materialActions(grid, 0),
+                "una reserva sin respuesta se quita: el servicio la confirma para liberarla");
+        assertEquals(List.of("material-edit", "material-sync"), materialActions(grid, 1), "con una salida sin respuesta, el material quiza ya salio");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("material-edit-" + LINE_FAILED)));
+        assertTrue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-planned")).isReadOnly());
+        assertTrue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-consumed")).isReadOnly());
+        assertTrue(LocatorJ._get(Paragraph.class, spec -> spec.withId("material-in-doubt")).getText()
+                .startsWith("Reserva sin respuesta. El almacen no contesto"));
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("material-over-consumption")), true);
+        click(MaterialUsageDialog.SAVE_ID);
+        verify(orderClient).updateMaterial(ORDER1, LINE_FAILED, MergePatch.of(new MaterialUsageUpdateRequest(null, null, true), 2L));
+    }
+
+    /**
+     * El proyecto de almacen de una orden no se ofrece mientras alguna de sus lineas espera respuesta
+     * del almacen: la reserva sin respuesta se repite contra ese proyecto, y el servicio rechaza
+     * cambiarlo. Lo demas se guarda como siempre, y en cuanto el almacen contesta vuelve a ofrecerse.
+     */
+    @Test
+    void theStockProjectOfAnOrderIsNotOfferedWhileOneOfItsLinesWaitsForTheWarehouse() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        OrderDto planned = orderOf(MaintenanceOrderStatus.PLANNED, MaintenanceOrderType.PREVENTIVE);
+        when(orderClient.update(eq(ORDER1), any())).thenReturn(planned);
+        when(orderClient.materials(ORDER1)).thenReturn(List.of(inDoubt(LINE_FAILED, StockRequestType.RESERVATION)),
+                List.of(line(LINE_FAILED, StockSyncStatus.RESERVED, null)));
+        openOrder(planned);
+
+        click("order-edit");
+        ComboBox<ProjectSummaryDto> project = comboWithId("order-stock-project");
+        assertTrue(project.isReadOnly());
+        assertEquals("Hay lineas de material esperando respuesta del almacen: el proyecto no cambia hasta que contesten", project.getHelperText());
+        LocatorJ._setValue(comboWithId("order-priority"), MaintenancePriority.CRITICAL);
+        click(OrderEditorDialog.SAVE_ID);
+        verify(orderClient).update(ORDER1, MergePatch.of(new OrderUpdateRequest(null, null, MaintenancePriority.CRITICAL, null, null, null, null,
+                null, null, null, null, null, null), 3L));
+
+        click("order-edit");
+        assertFalse(this.<ProjectSummaryDto>comboWithId("order-stock-project").isReadOnly(), "el almacen ya contesto");
     }
 
     @Test
