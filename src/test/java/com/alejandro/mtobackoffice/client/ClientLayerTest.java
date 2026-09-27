@@ -53,6 +53,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -140,6 +141,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.maintenance.StockRequestType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.StockSyncStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CloseShiftRequest;
@@ -2162,6 +2164,35 @@ class ClientLayerTest {
                 + "\"plannedQuantity\":4.000000,\"consumedQuantity\":null,\"unit\":\"m\",\"allowOverConsumption\":false,"
                 + "\"stockReservationId\":" + ("RESERVED".equals(status) ? "\"" + RES_ID + "\"" : "null") + ",\"stockSyncStatus\":\"" + status + "\","
                 + "\"stockSyncError\":" + (error == null ? "null" : "\"" + error + "\"") + ",\"audit\":null}";
+    }
+
+    /** La misma linea, con la peticion al almacen que se quedo sin respuesta. */
+    private static String lineJson(String status, String error, String inDoubt) {
+        String line = lineJson(status, error);
+        return line.substring(0, line.length() - 1) + ",\"stockRequestInDoubt\":" + (inDoubt == null ? "null" : "\"" + inDoubt + "\"") + "}";
+    }
+
+    /**
+     * Una linea dice que peticion mando al almacen y se quedo sin respuesta: con una reserva se puede
+     * quitar (el servicio la confirma para liberarla); con una salida, o con una peticion que este
+     * cliente no conoce, no. Sin peticion en duda, todo sigue como antes.
+     */
+    @Test
+    void aLineSaysWhichRequestToStockIsInDoubtAndAnUnknownOneOpensNothing() {
+        String materials = MAINTENANCE + "/orders/" + ORDER_ID + "/materials";
+        server.expect(requestTo(materials)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[" + lineJson("FAILED", "reserve: Read timed out", "RESERVATION") + ","
+                        + lineJson("FAILED", "consume: Read timed out", "OUTPUT") + "," + lineJson("FAILED", "reserve: stock down", "CANCELLATION") + ","
+                        + lineJson("RESERVED", null) + "]", MediaType.APPLICATION_JSON));
+
+        List<MaterialUsageDto> lines = asUser(() -> orderClient.materials(UUID.fromString(ORDER_ID)));
+
+        assertEquals(Arrays.asList(StockRequestType.RESERVATION, StockRequestType.OUTPUT, StockRequestType.UNKNOWN, null),
+                lines.stream().map(MaterialUsageDto::stockRequestInDoubt).toList());
+        assertEquals(List.of(true, true, true, false), lines.stream().map(MaterialUsageDto::isInDoubt).toList());
+        assertEquals(List.of(true, false, false, true), lines.stream().map(MaterialUsageDto::isRemovable).toList());
+        assertEquals(List.of(StockRequestType.RESERVATION, StockRequestType.OUTPUT), StockRequestType.selectable());
+        server.verify();
     }
 
     /**

@@ -345,6 +345,18 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   almacén»): si Almacén liberó su reserva, el servicio pide otra. Lo previsto de una línea reservada no se ofrece: el
   servicio no lo cambia. Un `MAT-001` al completar la orden sugiere sincronizar o, con
   `maintenance-supervise`, completar con `force`.
+- **Una línea con una petición al almacén sin respuesta no cambia lo que viaja en ella.**
+  `stockRequestInDoubt` (`RESERVATION` u `OUTPUT`, enumerado tolerante) es la reserva o la salida
+  que la línea mandó a `mto-stock` y se quedó sin respuesta; el servicio la repite antes de hacer
+  nada más con la línea, la reintenta solo cada 5 minutos y, mientras tanto, rechaza con 409
+  `MAT-001` cambiar lo previsto o lo consumido de la línea, quitarla con una salida en duda (el
+  material quizá ya salió) y cambiar el proyecto de almacén de la orden. Aquí no se ofrece nada de
+  eso: el estado lo dice («Fallida · Reserva sin respuesta», con el motivo y el reintento en el
+  tooltip), el diálogo de la línea deja solo «admite consumir de más», la fila no ofrece «Quitar»
+  con una salida (ni con una petición desconocida), y el editor de la orden, fuera de borrador,
+  lee las líneas y deja el proyecto de solo lectura si alguna está en duda (si no puede leerlas,
+  decide el servicio). Una reserva en duda sí se quita: el servicio la confirma para liberarla, así
+  que la confirmación avisa de que pasa por el almacén aunque la línea no tenga reserva todavía.
 - **Los enumerados que se leen de un servicio toleran lo desconocido.** Son los de
   mantenimiento, los de almacén (`MovementType`, `ReservationStatus`), el del historial
   (`RevisionOperation`) y los de los trabajos (`JobStatus`, `JobType`). Cada uno lleva `UNKNOWN`
@@ -473,7 +485,8 @@ su BOM y su disponibilidad, el historial tipado, el JSON de error de `mto-stock`
 tipo de apunte, un estado de reserva y una operación del historial desconocidos leídos como
 `UNKNOWN`; el
 mantenimiento: la lista de órdenes con sus filtros (enumerado por nombre, fecha ISO, `sort`
-repetido) y un valor desconocido leído como `UNKNOWN`, su JSON de error por alias, el merge-patch
+repetido) y un valor desconocido leído como `UNKNOWN`, la petición en duda de una línea (reserva,
+salida o desconocida, y cuál se puede quitar), su JSON de error por alias, el merge-patch
 (lo cambiado, lo vaciado a `null` y la versión; un campo a vaciar que no existe, rechazado antes de
 llamar; el 409 `CON-001`), activos (búsqueda, alta, `PATCH` con lo cambiado y lo vaciado,
 desactivar), catálogos y equipos enteros,
@@ -555,7 +568,10 @@ leve) y su orden correctiva, o los enlaces a ellos, y sus puntos contestados; de
 resueltos y descartados con sus motivos, los de una orden; las líneas de material con su almacén y
 lo que admite cada una (la reservada se comprueba; la rechazada, con su motivo, se reintenta y dice
 por qué el almacén vuelve a decir que no), el alta desde el almacén, quitar una reservada con su aviso y el almacén
-caído notificado, el `MAT-001` al completar y el proyecto de almacén de la orden; los informes (el
+caído notificado, el `MAT-001` al completar y el proyecto de almacén de la orden, y una línea con
+una petición al almacén sin respuesta (su estado y su tooltip, las cantidades de solo lectura, sin
+«Quitar» con una salida y, con una reserva, avisando de que pasa por el almacén, y el proyecto de la
+orden de solo lectura mientras dure); los informes (el
 avance con sus nombres y porcentaje, el mensual con sus 24 meses, las descargas de punta a punta
 con el `_download` de Karibu, y el parte del turno en su pestaña); el historial de cada ficha y el
 de un activo sin revisiones) y

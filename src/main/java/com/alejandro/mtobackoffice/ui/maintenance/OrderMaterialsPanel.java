@@ -29,8 +29,9 @@ import java.util.function.Supplier;
 
 /**
  * Las lineas de material de una orden y como van con mto-stock (el error o el motivo del rechazo, en
- * el tooltip del estado). Con la orden sin terminar: anadir (write + {@code stock-read}), modificar
- * (write) y quitar (delete; ni consumidas), que libera antes la reserva. Sincronizar (write) reintenta
+ * el tooltip del estado; una peticion al almacen sin respuesta, tambien en el texto). Con la orden sin
+ * terminar: anadir (write + {@code stock-read}), modificar (write) y quitar (delete; ni consumidas ni
+ * con una salida sin respuesta, que quiza ya salio), que libera antes la reserva. Sincronizar (write) reintenta
  * con el almacen una linea fallida o rechazada, o una sin pedir fuera de borrador, y en una orden
  * abierta comprueba una reservada, por si Almacen libero su reserva. Si el almacen sigue caido, el
  * servicio responde 503 {@code STK-503}; si dice que no, 409 {@code STK-001} o 422 {@code STK-422};
@@ -77,10 +78,13 @@ class OrderMaterialsPanel extends LazyPanel {
     }
 
     private Span status(MaterialUsageDto line) {
-        Span status = new Span(line.stockSyncStatus() == null ? "" : line.stockSyncStatus().label());
+        String label = line.stockSyncStatus() == null ? "" : line.stockSyncStatus().label();
+        Span status = new Span(line.isInDoubt() ? label + " · " + line.stockRequestInDoubt().label() : label);
         status.setId("material-status-" + line.id());
-        if (line.stockSyncError() != null && !line.stockSyncError().isBlank()) {
-            status.setTitle(line.stockSyncError());
+        String reason = line.stockSyncError() == null || line.stockSyncError().isBlank() ? null : line.stockSyncError();
+        String title = line.isInDoubt() ? (reason == null ? "" : reason + ". ") + MaintenanceFormats.IN_DOUBT_HINT : reason;
+        if (title != null) {
+            status.setTitle(title);
             status.getElement().getThemeList().add("badge error");
         }
         return status;
@@ -104,16 +108,25 @@ class OrderMaterialsPanel extends LazyPanel {
             actions.add(MaintenanceUi.rowButton("material-sync-" + line.id(), VaadinIcon.REFRESH,
                     checkable ? "Comprobar la reserva en el almacen" : "Sincronizar con el almacen", click -> sync(line)));
         }
-        if (canDelete && orderOpen && status != StockSyncStatus.CONSUMED) {
+        if (canDelete && orderOpen && status != StockSyncStatus.CONSUMED && line.isRemovable()) {
             Button remove = MaintenanceUi.rowButton("material-remove-" + line.id(), VaadinIcon.TRASH, "Quitar", click -> MaintenanceUi.confirm(
-                    "Quitar " + line.materialLabel(),
-                    line.isReserved() ? "Se libera antes su reserva en el almacen, y la linea desaparece (queda en su historial)."
-                            : "La linea desaparece (queda en su historial).",
-                    "Quitar", () -> remove(line)));
+                    "Quitar " + line.materialLabel(), removal(line), "Quitar", () -> remove(line)));
             remove.addThemeVariants(ButtonVariant.LUMO_ERROR);
             actions.add(remove);
         }
         return actions;
+    }
+
+    /**
+     * Lo que pasa en el almacen al quitar la linea: el servicio libera antes lo que retenga alli, y una
+     * reserva sin respuesta la confirma primero, asi que tambien pasa por el almacen aunque no tenga id.
+     */
+    private static String removal(MaterialUsageDto line) {
+        if (line.isInDoubt()) {
+            return "Antes se confirma con el almacen la reserva que se quedo sin respuesta y se libera; la linea desaparece (queda en su historial).";
+        }
+        return line.isReserved() ? "Se libera antes su reserva en el almacen, y la linea desaparece (queda en su historial)."
+                : "La linea desaparece (queda en su historial).";
     }
 
     private void sync(MaterialUsageDto line) {

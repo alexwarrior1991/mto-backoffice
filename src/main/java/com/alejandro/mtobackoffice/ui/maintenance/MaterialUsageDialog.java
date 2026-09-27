@@ -29,11 +29,13 @@ import java.util.Objects;
  * Registrar o modificar una linea de material. El alta elige material y almacen en mto-stock (pide
  * {@code stock-read}) y, si se quiere, la tarea; fuera de borrador el servicio la reserva al
  * momento. La modificacion manda solo lo cambiado; lo previsto de una linea reservada no se ofrece,
- * porque el servicio no lo cambia: se quita y se registra otra vez.
+ * porque el servicio no lo cambia: se quita y se registra otra vez. Con una peticion al almacen sin
+ * respuesta no se ofrecen ni lo previsto ni lo consumido, que viajan en ella; lo demas si.
  */
 public class MaterialUsageDialog extends Dialog {
 
     public static final String SAVE_ID = "material-save";
+    static final String IN_DOUBT_ID = "material-in-doubt";
 
     public MaterialUsageDialog(OrderDto order, MaterialUsageDto existing, List<TaskDto> openTasks, MaintenanceClients clients, Runnable saved) {
         boolean creating = existing == null;
@@ -68,7 +70,14 @@ public class MaterialUsageDialog extends Dialog {
             planned.setValue(existing.plannedQuantity());
             consumed.setValue(existing.consumedQuantity());
             overConsumption.setValue(Boolean.TRUE.equals(existing.allowOverConsumption()));
-            if (existing.isReserved()) {
+            if (existing.isInDoubt()) {
+                // Viajan en la peticion sin respuesta, que el servicio repite tal cual: los rechaza con 409 MAT-001.
+                planned.setReadOnly(true);
+                consumed.setReadOnly(true);
+                Paragraph inDoubt = new Paragraph(existing.stockRequestInDoubt().label() + ". " + MaintenanceFormats.IN_DOUBT_HINT);
+                inDoubt.setId(IN_DOUBT_ID);
+                add(inDoubt);
+            } else if (existing.isReserved()) {
                 planned.setReadOnly(true);
                 planned.setHelperText("Tiene reserva en el almacen: para cambiar lo previsto, quita la linea y registrala de nuevo");
             }

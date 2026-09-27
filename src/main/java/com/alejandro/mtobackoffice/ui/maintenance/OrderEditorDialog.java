@@ -1,8 +1,10 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
+import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderUpdateRequest;
@@ -30,7 +32,8 @@ import java.util.function.Consumer;
  * activos); despues ya no cambia. En borrador y planificada se modifica todo lo demas; asignada o
  * en curso, solo descripcion, prioridad y notas de cierre, porque es lo que el servicio admite (el
  * resto seria 409 {@code TRN-001}). Se manda solo lo que cambio, y lo que tenia valor no se deja
- * vaciar: para el servicio {@code null} es «no tocar».
+ * vaciar: para el servicio {@code null} es «no tocar». El proyecto de almacen no se ofrece mientras
+ * alguna linea de material espera respuesta del almacen (409 {@code MAT-001}).
  */
 public class OrderEditorDialog extends Dialog {
 
@@ -97,6 +100,11 @@ public class OrderEditorDialog extends Dialog {
                 ComboBox<ProjectSummaryDto> project = StockPickers.project("Proyecto de almacen", clients.projects());
                 project.setId("order-stock-project");
                 project.setHelperText("Vacio: el del paquete de ejecucion, al planificar");
+                if (!creating && hasMaterialsInDoubt(existing, clients)) {
+                    // Una reserva sin respuesta se repite contra el mismo proyecto: el servicio rechaza cambiarlo (409 MAT-001).
+                    project.setReadOnly(true);
+                    project.setHelperText("Hay lineas de material esperando respuesta del almacen: el proyecto no cambia hasta que contesten");
+                }
                 binder.forField(project).bind("stockProjectId");
                 layout.add(project);
             }
@@ -118,6 +126,21 @@ public class OrderEditorDialog extends Dialog {
         save.setId(SAVE_ID);
         save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         getFooter().add(new Button("Cancelar", click -> close()), save);
+    }
+
+    /**
+     * Si alguna linea de material de la orden tiene una peticion al almacen sin respuesta. En borrador
+     * no se ha pedido nada al almacen; si las lineas no se pueden leer, decide el servicio al guardar.
+     */
+    private static boolean hasMaterialsInDoubt(OrderDto order, MaintenanceClients clients) {
+        if (order.status() == MaintenanceOrderStatus.DRAFT) {
+            return false;
+        }
+        try {
+            return clients.orders().materials(order.id()).stream().anyMatch(MaterialUsageDto::isInDoubt);
+        } catch (BackofficeApiException failure) {
+            return false;
+        }
     }
 
     private void save(OrderDto existing, boolean full, MaintenanceClients clients, Consumer<OrderDto> saved) {

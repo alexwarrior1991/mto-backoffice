@@ -10,6 +10,13 @@ import java.time.LocalDate;
 /** Como se pintan KP, avances y fechas de mantenimiento: lo comun a todos los modulos, en {@link Formats}. */
 public final class MaintenanceFormats {
 
+    /**
+     * Lo que se dice de una linea de material con una peticion al almacen sin respuesta: el servicio la
+     * reintenta solo, y mientras tanto rechaza cambiar lo que viaja en ella.
+     */
+    public static final String IN_DOUBT_HINT = "El almacen no contesto: se reintenta sola cada 5 minutos, y hasta que conteste "
+            + "no cambian lo previsto, lo consumido ni el proyecto de almacen de la orden.";
+
     private MaintenanceFormats() {
     }
 
