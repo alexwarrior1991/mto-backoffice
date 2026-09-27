@@ -110,14 +110,23 @@ class OrderMaterialsPanel extends LazyPanel {
         }
         if (canDelete && orderOpen && status != StockSyncStatus.CONSUMED && line.isRemovable()) {
             Button remove = MaintenanceUi.rowButton("material-remove-" + line.id(), VaadinIcon.TRASH, "Quitar", click -> MaintenanceUi.confirm(
-                    "Quitar " + line.materialLabel(),
-                    line.isReserved() ? "Se libera antes su reserva en el almacen, y la linea desaparece (queda en su historial)."
-                            : "La linea desaparece (queda en su historial).",
-                    "Quitar", () -> remove(line)));
+                    "Quitar " + line.materialLabel(), removal(line), "Quitar", () -> remove(line)));
             remove.addThemeVariants(ButtonVariant.LUMO_ERROR);
             actions.add(remove);
         }
         return actions;
+    }
+
+    /**
+     * Lo que pasa en el almacen al quitar la linea: el servicio libera antes lo que retenga alli, y una
+     * reserva sin respuesta la confirma primero, asi que tambien pasa por el almacen aunque no tenga id.
+     */
+    private static String removal(MaterialUsageDto line) {
+        if (line.isInDoubt()) {
+            return "Antes se confirma con el almacen la reserva que se quedo sin respuesta y se libera; la linea desaparece (queda en su historial).";
+        }
+        return line.isReserved() ? "Se libera antes su reserva en el almacen, y la linea desaparece (queda en su historial)."
+                : "La linea desaparece (queda en su historial).";
     }
 
     private void sync(MaterialUsageDto line) {

@@ -4796,7 +4796,8 @@ class ViewLayerTest {
     /**
      * Una linea con una peticion al almacen sin respuesta lo dice en su estado, y solo ofrece lo que el
      * servicio acepta mientras tanto: ni lo previsto ni lo consumido, que viajan en ella, ni quitarla
-     * si es una salida, porque el material quiza ya salio. Sincronizar y admitir consumir de mas, si.
+     * si es una salida, porque el material quiza ya salio. Sincronizar y admitir consumir de mas, si, y
+     * quitar una reserva, avisando de que el servicio pasa antes por el almacen aunque no tenga id.
      */
     @Test
     void aLineWaitingForTheWarehouseSaysSoAndOnlyOffersWhatTheServiceAccepts() {
@@ -4823,6 +4824,13 @@ class ViewLayerTest {
         LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("material-over-consumption")), true);
         click(MaterialUsageDialog.SAVE_ID);
         verify(orderClient).updateMaterial(ORDER1, LINE_FAILED, MergePatch.of(new MaterialUsageUpdateRequest(null, null, true), 2L));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("material-remove-" + LINE_FAILED)));
+        ConfirmDialog confirm = LocatorJ._get(ConfirmDialog.class);
+        assertTrue(confirm.getElement().getProperty("message", "").startsWith("Antes se confirma con el almacen la reserva que se quedo sin respuesta"),
+                "sin id de reserva, quitarla tambien pasa por el almacen");
+        ConfirmDialogKt._fireConfirm(confirm);
+        verify(orderClient).removeMaterial(ORDER1, LINE_FAILED);
     }
 
     /**
