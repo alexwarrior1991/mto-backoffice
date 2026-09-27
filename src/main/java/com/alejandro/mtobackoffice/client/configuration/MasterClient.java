@@ -32,7 +32,7 @@ public interface MasterClient<D extends MasterDto> {
 
     @PostExchange("/filter")
     PageResponse<D> filter(@RequestParam("page") int page, @RequestParam("size") int size,
-                           @RequestParam("sort") List<String> sort, @RequestBody Map<String, Object> filter);
+                           @RequestParam(value = "sort", required = false) List<String> sort, @RequestBody Map<String, Object> filter);
 
     @GetExchange("/{id}")
     D findById(@PathVariable("id") Long id);

@@ -418,7 +418,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (por Jackson, para que lleve los `extras`), para que cancelar o un rechazo del servicio no
   cambien lo que enseña el Grid. `profiles.disconnector` (1:1, `null` = desvincular) no se toca.
 - **Las listas de maestros se paginan en el servidor.** `MasterView` pide cada página a
-  `POST /{recurso}/filter` con `page`, `size`, `sort=campo,asc` y `searchText`; el recuento es
+  `POST /{recurso}/filter` con `page`, `size`, `sort=campo,asc` y `searchText`; sin orden elegido
+  `sort` no viaja y ordena el servicio (por eso es opcional en `MasterClient.filter`); el recuento es
   `totalElements`. Nada de `findAll` en memoria como en los catálogos: los perfiles son miles.
   Las filas de paquetes, estaciones y vías llegan sin hijos y los filtros booleanos solo filtran
   si vienen; las dos cosas se arreglaron en `mto-configuration` para esta fase, no aquí.
@@ -468,7 +469,7 @@ Una clase por capa; se añaden métodos, no clases: `ClientLayerTest` (interface
 de página, `problem+json` de configuration, 401/403 y 503 del gateway, cuerpo no JSON; los
 catálogos: el `versionNumber` leído en el `PUT` y en el lote, y los dos 409 de configuration
 (`CON-001` y `BUS-002`) distinguidos por su código; los maestros: resolución del genérico,
-parámetros de página y orden del `/filter`, `extras` e hijos a
+parámetros de página y orden del `/filter` (sin orden no viaja `sort`, como en el recuento), `extras` e hijos a
 `null` en un `PUT`, referencias a catálogo como `{id, code}`, las ménsulas tipadas con su brazo y
 el seccionador 1:1 en un `PUT`, el esquema de una vía con sus records anidados; los trabajos: la importación como parte multipart con `dryRun` en
 la query, el 429 con el trabajo rechazado y el `Retry-After`, la lista paginada con sus filtros,
