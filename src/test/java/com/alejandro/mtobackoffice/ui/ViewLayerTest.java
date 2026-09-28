@@ -763,9 +763,11 @@ class ViewLayerTest {
 
         List<ListItem> audiences = LocatorJ._find(ListItem.class).stream()
                 .filter(item -> item.getElement().hasAttribute("data-audience")).toList();
-        assertEquals(5, audiences.size());
+        assertEquals(6, audiences.size());
         long present = audiences.stream().filter(item -> "true".equals(item.getElement().getAttribute("data-present"))).count();
         assertEquals(4, present);
+        assertTrue(audiences.stream().anyMatch(item -> "mto-notification-api".equals(item.getElement().getAttribute("data-audience"))
+                && "false".equals(item.getElement().getAttribute("data-present"))));
         assertTrue(audiences.stream().anyMatch(item -> "mto-gateway-api".equals(item.getElement().getAttribute("data-audience"))
                 && "false".equals(item.getElement().getAttribute("data-present"))));
         LocatorJ._get(ListItem.class, spec -> spec.withText("ROLE_REALM_MTO_ADMIN"));

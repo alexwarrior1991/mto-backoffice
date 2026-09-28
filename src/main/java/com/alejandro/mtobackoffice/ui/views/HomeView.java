@@ -20,7 +20,7 @@ import java.util.List;
 
 /**
  * Pantalla de inicio: quien ha entrado y con que. El panel de diagnostico existe para cerrar el
- * circuito completo (realm → token → audiencias → gateway → servicio) a simple vista: las cinco
+ * circuito completo (realm → token → audiencias → gateway → servicio) a simple vista: las seis
  * APIs tienen que estar en {@code aud} y los permisos tienen que ser roles de cliente
  * ({@code ROLE_CONFIG_*}), nunca solo perfiles de realm ({@code ROLE_REALM_*}).
  */
@@ -32,7 +32,8 @@ public class HomeView extends VerticalLayout {
 
     /** Las audiencias que un solo token tiene que llevar para valer en todo el dominio. */
     static final List<String> EXPECTED_AUDIENCES = List.of(
-            "mto-configuration-api", "mto-stock-api", "mto-maintenance-api", "mto-users-api", "mto-gateway-api");
+            "mto-configuration-api", "mto-stock-api", "mto-maintenance-api", "mto-users-api", "mto-notification-api",
+            "mto-gateway-api");
 
     public HomeView(AuthenticationContext authenticationContext) {
         add(new H2("Inicio"));

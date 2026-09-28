@@ -318,8 +318,9 @@ El módulo de mantenimiento necesita `mto-maintenance` y `mto-stock` levantados 
 | `mantenimiento.tecnico` | `mto-maintenance-technician` | Mantenimiento: órdenes, tareas, turnos, inspecciones, defectos y material, sin cancelar, `force`, quitar ni resolver |
 | `mantenimiento.responsable` | `mto-maintenance-manager` | el módulo Mantenimiento entero (fase 8) |
 
-La pantalla **Inicio** muestra el principal, las autoridades y las cinco audiencias del access token
-(`mto-configuration-api`, `mto-stock-api`, `mto-maintenance-api`, `mto-users-api`, `mto-gateway-api`):
+La pantalla **Inicio** muestra el principal, las autoridades y las seis audiencias del access token
+(`mto-configuration-api`, `mto-stock-api`, `mto-maintenance-api`, `mto-users-api`, `mto-notification-api`,
+`mto-gateway-api`):
 si falta una, el servicio correspondiente responderá 401 aunque la persona tenga permisos.
 
 Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el que fija
@@ -341,7 +342,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 ## Seguridad
 
 - Cliente **confidencial** `mto-backoffice` (Authorization Code con secreto) declarado en
-  `keycloak/mto-backoffice-partial-import.json`, con los mismos cinco audience mapper que
+  `keycloak/mto-backoffice-partial-import.json`, con los mismos seis audience mapper que
   `mto-frontend`, que queda intacto y reservado a una futura SPA. Detalle en `keycloak/README.md`.
 - Los permisos son roles de **cliente** de cuatro clientes: `mto-configuration-api` (`config-read`,
   `config-write`, `config-delete`, `config-import`, `lov-manage`, `config-audit`) para las
