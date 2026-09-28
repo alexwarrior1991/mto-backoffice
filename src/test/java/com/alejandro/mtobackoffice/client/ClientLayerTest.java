@@ -601,6 +601,28 @@ class ClientLayerTest {
         server.verify();
     }
 
+    /**
+     * Sin orden no viaja {@code sort}, y el servicio aplica el suyo. Es lo que pide el recuento de cada
+     * lista, y la primera pagina mientras nadie ordena por una columna. Con {@code sort} obligatorio, la
+     * interfaz HTTP rechazaba la lista vacia antes de llamar ({@code Missing request parameter value
+     * 'sort'}), y las seis listas de Infraestructura decian «Error interno» al abrirse.
+     */
+    @Test
+    void aMasterListWithoutSortOrderGoesOutWithoutTheSortParameter() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/tracks/filter?page=0&size=1"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("""
+                        {"content":[{"id":98,"name":"TRACK 3 TLV SAVIDOR","executionPackageId":8,"stationIds":[7],
+                                     "profiles":null,"versionNumber":1}],
+                         "page":{"size":1,"number":0,"totalElements":176,"totalPages":176}}
+                        """, MediaType.APPLICATION_JSON));
+
+        PageResponse<TrackDto> page = asUser(() -> trackClient.filter(0, 1, MasterFilters.sort(List.of()), MasterFilters.of()));
+
+        assertEquals(176L, page.page().totalElements());
+        server.verify();
+    }
+
     /** README_API §4: lee, modifica sobre lo leido y devuelvelo entero; los hijos que no se tocan van a null. */
     @Test
     void updatingAMasterSendsBackWhatWasReadWithItsUnknownFieldsAndItsChildrenLeftAlone() {
