@@ -181,7 +181,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   pide sus datos al abrirse; `Downloads`, el fichero de un servicio servido a través de esta
   aplicación con `DownloadHandler`; `Formats`, cantidades y fechas).
 - `configuration/vaadin` — `BackofficeSystemMessages`, los mensajes de sistema de Vaadin en
-  castellano y con el aviso de sesión caducada apagado (recarga → login → SSO).
+  castellano y con el aviso de sesión caducada apagado (recarga → login → SSO). El tema no vive
+  aquí sino en `MtoBackofficeApplication`, el `AppShellConfigurator`: `@StyleSheet(Lumo.STYLESHEET)`
+  y `@StyleSheet(Lumo.UTILITY_STYLESHEET)`. En Vaadin 25 un shell sin ellos deja la aplicación con
+  la letra y los colores del navegador, y las clases de `LumoUtility` sin efecto.
 
 ### Reglas que no se rompen
 
@@ -578,4 +581,5 @@ con el `_download` de Karibu, y el parte del turno en su pestaña); el historial
 de un activo sin revisiones) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway, con los clientes de
 cada servicio y los cuatro clientes cuyos roles son permisos; redirección al login; sonda de
-salud; ausencia de artefactos comerciales). Todo corre en la JVM sin Docker.
+salud; ausencia de artefactos comerciales; las dos hojas de Lumo en el shell). Todo corre en la JVM
+sin Docker.
