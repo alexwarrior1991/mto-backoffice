@@ -435,8 +435,11 @@ Una clase por capa: `ClientLayerTest` (`MockRestServiceServer`), `SecurityLayerT
 
 En Vaadin 25 no hay perfil `production`: `./mvnw package` compila el frontend de producción
 (`build-frontend` en `prepare-package`) y `vaadin-dev`, la herramienta de desarrollo, es `optional`
-y no entra en el jar. `Dockerfile` construye esa imagen (la etapa de build no es Alpine porque el
-Node que descarga el plugin necesita glibc) y `compose.yaml` la arranca contra `mto-platform`:
+y no entra en el jar. El tema tampoco se carga solo: `MtoBackofficeApplication` declara Lumo y sus
+clases utilitarias con `@StyleSheet(Lumo.STYLESHEET)` y `@StyleSheet(Lumo.UTILITY_STYLESHEET)`, y
+sin ellas la aplicación sale con la letra y los colores del navegador. `Dockerfile` construye esa
+imagen (la etapa de build no es Alpine porque el Node que descarga el plugin necesita glibc) y
+`compose.yaml` la arranca contra `mto-platform`:
 
 ```bash
 cp .env.example .env

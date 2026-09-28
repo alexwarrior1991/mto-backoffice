@@ -18,6 +18,8 @@ import com.alejandro.mtobackoffice.client.stock.WarehouseClient;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.configuration.security.KeycloakProperties;
 import com.alejandro.mtobackoffice.ui.maintenance.MaintenanceClients;
+import com.vaadin.flow.component.dependency.StyleSheet;
+import com.vaadin.flow.theme.lumo.Lumo;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,6 +35,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.util.ClassUtils;
 
+import java.util.Arrays;
 import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
@@ -109,6 +112,16 @@ class MtoBackofficeApplicationTests {
     @Test
     void healthProbeIsOpenWithoutAToken() throws Exception {
         mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
+    }
+
+    /**
+     * En Vaadin 25 el tema no se carga solo: sin estas dos hojas en el shell la aplicacion sale con
+     * la letra y los colores del navegador, y las clases de LumoUtility de las vistas no pintan nada.
+     */
+    @Test
+    void theAppShellLoadsLumoAndItsUtilityClasses() {
+        assertEquals(List.of(Lumo.STYLESHEET, Lumo.UTILITY_STYLESHEET),
+                Arrays.stream(MtoBackofficeApplication.class.getAnnotationsByType(StyleSheet.class)).map(StyleSheet::value).toList());
     }
 
     /** Solo componentes Apache 2.0: ningun artefacto comercial de Vaadin en el classpath. */
