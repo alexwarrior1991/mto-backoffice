@@ -21,7 +21,7 @@ Séptimo repositorio del dominio, hermano e independiente de
 [`mto-maintenance`](../mto-maintenance), [`mto-users`](../mto-users) y
 [`mto-gateway`](../mto-gateway); la infraestructura local es de [`mto-platform`](../mto-platform).
 
-## Estado: fase 8
+## Estado: fase 9
 
 - **Fase 0**: circuito completo con lo mínimo. Cliente `mto-backoffice` en el realm, login OIDC,
   marco con menú filtrado por roles y la pantalla de inicio con el diagnóstico del token.
@@ -218,6 +218,24 @@ Séptimo repositorio del dominio, hermano e independiente de
   de las máquinas de estado del servicio para no ofrecer lo que va a fallar), y quien decide es el
   servicio; si otra persona cambió el estado entre medias, llega su `TRN-001` y se notifica.
 
+- **Fase 9**: las **notificaciones y el registro de actividad** sobre `mto-notification`. La
+  **campana** de la barra, para quien tiene `notification-inbox` (todos los perfiles del dominio),
+  enseña cuántas notificaciones tiene la persona sin leer (`GET /inbox/unread-count`, acotado:
+  «100+»), se refresca cada 30 s desde el hilo compartido con `@Push` y abre la **bandeja**
+  (`notificaciones`): la lista paginada y filtrada en el servidor, que abre con las no leídas
+  (el estado de lectura es de cada persona y el servicio no ordena por él); abrir una la marca como
+  leída y sigue su enlace, que es una ruta de esta aplicación puesta por la regla que la creó
+  (`/mantenimiento/ordenes/{id}`, `/actividad?category=SYSTEM`...), y «Marcar todas como leídas»
+  va hasta la más reciente visible, como hace el servicio. El **registro** (`actividad`, con
+  `notification-activity-read`) lista todo lo que pasa en el dominio salvo los accesos, con los
+  filtros del servicio (categoría, tipo, quién, sobre qué, gravedad, origen, fechas, y los eventos
+  fundidos solo si se piden) y el detalle de cada línea con lo que la fuente publicó; los
+  **accesos** (`actividad/accesos`, con `notification-access-read`, que no viene con el registro
+  porque llevan usuario e IP) tienen su pantalla, y los enlaces de las reglas llegan a las dos con
+  sus filtros en la URL. Nada se calcula aquí: a quién va cada notificación lo resuelve el servicio
+  con el token, y un valor nuevo del servicio (una categoría, una gravedad, un resultado) se lee
+  como desconocido en vez de romper la pantalla.
+
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|
 | Exportar perfiles, consultar, descargar | `config-read` |
@@ -280,6 +298,15 @@ Las pantallas de mantenimiento (fase 8) siguen los permisos de `mto-maintenance-
 Los tres perfiles de mantenimiento del realm llevan `config-read` y `stock-read`, así que quien los
 tiene ve también Infraestructura, Catálogos, Trabajos y Almacén, en lectura.
 
+Las pantallas de notificaciones (fase 9) siguen los permisos de `mto-notification-api`, donde el
+permiso lo decide el recurso y ninguno implica otro:
+
+| Acción en notificaciones | Roles |
+|---|---|
+| La campana y la bandeja: ver, abrir y marcar como leídas | `notification-inbox` (lo llevan todos los perfiles del dominio) |
+| El registro de actividad y el detalle de cada línea (también desde la bandeja) | `notification-activity-read` |
+| Los accesos, con usuario e IP | `notification-access-read` (no viene con el registro) |
+
 Esconder un botón es cortesía: la guarda real es `@RolesAllowed` en la vista y el 403 del servicio.
 Con los usuarios de desarrollo, `config.responsable` (`mto-admin`) lo ve todo; `config.editor`
 (`mto-editor`) ve los catálogos pero no puede tocarlos: le falta `lov-manage`, a propósito.
@@ -317,6 +344,16 @@ El módulo de mantenimiento necesita `mto-maintenance` y `mto-stock` levantados 
 | `mantenimiento.lector` | `mto-maintenance-viewer` | Mantenimiento en solo lectura (con los informes y sus ficheros); configuración y almacén en lectura |
 | `mantenimiento.tecnico` | `mto-maintenance-technician` | Mantenimiento: órdenes, tareas, turnos, inspecciones, defectos y material, sin cancelar, `force`, quitar ni resolver |
 | `mantenimiento.responsable` | `mto-maintenance-manager` | el módulo Mantenimiento entero (fase 8) |
+| `notificacion.lector` | `mto-notification-viewer` | la bandeja y el registro de actividad; nada más |
+| `notificacion.auditor` | `mto-notification-auditor` | además, los accesos |
+| `notificacion.responsable` | `mto-notification-admin` | todo lo de notificaciones (la administración del servicio no tiene pantalla todavía) |
+
+Todos los perfiles del dominio llevan `notification-inbox`, así que cualquier usuario de desarrollo
+ve la campana y su bandeja. El registro lo ven los responsables de cada módulo
+(`config.responsable`, `usuarios.responsable`, `almacen.responsable`, `mantenimiento.responsable`),
+`config.auditor` (`mto-auditor`) y `config.ops` (`mto-ops`); los accesos, `config.auditor`,
+`usuarios.responsable` y `notificacion.auditor`. Qué perfil concede cada rol lo declara cada
+servicio en su parcial del realm.
 
 La pantalla **Inicio** muestra el principal, las autoridades y las seis audiencias del access token
 (`mto-configuration-api`, `mto-stock-api`, `mto-maintenance-api`, `mto-users-api`, `mto-notification-api`,
@@ -332,7 +369,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 | `KEYCLOAK_ISSUER_URI` | Realm que emite los tokens | `http://auth.mto.local:8082/realms/mto` |
 | `KEYCLOAK_CLIENT_ID` | Cliente confidencial de esta aplicación | `mto-backoffice` |
 | `KEYCLOAK_CLIENT_SECRET` | Su secreto | vacío (`dev`: el local; `prod`: obligatorio) |
-| `KEYCLOAK_ROLES_CLIENT_IDS` | Clientes cuyos roles del access token son los permisos (lista por comas) | `mto-configuration-api,mto-users-api,mto-stock-api,mto-maintenance-api` |
+| `KEYCLOAK_ROLES_CLIENT_IDS` | Clientes cuyos roles del access token son los permisos (lista por comas) | `mto-configuration-api,mto-users-api,mto-stock-api,mto-maintenance-api,mto-notification-api` |
 | `MTO_GATEWAY_URL` | El gateway | `http://localhost:8090` |
 | `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP | `2s` / `15s` |
 
@@ -344,15 +381,17 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 - Cliente **confidencial** `mto-backoffice` (Authorization Code con secreto) declarado en
   `keycloak/mto-backoffice-partial-import.json`, con los mismos seis audience mapper que
   `mto-frontend`, que queda intacto y reservado a una futura SPA. Detalle en `keycloak/README.md`.
-- Los permisos son roles de **cliente** de cuatro clientes: `mto-configuration-api` (`config-read`,
+- Los permisos son roles de **cliente** de cinco clientes: `mto-configuration-api` (`config-read`,
   `config-write`, `config-delete`, `config-import`, `lov-manage`, `config-audit`) para las
   pantallas de configuración, `mto-users-api` (`users-read`, `users-write`, `users-delete`,
   `users-roles-write`, `users-password-reset`, `users-profiles-write`, `users-sessions-write`,
   `users-credentials-write`) para el módulo de usuarios, `mto-stock-api` (`stock-read`,
-  `stock-write`, `stock-delete`, `stock-adjust`) para el de almacén y `mto-maintenance-api`
+  `stock-write`, `stock-delete`, `stock-adjust`) para el de almacén, `mto-maintenance-api`
   (`maintenance-read`, `maintenance-write`, `maintenance-delete`, `maintenance-supervise`) para el
-  de mantenimiento. Llegan como `ROLE_CONFIG_READ`, `ROLE_USERS_READ`, `ROLE_STOCK_READ`,
-  `ROLE_MAINTENANCE_READ`... y se comprueban con `@RolesAllowed` en cada vista; cada
+  de mantenimiento y `mto-notification-api` (`notification-inbox`, `notification-activity-read`,
+  `notification-access-read`, `notification-admin`) para la campana, la bandeja, el registro y los
+  accesos. Llegan como `ROLE_CONFIG_READ`, `ROLE_USERS_READ`, `ROLE_STOCK_READ`,
+  `ROLE_MAINTENANCE_READ`, `ROLE_NOTIFICATION_INBOX`... y se comprueban con `@RolesAllowed` en cada vista; cada
   uno sale además cualificado por su cliente (`ROLE_CLIENT_MTO_USERS_API_USERS_READ`). Que un rol
   de un cliente no se confunda con uno de otro depende de que sus nombres no se solapen, cosa que
   `SecurityLayerTest` comprueba. Los roles de realm (`mto-admin`, `mto-users-manager`...) llegan
@@ -360,7 +399,8 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 - Keycloak pone los roles en el **access token**, no en el ID token; por eso `BackofficeOidcUserService`
   verifica el access token y saca de él las autoridades. Sin eso, ninguna vista vería un rol.
 - Los access token duran cinco minutos. `UserTokenProvider` los refresca desde cualquier hilo
-  (también fuera de una petición HTTP: `UI.access()`, push, sondeo de trabajos), pidiéndolos por el
+  (también fuera de una petición HTTP: `UI.access()`, push, el sondeo de trabajos y el de la
+  campana), pidiéndolos por el
   nombre del principal. Cuando el refresh ya no vale (la sesión SSO ha caducado), la aplicación lo
   dice y ofrece volver a entrar.
 - «Salir» cierra también la sesión de Keycloak (`end_session_endpoint`); volver a entrar pide

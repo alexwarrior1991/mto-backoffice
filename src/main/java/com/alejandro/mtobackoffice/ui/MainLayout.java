@@ -1,10 +1,15 @@
 package com.alejandro.mtobackoffice.ui;
 
 import com.alejandro.mtobackoffice.client.configuration.LovResource;
+import com.alejandro.mtobackoffice.client.notification.NotificationClient;
+import com.alejandro.mtobackoffice.configuration.security.NotificationRoles;
 import com.alejandro.mtobackoffice.ui.lov.LovCrudView;
 import com.alejandro.mtobackoffice.ui.maintenance.MaintenanceRoutes;
 import com.alejandro.mtobackoffice.ui.master.MasterView;
+import com.alejandro.mtobackoffice.ui.notification.InboxBell;
+import com.alejandro.mtobackoffice.ui.notification.NotificationRoutes;
 import com.alejandro.mtobackoffice.ui.stock.StockRoutes;
+import com.alejandro.mtobackoffice.ui.support.SharedPolling;
 import com.alejandro.mtobackoffice.ui.users.UsersView;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.applayout.AppLayout;
@@ -30,13 +35,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Marco de todas las pantallas: barra con la persona y «Salir», y menu lateral con las vistas
- * anotadas con {@code @Menu} <b>a las que esta persona puede entrar</b>.
+ * Marco de todas las pantallas: barra con la persona, la campana de notificaciones y «Salir», y
+ * menu lateral con las vistas anotadas con {@code @Menu} <b>a las que esta persona puede entrar</b>.
  *
  * <p>El filtro del menu es el mismo que aplica el control de navegacion ({@code @RolesAllowed} de
  * cada vista, comprobado por {@link AccessAnnotationChecker}): una pantalla que el servicio
  * respondera con 403 no se ofrece. Es solo cortesia: la guarda real esta en la vista y en el
  * servicio.</p>
+ *
+ * <p>La campana ({@link InboxBell}) solo la tiene quien puede leer su bandeja
+ * ({@code notification-inbox}): cuantas notificaciones tiene sin leer, refrescadas desde el hilo
+ * compartido mientras hay una pantalla abierta, y el camino a la bandeja.</p>
  *
  * <p>{@code @PermitAll} porque Vaadin comprueba tambien el layout padre: basta con haber entrado,
  * y son las vistas las que piden un rol concreto.</p>
@@ -46,10 +55,15 @@ public class MainLayout extends AppLayout {
 
     private final AuthenticationContext authenticationContext;
     private final AccessAnnotationChecker accessChecker;
+    private final NotificationClient notifications;
+    private final SharedPolling polling;
 
-    public MainLayout(AuthenticationContext authenticationContext, AccessAnnotationChecker accessChecker) {
+    public MainLayout(AuthenticationContext authenticationContext, AccessAnnotationChecker accessChecker,
+                      NotificationClient notifications, SharedPolling polling) {
         this.authenticationContext = authenticationContext;
         this.accessChecker = accessChecker;
+        this.notifications = notifications;
+        this.polling = polling;
         setPrimarySection(Section.DRAWER);
         addToNavbar(header());
         addToDrawer(menu());
@@ -65,7 +79,11 @@ public class MainLayout extends AppLayout {
         Button logout = new Button("Salir", new Icon("vaadin", "sign-out"), event -> authenticationContext.logout());
         logout.addThemeVariants(ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SMALL);
 
-        HorizontalLayout header = new HorizontalLayout(new DrawerToggle(), title, user, logout);
+        HorizontalLayout header = new HorizontalLayout(new DrawerToggle(), title, user);
+        if (authenticationContext.hasRole(NotificationRoles.NOTIFICATION_INBOX)) {
+            header.add(new InboxBell(notifications, polling, authenticationContext.getPrincipalName().orElse(null)));
+        }
+        header.add(logout);
         header.setWidthFull();
         header.setAlignItems(FlexComponent.Alignment.CENTER);
         header.expand(title);
@@ -78,14 +96,15 @@ public class MainLayout extends AppLayout {
     }
 
     /**
-     * Prefijo de ruta (primer segmento) → grupo. La lista de usuarios, la de existencias y la de
-     * ordenes son a la vez el nodo de su grupo.
+     * Prefijo de ruta (primer segmento) → grupo. La lista de usuarios, la de existencias, la de
+     * ordenes y el registro de actividad son a la vez el nodo de su grupo.
      */
     private static final Map<String, MenuGroup> GROUPS = Map.of(
             MasterView.ROUTE_PREFIX, new MenuGroup("Infraestructura", "train"),
             UsersView.ROUTE_PREFIX, new MenuGroup("Usuarios", "users"),
             StockRoutes.PREFIX, new MenuGroup("Almacen", "storage"),
-            MaintenanceRoutes.PREFIX, new MenuGroup("Mantenimiento", "wrench"));
+            MaintenanceRoutes.PREFIX, new MenuGroup("Mantenimiento", "wrench"),
+            NotificationRoutes.ACTIVITY, new MenuGroup("Actividad", "records"));
 
     private Component menu() {
         SideNav nav = new SideNav();

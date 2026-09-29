@@ -9,7 +9,8 @@ package com.alejandro.mtobackoffice.configuration.security;
  * roles propios: ensena o esconde lo que el servicio va a permitir o negar. Un rol que se anade
  * aqui sin existir alli no lo tiene nadie y la pantalla desaparece del menu para todos. Los del
  * modulo de usuarios, roles de cliente de {@code mto-users-api}, viven en {@link UserRoles}; los de
- * almacen, en {@link StockRoles}, y los de mantenimiento, en {@link MaintenanceRoles}.</p>
+ * almacen, en {@link StockRoles}; los de mantenimiento, en {@link MaintenanceRoles}, y los de
+ * notificaciones, en {@link NotificationRoles}.</p>
  */
 public final class SecurityRoles {
 

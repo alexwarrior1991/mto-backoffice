@@ -20,6 +20,7 @@ import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.master.ReferenceCatalog;
 import com.alejandro.mtobackoffice.ui.support.Downloads;
+import com.alejandro.mtobackoffice.ui.support.SharedPolling;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.component.Component;
@@ -82,7 +83,7 @@ import java.util.function.Supplier;
  * tipo y estado), asi que se ven tambien los trabajos lanzados desde otra sesion o antes de un
  * reinicio; lo que solo sabe esta sesion —con que etiqueta lanzo cada uno— lo guarda {@link JobLog}
  * y se pinta encima. Seguirlos es lo que hace {@code @Push}: mientras esta pantalla esta abierta y
- * hay algo en curso, un hilo compartido ({@link JobPolling}) vuelve a pedir la pagina cada pocos
+ * hay algo en curso, un hilo compartido ({@link SharedPolling}) vuelve a pedir la pagina cada pocos
  * segundos y lleva lo que cambio a la pantalla con {@code UI.access()}, sin que el navegador
  * pregunte; un trabajo de esta sesion que no este en la pagina se consulta por su familia.</p>
  *
@@ -115,7 +116,7 @@ public class JobsView extends VerticalLayout {
 
     private final JobsClient client;
     private final ObjectMapper objectMapper;
-    private final JobPolling polling;
+    private final SharedPolling polling;
     private final ReferenceCatalog catalog;
     private final AuthenticationContext authentication;
     private final boolean canImport;
@@ -139,7 +140,7 @@ public class JobsView extends VerticalLayout {
     private UploadedFile lovMaster;
 
     public JobsView(JobsClient client, ExecutionPackageClient packages, StationClient stations, TrackClient tracks,
-                    BusinessEntityClient companies, JobPolling polling, AuthenticationContext authentication,
+                    BusinessEntityClient companies, SharedPolling polling, AuthenticationContext authentication,
                     ObjectMapper objectMapper) {
         this.client = client;
         this.objectMapper = objectMapper;
@@ -401,7 +402,7 @@ public class JobsView extends VerticalLayout {
     // --- Seguimiento ------------------------------------------------------------------------------
 
     /**
-     * Una pasada de consulta, en el hilo de {@link JobPolling} (los tests la llaman directamente):
+     * Una pasada de consulta, en el hilo de {@link SharedPolling} (los tests la llaman directamente):
      * si hay algo en curso —en la pagina o lanzado desde aqui— vuelve a pedir la pagina fuera del
      * bloqueo de la sesion, pregunta por su familia a los trabajos de esta sesion que no esten en
      * ella, y lleva lo que cambio a la pantalla con {@code UI.access()}.

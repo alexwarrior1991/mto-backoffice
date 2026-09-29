@@ -10,7 +10,7 @@ Dos ficheros, que aplica `mto-platform/keycloak/apply-partials.sh` en su sitio d
 ## Qué hay dentro
 
 Un solo cliente, y sin roles: los permisos que comprueba el backoffice son los roles de cliente de
-cuatro clientes, cada uno declarado por su servicio (`app.keycloak.roles-client-ids`):
+cinco clientes, cada uno declarado por su servicio (`app.keycloak.roles-client-ids`):
 
 | Cliente | Roles | Lo declara |
 |---|---|---|
@@ -18,11 +18,15 @@ cuatro clientes, cada uno declarado por su servicio (`app.keycloak.roles-client-
 | `mto-users-api` | `users-read`, `users-write`, `users-delete`, `users-roles-write`, `users-password-reset`, `users-profiles-write`, `users-sessions-write`, `users-credentials-write` | `mto-users` |
 | `mto-stock-api` | `stock-read`, `stock-write`, `stock-delete`, `stock-adjust` | `mto-stock` |
 | `mto-maintenance-api` | `maintenance-read`, `maintenance-write`, `maintenance-delete`, `maintenance-supervise` | `mto-maintenance` |
+| `mto-notification-api` | `notification-inbox`, `notification-activity-read`, `notification-access-read`, `notification-admin` | `mto-notification` |
 
 Los perfiles de realm que reúnen esos roles también son de cada servicio. Los tres de
 mantenimiento (`mto-maintenance-viewer`, `-technician` y `-manager`) llevan además `config-read` y
 `stock-read`, porque sus pantallas nombran vías, paquetes, materiales, almacenes y proyectos que
-`mto-maintenance` solo guarda como id; sin ellos, el backoffice pintaría `#id`.
+`mto-maintenance` solo guarda como id; sin ellos, el backoffice pintaría `#id`. Y **todos** los
+perfiles del dominio llevan `notification-inbox`, porque la campana y la bandeja son de todo el
+mundo: cada servicio lo declara en los suyos, y `mto-notification` aplica su parcial la primera
+para que existan los roles que los demás nombran.
 
 | Cliente | Tipo | Para qué |
 |---|---|---|

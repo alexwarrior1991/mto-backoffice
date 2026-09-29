@@ -37,7 +37,9 @@ class SecurityLayerTest {
     private static final String USERS_CLIENT_ID = "mto-users-api";
     private static final String STOCK_CLIENT_ID = "mto-stock-api";
     private static final String MAINTENANCE_CLIENT_ID = "mto-maintenance-api";
-    private static final List<String> LISTED_CLIENTS = List.of(CLIENT_ID, USERS_CLIENT_ID, STOCK_CLIENT_ID, MAINTENANCE_CLIENT_ID);
+    private static final String NOTIFICATION_CLIENT_ID = "mto-notification-api";
+    private static final List<String> LISTED_CLIENTS = List.of(CLIENT_ID, USERS_CLIENT_ID, STOCK_CLIENT_ID, MAINTENANCE_CLIENT_ID,
+            NOTIFICATION_CLIENT_ID);
     private static final KeycloakProperties PROPERTIES = new KeycloakProperties("http://localhost:8082/realms/mto/",
             "mto-backoffice", "secret", LISTED_CLIENTS);
 
@@ -98,14 +100,16 @@ class SecurityLayerTest {
                         CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("config-read")),
                         USERS_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("users-read", "users-sessions-write")),
                         STOCK_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("stock-adjust")),
-                        MAINTENANCE_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("maintenance-supervise"))))));
+                        MAINTENANCE_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("maintenance-supervise")),
+                        NOTIFICATION_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("notification-inbox"))))));
 
         assertEquals(Set.of(
                 "ROLE_CONFIG_READ", "ROLE_CLIENT_MTO_CONFIGURATION_API_CONFIG_READ",
                 "ROLE_USERS_READ", "ROLE_CLIENT_MTO_USERS_API_USERS_READ",
                 "ROLE_USERS_SESSIONS_WRITE", "ROLE_CLIENT_MTO_USERS_API_USERS_SESSIONS_WRITE",
                 "ROLE_STOCK_ADJUST", "ROLE_CLIENT_MTO_STOCK_API_STOCK_ADJUST",
-                "ROLE_MAINTENANCE_SUPERVISE", "ROLE_CLIENT_MTO_MAINTENANCE_API_MAINTENANCE_SUPERVISE"), names);
+                "ROLE_MAINTENANCE_SUPERVISE", "ROLE_CLIENT_MTO_MAINTENANCE_API_MAINTENANCE_SUPERVISE",
+                "ROLE_NOTIFICATION_INBOX", "ROLE_CLIENT_MTO_NOTIFICATION_API_NOTIFICATION_INBOX"), names);
     }
 
     /** La regla que protege config-write vale igual para users-read: un rol de realm nunca abre el modulo. */
@@ -150,7 +154,7 @@ class SecurityLayerTest {
                 .header("alg", "RS256")
                 .subject("u-1").issuedAt(now).expiresAt(now.plusSeconds(300))
                 .claim(JwtClaimNames.AUDIENCE, List.of("mto-configuration-api", "mto-stock-api", "mto-maintenance-api",
-                        "mto-users-api", "mto-gateway-api"))
+                        "mto-users-api", "mto-notification-api", "mto-gateway-api"))
                 .claim(JwtClaimNames.SCOPE, "openid profile email")
                 .claim(JwtClaimNames.RESOURCE_ACCESS, Map.of(CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("config-read", "config-write"))))
                 .claim(JwtClaimNames.REALM_ACCESS, Map.of(JwtClaimNames.ROLES, List.of("mto-editor")))
@@ -166,7 +170,7 @@ class SecurityLayerTest {
         assertFalse(names.contains("ROLE_MTO_EDITOR"));
         assertEquals("config.editor", user.getName());
         BackofficeUser backofficeUser = assertInstanceOf(BackofficeUser.class, user);
-        assertEquals(5, backofficeUser.getAccessTokenAudience().size());
+        assertEquals(6, backofficeUser.getAccessTokenAudience().size());
     }
 
     @Test
@@ -231,7 +235,7 @@ class SecurityLayerTest {
     }
 
     /**
-     * Emitir ROLE_ para los cuatro clientes solo es inocuo mientras sus nombres de rol no se solapen.
+     * Emitir ROLE_ para los cinco clientes solo es inocuo mientras sus nombres de rol no se solapen.
      * Los {@code ops-*} se repiten en todos a proposito (son de operacion, no de pantalla) y ninguna
      * vista los comprueba, asi que no hay constante que los nombre.
      */
@@ -245,8 +249,10 @@ class SecurityLayerTest {
         Set<String> stock = Set.of(StockRoles.STOCK_READ, StockRoles.STOCK_WRITE, StockRoles.STOCK_DELETE, StockRoles.STOCK_ADJUST);
         Set<String> maintenance = Set.of(MaintenanceRoles.MAINTENANCE_READ, MaintenanceRoles.MAINTENANCE_WRITE,
                 MaintenanceRoles.MAINTENANCE_DELETE, MaintenanceRoles.MAINTENANCE_SUPERVISE);
+        Set<String> notification = Set.of(NotificationRoles.NOTIFICATION_INBOX, NotificationRoles.NOTIFICATION_ACTIVITY_READ,
+                NotificationRoles.NOTIFICATION_ACCESS_READ, NotificationRoles.NOTIFICATION_ADMIN);
 
-        List<Set<String>> sets = List.of(configuration, users, stock, maintenance);
+        List<Set<String>> sets = List.of(configuration, users, stock, maintenance, notification);
         for (int i = 0; i < sets.size(); i++) {
             for (int j = i + 1; j < sets.size(); j++) {
                 assertTrue(java.util.Collections.disjoint(sets.get(i), sets.get(j)), sets.get(i) + " / " + sets.get(j));
@@ -294,5 +300,34 @@ class SecurityLayerTest {
         assertTrue(names.contains("ROLE_MAINTENANCE_READ"));
         assertTrue(names.contains("ROLE_CLIENT_MTO_MAINTENANCE_API_MAINTENANCE_READ"));
         assertFalse(names.contains("ROLE_MAINTENANCE_SUPERVISE"));
+    }
+
+    @Test
+    void notificationRolesMatchTheClientRolesOfMtoNotificationApiOnceNormalized() {
+        Set<String> declared = Set.of(NotificationRoles.NOTIFICATION_INBOX, NotificationRoles.NOTIFICATION_ACTIVITY_READ,
+                NotificationRoles.NOTIFICATION_ACCESS_READ, NotificationRoles.NOTIFICATION_ADMIN);
+        Set<String> fromRealm = Set.of("notification-inbox", "notification-activity-read", "notification-access-read", "notification-admin")
+                .stream().map(KeycloakRoleMapper::normalize).collect(Collectors.toSet());
+
+        assertEquals(fromRealm, declared);
+    }
+
+    /**
+     * Los perfiles del dominio llevan {@code notification-inbox} dentro (la campana es de todo el
+     * mundo), pero lo que abre la bandeja es ese rol de cliente, nunca un rol de realm con su nombre;
+     * y los accesos piden el suyo, que no viene con el registro.
+     */
+    @Test
+    void aRealmRoleNamedLikeANotificationPermissionNeverOpensTheModule() {
+        Set<String> names = authorities(mapper.authorities(Map.of(
+                JwtClaimNames.REALM_ACCESS, Map.of(JwtClaimNames.ROLES, List.of("notification-access-read", "mto-auditor")),
+                JwtClaimNames.RESOURCE_ACCESS, Map.of(NOTIFICATION_CLIENT_ID,
+                        Map.of(JwtClaimNames.ROLES, List.of("notification-inbox", "notification-activity-read"))))));
+
+        assertTrue(names.contains("ROLE_REALM_NOTIFICATION_ACCESS_READ"));
+        assertTrue(names.contains("ROLE_REALM_MTO_AUDITOR"));
+        assertTrue(names.contains("ROLE_NOTIFICATION_INBOX"));
+        assertTrue(names.contains("ROLE_CLIENT_MTO_NOTIFICATION_API_NOTIFICATION_ACTIVITY_READ"));
+        assertFalse(names.contains("ROLE_NOTIFICATION_ACCESS_READ"));
     }
 }
