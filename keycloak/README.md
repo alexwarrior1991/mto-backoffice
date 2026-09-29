@@ -32,11 +32,11 @@ mantenimiento (`mto-maintenance-viewer`, `-technician` y `-manager`) llevan adem
   registro `keycloak`). El puerto es el 8085 porque los demás están ocupados.
 - `post.logout.redirect.uris`: `http://localhost:8085/*`, para que «Salir» pueda volver a la
   aplicación después de cerrar la sesión de Keycloak (`end_session_endpoint`).
-- Cinco **audience mapper** (`oidc-audience-mapper`, `access.token.claim=true`), copiados de
-  `mto-frontend`: `mto-configuration-api`, `mto-stock-api`, `mto-maintenance-api`, `mto-users-api`
-  y `mto-gateway-api`. Sin el de un servicio, ese servicio responde 401 a todo: su
-  `JwtAudienceValidator` exige su `clientId` en `aud`. `mto-platform/scripts/check_realm_consistency.py`
-  comprueba que todo cliente de login lleve los cinco.
+- Seis **audience mapper** (`oidc-audience-mapper`, `access.token.claim=true`), copiados de
+  `mto-frontend`: `mto-configuration-api`, `mto-stock-api`, `mto-maintenance-api`, `mto-users-api`,
+  `mto-notification-api` y `mto-gateway-api`. Sin el de un servicio, ese servicio responde 401 a
+  todo: su `JwtAudienceValidator` exige su `clientId` en `aud`.
+  `mto-platform/scripts/check_realm_consistency.py` comprueba que todo cliente de login lleve los seis.
 - Sin PKCE: es un cliente confidencial con secreto. Se puede añadir (`pkce.code.challenge.method`
   en el cliente y `withPkce()` en Spring), pero entonces hay que hacerlo en los dos sitios.
 
@@ -59,7 +59,7 @@ secreto). La parcial no lleva `ifResourceExists`: el script la importa con `OVER
 El `-dev.json` no se importa tal cual. Solo trae `clientId` y `secret`, y una importación con
 `OVERWRITE` sustituiría el cliente entero; el script pone el secreto sobre el cliente ya importado
 (un `GET` del cliente y un `PUT` con el secreto), así que el cliente conserva el redirect URI, el
-post-logout y los cinco mappers. Hasta mto-platform#14 no era así, y en local el login del
+post-logout y los seis mappers. Hasta mto-platform#14 no era así, y en local el login del
 backoffice no podía funcionar. Ahora el CI de `mto-platform` lo comprueba sobre un Keycloak de
 verdad (`scripts/check_applied_realm.py`): ya no hace falta mirarlo en la consola.
 
