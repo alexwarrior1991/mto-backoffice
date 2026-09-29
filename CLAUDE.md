@@ -52,9 +52,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (claims → `ROLE_*` para los clientes de `app.keycloak.roles-client-ids`, más el sinónimo
   `ROLE_CLIENT_<CLIENTE>_*`), `BackofficeUser` (el usuario con las audiencias del access token),
   `CurrentPrincipal` (nombre del principal desde cualquier hilo), `PrincipalSessionRecorder`,
-  `SecurityRoles`, `UserRoles`, `StockRoles` y `MaintenanceRoles` (los permisos de
-  `mto-configuration-api`, `mto-users-api`, `mto-stock-api` y `mto-maintenance-api`),
-  `SecurityAuthorityPrefixes`, `JwtClaimNames`, `KeycloakProperties`.
+  `SecurityRoles`, `UserRoles`, `StockRoles`, `MaintenanceRoles` y `NotificationRoles` (los
+  permisos de `mto-configuration-api`, `mto-users-api`, `mto-stock-api`, `mto-maintenance-api` y
+  `mto-notification-api`), `SecurityAuthorityPrefixes`, `JwtClaimNames`, `KeycloakProperties`.
 - `configuration/client` — `GatewayClientConfiguration` (un `RestClient` hacia el gateway con dos
   interceptores, `BearerTokenInterceptor` y `CorrelationIdInterceptor`, y `ApiErrorDecoder` como
   manejador de estado; `HttpServiceProxyFactory` para las interfaces `@HttpExchange`),
@@ -92,7 +92,12 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   todos con `revisions` salvo los catálogos y los informes; DTO como records en
   `client/dto/maintenance`: filtros (`OrderFilter`, `AssetFilter`...), peticiones `*Request`, las
   modificaciones como `MergePatch<*UpdateRequest>` (lo cambiado, lo vaciado y la versión leída) y
-  enumerados tolerantes —ver las reglas—). Los DTO
+  enumerados tolerantes —ver las reglas—); `client/notification/NotificationClient` (la API de
+  `mto-notification` bajo `/api/notifications`: mi bandeja paginada con sus filtros, el contador
+  acotado, marcar una o todas, el registro con sus filtros y el detalle de una línea, y los
+  accesos; DTO como records en `client/dto/notification`, con `payload` como `Map` y los
+  enumerados tolerantes `ActivityCategory`, `ActivitySeverity`, `ActorKind` y `AccessOutcome`).
+  Los DTO
   (`client/dto`): `LovDto` es un record con solo las claves que usa la UI (con `versionNumber`,
   que vuelve como se leyó) y `@JsonInclude(NON_NULL)`; los maestros (`client/dto/master`) son
   **clases mutables** que heredan de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo y los hijos
@@ -119,8 +124,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   el SVG que la dibuja en Java puro; `MasterView.addRowActions` y `rowButton`, el gancho de acciones
   de fila con el que `TracksView` pone el botón «Esquema»), `ui/jobs` (`JobsView` en `trabajos`: los lanzadores y la lista del servicio,
   paginada y filtrada; `JobLog`, lo que solo sabe la sesión de sus trabajos —la etiqueta y el
-  último estado— en la `VaadinSession`; `JobPolling`, el hilo compartido que vuelve a pedir la
-  página mientras hay algo en curso; `JobErrorsDialog`), `ui/users` (`UsersView` en `usuarios`:
+  último estado— en la `VaadinSession`; `JobErrorsDialog`), `ui/users` (`UsersView` en `usuarios`:
   la lista paginada en el servidor con `grid.setItems(fetch, count)` sobre `GET /api/users` y
   `first`/`max`; `UserEditorDialog`, el `Binder` sobre el modelo mutable `UserForm`, cuyas
   propiedades se llaman como los campos del servicio para `ServerValidation`; `UserAttributes`,
@@ -173,13 +177,23 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   propiedades se llaman como los campos de la petición para `ServerValidation`;
   `MaintenanceHistory`, el botón «Historial» y la línea de cada recurso en `RevisionsDialog`;
   `MaintenanceUi`, `MaintenancePickers`, `MaintenanceCatalogs` y `MaintenanceFormats`, lo
-  compartido), `ui/support` (`UiErrors`: excepción →
+  compartido), `ui/notification` (`NotificationRoutes`: `notificaciones`, `actividad` y
+  `actividad/accesos`; `InboxBell`, la campana de la barra, que `MainLayout` pone solo con
+  `notification-inbox` y que pide el contador al entrar y cada 30 s desde `SharedPolling` con
+  `CurrentPrincipal.callAs` + `UI.access()`; `NotificationsView`, la bandeja paginada en el
+  servidor, que abre con las no leídas, marca al abrir y sigue el enlace con `NotificationLinks`
+  (una ruta de esta aplicación con sus parámetros, o una pestaña nueva si es absoluto);
+  `ActivityView`, el registro con los filtros del servicio y los de la URL (`BeforeEnterObserver`);
+  `AccessView`, los accesos con su permiso aparte; `EventDetailDialog`, una línea entera con su
+  `payload` clave a clave), `ui/support` (`UiErrors`: excepción →
   `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`;
   `OffsetPager`: anteriores/siguientes para una lista `first`/`max` sin total, donde una página
   llena es la única señal de que hay más; `RevisionsDialog<D>`, el historial de cualquier fila
   (paginado, la más reciente primero; el 404 es «sin historial»); `LazyPanel`, la pestaña que
   pide sus datos al abrirse; `Downloads`, el fichero de un servicio servido a través de esta
-  aplicación con `DownloadHandler`; `Formats`, cantidades y fechas).
+  aplicación con `DownloadHandler`; `Formats`, cantidades y fechas; `SharedPolling`, el hilo
+  compartido que vuelve a preguntar al servicio mientras hay una pantalla abierta: los trabajos
+  en curso y el contador de la campana).
 - `configuration/vaadin` — `BackofficeSystemMessages`, los mensajes de sistema de Vaadin en
   castellano y con el aviso de sesión caducada apagado (recarga → login → SSO). El tema no vive
   aquí sino en `MtoBackofficeApplication`, el `AppShellConfigurator`: `@StyleSheet(Lumo.STYLESHEET)`
@@ -198,12 +212,12 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   access token.
 - **Los roles de realm se emiten solo como `ROLE_REALM_*`, nunca como `ROLE_*`.** Los permisos que
   comprueban las vistas (`@RolesAllowed("CONFIG_READ")`, `@RolesAllowed("USERS_READ")`) son roles
-  de **cliente** de `mto-configuration-api`, `mto-users-api`, `mto-stock-api` y
-  `mto-maintenance-api` (`app.keycloak.roles-client-ids`).
+  de **cliente** de `mto-configuration-api`, `mto-users-api`, `mto-stock-api`,
+  `mto-maintenance-api` y `mto-notification-api` (`app.keycloak.roles-client-ids`).
   Si un rol de realm se emitiera con `ROLE_`, quien administre el realm podría crear un rol llamado
   como un permiso y concederlo a cualquiera (`SecurityLayerTest`). El mapeo emite `ROLE_X` para
-  los cuatro clientes, así que sus nombres de rol no pueden solaparse (`config-*` y `lov-manage`,
-  `users-*`, `stock-*` y `maintenance-*`; `SecurityLayerTest` lo comprueba), y además
+  los cinco clientes, así que sus nombres de rol no pueden solaparse (`config-*` y `lov-manage`,
+  `users-*`, `stock-*`, `maintenance-*` y `notification-*`; `SecurityLayerTest` lo comprueba), y además
   `ROLE_CLIENT_<CLIENTE>_X`.
 - **Sin descubrimiento OIDC en el arranque.** `KeycloakClientRegistrations` deriva los endpoints del
   issuer y añade `end_session_endpoint` a los metadatos; con `issuer-uri` en YAML la aplicación no
@@ -362,7 +376,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   que la confirmación avisa de que pasa por el almacén aunque la línea no tenga reserva todavía.
 - **Los enumerados que se leen de un servicio toleran lo desconocido.** Son los de
   mantenimiento, los de almacén (`MovementType`, `ReservationStatus`), el del historial
-  (`RevisionOperation`) y los de los trabajos (`JobStatus`, `JobType`). Cada uno lleva `UNKNOWN`
+  (`RevisionOperation`), los de los trabajos (`JobStatus`, `JobType`) y los de notificaciones
+  (`ActivityCategory`, `ActivitySeverity`, `ActorKind`, `AccessOutcome`). Cada uno lleva `UNKNOWN`
   («Desconocido»), un `@JsonCreator(mode = DELEGATING) of(String)` que delega en
   `ClientEnums.parse` y `selectable()` sin `UNKNOWN` para los desplegables: un valor nuevo en el
   servicio se lee como desconocido en vez de romper la página entera, que además fallaría sin
@@ -390,6 +405,31 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `DELETE /sessions` y `DELETE /offline-sessions`, para en el primer `BackofficeApiException` y
   devuelve lo hecho y el paso que falló; el botón pide `users-write` **y** `users-sessions-write`
   (`hasAllRoles`). No es una regla nueva de negocio: es la orquestación documentada allí.
+- **La campana y la bandeja son de la persona, y a quién va cada aviso lo decide el servicio con el
+  token.** `mto-notification` resuelve al leer, por usuario, perfil y rol de cliente, qué
+  notificaciones son mías; aquí no se filtra por nadie ni se cuenta nada: el contador es el de
+  `GET /inbox/unread-count`, acotado (`capped` → «100+»), pedido al entrar y cada 30 s desde
+  `SharedPolling` (`InboxBell.REFRESH_PERIOD`) con `CurrentPrincipal.callAs` + `UI.access()`, y
+  un fallo al pedirlo deja el número como estaba sin notificar nada (cada 30 s y por cada
+  pantalla abierta, un aviso sería ruido; la bandeja lo dirá al abrirse). La campana existe solo
+  con `notification-inbox`, que llevan todos los perfiles del dominio. La bandeja abre con las no
+  leídas (`unread=true`), porque el estado de lectura es de cada persona y el servicio no ordena
+  por él; abrir una notificación (la fila o su flecha) la marca como leída **antes** de seguir su
+  enlace, y si el servicio dice 404 `NTF-404` (ya no es mía) se notifica y no se abre nada;
+  «Marcar todas como leídas» es `POST /inbox/read-all`, que va hasta la más reciente visible, no
+  hasta ahora. El enlace es una ruta de esta aplicación que ponen las reglas del servicio
+  (`/mantenimiento/ordenes/{id}`, `/actividad?category=SYSTEM`, `/actividad/accesos?username=`):
+  `NotificationLinks` la navega con sus parámetros (un absoluto se abre en otra pestaña) y
+  `ActivityView` y `AccessView` aplican al entrar los filtros que llegan en la URL.
+- **Los accesos tienen su permiso aparte, y el registro nunca los enseña.** `actividad/accesos`
+  pide `notification-access-read`, que no viene con `notification-activity-read` ni al revés (un
+  permiso nunca implica otro, como en el servicio), porque un acceso lleva usuario e IP. El
+  registro no ofrece `ACCESS` como categoría (`ActivityCategory.selectableForActivity`): el
+  servicio lo rechaza con 400. Los tipos, los orígenes y los sujetos se escriben enteros y se
+  comparan en el servicio: el catálogo de tipos es suyo y aquí no se copia. Lo fundido (el evento
+  de administración de Keycloak que ya cuenta el de `mto-users` del mismo cambio) solo viaja como
+  `includeSuperseded=true` cuando se pide. Una línea se enseña entera en `EventDetailDialog`, con
+  su `payload` tal cual lo dejó la lista blanca del servicio: aquí no se interpreta nada.
 - **El menú no es una guarda.** `MainLayout` esconde lo que la persona no puede abrir; quien manda
   es `@RolesAllowed` en la vista y el 403 del servicio. Dentro de una vista pasa lo mismo: los
   botones de `LovCrudView` siguen los permisos del servicio (`config-write`+`lov-manage` para crear
@@ -437,7 +477,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 - **Un trabajo se lanza y se sigue; no se espera.** Lanzar responde 202 con el trabajo, o 429 con
   el trabajo ya rechazado y un `Retry-After` (`TooManyRequestsApiException` trae ese cuerpo, y
   `JobsView` lo apunta como rechazado en vez de tratarlo como un fallo). El progreso lo trae
-  `@Push`: `JobPolling` consulta desde un hilo propio, con el principal fijado por
+  `@Push`: `SharedPolling` consulta desde un hilo propio, con el principal fijado por
   `CurrentPrincipal.callAs`, y `JobsView` lo lleva a la pantalla con `UI.access()`; sin pantalla
   abierta, o sin nada en curso, no se consulta nada. La lista es la del servicio (`GET /jobs`):
   `JobLog` solo guarda la etiqueta con la que esta sesión lanzó cada trabajo y su último estado,
@@ -499,12 +539,17 @@ sus conjuntos enteros, sus tareas y perfiles, ejecutar una tarea con su checklis
 materiales, inspecciones y lo que generan, defectos y sus transiciones, líneas de material
 (quitar con 204 y el 503 `STK-503`; la rechazada con su motivo, y el 422 `STK-422` o el 409
 `STK-001` al sincronizarla), los informes en JSON y como fichero con su nombre, y el
-historial de cada recurso con el 404 de un activo sin revisiones),
-`SecurityLayerTest` (mapeo de roles de los cuatro clientes con el sinónimo cualificado, un cliente
-no listado no aporta nada, un rol de realm `users-read`, `stock-read` o `maintenance-read` nunca
-abre el módulo, `SecurityRoles`, `UserRoles`, `StockRoles` y `MaintenanceRoles` coinciden con el
-realm y son disjuntos, registro OIDC sin descubrimiento, roles desde
-el access token, `CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
+historial de cada recurso con el 404 de un activo sin revisiones; las notificaciones: la bandeja
+con sus filtros y una gravedad desconocida leída como `UNKNOWN`, el contador acotado, las marcas
+como `POST` sin cuerpo y el 404 `NTF-404` por alias, el registro con todos sus filtros
+(`includeSuperseded` solo cuando es verdadero), una categoría y un actor desconocidos, el detalle
+con su `payload`, los accesos por usuario, IP, tipo y resultado, y el 400 `REQ-400` de un `sort`
+desconocido),
+`SecurityLayerTest` (mapeo de roles de los cinco clientes con el sinónimo cualificado, un cliente
+no listado no aporta nada, un rol de realm `users-read`, `stock-read`, `maintenance-read` o
+`notification-access-read` nunca abre el módulo, `SecurityRoles`, `UserRoles`, `StockRoles`,
+`MaintenanceRoles` y `NotificationRoles` coinciden con el realm y son disjuntos, registro OIDC sin
+descubrimiento, roles desde el access token, `CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
 de la ruta y su filtro local, menú por roles, controles de escritura ocultos sin permiso, alta por
 diálogo, errores del servicio campo a campo, la modificación con la versión leída y la siguiente
 con la recargada, la versión vieja con su aviso de recargar y el diálogo abierto, los dos 409 de
@@ -578,8 +623,18 @@ una petición al almacén sin respuesta (su estado y su tooltip, las cantidades 
 orden de solo lectura mientras dure); los informes (el
 avance con sus nombres y porcentaje, el mensual con sus 24 meses, las descargas de punta a punta
 con el `_download` de Karibu, y el parte del turno en su pestaña); el historial de cada ficha y el
-de un activo sin revisiones) y
+de un activo sin revisiones; las notificaciones: la campana con su número, solo con
+`notification-inbox` (un rol de realm no la da), sin número con nada sin leer, refrescada con
+`pollOnce()` + `UI.access()` hasta «100+» y con un fallo que deja el número como estaba, el menú
+con la bandeja, el registro como nodo y los accesos cada uno tras su permiso, la bandeja que abre
+con las no leídas y filtra y ordena en el servicio, abrir una notificación marcándola y siguiendo
+su enlace con sus filtros hasta el registro, la leída que no se vuelve a marcar y la que no tiene
+enlace, «marcar todas», el `NTF-404` notificado sin abrir nada, la línea del registro tras una
+notificación solo con `notification-activity-read`; el registro filtrado y ordenado en el servicio
+sin ofrecer los accesos, una categoría nueva como «Desconocido», la ráfaga con su recuento y la
+fundida, el detalle con su `payload`; los accesos desde el enlace de una regla con el usuario en
+la URL, filtrados en el servicio, un resultado nuevo como «Desconocido» y su detalle) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway, con los clientes de
-cada servicio y los cuatro clientes cuyos roles son permisos; redirección al login; sonda de
+cada servicio y los cinco clientes cuyos roles son permisos; redirección al login; sonda de
 salud; ausencia de artefactos comerciales; las dos hojas de Lumo en el shell). Todo corre en la JVM
 sin Docker.

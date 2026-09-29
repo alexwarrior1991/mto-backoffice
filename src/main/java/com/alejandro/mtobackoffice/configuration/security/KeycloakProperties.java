@@ -15,8 +15,8 @@ import java.util.List;
  * @param clientId      cliente confidencial de esta aplicacion en el realm
  * @param clientSecret  su secreto; vacio arranca (con aviso) y falla al entrar, no antes
  * @param rolesClientIds clientes cuyos roles del access token se convierten en autoridades ROLE_*
- *                       (los permisos de configuracion y los de los modulos de usuarios, almacen
- *                       y mantenimiento)
+ *                       (los permisos de configuracion y los de los modulos de usuarios, almacen,
+ *                       mantenimiento y notificaciones)
  */
 @Validated
 @ConfigurationProperties(prefix = "app.keycloak")
@@ -24,7 +24,8 @@ public record KeycloakProperties(
         @NotBlank String issuerUri,
         @DefaultValue("mto-backoffice") @NotBlank String clientId,
         @DefaultValue("") String clientSecret,
-        @DefaultValue({"mto-configuration-api", "mto-users-api", "mto-stock-api", "mto-maintenance-api"}) @NotEmpty List<String> rolesClientIds
+        @DefaultValue({"mto-configuration-api", "mto-users-api", "mto-stock-api", "mto-maintenance-api", "mto-notification-api"})
+        @NotEmpty List<String> rolesClientIds
 ) {
 
     /** El issuer sin barra final, para concatenar rutas. */

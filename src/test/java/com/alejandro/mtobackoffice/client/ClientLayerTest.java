@@ -122,6 +122,19 @@ import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import com.alejandro.mtobackoffice.client.maintenance.ShiftClient;
 import com.alejandro.mtobackoffice.client.maintenance.DefectClient;
+import com.alejandro.mtobackoffice.client.notification.NotificationClient;
+import com.alejandro.mtobackoffice.client.dto.notification.AccessEventDto;
+import com.alejandro.mtobackoffice.client.dto.notification.AccessFilter;
+import com.alejandro.mtobackoffice.client.dto.notification.AccessOutcome;
+import com.alejandro.mtobackoffice.client.dto.notification.ActivityCategory;
+import com.alejandro.mtobackoffice.client.dto.notification.ActivityEventDto;
+import com.alejandro.mtobackoffice.client.dto.notification.ActivityFilter;
+import com.alejandro.mtobackoffice.client.dto.notification.ActivitySeverity;
+import com.alejandro.mtobackoffice.client.dto.notification.ActorKind;
+import com.alejandro.mtobackoffice.client.dto.notification.InboxFilter;
+import com.alejandro.mtobackoffice.client.dto.notification.InboxItemDto;
+import com.alejandro.mtobackoffice.client.dto.notification.ReadAllDto;
+import com.alejandro.mtobackoffice.client.dto.notification.UnreadCountDto;
 import com.alejandro.mtobackoffice.client.maintenance.InspectionClient;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CreateCorrectiveOrderRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CreateDefectFromInspectionRequest;
@@ -240,6 +253,7 @@ class ClientLayerTest {
     private InspectionClient inspectionClient;
     private DefectClient defectClient;
     private ReportClient reportClient;
+    private NotificationClient notificationClient;
 
     @BeforeEach
     void setUp() {
@@ -274,6 +288,7 @@ class ClientLayerTest {
         inspectionClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(InspectionClient.class);
         defectClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(DefectClient.class);
         reportClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ReportClient.class);
+        notificationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(NotificationClient.class);
     }
 
     @AfterEach
@@ -2431,6 +2446,195 @@ class ClientLayerTest {
         assertEquals("SYSTEM", defects.content().getFirst().revision().source());
         assertEquals(DefectStatus.RESOLVED, defects.content().getFirst().entity().status());
         assertEquals("APP-404", none.getProblem().code());
+        server.verify();
+    }
+
+    // --- Notificaciones (mto-notification) ------------------------------------------------------
+
+    private static final String NOTIFICATIONS = GATEWAY + "/api/notifications";
+    private static final String NOTIFICATION_ID = "5e6f7a8b-0000-4000-8000-000000000501";
+    private static final String NOTIFICATION_ID_2 = "5e6f7a8b-0000-4000-8000-000000000502";
+    private static final String EVENT_ID = "5e6f7a8b-0000-4000-8000-000000000511";
+
+    /** Una notificacion como la devuelve mto-notification; {@code severity} va tal cual, para probar las desconocidas. */
+    private static String inboxItemJson(String id, boolean read, String severity) {
+        return "{\"id\":\"" + id + "\",\"ruleKey\":\"maintenance-order-urgent\",\"category\":\"MAINTENANCE\",\"severity\":\"" + severity
+                + "\",\"title\":\"Orden urgente MO-000012\",\"body\":\"Creada por mantenimiento.tecnico\","
+                + "\"link\":\"/mantenimiento/ordenes/" + ORDER_ID + "\",\"subjectType\":\"order\",\"subjectId\":\"" + ORDER_ID + "\","
+                + "\"activityEventId\":\"" + EVENT_ID + "\",\"createdAt\":\"2026-09-28T06:07:00Z\",\"read\":" + read
+                + ",\"readAt\":" + (read ? "\"2026-09-28T07:00:00Z\"" : "null") + ",\"unknownTomorrow\":1}";
+    }
+
+    private static String activityEventJson(String id, String category, String actorKind, String supersededBy) {
+        return "{\"id\":\"" + id + "\",\"seq\":118,\"sourceService\":\"mto-users\",\"sourceEventId\":\"f0000000-0000-4000-8000-000000000001\","
+                + "\"category\":\"" + category + "\",\"type\":\"users.user.created\",\"severity\":\"INFO\","
+                + "\"occurredAt\":\"2026-09-28T06:07:00Z\",\"recordedAt\":\"2026-09-28T06:07:01Z\","
+                + "\"actor\":{\"kind\":\"" + actorKind + "\",\"username\":\"usuarios.responsable\",\"id\":\"a0000000-0000-4000-8000-000000000042\"},"
+                + "\"subject\":{\"type\":\"user\",\"id\":\"u-1\",\"label\":\"nueva.persona\"},\"correlationId\":\"corr-n7\",\"eventCount\":1,"
+                + "\"payload\":{\"targetUsername\":\"nueva.persona\",\"temporaryCredential\":true,\"actions\":[\"VERIFY_EMAIL\"]},"
+                + "\"supersededBy\":" + (supersededBy == null ? "null" : "\"" + supersededBy + "\"") + ",\"unknownTomorrow\":1}";
+    }
+
+    @Test
+    void theInboxIsReadWithItsFiltersAndAnUnknownSeverityIsReadAsUnknown() {
+        server.expect(requestTo(NOTIFICATIONS + "/inbox?unread=true&category=MAINTENANCE&from=2026-09-01T00%3A00%3A00Z&page=0&size=20"
+                        + "&sort=createdAt%2Cdesc"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer token-for-" + PRINCIPAL))
+                .andExpect(header("X-Correlation-Id", matchesRegex(UUID_PATTERN)))
+                .andRespond(withSuccess(stockPage(inboxItemJson(NOTIFICATION_ID, false, "CRITICAL") + "," + inboxItemJson(NOTIFICATION_ID_2, true, "FATAL"),
+                        0, 20, 2), MediaType.APPLICATION_JSON));
+        // Sin filtros no viaja ninguno: para el servicio un filtro ausente no filtra.
+        server.expect(requestTo(NOTIFICATIONS + "/inbox?page=1&size=20&sort=severity%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("", 1, 20, 0), MediaType.APPLICATION_JSON));
+
+        PageResponse<InboxItemDto> page = asUser(() -> notificationClient.inbox(new InboxFilter(true, ActivityCategory.MAINTENANCE, null,
+                Instant.parse("2026-09-01T00:00:00Z"), null), 0, 20, List.of("createdAt,desc")));
+        PageResponse<InboxItemDto> empty = asUser(() -> notificationClient.inbox(InboxFilter.NONE, 1, 20, List.of("severity,asc")));
+
+        assertEquals(2, page.page().totalElements());
+        InboxItemDto unread = page.content().getFirst();
+        assertEquals(UUID.fromString(NOTIFICATION_ID), unread.id());
+        assertEquals(ActivityCategory.MAINTENANCE, unread.category());
+        assertEquals(ActivitySeverity.CRITICAL, unread.severity());
+        assertEquals("/mantenimiento/ordenes/" + ORDER_ID, unread.link());
+        assertTrue(unread.hasLink());
+        assertEquals(UUID.fromString(EVENT_ID), unread.activityEventId());
+        assertFalse(unread.read());
+        assertNull(unread.readAt());
+        InboxItemDto read = page.content().get(1);
+        assertTrue(read.read());
+        assertEquals(Instant.parse("2026-09-28T07:00:00Z"), read.readAt());
+        assertEquals(ActivitySeverity.UNKNOWN, read.severity(), "una gravedad nueva en el servicio no rompe la bandeja");
+        assertTrue(empty.content().isEmpty());
+        server.verify();
+    }
+
+    @Test
+    void theUnreadCountIsCappedAndTheMarksArePostsWithoutBody() {
+        server.expect(requestTo(NOTIFICATIONS + "/inbox/unread-count")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"count\":100,\"capped\":true}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(NOTIFICATIONS + "/inbox/" + NOTIFICATION_ID + "/read")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(""))
+                .andRespond(withSuccess(inboxItemJson(NOTIFICATION_ID, true, "CRITICAL"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(NOTIFICATIONS + "/inbox/read-all")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(""))
+                .andRespond(withSuccess("{\"allReadUntil\":\"2026-09-28T06:07:00Z\"}", MediaType.APPLICATION_JSON));
+        // El JSON de error de mto-notification es el de mto-maintenance: errorCode y message, por alias.
+        server.expect(requestTo(NOTIFICATIONS + "/inbox/" + NOTIFICATION_ID_2 + "/read")).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON).header("X-Correlation-Id", "corr-n1")
+                        .body("{\"timestamp\":\"2026-09-28T06:07:00Z\",\"status\":404,\"error\":\"NOT_FOUND\","
+                                + "\"message\":\"Notification " + NOTIFICATION_ID_2 + " is not addressed to config.responsable\","
+                                + "\"path\":\"/api/v1/notifications/inbox/" + NOTIFICATION_ID_2 + "/read\",\"method\":\"POST\","
+                                + "\"errorCode\":\"NTF-404\",\"correlationId\":\"corr-n1\",\"validationErrors\":[]}"));
+
+        UnreadCountDto count = asUser(() -> notificationClient.unreadCount());
+        InboxItemDto marked = asUser(() -> notificationClient.markRead(UUID.fromString(NOTIFICATION_ID)));
+        ReadAllDto all = asUser(() -> notificationClient.markAllRead());
+        NotFoundApiException notMine = assertThrows(NotFoundApiException.class,
+                () -> asUser(() -> notificationClient.markRead(UUID.fromString(NOTIFICATION_ID_2))));
+
+        assertEquals(100, count.count());
+        assertTrue(count.capped(), "cien o mas, no un total");
+        assertTrue(marked.read());
+        assertEquals(Instant.parse("2026-09-28T06:07:00Z"), all.allReadUntil());
+        assertEquals("NTF-404", notMine.getProblem().code());
+        assertTrue(notMine.getProblem().detail().contains("is not addressed to"), notMine.getProblem().detail());
+        assertEquals("corr-n1", notMine.getReference());
+        server.verify();
+    }
+
+    @Test
+    void theActivityLogIsSearchedWithEveryFilterAndTheDetailBringsThePayload() {
+        server.expect(requestTo(NOTIFICATIONS + "/activity?category=USERS&type=users.user.created&actorUsername=usuarios.responsable"
+                        + "&subjectType=user&subjectId=u-1&severity=INFO&sourceService=mto-users&from=2026-09-01T00%3A00%3A00Z"
+                        + "&to=2026-09-30T23%3A59%3A59.999Z&includeSuperseded=true&page=0&size=50&sort=occurredAt%2Cdesc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(activityEventJson(EVENT_ID, "USERS", "PERSON", null) + ","
+                        + activityEventJson(NOTIFICATION_ID_2, "FIELD", "ROBOT", EVENT_ID), 0, 50, 2), MediaType.APPLICATION_JSON));
+        // includeSuperseded solo viaja cuando es verdadero: el servicio ya esconde lo fundido por defecto.
+        server.expect(requestTo(NOTIFICATIONS + "/activity?page=0&size=50&sort=occurredAt%2Cdesc&sort=seq%2Cdesc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("", 0, 50, 0), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(NOTIFICATIONS + "/activity/" + EVENT_ID)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(activityEventJson(EVENT_ID, "USERS", "SERVICE", null), MediaType.APPLICATION_JSON));
+
+        PageResponse<ActivityEventDto> page = asUser(() -> notificationClient.activity(new ActivityFilter(ActivityCategory.USERS,
+                "users.user.created", "usuarios.responsable", "user", "u-1", ActivitySeverity.INFO, "mto-users",
+                Instant.parse("2026-09-01T00:00:00Z"), Instant.parse("2026-09-30T23:59:59.999Z"), true), 0, 50, List.of("occurredAt,desc")));
+        PageResponse<ActivityEventDto> visible = asUser(() -> notificationClient.activity(ActivityFilter.NONE, 0, 50,
+                List.of("occurredAt,desc", "seq,desc")));
+        ActivityEventDto detail = asUser(() -> notificationClient.activityEvent(UUID.fromString(EVENT_ID)));
+
+        ActivityEventDto created = page.content().getFirst();
+        assertEquals(118L, created.seq());
+        assertEquals(ActivityCategory.USERS, created.category());
+        assertEquals("users.user.created", created.type());
+        assertEquals(ActorKind.PERSON, created.actor().kind());
+        assertEquals("usuarios.responsable", created.actor().describe());
+        assertEquals("user nueva.persona", created.subject().describe());
+        assertEquals("corr-n7", created.correlationId());
+        assertEquals(true, created.payload().get("temporaryCredential"));
+        assertEquals(List.of("VERIFY_EMAIL"), created.payload().get("actions"));
+        assertNull(created.supersededBy());
+        ActivityEventDto superseded = page.content().get(1);
+        assertEquals(ActivityCategory.UNKNOWN, superseded.category(), "una categoria nueva no rompe el registro");
+        assertEquals(ActorKind.UNKNOWN, superseded.actor().kind());
+        assertEquals(UUID.fromString(EVENT_ID), superseded.supersededBy());
+        assertTrue(visible.content().isEmpty());
+        assertEquals("usuarios.responsable (Servicio)", detail.actor().describe() + " (" + detail.actor().kind().label() + ")");
+        assertEquals("nueva.persona", detail.payload().get("targetUsername"));
+        server.verify();
+    }
+
+    @Test
+    void theAccessesAreSearchedByUserIpTypeAndOutcome() {
+        server.expect(requestTo(NOTIFICATIONS + "/access?username=config.lector&ipAddress=10.0.0.7&type=access.login.failed&outcome=FAILURE"
+                        + "&page=0&size=50&sort=occurredAt%2Cdesc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(
+                        "{\"id\":\"" + EVENT_ID + "\",\"seq\":7,\"type\":\"access.login.failed\",\"severity\":\"WARNING\",\"outcome\":\"FAILURE\","
+                                + "\"occurredAt\":\"2026-09-28T06:07:00Z\",\"recordedAt\":\"2026-09-28T06:07:20Z\",\"username\":\"config.lector\","
+                                + "\"userId\":\"a0000000-0000-4000-8000-000000000041\",\"ipAddress\":\"10.0.0.7\",\"correlationId\":null,\"eventCount\":1,"
+                                + "\"payload\":{\"error\":\"invalid_user_credentials\",\"username\":\"config.lector\"}},"
+                                + "{\"id\":\"" + NOTIFICATION_ID_2 + "\",\"seq\":8,\"type\":\"access.login.streak\",\"severity\":\"CRITICAL\","
+                                + "\"outcome\":\"BLOCKED\",\"occurredAt\":\"2026-09-28T06:08:00Z\",\"recordedAt\":\"2026-09-28T06:08:20Z\","
+                                + "\"username\":\"config.lector\",\"userId\":null,\"ipAddress\":\"10.0.0.7\",\"correlationId\":null,\"eventCount\":3,"
+                                + "\"payload\":{\"dimension\":\"username\",\"value\":\"config.lector\",\"count\":3}}", 0, 50, 2),
+                        MediaType.APPLICATION_JSON));
+
+        PageResponse<AccessEventDto> page = asUser(() -> notificationClient.access(new AccessFilter("config.lector", "10.0.0.7",
+                "access.login.failed", AccessOutcome.FAILURE, null, null), 0, 50, List.of("occurredAt,desc")));
+
+        AccessEventDto failed = page.content().getFirst();
+        assertEquals(AccessOutcome.FAILURE, failed.outcome());
+        assertEquals("10.0.0.7", failed.ipAddress());
+        assertEquals("config.lector", failed.username());
+        assertEquals("invalid_user_credentials", failed.payload().get("error"));
+        AccessEventDto streak = page.content().get(1);
+        assertEquals(AccessOutcome.UNKNOWN, streak.outcome(), "un resultado nuevo se lee como desconocido");
+        assertEquals(3, streak.eventCount());
+        assertEquals(3, streak.payload().get("count"));
+        server.verify();
+    }
+
+    /** Un {@code sort} que el servicio no admite es 400 {@code REQ-400} sin errores por campo: una regla, no un formulario. */
+    @Test
+    void anUnknownSortIsA400OfTheNotificationServiceReadByAlias() {
+        server.expect(requestTo(NOTIFICATIONS + "/activity?page=0&size=50&sort=payload%2Casc")).andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON).header("X-Correlation-Id", "corr-n2")
+                        .body("{\"timestamp\":\"2026-09-28T06:07:00Z\",\"status\":400,\"error\":\"BAD_REQUEST\","
+                                + "\"message\":\"Unknown sort property 'payload'\",\"path\":\"/api/v1/notifications/activity\",\"method\":\"GET\","
+                                + "\"errorCode\":\"REQ-400\",\"correlationId\":\"corr-n2\",\"validationErrors\":[]}"));
+
+        ValidationApiException invalid = assertThrows(ValidationApiException.class,
+                () -> asUser(() -> notificationClient.activity(ActivityFilter.NONE, 0, 50, List.of("payload,asc"))));
+
+        assertEquals("REQ-400", invalid.getProblem().code());
+        assertEquals("Unknown sort property 'payload'", invalid.getProblem().detail());
+        assertFalse(invalid.getProblem().hasFieldErrors());
+        assertEquals("corr-n2", invalid.getReference());
         server.verify();
     }
 }

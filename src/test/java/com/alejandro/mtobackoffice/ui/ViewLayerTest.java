@@ -48,6 +48,28 @@ import com.alejandro.mtobackoffice.client.dto.users.UserDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserEnabledRequest;
 import com.alejandro.mtobackoffice.client.dto.users.UsersPage;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
+import com.alejandro.mtobackoffice.client.notification.NotificationClient;
+import com.alejandro.mtobackoffice.client.dto.notification.AccessEventDto;
+import com.alejandro.mtobackoffice.client.dto.notification.AccessFilter;
+import com.alejandro.mtobackoffice.client.dto.notification.AccessOutcome;
+import com.alejandro.mtobackoffice.client.dto.notification.ActivityCategory;
+import com.alejandro.mtobackoffice.client.dto.notification.ActivityEventDto;
+import com.alejandro.mtobackoffice.client.dto.notification.ActivityFilter;
+import com.alejandro.mtobackoffice.client.dto.notification.ActivitySeverity;
+import com.alejandro.mtobackoffice.client.dto.notification.ActorDto;
+import com.alejandro.mtobackoffice.client.dto.notification.ActorKind;
+import com.alejandro.mtobackoffice.client.dto.notification.InboxFilter;
+import com.alejandro.mtobackoffice.client.dto.notification.InboxItemDto;
+import com.alejandro.mtobackoffice.client.dto.notification.ReadAllDto;
+import com.alejandro.mtobackoffice.client.dto.notification.SubjectDto;
+import com.alejandro.mtobackoffice.client.dto.notification.UnreadCountDto;
+import com.alejandro.mtobackoffice.ui.notification.AccessView;
+import com.alejandro.mtobackoffice.ui.notification.ActivityView;
+import com.alejandro.mtobackoffice.ui.notification.EventDetailDialog;
+import com.alejandro.mtobackoffice.ui.notification.InboxBell;
+import com.alejandro.mtobackoffice.ui.notification.NotificationLinks;
+import com.alejandro.mtobackoffice.ui.notification.NotificationRoutes;
+import com.alejandro.mtobackoffice.ui.notification.NotificationsView;
 import com.alejandro.mtobackoffice.ui.users.UserAttributes;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.alejandro.mtobackoffice.ui.users.UsersView;
@@ -398,6 +420,8 @@ class ViewLayerTest {
     private DefectClient defectClient;
     @MockitoBean
     private ReportClient reportClient;
+    @MockitoBean
+    private NotificationClient notificationClient;
 
     @BeforeEach
     void setUp() {
@@ -793,6 +817,10 @@ class ViewLayerTest {
         when(disconnectorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<DisconnectorDto>of(), 0, 50));
         when(sectionInsulatorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<SectionInsulatorDto>of(), 0, 50));
         when(jobsClient.list(anyInt(), anyInt(), any(), any())).thenReturn(page(List.<JobDto>of(), 0, 20));
+        when(notificationClient.unreadCount()).thenReturn(new UnreadCountDto(0, false));
+        when(notificationClient.inbox(any(InboxFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<InboxItemDto>of(), 0, 20));
+        when(notificationClient.activity(any(ActivityFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<ActivityEventDto>of(), 0, 50));
+        when(notificationClient.access(any(AccessFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<AccessEventDto>of(), 0, 50));
         stubUsers(List.of());
         stubCatalogue(warehouseClient, List.<WarehouseDto>of(), WarehouseDto::code, WarehouseDto::name, WarehouseDto::active);
         stubCatalogue(supplierClient, List.<SupplierDto>of(), SupplierDto::code, SupplierDto::name, SupplierDto::active);
@@ -5109,5 +5137,399 @@ class ViewLayerTest {
                 spec -> spec.withId("asset-history-" + ASSET_OWN)));
         List<String> row = GridKt._getFormattedRow(gridWithId("revisions-grid"), 0);
         assertTrue(row.contains("Tramo TS-0002 · KP 12.1 - 13.45 · activo · Tramo propio"), row.toString());
+    }
+
+    // --- Notificaciones y actividad --------------------------------------------------------------
+
+    private static final UUID NOTIFICATION1 = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000501");
+    private static final UUID NOTIFICATION2 = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000502");
+    private static final UUID EVENT1 = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000511");
+    private static final UUID EVENT2 = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000512");
+    private static final Instant NOTIFIED_AT = Instant.parse("2026-09-28T06:07:00Z");
+
+    private static InboxItemDto notification(UUID id, String title, String link, boolean read, ActivitySeverity severity,
+                                             ActivityCategory category) {
+        return new InboxItemDto(id, "rule-" + id, category, severity, title, "Detalle de " + title, link, "order", "MO-000012", EVENT1,
+                NOTIFIED_AT, read, read ? NOTIFIED_AT.plusSeconds(3600) : null);
+    }
+
+    private static InboxItemDto read(InboxItemDto item) {
+        return new InboxItemDto(item.id(), item.ruleKey(), item.category(), item.severity(), item.title(), item.body(), item.link(),
+                item.subjectType(), item.subjectId(), item.activityEventId(), item.createdAt(), true, NOTIFIED_AT.plusSeconds(60));
+    }
+
+    private static ActivityEventDto event(UUID id, ActivityCategory category, String type, ActivitySeverity severity, Map<String, Object> payload) {
+        return new ActivityEventDto(id, 118L, "mto-maintenance", "f0000000-0000-4000-8000-000000000001", category, type, severity, NOTIFIED_AT,
+                NOTIFIED_AT.plusSeconds(1), new ActorDto(ActorKind.PERSON, "mantenimiento.tecnico", "a-1"), new SubjectDto("order", "MO-000012", null),
+                "corr-1", 1, payload, null);
+    }
+
+    private static AccessEventDto access(UUID id, String type, AccessOutcome outcome, ActivitySeverity severity, int count) {
+        return new AccessEventDto(id, 7L, type, severity, outcome, NOTIFIED_AT, NOTIFIED_AT.plusSeconds(20), "config.lector", "a-41", "10.0.0.7",
+                null, count, Map.of("error", "invalid_user_credentials"));
+    }
+
+    private void stubInbox(List<InboxItemDto> items) {
+        when(notificationClient.inbox(any(InboxFilter.class), anyInt(), anyInt(), anyList()))
+                .thenAnswer(call -> page(items, call.getArgument(1), call.getArgument(2)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Grid<InboxItemDto> inboxGrid() {
+        return LocatorJ._get(Grid.class, spec -> spec.withId("inbox-grid"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Grid<ActivityEventDto> activityGrid() {
+        return LocatorJ._get(Grid.class, spec -> spec.withId("activity-grid"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Grid<AccessEventDto> accessGrid() {
+        return LocatorJ._get(Grid.class, spec -> spec.withId("access-grid"));
+    }
+
+    private static Span bellBadge() {
+        return LocatorJ._get(Span.class, spec -> spec.withId(InboxBell.COUNT_ID));
+    }
+
+    @Test
+    void theBellShowsTheUnreadCountAndOpensTheInbox() {
+        loginAs("mantenimiento.tecnico", "ROLE_NOTIFICATION_INBOX", "ROLE_MAINTENANCE_READ", "ROLE_REALM_MTO_MAINTENANCE_TECHNICIAN");
+        when(notificationClient.unreadCount()).thenReturn(new UnreadCountDto(3, false));
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        assertEquals("3", bellBadge().getText());
+        List<String> labels = menuLabels();
+        assertTrue(labels.contains("Notificaciones"), labels.toString());
+        assertFalse(labels.contains("Actividad"), "sin activity-read no hay registro: " + labels);
+        assertFalse(labels.contains("Accesos"), labels.toString());
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(InboxBell.ID)));
+        LocatorJ._get(NotificationsView.class);
+    }
+
+    /** La campana es de quien puede leer su bandeja, que es un rol de cliente; un rol de realm con su nombre no la da. */
+    @Test
+    void theBellIsOnlyForWhoCanReadTheInbox() {
+        loginAs("config.lector", "ROLE_CONFIG_READ", "ROLE_REALM_NOTIFICATION_INBOX");
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        assertTrue(LocatorJ._find(InboxBell.class).isEmpty());
+        verify(notificationClient, never()).unreadCount();
+        assertFalse(menuLabels().contains("Notificaciones"), menuLabels().toString());
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(NotificationRoutes.INBOX));
+        assertTrue(LocatorJ._find(NotificationsView.class).isEmpty());
+    }
+
+    @Test
+    void theBellHidesTheNumberWithNothingUnreadAndIsRefreshedFromTheSharedThreadWithPush() {
+        loginAs("almacen.responsable", "ROLE_NOTIFICATION_INBOX");
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        LocatorJ._get(Button.class, spec -> spec.withId(InboxBell.ID));
+        List<Span> badges = LocatorJ._find(Span.class, spec -> spec.withId(InboxBell.COUNT_ID));
+        assertTrue(badges.isEmpty() || !badges.getFirst().isVisible(), "sin nada sin leer no hay numero");
+
+        InboxBell bell = LocatorJ._get(InboxBell.class);
+        when(notificationClient.unreadCount()).thenReturn(new UnreadCountDto(100, true));
+        bell.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertEquals("100+", bellBadge().getText(), "acotado: cien o mas");
+
+        // Un fallo en una pasada no molesta: el numero se queda como estaba y no hay notificacion.
+        when(notificationClient.unreadCount()).thenThrow(BackofficeApiException.of(HttpStatus.SERVICE_UNAVAILABLE, ApiProblem.empty(), "corr-9",
+                Duration.ofSeconds(30), "GET /api/notifications/inbox/unread-count"));
+        bell.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertEquals("100+", bellBadge().getText());
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
+    }
+
+    @Test
+    void theMenuOffersTheInboxTheLogAndTheAccessesEachByItsPermission() {
+        loginAs("auditor", "ROLE_NOTIFICATION_INBOX", "ROLE_NOTIFICATION_ACTIVITY_READ", "ROLE_NOTIFICATION_ACCESS_READ", "ROLE_REALM_MTO_AUDITOR");
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        List<String> labels = menuLabels();
+        assertTrue(labels.containsAll(List.of("Notificaciones", "Actividad", "Accesos")), labels.toString());
+        SideNavItem activity = LocatorJ._get(SideNavItem.class, spec -> spec.withLabel("Actividad"));
+        assertEquals(NotificationRoutes.ACTIVITY, activity.getPath(), "el registro es el nodo del grupo");
+        assertEquals(List.of("Accesos"), activity.getItems().stream().map(SideNavItem::getLabel).toList());
+    }
+
+    /** Los accesos llevan usuario e IP: su permiso no viene con el del registro, ni al reves. */
+    @Test
+    void theAccessesHaveTheirOwnPermissionThatTheLogDoesNotGive() {
+        loginAs("usuarios.responsable", "ROLE_NOTIFICATION_ACTIVITY_READ");
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        List<String> labels = menuLabels();
+        assertTrue(labels.contains("Actividad"), labels.toString());
+        assertFalse(labels.contains("Accesos"), "sin access-read no se ofrecen: " + labels);
+        assertFalse(labels.contains("Notificaciones"), labels.toString());
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(NotificationRoutes.ACCESS));
+        assertTrue(LocatorJ._find(AccessView.class).isEmpty());
+    }
+
+    @Test
+    void aRealmRoleNamedLikeANotificationPermissionOpensNeitherTheLogNorTheAccesses() {
+        loginAs("impostor", "ROLE_REALM_NOTIFICATION_ACTIVITY_READ", "ROLE_REALM_NOTIFICATION_ACCESS_READ");
+
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(NotificationRoutes.ACTIVITY));
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(NotificationRoutes.ACCESS));
+
+        assertTrue(LocatorJ._find(ActivityView.class).isEmpty());
+        assertTrue(LocatorJ._find(AccessView.class).isEmpty());
+    }
+
+    @Test
+    void theInboxOpensWithTheUnreadOnesAndFiltersAndSortsInTheServer() {
+        loginAs("mantenimiento.responsable", "ROLE_NOTIFICATION_INBOX");
+        stubInbox(List.of(
+                notification(NOTIFICATION1, "Orden urgente MO-000012", "/mantenimiento/ordenes/" + ORDER1, false, ActivitySeverity.CRITICAL,
+                        ActivityCategory.MAINTENANCE),
+                notification(NOTIFICATION2, "Material GA70 bajo minimo", "/almacen/materiales", true, ActivitySeverity.WARNING, ActivityCategory.STOCK)));
+
+        UI.getCurrent().navigate(NotificationRoutes.INBOX);
+
+        Grid<InboxItemDto> grid = inboxGrid();
+        assertEquals(2, GridKt._size(grid));
+        verify(notificationClient, atLeastOnce()).inbox(eq(new InboxFilter(true, null, null, null, null)), eq(0), anyInt(),
+                eq(List.of("createdAt,desc")));
+        List<String> row = GridKt._getFormattedRow(grid, 0);
+        assertTrue(row.containsAll(List.of("Critica", "Mantenimiento", "Orden urgente MO-000012", "Detalle de Orden urgente MO-000012")), row.toString());
+        assertEquals("Nueva", ((Span) GridKt._getCellComponent(grid, 0, "state")).getText());
+        assertEquals("", ((Span) GridKt._getCellComponent(grid, 1, "state")).getText(), "una leida no lleva marca");
+        LocatorJ._get(Span.class, spec -> spec.withText("2 sin leer"));
+
+        clearInvocations(notificationClient);
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("inbox-unread-only")), false);
+        GridKt._size(grid);
+        verify(notificationClient, atLeastOnce()).inbox(eq(InboxFilter.NONE), anyInt(), anyInt(), eq(List.of("createdAt,desc")));
+        LocatorJ._get(Span.class, spec -> spec.withText("2 notificaciones"));
+
+        clearInvocations(notificationClient);
+        LocatorJ._setValue(LocatorJ._get(ComboBox.class, spec -> spec.withId("inbox-category")), ActivityCategory.STOCK);
+        LocatorJ._setValue(LocatorJ._get(ComboBox.class, spec -> spec.withId("inbox-severity")), ActivitySeverity.WARNING);
+        GridKt._size(grid);
+        verify(notificationClient, atLeastOnce()).inbox(eq(new InboxFilter(null, ActivityCategory.STOCK, ActivitySeverity.WARNING, null, null)),
+                anyInt(), anyInt(), anyList());
+
+        // El recuento va siempre con el orden del servicio; la pagina lleva el de la columna.
+        grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("severity"), SortDirection.DESCENDING)));
+        GridKt._get(grid, 0);
+        verify(notificationClient, atLeastOnce()).inbox(any(InboxFilter.class), anyInt(), anyInt(), eq(List.of("severity,desc")));
+        assertFalse(grid.getColumnByKey("state").isSortable(), "el estado de lectura es de cada persona: el servicio no ordena por el");
+    }
+
+    /** El enlace de una regla es una ruta de esta aplicacion con sus filtros: se abre y los aplica, tras marcar la notificacion como leida. */
+    @Test
+    void openingANotificationMarksItReadRefreshesTheBellAndFollowsItsLinkWithItsFilters() {
+        loginAs("config.ops", "ROLE_NOTIFICATION_INBOX", "ROLE_NOTIFICATION_ACTIVITY_READ");
+        InboxItemDto stalled = notification(NOTIFICATION1, "Fuente parada", "/actividad?category=SYSTEM&type=system.source.stalled", false,
+                ActivitySeverity.CRITICAL, ActivityCategory.SYSTEM);
+        stubInbox(List.of(stalled));
+        when(notificationClient.markRead(NOTIFICATION1)).thenReturn(read(stalled));
+        when(notificationClient.unreadCount()).thenReturn(new UnreadCountDto(1, false));
+
+        UI.getCurrent().navigate(NotificationRoutes.INBOX);
+        assertEquals("1", bellBadge().getText());
+        when(notificationClient.unreadCount()).thenReturn(new UnreadCountDto(0, false));
+        clearInvocations(notificationClient);
+        Component actions = GridKt._getCellComponent(inboxGrid(), 0, NotificationsView.ACTIONS_COLUMN);
+        LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withId("open-" + NOTIFICATION1)));
+
+        verify(notificationClient).markRead(NOTIFICATION1);
+        verify(notificationClient, atLeastOnce()).unreadCount();
+        LocatorJ._get(ActivityView.class);
+        assertEquals(ActivityCategory.SYSTEM, LocatorJ._get(ComboBox.class, spec -> spec.withId("activity-category")).getValue());
+        assertEquals("system.source.stalled", LocatorJ._get(TextField.class, spec -> spec.withId("activity-type")).getValue());
+        GridKt._size(activityGrid());
+        verify(notificationClient, atLeastOnce()).activity(eq(new ActivityFilter(ActivityCategory.SYSTEM, "system.source.stalled", null, null, null,
+                null, null, null, null, false)), eq(0), anyInt(), eq(List.of("occurredAt,desc")));
+    }
+
+    @Test
+    void aReadNotificationIsNotMarkedAgainAndTheCheckMarksOneWithoutFollowingAnything() {
+        loginAs("config.lector", "ROLE_NOTIFICATION_INBOX");
+        InboxItemDto alreadyRead = notification(NOTIFICATION1, "Ya leida", "/", true, ActivitySeverity.INFO, ActivityCategory.CONFIGURATION);
+        InboxItemDto withoutLink = notification(NOTIFICATION2, "Sin enlace", null, false, ActivitySeverity.INFO, ActivityCategory.CONFIGURATION);
+        stubInbox(List.of(alreadyRead, withoutLink));
+        when(notificationClient.markRead(NOTIFICATION2)).thenReturn(read(withoutLink));
+
+        UI.getCurrent().navigate(NotificationRoutes.INBOX);
+        Component readActions = GridKt._getCellComponent(inboxGrid(), 0, NotificationsView.ACTIONS_COLUMN);
+        assertTrue(LocatorJ._find(readActions, Button.class, spec -> spec.withId("read-" + NOTIFICATION1)).isEmpty(), "una leida no se vuelve a marcar");
+        assertTrue(LocatorJ._find(readActions, Button.class, spec -> spec.withId("event-" + NOTIFICATION1)).isEmpty(),
+                "sin activity-read no se ofrece la linea del registro");
+        Component unreadActions = GridKt._getCellComponent(inboxGrid(), 1, NotificationsView.ACTIONS_COLUMN);
+        assertTrue(LocatorJ._find(unreadActions, Button.class, spec -> spec.withId("open-" + NOTIFICATION2)).isEmpty(), "sin enlace no hay flecha");
+
+        clearInvocations(notificationClient);
+        LocatorJ._click(LocatorJ._get(unreadActions, Button.class, spec -> spec.withId("read-" + NOTIFICATION2)));
+        verify(notificationClient).markRead(NOTIFICATION2);
+        GridKt._size(inboxGrid());
+        verify(notificationClient, atLeastOnce()).inbox(any(InboxFilter.class), anyInt(), anyInt(), anyList());
+        LocatorJ._get(NotificationsView.class);
+
+        clearInvocations(notificationClient);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(inboxGrid(), 0, NotificationsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("open-" + NOTIFICATION1)));
+        verify(notificationClient, never()).markRead(any());
+        LocatorJ._get(HomeView.class);
+    }
+
+    @Test
+    void markingAllAsReadGoesToTheServiceAndRefreshesTheListAndTheBell() {
+        loginAs("config.lector", "ROLE_NOTIFICATION_INBOX");
+        stubInbox(List.of(notification(NOTIFICATION1, "Una", null, false, ActivitySeverity.INFO, ActivityCategory.USERS)));
+        when(notificationClient.markAllRead()).thenReturn(new ReadAllDto(NOTIFIED_AT));
+
+        UI.getCurrent().navigate(NotificationRoutes.INBOX);
+        GridKt._size(inboxGrid());
+        clearInvocations(notificationClient);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("inbox-read-all")));
+
+        verify(notificationClient).markAllRead();
+        verify(notificationClient, atLeastOnce()).unreadCount();
+        NotificationsKt.expectNotifications("Todas las notificaciones quedan como leidas");
+        GridKt._size(inboxGrid());
+        verify(notificationClient, atLeastOnce()).inbox(any(InboxFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    /** 404 NTF-404: ya no va dirigida a mi (o nunca fue). Se dice y no se abre nada. */
+    @Test
+    void aNotificationThatIsNoLongerMineIsSaidAsNotFoundAndNothingOpens() {
+        loginAs("config.lector", "ROLE_NOTIFICATION_INBOX");
+        stubInbox(List.of(notification(NOTIFICATION1, "Ajena", "/", false, ActivitySeverity.INFO, ActivityCategory.USERS)));
+        ApiProblem problem = new ApiProblem(null, "NOT_FOUND", 404, "Notification " + NOTIFICATION1 + " is not addressed to config.lector", null,
+                "NTF-404", null, "corr-n4", null, null, null, null);
+        when(notificationClient.markRead(NOTIFICATION1)).thenThrow(BackofficeApiException.of(HttpStatus.NOT_FOUND, problem, "corr-n4", null,
+                "POST /api/notifications/inbox/" + NOTIFICATION1 + "/read"));
+
+        UI.getCurrent().navigate(NotificationRoutes.INBOX);
+        GridKt._clickItem(inboxGrid(), 0, 1, false, false, false, false);
+
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size());
+        LocatorJ._get(notifications.getFirst(), Span.class,
+                spec -> spec.withText("No se ha encontrado lo que se pedia. Notification " + NOTIFICATION1 + " is not addressed to config.lector"));
+        LocatorJ._get(NotificationsView.class);
+        assertTrue(LocatorJ._find(HomeView.class).isEmpty(), "sin marcar no se sigue el enlace");
+    }
+
+    @Test
+    void theLineBehindANotificationOpensWithItsPayloadOnlyWithActivityRead() {
+        loginAs("config.ops", "ROLE_NOTIFICATION_INBOX", "ROLE_NOTIFICATION_ACTIVITY_READ");
+        stubInbox(List.of(notification(NOTIFICATION1, "Orden urgente", null, true, ActivitySeverity.CRITICAL, ActivityCategory.MAINTENANCE)));
+        when(notificationClient.activityEvent(EVENT1)).thenReturn(event(EVENT1, ActivityCategory.MAINTENANCE, "maintenance.order.created",
+                ActivitySeverity.CRITICAL, Map.of("type", "URGENT", "code", "MO-000012")));
+
+        UI.getCurrent().navigate(NotificationRoutes.INBOX);
+        Component actions = GridKt._getCellComponent(inboxGrid(), 0, NotificationsView.ACTIONS_COLUMN);
+        LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withId("event-" + NOTIFICATION1)));
+
+        Dialog dialog = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
+        LocatorJ._get(dialog, Span.class, spec -> spec.withText("maintenance.order.created"));
+        LocatorJ._get(dialog, Span.class, spec -> spec.withText("mantenimiento.tecnico (Persona)"));
+        LocatorJ._get(dialog, Span.class, spec -> spec.withText("order MO-000012"));
+        @SuppressWarnings("unchecked")
+        Grid<EventDetailDialog.PayloadEntry> payload = LocatorJ._get(dialog, Grid.class, spec -> spec.withId(EventDetailDialog.PAYLOAD_ID));
+        assertEquals(2, GridKt._size(payload));
+        assertEquals(new EventDetailDialog.PayloadEntry("code", "MO-000012"), GridKt._get(payload, 0));
+        assertEquals(new EventDetailDialog.PayloadEntry("type", "URGENT"), GridKt._get(payload, 1));
+    }
+
+    @Test
+    void theActivityLogIsFilteredAndSortedInTheServerAndNeverOffersTheAccesses() {
+        loginAs("auditor", "ROLE_NOTIFICATION_ACTIVITY_READ");
+        ActivityEventDto created = event(EVENT1, ActivityCategory.MAINTENANCE, "maintenance.order.created", ActivitySeverity.CRITICAL, Map.of());
+        ActivityEventDto burst = new ActivityEventDto(EVENT2, 119L, "mto-configuration", "burst:7", ActivityCategory.of("FIELD"),
+                "configuration.profile.updated", ActivitySeverity.INFO, NOTIFIED_AT, NOTIFIED_AT, new ActorDto(ActorKind.SYSTEM, null, null),
+                new SubjectDto("profile", null, null), "job-1", 12645, Map.of("sampleIds", List.of(1, 2)), EVENT1);
+        when(notificationClient.activity(any(ActivityFilter.class), anyInt(), anyInt(), anyList()))
+                .thenAnswer(call -> page(List.of(created, burst), call.getArgument(1), call.getArgument(2)));
+
+        UI.getCurrent().navigate(NotificationRoutes.ACTIVITY);
+
+        Grid<ActivityEventDto> grid = activityGrid();
+        assertEquals(2, GridKt._size(grid));
+        verify(notificationClient, atLeastOnce()).activity(eq(ActivityFilter.NONE), eq(0), anyInt(), eq(List.of("occurredAt,desc")));
+        LocatorJ._get(Span.class, spec -> spec.withText("2 eventos"));
+        List<String> first = GridKt._getFormattedRow(grid, 0);
+        assertTrue(first.containsAll(List.of("Mantenimiento", "maintenance.order.created", "Critica", "mantenimiento.tecnico", "order MO-000012",
+                "mto-maintenance")), first.toString());
+        List<String> second = GridKt._getFormattedRow(grid, 1);
+        assertTrue(second.contains("Desconocido"), "una categoria nueva se pinta como desconocida: " + second);
+        assertTrue(second.containsAll(List.of("Sistema", "x12645", "Fundida")), second.toString());
+        @SuppressWarnings("unchecked")
+        ComboBox<ActivityCategory> category = LocatorJ._get(ComboBox.class, spec -> spec.withId("activity-category"));
+        List<ActivityCategory> offered = category.getListDataView().getItems().toList();
+        assertFalse(offered.contains(ActivityCategory.ACCESS), "los accesos van por su pantalla; aqui el servicio los rechaza: " + offered);
+        assertFalse(offered.contains(ActivityCategory.UNKNOWN), offered.toString());
+        assertTrue(offered.containsAll(List.of(ActivityCategory.USERS, ActivityCategory.SYSTEM)), offered.toString());
+
+        clearInvocations(notificationClient);
+        LocatorJ._setValue(LocatorJ._get(ComboBox.class, spec -> spec.withId("activity-severity")), ActivitySeverity.CRITICAL);
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("activity-actor")), "mantenimiento.tecnico");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("activity-source")), " mto-maintenance ");
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("activity-include-superseded")), true);
+        GridKt._size(grid);
+        verify(notificationClient, atLeastOnce()).activity(eq(new ActivityFilter(null, null, "mantenimiento.tecnico", null, null,
+                ActivitySeverity.CRITICAL, "mto-maintenance", null, null, true)), anyInt(), anyInt(), anyList());
+
+        grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("type"), SortDirection.ASCENDING)));
+        GridKt._get(grid, 0);
+        verify(notificationClient, atLeastOnce()).activity(any(ActivityFilter.class), anyInt(), anyInt(), eq(List.of("type,asc")));
+
+        GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        Dialog dialog = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
+        LocatorJ._get(dialog, Span.class, spec -> spec.withText("corr-1"));
+        LocatorJ._get(dialog, Span.class, spec -> spec.withText("Sin datos publicados"));
+        assertTrue(LocatorJ._find(dialog, Grid.class, spec -> spec.withId(EventDetailDialog.PAYLOAD_ID)).isEmpty());
+    }
+
+    /** Los enlaces de las reglas llegan con el usuario o la IP en la URL; el resto de filtros se manda al servicio. */
+    @Test
+    void theAccessesAreListedWithTheUserFromTheLinkAndFilteredInTheServer() {
+        loginAs("usuarios.responsable", "ROLE_NOTIFICATION_ACCESS_READ");
+        AccessEventDto failed = access(EVENT1, "access.login.failed", AccessOutcome.FAILURE, ActivitySeverity.WARNING, 1);
+        AccessEventDto streak = access(EVENT2, "access.login.streak", AccessOutcome.of("BLOCKED"), ActivitySeverity.CRITICAL, 3);
+        when(notificationClient.access(any(AccessFilter.class), anyInt(), anyInt(), anyList()))
+                .thenAnswer(call -> page(List.of(failed, streak), call.getArgument(1), call.getArgument(2)));
+
+        NotificationLinks.open(UI.getCurrent(), "/actividad/accesos?username=config.lector");
+
+        LocatorJ._get(AccessView.class);
+        Grid<AccessEventDto> grid = accessGrid();
+        assertEquals("config.lector", LocatorJ._get(TextField.class, spec -> spec.withId("access-username")).getValue());
+        assertEquals(2, GridKt._size(grid));
+        verify(notificationClient, atLeastOnce()).access(eq(new AccessFilter("config.lector", null, null, null, null, null)), eq(0),
+                anyInt(), eq(List.of("occurredAt,desc")));
+        List<String> row = GridKt._getFormattedRow(grid, 0);
+        assertTrue(row.containsAll(List.of("access.login.failed", "Fallido", "config.lector", "10.0.0.7", "Aviso")), row.toString());
+        List<String> streakRow = GridKt._getFormattedRow(grid, 1);
+        assertTrue(streakRow.containsAll(List.of("Desconocido", "x3")), "un resultado nuevo se pinta como desconocido: " + streakRow);
+        LocatorJ._get(Span.class, spec -> spec.withText("2 accesos"));
+
+        clearInvocations(notificationClient);
+        LocatorJ._setValue(LocatorJ._get(ComboBox.class, spec -> spec.withId("access-outcome")), AccessOutcome.FAILURE);
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("access-ip")), "10.0.0.7");
+        GridKt._size(grid);
+        verify(notificationClient, atLeastOnce()).access(eq(new AccessFilter("config.lector", "10.0.0.7", null, AccessOutcome.FAILURE, null, null)),
+                anyInt(), anyInt(), anyList());
+
+        GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        Dialog dialog = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
+        LocatorJ._get(dialog, Span.class, spec -> spec.withText("10.0.0.7"));
+        LocatorJ._get(dialog, Span.class, spec -> spec.withText("Fallido"));
+        @SuppressWarnings("unchecked")
+        Grid<EventDetailDialog.PayloadEntry> payload = LocatorJ._get(dialog, Grid.class, spec -> spec.withId(EventDetailDialog.PAYLOAD_ID));
+        assertEquals(new EventDetailDialog.PayloadEntry("error", "invalid_user_credentials"), GridKt._get(payload, 0));
     }
 }

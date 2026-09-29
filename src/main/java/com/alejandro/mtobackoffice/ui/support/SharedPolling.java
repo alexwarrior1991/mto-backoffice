@@ -1,4 +1,4 @@
-package com.alejandro.mtobackoffice.ui.jobs;
+package com.alejandro.mtobackoffice.ui.support;
 
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -12,19 +12,20 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Un hilo compartido que consulta el estado de los trabajos en curso mientras la pantalla de
- * trabajos esta abierta. Es lo que hace util {@code @Push}: el servicio se pregunta desde aqui,
- * fuera de cualquier peticion del navegador, y la respuesta se lleva a la pantalla con
+ * Un hilo compartido para lo que se vuelve a preguntar al servicio mientras una pantalla esta
+ * abierta: el estado de los trabajos en curso ({@code JobsView}) y el contador de la campana
+ * ({@code InboxBell}). Es lo que hace util {@code @Push}: el servicio se pregunta desde aqui, fuera
+ * de cualquier peticion del navegador, y la respuesta se lleva a la pantalla con
  * {@code UI.access()}. Cada pantalla se apunta al entrar y se borra al salir; sin pantallas
- * abiertas no se consulta nada.
+ * abiertas no se consulta nada. El principal se fija en la tarea con {@code CurrentPrincipal.callAs}.
  */
 @Component
-public class JobPolling {
+public class SharedPolling {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(JobPolling.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(SharedPolling.class);
 
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-        Thread thread = new Thread(runnable, "job-polling");
+        Thread thread = new Thread(runnable, "shared-polling");
         thread.setDaemon(true);
         return thread;
     });
@@ -35,7 +36,7 @@ public class JobPolling {
             try {
                 task.run();
             } catch (RuntimeException failure) {
-                LOGGER.warn("La consulta de trabajos ha fallado: {}", failure.getMessage());
+                LOGGER.warn("La consulta en segundo plano ha fallado: {}", failure.getMessage());
             }
         }, period.toMillis(), period.toMillis(), TimeUnit.MILLISECONDS);
     }
