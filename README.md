@@ -74,8 +74,8 @@ Séptimo repositorio del dominio, hermano e independiente de
   editor del padre, en su propia tabla con alta, modificación y baja; al guardar, si nadie las
   tocó van a `null` y si alguien las tocó va la lista entera, que para el servicio es el estado
   final (`README_API.md` §4: la que no mandas se borra). El **seccionador** de un perfil (1:1) se
-  vincula o desvincula desde el editor del perfil: se manda el objeto entero para vincularlo y
-  `null` para desvincularlo, que no lo borra. En la lista de seccionadores el perfil se muestra
+  enseña en el editor del perfil, de solo lectura: el vínculo es del seccionador y se cambia en su
+  editor, porque `mto-configuration` ignora el que llega dentro del perfil. En la lista de seccionadores el perfil se muestra
   por su identificador y su KP, que el servicio manda ahora con cada fila (`profileCode`,
   `profileKp`) para no ir perfil por perfil. Y los mensajes de sistema de Vaadin quedan fijados en
   castellano y sin diálogo de sesión caducada: tras un reinicio la pantalla recarga sola y vuelve

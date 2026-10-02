@@ -1,7 +1,6 @@
 package com.alejandro.mtobackoffice.ui.master;
 
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
-import com.alejandro.mtobackoffice.client.configuration.DisconnectorClient;
 import com.alejandro.mtobackoffice.client.configuration.ProfileClient;
 import com.alejandro.mtobackoffice.client.dto.master.DisconnectorDto;
 import com.alejandro.mtobackoffice.client.dto.master.LovRef;
@@ -77,25 +76,6 @@ public final class Pickers {
                 return profiles.filter(query.getPage(), query.getPageSize(), List.of("profileId,asc"),
                                 MasterFilters.of("searchText", query.getFilter().orElse("")))
                         .content().stream().map(Pickers::profileRef);
-            } catch (BackofficeApiException failure) {
-                UiErrors.show(failure);
-                return Stream.empty();
-            }
-        });
-        return combo;
-    }
-
-    /** Seccionadores buscados en el servidor por nombre, para vincular uno a un perfil. */
-    public static ComboBox<RefItem> lazyDisconnector(String label, DisconnectorClient disconnectors) {
-        ComboBox<RefItem> combo = new ComboBox<>(label);
-        combo.setItemLabelGenerator(RefItem::label);
-        combo.setClearButtonVisible(true);
-        combo.setPlaceholder("Escribe el nombre del seccionador");
-        combo.setItems(query -> {
-            try {
-                return disconnectors.filter(query.getPage(), query.getPageSize(), List.of("name,asc"),
-                                MasterFilters.of("searchText", query.getFilter().orElse("")))
-                        .content().stream().map(Pickers::disconnectorRef);
             } catch (BackofficeApiException failure) {
                 UiErrors.show(failure);
                 return Stream.empty();
