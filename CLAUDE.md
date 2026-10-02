@@ -459,7 +459,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `@JsonInclude(NON_NULL)`: el `null` tiene que viajar. `versionNumber` vuelve como se leyó: es el
   bloqueo optimista, y un cambio concurrente llega como 409. Se edita una **copia** de la fila
   (por Jackson, para que lleve los `extras`), para que cancelar o un rechazo del servicio no
-  cambien lo que enseña el Grid. `profiles.disconnector` (1:1, `null` = desvincular) no se toca.
+  cambien lo que enseña el Grid. `profiles.disconnector` se enseña de solo lectura y vuelve como
+  se leyó: `mto-configuration` lo ignora al escribir un perfil (#31), y el vínculo se cambia desde
+  Seccionadores, con el `profileId` del seccionador.
 - **Las listas de maestros se paginan en el servidor.** `MasterView` pide cada página a
   `POST /{recurso}/filter` con `page`, `size`, `sort=campo,asc` y `searchText`; sin orden elegido
   `sort` no viaja y ordena el servicio (por eso es opcional en `MasterClient.filter`); el recuento es
@@ -495,9 +497,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   editor la pone entonces en el DTO, ya después de `forgetChildren()`, y si no, se queda el
   `null` que deja al servicio sin decir nada. Media lista no existe: para el servicio la
   colección que llega es el estado final y el hijo que falta se borra (`README_API.md` §4). El 1:1
-  (`profiles.disconnector`, `cantilevers.steadyArm`) se manda entero para vincular o mantener y
-  `null` para desvincular, y por eso el seccionador del editor de perfiles no pasa por el `Binder`:
-  lo que viaja es el objeto leído del servicio, no un id.
+  `cantilevers.steadyArm` se manda entero para crearlo o mantenerlo y `null` para quitarlo. El
+  seccionador del perfil ya no se escribe desde el perfil: `ProfileEditor` lo enseña de solo
+  lectura, sin `Binder`, y viaja el objeto leído.
 - **Un reinicio no deja un diálogo muerto.** Sesión y tokens viven en memoria y se pierden al
   reiniciar; `BackofficeSystemMessages` deja apagado el aviso de sesión caducada para que Vaadin
   recargue en cuanto lo detecte y la cadena de seguridad reentre por el SSO de Keycloak. No se
@@ -558,7 +560,8 @@ de cada fila, parser del alta múltiple, notificación de error, diagnóstico de
 maestros: lista paginada, ordenada y filtrada contra el cliente simulado, nombres de referencias en las columnas,
 edición sobre una copia que vuelve con `extras` e hijos a `null`, errores del servicio sobre un
 desplegable, borrado confirmado, alta de un perfil con sus referencias, KP no válido, las
-ménsulas a `null` sin tocar y enteras al tocarlas, las agujas en su diálogo y enteras al guardar,
+ménsulas a `null` sin tocar y enteras al tocarlas, el seccionador del perfil de solo lectura y de
+vuelta como se leyó, las agujas en su diálogo y enteras al guardar,
 el perfil legible en la lista de seccionadores, los mensajes de sistema, el esquema de una vía desde
 su fila en una llamada con los postes en el orden recibido, el texto escapado, el fallo notificado
 sin ventana, la vía sin perfiles y el reparto del dibujo (aisladores entre sus vecinos por KP, brazos

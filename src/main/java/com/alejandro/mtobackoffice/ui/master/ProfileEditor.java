@@ -1,10 +1,8 @@
 package com.alejandro.mtobackoffice.ui.master;
 
-import com.alejandro.mtobackoffice.client.configuration.DisconnectorClient;
 import com.alejandro.mtobackoffice.client.configuration.LovResource;
 import com.alejandro.mtobackoffice.client.configuration.MasterResource;
 import com.alejandro.mtobackoffice.client.dto.master.CantileverDto;
-import com.alejandro.mtobackoffice.client.dto.master.DisconnectorDto;
 import com.alejandro.mtobackoffice.client.dto.master.LovRef;
 import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -15,20 +13,20 @@ import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.validator.RegexpValidator;
 
 import java.util.List;
-import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
  * Alta o modificacion de un perfil: identificador, KP, via, medidas y las referencias a catalogo
  * (una por campo salvo seccionamientos, anclajes y aparatos de seccionamiento, que son varios),
- * sus mensulas (hasta tres, cada una con su brazo de atirantado) y el seccionador que cuelga
- * de el.
+ * sus mensulas (hasta tres, cada una con su brazo de atirantado) y, de solo lectura, el
+ * seccionador que cuelga de el.
  *
  * <p>Las mensulas siguen la regla de las colecciones de hijos (README_API.md §4): si nadie las
  * toca van a {@code null} y el servicio las deja como estan; si alguien las toca, va la lista
- * entera. El seccionador es una relacion 1:1: se manda el objeto para vincularlo o mantenerlo y
- * {@code null} para desvincularlo, que no lo borra.</p>
+ * entera. El seccionador no se cambia desde aqui: el vinculo es suyo ({@code profileId}) y se
+ * cambia en su editor, y el servicio ignora el que llega dentro del perfil
+ * (mto-configuration#31). Viaja como se leyo, en la copia de la fila.</p>
  */
 public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
 
@@ -37,16 +35,11 @@ public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
     /** El tope del servicio ({@code PROFILE_MAX_CANTILEVERS}); el boton de anadir se apaga al llegar. */
     static final int MAX_CANTILEVERS = 3;
 
-    private final DisconnectorClient disconnectors;
     private final ChildrenEditor<CantileverDto> cantilevers;
-    private final ComboBox<RefItem> disconnector;
-    private final Long disconnectorAsRead;
-    private boolean disconnectorTouched;
 
-    public ProfileEditor(ProfileDto dto, ReferenceCatalog catalog, LovCatalog lovs, DisconnectorClient disconnectors,
+    public ProfileEditor(ProfileDto dto, ReferenceCatalog catalog, LovCatalog lovs,
                          Function<ProfileDto, ProfileDto> saver, Consumer<ProfileDto> onSaved) {
         super(MasterResource.PROFILES, ProfileDto.class, dto, saver, onSaved);
-        this.disconnectors = disconnectors;
 
         TextField profileId = text("Identificador", PROFILE_ID_MAX_LENGTH, true);
         TextField kp = text("KP", 13, true);
@@ -94,15 +87,12 @@ public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
         binder.forField(poleGaugeLocation).bind("poleGaugeLocation");
         binder.forField(railPoleDistance).bind("railPoleDistance");
 
-        // El seccionador 1:1 no pasa por el Binder: lo que viaja es el objeto entero, no un id.
-        disconnector = Pickers.lazyDisconnector("Seccionador", disconnectors);
+        // El seccionador se ensena, pero no pasa por el Binder ni se cambia aqui: ver la clase.
+        TextField disconnector = new TextField("Seccionador");
         disconnector.setId("profile-disconnector");
-        disconnector.setHelperText("El que cuelga de este perfil; vacio lo desvincula, no lo borra");
-        disconnectorAsRead = dto.getDisconnector() == null ? null : dto.getDisconnector().getId();
-        if (dto.getDisconnector() != null) {
-            disconnector.setValue(Pickers.disconnectorRef(dto.getDisconnector()));
-        }
-        disconnector.addValueChangeListener(change -> disconnectorTouched = true);
+        disconnector.setReadOnly(true);
+        disconnector.setValue(dto.getDisconnector() == null ? "Ninguno" : Pickers.disconnectorRef(dto.getDisconnector()).label());
+        disconnector.setHelperText("El que cuelga de este perfil. Se vincula desde Seccionadores, en el editor del seccionador.");
 
         cantilevers = new ChildrenEditor<>("Mensulas", "cantilevers", dto.getCantilevers(), MAX_CANTILEVERS, CantileverDto::new,
                 (child, accepted) -> new CantileverDialog(child, lovs, accepted).open(), grid -> {
@@ -136,17 +126,6 @@ public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
     @Override
     protected void prepare(ProfileDto dto) {
         cantilevers.edited().ifPresent(dto::setCantilevers);
-        if (!disconnectorTouched) {
-            return;
-        }
-        RefItem chosen = disconnector.getValue();
-        if (chosen == null) {
-            dto.setDisconnector(null);
-        } else if (!Objects.equals(chosen.id(), disconnectorAsRead)) {
-            DisconnectorDto linked = disconnectors.findById(chosen.id());
-            linked.setProfileId(dto.getId());
-            dto.setDisconnector(linked);
-        }
     }
 
     /** Para los tests: las mensulas tal como quedan en el editor. */

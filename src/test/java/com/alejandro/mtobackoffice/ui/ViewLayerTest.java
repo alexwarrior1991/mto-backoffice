@@ -330,6 +330,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -1280,6 +1281,44 @@ class ViewLayerTest {
                 && "PT1".equals(dto.getCantilevers().get(1).getCantileverType().code())
                 && Long.valueOf(900L).equals(dto.getCantilevers().get(1).getSteadyArm().getLength())));
         assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
+    }
+
+    /**
+     * El seccionador de un perfil se ensena de solo lectura y vuelve como se leyo: el vinculo es del
+     * seccionador, y el servicio ignora el que llega dentro del perfil (mto-configuration#31).
+     */
+    @Test
+    void theDisconnectorOfAProfileIsReadOnlyAndTravelsAsRead() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null, null)));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        ProfileDto profile = profileWithOneCantilever();
+        DisconnectorDto hanging = new DisconnectorDto();
+        hanging.setId(5L);
+        hanging.setName("SEC-1");
+        hanging.setProfileId(7L);
+        hanging.setDisconnectorFunction(new LovRef(9L, "Disc", "Seccionador"));
+        profile.setDisconnector(hanging);
+        when(profileClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(profile), 0, 50));
+        when(profileClient.update(eq(7L), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(PROFILES_ROUTE);
+        @SuppressWarnings("unchecked")
+        Grid<ProfileDto> profiles = LocatorJ._get(Grid.class);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(profiles, 0, "actions"), Button.class, spec -> spec.withId("edit-7")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        TextField disconnector = LocatorJ._get(dialog, TextField.class, spec -> spec.withId("profile-disconnector"));
+        assertTrue(disconnector.isReadOnly(), "el vinculo se cambia desde Seccionadores");
+        assertEquals("SEC-1 (Disc)", disconnector.getValue());
+        assertEquals("El que cuelga de este perfil. Se vincula desde Seccionadores, en el editor del seccionador.",
+                disconnector.getHelperText());
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        verify(profileClient).update(eq(7L), argThat(dto -> dto.getDisconnector() != null
+                && Long.valueOf(5L).equals(dto.getDisconnector().getId())
+                && Long.valueOf(7L).equals(dto.getDisconnector().getProfileId())));
+        verifyNoInteractions(disconnectorClient);
     }
 
     /** README_API.md §4 quater: las agujas son una coleccion de hijos; el codigo tiene forma fija. */
