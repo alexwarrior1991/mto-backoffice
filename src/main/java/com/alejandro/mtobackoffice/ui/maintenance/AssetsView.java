@@ -1,7 +1,6 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
-import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetUpdateRequest;
@@ -14,6 +13,7 @@ import com.alejandro.mtobackoffice.ui.master.EnabledFilter;
 import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.support.Formats;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasValue;
@@ -31,7 +31,7 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.component.textfield.TextField;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.router.Menu;
@@ -41,7 +41,6 @@ import com.vaadin.flow.spring.security.AuthenticationContext;
 import jakarta.annotation.security.RolesAllowed;
 
 import java.util.List;
-import java.util.stream.Stream;
 
 /**
  * Los activos de catenaria, paginados y filtrados en el servidor. Un tramo de via se da de alta
@@ -76,6 +75,7 @@ public class AssetsView extends VerticalLayout {
     private final DatePicker dueBy = new DatePicker("Preventivo vence hasta");
     private final Span count = new Span();
     private final Grid<AssetDto> grid = new Grid<>();
+    private LazyPages<AssetDto> pages;
 
     public AssetsView(MaintenanceClients clients, AuthenticationContext authentication) {
         this.clients = clients;
@@ -147,7 +147,7 @@ public class AssetsView extends VerticalLayout {
         grid.setPageSize(PAGE_SIZE);
         grid.setMultiSort(false);
         grid.setSizeFull();
-        grid.setItems(this::fetch, this::count);
+        pages = LazyPages.of(grid, this::load, total -> count.setText(total + " activos"));
         return grid;
     }
 
@@ -204,7 +204,7 @@ public class AssetsView extends VerticalLayout {
     }
 
     void refresh() {
-        grid.getDataProvider().refreshAll();
+        pages.refresh();
     }
 
     private AssetFilter filter() {
@@ -216,27 +216,10 @@ public class AssetsView extends VerticalLayout {
         return item == null ? null : item.id();
     }
 
-    private Stream<AssetDto> fetch(Query<AssetDto, Void> query) {
-        try {
-            int size = Math.max(1, query.getLimit());
-            List<String> sort = MasterFilters.sort(query.getSortOrders());
-            PageResponse<AssetDto> page = clients.assets().search(filter(), query.getOffset() / size, size, sort.isEmpty() ? DEFAULT_SORT : sort);
-            count.setText(page.page().totalElements() + " activos");
-            return page.content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
-    }
-
-    private int count(Query<AssetDto, Void> query) {
-        try {
-            long total = clients.assets().search(filter(), 0, 1, DEFAULT_SORT).page().totalElements();
-            count.setText(total + " activos");
-            return (int) Math.min(Integer.MAX_VALUE, total);
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return 0;
-        }
+    /** Una pagina con su total: una peticion ({@link LazyPages}). */
+    private LazyPages.Page<AssetDto> load(int offset, int limit, List<QuerySortOrder> sort) {
+        int size = Math.max(1, limit);
+        List<String> order = MasterFilters.sort(sort);
+        return LazyPages.Page.of(clients.assets().search(filter(), offset / size, size, order.isEmpty() ? DEFAULT_SORT : order));
     }
 }

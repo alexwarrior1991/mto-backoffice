@@ -2,18 +2,17 @@ package com.alejandro.mtobackoffice.ui.support;
 
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.RevisionDto;
-import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.theme.lumo.LumoUtility;
 
+import java.util.List;
 import java.util.function.Function;
-import java.util.stream.Stream;
 
 /**
  * El historial de una fila (Envers en mto-stock y en mto-maintenance, con la misma forma): las
@@ -65,7 +64,7 @@ public class RevisionsDialog<D> extends Dialog {
         grid.addColumn(row -> text(row.revision().correlationId())).setHeader("Correlacion").setKey("correlationId").setAutoWidth(true);
         grid.setPageSize(PAGE_SIZE);
         grid.setSizeFull();
-        grid.setItems(this::fetch, this::count);
+        LazyPages.of(grid, this::load, total -> count.setText(total + " revisiones, la mas reciente primero"));
 
         VerticalLayout layout = new VerticalLayout(count, empty, grid);
         layout.setSizeFull();
@@ -75,38 +74,23 @@ public class RevisionsDialog<D> extends Dialog {
         getFooter().add(new Button("Cerrar", click -> close()));
     }
 
-    private Stream<RevisionDto<D>> fetch(Query<RevisionDto<D>, Void> query) {
-        int size = Math.max(1, query.getLimit());
-        PageResponse<RevisionDto<D>> page = load(query.getOffset() / size, size);
-        return page == null ? Stream.empty() : page.content().stream();
-    }
-
-    private int count(Query<RevisionDto<D>, Void> query) {
-        PageResponse<RevisionDto<D>> page = load(0, 1);
-        if (page == null) {
-            return 0;
-        }
-        long total = page.page() == null ? page.content().size() : page.page().totalElements();
-        count.setText(total + " revisiones, la mas reciente primero");
-        return (int) Math.min(Integer.MAX_VALUE, total);
-    }
-
-    /** Una pagina, o {@code null} si no la hay: un 404 es «sin historial» y se dice una vez. */
-    private PageResponse<RevisionDto<D>> load(int page, int size) {
+    /**
+     * Una pagina del historial con su total, en una peticion ({@link LazyPages}). Un 404 es «sin
+     * historial»: se dice una vez, sin aviso, y no se vuelve a pedir.
+     */
+    private LazyPages.Page<RevisionDto<D>> load(int offset, int limit, List<QuerySortOrder> sort) {
         if (none) {
-            return null;
+            return LazyPages.Page.empty();
         }
+        int size = Math.max(1, limit);
         try {
-            return source.page(page, size);
+            return LazyPages.Page.of(source.page(offset / size, size));
         } catch (NotFoundApiException noRevisions) {
             none = true;
             empty.setVisible(true);
             count.setVisible(false);
             grid.setVisible(false);
-            return null;
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return null;
+            return LazyPages.Page.empty();
         }
     }
 

@@ -1,19 +1,16 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
-import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
-import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
-import com.alejandro.mtobackoffice.ui.support.UiErrors;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 
 import java.util.List;
-import java.util.stream.Stream;
 
 /** Las ordenes de un activo, paginadas en el servidor y la mas reciente primero; una fila abre su ficha. */
 public class AssetOrdersDialog extends Dialog {
@@ -37,7 +34,7 @@ public class AssetOrdersDialog extends Dialog {
         grid.addColumn(order -> MaintenanceFormats.progress(order.completedTaskCount(), order.taskCount())).setHeader("Tareas")
                 .setKey("tasks").setAutoWidth(true);
         grid.setSizeFull();
-        grid.setItems(query -> fetch(clients, asset, query), query -> count(clients, asset));
+        LazyPages.of(grid, (offset, limit, sort) -> load(clients, asset, offset, limit, sort));
         grid.addItemClickListener(click -> {
             close();
             UI.getCurrent().navigate(OrderDetailView.class, OrderDetailView.parametersOf(click.getItem().id()));
@@ -46,25 +43,10 @@ public class AssetOrdersDialog extends Dialog {
         getFooter().add(new Button("Cerrar", click -> close()));
     }
 
-    private static Stream<OrderDto> fetch(MaintenanceClients clients, AssetDto asset, Query<OrderDto, Void> query) {
-        try {
-            int size = Math.max(1, query.getLimit());
-            PageResponse<OrderDto> page = clients.assets().orders(asset.id(), query.getOffset() / size, size,
-                    MasterFilters.sort(query.getSortOrders(), DEFAULT_SORT, MasterFilters.BY_ID));
-            return page.content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
-    }
-
-    private static int count(MaintenanceClients clients, AssetDto asset) {
-        try {
-            return (int) Math.min(Integer.MAX_VALUE, clients.assets().orders(asset.id(), 0, 1,
-                    MasterFilters.withTieBreak(DEFAULT_SORT, MasterFilters.BY_ID)).page().totalElements());
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return 0;
-        }
+    /** Una pagina de las ordenes del activo, con su total: una peticion ({@link LazyPages}). */
+    private static LazyPages.Page<OrderDto> load(MaintenanceClients clients, AssetDto asset, int offset, int limit, List<QuerySortOrder> sort) {
+        int size = Math.max(1, limit);
+        return LazyPages.Page.of(clients.assets().orders(asset.id(), offset / size, size,
+                MasterFilters.sort(sort, DEFAULT_SORT, MasterFilters.BY_ID)));
     }
 }

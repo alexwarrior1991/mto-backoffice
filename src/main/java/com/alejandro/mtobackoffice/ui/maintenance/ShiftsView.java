@@ -1,19 +1,17 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
-import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.maintenance.PossessionType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamDto;
-import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.support.Formats;
-import com.alejandro.mtobackoffice.ui.support.UiErrors;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
 import com.vaadin.flow.component.HasValue;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -28,7 +26,7 @@ import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.FlexLayout;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.router.Menu;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
@@ -37,7 +35,6 @@ import jakarta.annotation.security.RolesAllowed;
 
 import java.util.List;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * Los turnos nocturnos, paginados y filtrados en el servidor (fechas, equipo, via, paquete, estado
@@ -64,6 +61,7 @@ public class ShiftsView extends VerticalLayout {
     private final ComboBox<PossessionType> possession = new ComboBox<>("Posesion");
     private final Span count = new Span();
     private final Grid<ShiftDto> grid = new Grid<>();
+    private LazyPages<ShiftDto> pages;
 
     public ShiftsView(MaintenanceClients clients, AuthenticationContext authentication) {
         this.clients = clients;
@@ -132,13 +130,13 @@ public class ShiftsView extends VerticalLayout {
         grid.setPageSize(PAGE_SIZE);
         grid.setMultiSort(false);
         grid.setSizeFull();
-        grid.setItems(this::fetch, this::count);
+        pages = LazyPages.of(grid, this::load, total -> count.setText(total + " turnos"));
         grid.addItemClickListener(click -> UI.getCurrent().navigate(ShiftDetailView.class, ShiftDetailView.parametersOf(click.getItem().id())));
         return grid;
     }
 
     void refresh() {
-        grid.getDataProvider().refreshAll();
+        pages.refresh();
     }
 
     private ShiftFilter filter() {
@@ -147,27 +145,10 @@ public class ShiftsView extends VerticalLayout {
                 status.getValue(), possession.getValue());
     }
 
-    private Stream<ShiftDto> fetch(Query<ShiftDto, Void> query) {
-        try {
-            int size = Math.max(1, query.getLimit());
-            List<String> sort = MasterFilters.sort(query.getSortOrders());
-            PageResponse<ShiftDto> page = clients.shifts().search(filter(), query.getOffset() / size, size, sort.isEmpty() ? DEFAULT_SORT : sort);
-            count.setText(page.page().totalElements() + " turnos");
-            return page.content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
-    }
-
-    private int count(Query<ShiftDto, Void> query) {
-        try {
-            long total = clients.shifts().search(filter(), 0, 1, DEFAULT_SORT).page().totalElements();
-            count.setText(total + " turnos");
-            return (int) Math.min(Integer.MAX_VALUE, total);
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return 0;
-        }
+    /** Una pagina con su total: una peticion ({@link LazyPages}). */
+    private LazyPages.Page<ShiftDto> load(int offset, int limit, List<QuerySortOrder> sort) {
+        int size = Math.max(1, limit);
+        List<String> order = MasterFilters.sort(sort);
+        return LazyPages.Page.of(clients.shifts().search(filter(), offset / size, size, order.isEmpty() ? DEFAULT_SORT : order));
     }
 }

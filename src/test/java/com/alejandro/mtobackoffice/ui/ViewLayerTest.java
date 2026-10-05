@@ -1128,6 +1128,50 @@ class ViewLayerTest {
         verify(trackClient, atLeastOnce()).filter(anyInt(), anyInt(), eq(List.of("name,desc")), anyMap());
     }
 
+    /**
+     * Una pagina es una peticion, con su total, como en mto-frontend: el recuento de Vaadin ya no se
+     * pide aparte (ni con el orden elegido), y un fallo se notifica una vez aunque Vaadin vuelva a
+     * contar en la misma ida y vuelta.
+     */
+    @Test
+    void aMasterListAsksOncePerPageAndNotifiesAFailureOnce() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubTracks(threeTracks());
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        Grid<TrackDto> grid = trackGrid();
+        GridKt._size(grid);
+        MockVaadin.clientRoundtrip();
+
+        clearInvocations(trackClient);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Recargar")));
+        assertEquals(3, GridKt._size(grid));
+        assertEquals("VIA 1", GridKt._get(grid, 0).getName());
+        assertEquals("VIA MUERTA", GridKt._get(grid, 2).getName());
+        MockVaadin.clientRoundtrip();
+        verify(trackClient, times(1)).filter(anyInt(), anyInt(), anyList(), anyMap());
+        verify(trackClient).filter(eq(0), eq(50), eq(List.of()), anyMap());
+
+        clearInvocations(trackClient);
+        grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("name"), SortDirection.DESCENDING)));
+        assertEquals(3, GridKt._size(grid));
+        GridKt._get(grid, 0);
+        MockVaadin.clientRoundtrip();
+        verify(trackClient, times(1)).filter(anyInt(), anyInt(), anyList(), anyMap());
+        verify(trackClient).filter(eq(0), eq(50), eq(List.of("name,desc")), anyMap());
+
+        doThrow(BackofficeApiException.of(HttpStatus.SERVICE_UNAVAILABLE, ApiProblem.empty(), "corr-lp", null,
+                "POST /api/configuration/tracks/filter")).when(trackClient).filter(anyInt(), anyInt(), anyList(), anyMap());
+        clearInvocations(trackClient);
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Recargar")));
+        assertEquals(0, GridKt._size(grid));
+        MockVaadin.clientRoundtrip();
+        assertEquals(0, GridKt._size(grid), "la siguiente vez se vuelve a pedir");
+        assertEquals(2, NotificationsKt.getNotifications().size(), "un aviso por vez que se pidio, no por recuento");
+        verify(trackClient, times(2)).filter(anyInt(), anyInt(), anyList(), anyMap());
+        LocatorJ._get(Span.class, spec -> spec.withText("0 vias"));
+    }
+
     @Test
     void aReadOnlyPersonSeesTheMastersWithoutAnyWriteControl() {
         loginAs("config.lector", "ROLE_CONFIG_READ");
@@ -2178,6 +2222,15 @@ class ViewLayerTest {
         assertEquals(3, GridKt._size(grid), "user012, user015 y user018 estan desactivados");
         verify(usersClient, atLeastOnce()).search(eq("user01"), isNull(), isNull(), eq(false), isNull(), isNull(), eq(0), anyInt());
         LocatorJ._get(Span.class, spec -> spec.withText("3 usuarios"));
+
+        // Un tramo es una peticion, con su total: el recuento no se pide aparte (LazyPages).
+        clearInvocations(usersClient);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Recargar")));
+        assertEquals(3, GridKt._size(grid));
+        assertEquals("user018", GridKt._get(grid, 2).username());
+        MockVaadin.clientRoundtrip();
+        verify(usersClient, times(1)).search(any(), any(), any(), any(), any(), any(), anyInt(), anyInt());
+        verify(usersClient).search(eq("user01"), isNull(), isNull(), eq(false), isNull(), isNull(), eq(0), eq(UsersView.PAGE_SIZE));
     }
 
     @Test
@@ -6104,7 +6157,7 @@ class ViewLayerTest {
         verify(notificationClient, atLeastOnce()).inbox(eq(new InboxFilter(null, ActivityCategory.STOCK, ActivitySeverity.WARNING, null, null)),
                 anyInt(), anyInt(), anyList());
 
-        // El recuento va siempre con el orden del servicio; la pagina lleva el de la columna.
+        // La pagina lleva el orden de la columna, y con ella llega el recuento (LazyPages).
         grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("severity"), SortDirection.DESCENDING)));
         GridKt._get(grid, 0);
         verify(notificationClient, atLeastOnce()).inbox(any(InboxFilter.class), anyInt(), anyInt(), eq(List.of("severity,desc")));

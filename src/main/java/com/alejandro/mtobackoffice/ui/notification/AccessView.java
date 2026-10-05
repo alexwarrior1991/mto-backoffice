@@ -1,16 +1,14 @@
 package com.alejandro.mtobackoffice.ui.notification;
 
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
-import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.notification.AccessEventDto;
 import com.alejandro.mtobackoffice.client.dto.notification.AccessFilter;
 import com.alejandro.mtobackoffice.client.dto.notification.AccessOutcome;
-import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.notification.NotificationClient;
 import com.alejandro.mtobackoffice.configuration.security.NotificationRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
-import com.alejandro.mtobackoffice.ui.support.UiErrors;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
 import com.vaadin.flow.component.HasValue;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -24,7 +22,7 @@ import com.vaadin.flow.component.orderedlayout.FlexLayout;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextField;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.BeforeEnterObserver;
@@ -37,7 +35,6 @@ import jakarta.annotation.security.RolesAllowed;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
-import java.util.stream.Stream;
 
 /**
  * Los accesos: logins, fallos, rachas, logouts, bloqueos y cambios de credenciales, con usuario e
@@ -64,6 +61,7 @@ public class AccessView extends VerticalLayout implements BeforeEnterObserver {
     private final DatePicker to = new DatePicker("Hasta");
     private final Span count = new Span();
     private final Grid<AccessEventDto> grid = new Grid<>();
+    private LazyPages<AccessEventDto> pages;
     private static final Pattern IPV4 = Pattern.compile("^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$");
     private static final Pattern IPV6 = Pattern.compile("^[0-9a-fA-F:.]{2,45}$");
     /** Lo que pide la lista: el ultimo filtro con la IP entera (o sin IP). */
@@ -117,7 +115,7 @@ public class AccessView extends VerticalLayout implements BeforeEnterObserver {
         grid.setPageSize(PAGE_SIZE);
         grid.setMultiSort(false);
         grid.setSizeFull();
-        grid.setItems(this::fetch, this::count);
+        pages = LazyPages.of(grid, this::load, total -> count.setText(total + " accesos"));
         grid.addItemClickListener(click -> EventDetailDialog.of(click.getItem()).open());
 
         add(new H2("Accesos"), filters, toolbar, grid);
@@ -139,7 +137,7 @@ public class AccessView extends VerticalLayout implements BeforeEnterObserver {
 
     /** Vuelve a pedir la lista con el filtro que ya pidio. */
     void refresh() {
-        grid.getDataProvider().refreshAll();
+        pages.refresh();
     }
 
     /**
@@ -180,27 +178,10 @@ public class AccessView extends VerticalLayout implements BeforeEnterObserver {
         return applied;
     }
 
-    private Stream<AccessEventDto> fetch(Query<AccessEventDto, Void> query) {
-        try {
-            int size = Math.max(1, query.getLimit());
-            List<String> sort = MasterFilters.sort(query.getSortOrders());
-            PageResponse<AccessEventDto> page = client.access(filter(), query.getOffset() / size, size, sort.isEmpty() ? DEFAULT_SORT : sort);
-            count.setText(page.page().totalElements() + " accesos");
-            return page.content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
-    }
-
-    private int count(Query<AccessEventDto, Void> query) {
-        try {
-            long total = client.access(filter(), 0, 1, DEFAULT_SORT).page().totalElements();
-            count.setText(total + " accesos");
-            return (int) Math.min(Integer.MAX_VALUE, total);
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return 0;
-        }
+    /** Una pagina con su total: una peticion ({@link LazyPages}). */
+    private LazyPages.Page<AccessEventDto> load(int offset, int limit, List<QuerySortOrder> sort) {
+        int size = Math.max(1, limit);
+        List<String> order = MasterFilters.sort(sort);
+        return LazyPages.Page.of(client.access(filter(), offset / size, size, order.isEmpty() ? DEFAULT_SORT : order));
     }
 }

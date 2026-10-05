@@ -3,10 +3,10 @@ package com.alejandro.mtobackoffice.ui.master;
 import com.alejandro.mtobackoffice.client.configuration.MasterClient;
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
 import com.alejandro.mtobackoffice.client.configuration.MasterResource;
-import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.SecurityRoles;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.button.Button;
@@ -22,7 +22,7 @@ import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextField;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.spring.security.AuthenticationContext;
@@ -32,7 +32,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.stream.Stream;
 import com.vaadin.flow.component.ClickEvent;
 import com.vaadin.flow.component.ComponentEventListener;
 
@@ -70,6 +69,7 @@ public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
     private final HorizontalLayout filters = new HorizontalLayout();
     private final Span count = new Span();
     private final Grid<D> grid = new Grid<>();
+    private LazyPages<D> pages;
 
     protected MasterView(MasterResource resource, Class<D> type, MasterClient<D> client,
                          AuthenticationContext authentication, ObjectMapper objectMapper) {
@@ -99,7 +99,7 @@ public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
         }
         grid.setPageSize(PAGE_SIZE);
         grid.setSizeFull();
-        grid.setItems(this::fetch, this::count);
+        pages = LazyPages.of(grid, this::load, this::showCount);
     }
 
     /** Las columnas propias del maestro; el orden de cada una es un campo del servicio. */
@@ -185,28 +185,10 @@ public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
         return filter;
     }
 
-    private Stream<D> fetch(Query<D, Void> query) {
-        try {
-            PageResponse<D> page = client.filter(query.getPage(), query.getPageSize(),
-                    MasterFilters.sort(query.getSortOrders()), filterBody());
-            showCount(page.page().totalElements());
-            return page.content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
-    }
-
-    private int count(Query<D, Void> query) {
-        try {
-            long total = client.filter(0, 1, List.of(), filterBody()).page().totalElements();
-            showCount(total);
-            return (int) Math.min(Integer.MAX_VALUE, total);
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            showCount(0);
-            return 0;
-        }
+    /** Una pagina del {@code /filter}, con el total de la lista (una peticion: {@link LazyPages}). */
+    private LazyPages.Page<D> load(int offset, int limit, List<QuerySortOrder> sort) {
+        int size = Math.max(1, limit);
+        return LazyPages.Page.of(client.filter(offset / size, size, MasterFilters.sort(sort), filterBody()));
     }
 
     private void showCount(long total) {
@@ -216,7 +198,7 @@ public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
 
     public void refresh() {
         grid.deselectAll();
-        grid.getDataProvider().refreshAll();
+        pages.refresh();
     }
 
     /**

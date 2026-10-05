@@ -1,13 +1,11 @@
 package com.alejandro.mtobackoffice.ui.stock;
 
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
-import com.alejandro.mtobackoffice.client.dto.PageResponse;
-import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.stock.StockCatalogueClient;
 import com.alejandro.mtobackoffice.configuration.security.StockRoles;
 import com.alejandro.mtobackoffice.ui.master.EnabledFilter;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
 import com.alejandro.mtobackoffice.ui.support.RevisionsDialog;
-import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.ClickEvent;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.ComponentEventListener;
@@ -22,14 +20,13 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.component.textfield.TextField;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.spring.security.AuthenticationContext;
 
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Stream;
 
 /**
  * Un catalogo de mto-stock (almacenes, proveedores, proyectos, materiales): la lista paginada <b>en
@@ -56,6 +53,7 @@ public abstract class StockCatalogueView<D> extends VerticalLayout {
     private final Select<EnabledFilter> state = EnabledFilter.select("Estado", "Todos", "Activos", "Retirados");
     private final Span count = new Span();
     protected final Grid<D> grid = new Grid<>();
+    private LazyPages<D> pages;
 
     /**
      * @param title  el de la pantalla
@@ -116,7 +114,7 @@ public abstract class StockCatalogueView<D> extends VerticalLayout {
         grid.setPageSize(PAGE_SIZE);
         grid.setMultiSort(false);
         grid.setSizeFull();
-        grid.setItems(this::fetch, this::count);
+        pages = LazyPages.of(grid, this::load, this::showCount);
         return grid;
     }
 
@@ -159,31 +157,11 @@ public abstract class StockCatalogueView<D> extends VerticalLayout {
         return button;
     }
 
-    private Stream<D> fetch(Query<D, Void> query) {
-        try {
-            int size = Math.max(1, query.getLimit());
-            PageResponse<D> page = client.search(searchText(), state.getValue().value(), query.getOffset() / size, size,
-                    MasterFilters.sort(query.getSortOrders(), DEFAULT_SORT, MasterFilters.BY_ID));
-            showCount(page.page() == null ? page.content().size() : page.page().totalElements());
-            return page.content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
-    }
-
-    private int count(Query<D, Void> query) {
-        try {
-            PageResponse<D> page = client.search(searchText(), state.getValue().value(), 0, 1,
-                    MasterFilters.withTieBreak(DEFAULT_SORT, MasterFilters.BY_ID));
-            long total = page.page() == null ? page.content().size() : page.page().totalElements();
-            showCount(total);
-            return (int) Math.min(Integer.MAX_VALUE, total);
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            showCount(0);
-            return 0;
-        }
+    /** Una pagina del catalogo con su total: una peticion ({@link LazyPages}). */
+    private LazyPages.Page<D> load(int offset, int limit, List<QuerySortOrder> sort) {
+        int size = Math.max(1, limit);
+        return LazyPages.Page.of(client.search(searchText(), state.getValue().value(), offset / size, size,
+                MasterFilters.sort(sort, DEFAULT_SORT, MasterFilters.BY_ID)));
     }
 
     private String searchText() {
@@ -196,7 +174,7 @@ public abstract class StockCatalogueView<D> extends VerticalLayout {
     }
 
     public void refresh() {
-        grid.getDataProvider().refreshAll();
+        pages.refresh();
     }
 
     protected static String yesNo(Boolean value) {

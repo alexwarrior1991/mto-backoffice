@@ -1,7 +1,6 @@
 package com.alejandro.mtobackoffice.ui.notification;
 
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
-import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.notification.ActivityCategory;
 import com.alejandro.mtobackoffice.client.dto.notification.ActivitySeverity;
 import com.alejandro.mtobackoffice.client.dto.notification.InboxFilter;
@@ -11,6 +10,7 @@ import com.alejandro.mtobackoffice.client.notification.NotificationClient;
 import com.alejandro.mtobackoffice.configuration.security.NotificationRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasValue;
@@ -30,7 +30,7 @@ import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.FlexLayout;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.router.Menu;
 import com.vaadin.flow.router.PageTitle;
@@ -40,7 +40,6 @@ import jakarta.annotation.security.RolesAllowed;
 
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Stream;
 
 /**
  * Mi bandeja: las notificaciones dirigidas a mi (por usuario, perfil o rol de cliente, y eso lo
@@ -73,6 +72,7 @@ public class NotificationsView extends VerticalLayout {
     private final DatePicker to = new DatePicker("Hasta");
     private final Span count = new Span();
     private final Grid<InboxItemDto> grid = new Grid<>();
+    private LazyPages<InboxItemDto> pages;
 
     public NotificationsView(NotificationClient client, AuthenticationContext authentication) {
         this.client = client;
@@ -119,7 +119,7 @@ public class NotificationsView extends VerticalLayout {
         grid.setPageSize(PAGE_SIZE);
         grid.setMultiSort(false);
         grid.setSizeFull();
-        grid.setItems(this::fetch, this::count);
+        pages = LazyPages.of(grid, this::load, total -> count.setText(countText(total)));
         grid.addItemClickListener(click -> open(click.getItem()));
 
         add(new H2("Notificaciones"), filters, toolbar, grid);
@@ -167,7 +167,7 @@ public class NotificationsView extends VerticalLayout {
     }
 
     void refresh() {
-        grid.getDataProvider().refreshAll();
+        pages.refresh();
     }
 
     /** Abrir: marcarla como leida si no lo estaba y seguir su enlace; sin enlace, solo la marca. */
@@ -224,27 +224,10 @@ public class NotificationsView extends VerticalLayout {
         return total + (Boolean.TRUE.equals(unreadOnly.getValue()) ? " sin leer" : " notificaciones");
     }
 
-    private Stream<InboxItemDto> fetch(Query<InboxItemDto, Void> query) {
-        try {
-            int size = Math.max(1, query.getLimit());
-            List<String> sort = MasterFilters.sort(query.getSortOrders());
-            PageResponse<InboxItemDto> page = client.inbox(filter(), query.getOffset() / size, size, sort.isEmpty() ? DEFAULT_SORT : sort);
-            count.setText(countText(page.page().totalElements()));
-            return page.content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
-    }
-
-    private int count(Query<InboxItemDto, Void> query) {
-        try {
-            long total = client.inbox(filter(), 0, 1, DEFAULT_SORT).page().totalElements();
-            count.setText(countText(total));
-            return (int) Math.min(Integer.MAX_VALUE, total);
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return 0;
-        }
+    /** Una pagina con su total: una peticion ({@link LazyPages}). */
+    private LazyPages.Page<InboxItemDto> load(int offset, int limit, List<QuerySortOrder> sort) {
+        int size = Math.max(1, limit);
+        List<String> order = MasterFilters.sort(sort);
+        return LazyPages.Page.of(client.inbox(filter(), offset / size, size, order.isEmpty() ? DEFAULT_SORT : order));
     }
 }
