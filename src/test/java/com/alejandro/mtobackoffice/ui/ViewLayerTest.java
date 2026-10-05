@@ -72,6 +72,7 @@ import com.alejandro.mtobackoffice.ui.notification.NotificationLinks;
 import com.alejandro.mtobackoffice.ui.notification.NotificationRoutes;
 import com.alejandro.mtobackoffice.ui.notification.NotificationsView;
 import com.alejandro.mtobackoffice.ui.users.UserAttributes;
+import com.alejandro.mtobackoffice.ui.support.PageVisibility;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.alejandro.mtobackoffice.ui.users.UsersView;
 import com.alejandro.mtobackoffice.client.dto.stock.CatalogueRequest;
@@ -123,6 +124,7 @@ import com.alejandro.mtobackoffice.ui.stock.StockView;
 import com.alejandro.mtobackoffice.ui.stock.MaterialsView;
 import com.vaadin.flow.component.datepicker.DatePicker;
 import com.vaadin.flow.component.datetimepicker.DateTimePicker;
+import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.html.Div;
 import java.time.LocalDate;
 import com.alejandro.mtobackoffice.ui.stock.ProjectsView;
@@ -284,6 +286,7 @@ import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.sidenav.SideNavItem;
 import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.component.upload.FileRemovedEvent;
 import com.vaadin.flow.component.upload.Upload;
 import kotlin.jvm.functions.Function0;
 import org.junit.jupiter.api.AfterEach;
@@ -341,6 +344,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -1405,6 +1409,67 @@ class ViewLayerTest {
         return dto;
     }
 
+    /**
+     * README_API.md §4: en una referencia a catalogo, {@code null} es «no la toques». Vaciar la que tenia
+     * valor viaja como {@code {}}, y la que nadie toco vuelve como se leyo, igual que en mto-frontend.
+     */
+    @Test
+    void clearingAnOptionalReferenceOfAProfileSendsAnEmptyReferenceAndAnUntouchedOneTravelsAsRead() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null, null)));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        ProfileDto read = profileWithOneCantilever();
+        read.setPoleType(new LovRef(5L, "PT1", "Poste tipo 1"));
+        read.setSupportType(new LovRef(5L, "PT1", "Poste tipo 1"));
+        when(profileClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(read), 0, 50));
+        when(profileClient.update(eq(7L), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(PROFILES_ROUTE);
+        @SuppressWarnings("unchecked")
+        Grid<ProfileDto> profiles = LocatorJ._get(Grid.class);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(profiles, 0, "actions"), Button.class, spec -> spec.withId("edit-7")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        ComboBox<LovRef> poleType = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Tipo de poste"));
+        LocatorJ._setValue(poleType, null);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        verify(profileClient).update(eq(7L), argThat(dto -> dto.getPoleType() != null && dto.getPoleType().id() == null
+                && dto.getPoleType().code() == null
+                && Long.valueOf(5L).equals(dto.getSupportType().id())
+                && dto.getFoundation() == null));
+    }
+
+    @Test
+    void aTrackConnectionInsulatorWithoutItsConnectedTrackNeverReachesTheService() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(station(12L, "ATOCHA", 100L)), 0, 50));
+
+        UI.getCurrent().navigate(SECTION_INSULATORS_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Nombre")), "AS-1");
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> stationBox = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Estacion"));
+        LocatorJ._setValue(stationBox, stationBox.getListDataView().getItems().findFirst().orElseThrow());
+        @SuppressWarnings("unchecked")
+        ComboBox<SectionInsulatorInstallationType> installation = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Instalacion"));
+        LocatorJ._setValue(installation, SectionInsulatorInstallationType.TRACK_CONNECTION);
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> trackBox = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via"));
+        LocatorJ._setValue(trackBox, new RefItem(3L, "TRACK 1 (EP4)"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> connected = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via conectada"));
+        assertTrue(connected.isInvalid(), "el servicio rechazaria la conexion sin la otra via");
+        verify(sectionInsulatorClient, never()).create(any());
+    }
+
     /** README_API.md §4: sin tocar las mensulas van a null; tocadas, va la lista entera, con el brazo 1:1 de cada una. */
     @Test
     void theCantileversOfAProfileGoAsNullUntouchedAndWholeWhenEdited() {
@@ -1616,7 +1681,7 @@ class ViewLayerTest {
 
     /** El servicio simulado: GET /jobs devuelve lo que haya en la lista, paginado y filtrado por tipo y estado. */
     private void stubJobHistory(List<JobDto> history) {
-        when(jobsClient.list(anyInt(), anyInt(), any(), any())).thenAnswer(call -> {
+        doAnswer(call -> {
             JobType type = call.getArgument(2);
             JobStatus status = call.getArgument(3);
             List<JobDto> matching = history.stream()
@@ -1624,7 +1689,7 @@ class ViewLayerTest {
                     .filter(job -> status == null || job.status() == status)
                     .toList();
             return page(matching, call.getArgument(0), call.getArgument(1));
-        });
+        }).when(jobsClient).list(anyInt(), anyInt(), any(), any());
     }
 
     /** Subir, lanzar, y ver el progreso llegar por @Push sin que el navegador pregunte. */
@@ -1681,6 +1746,8 @@ class ViewLayerTest {
         Grid<JobItemError> errorRows = LocatorJ._get(errors, Grid.class);
         assertEquals(1, GridKt._size(errorRows));
         assertEquals("kp obligatorio [kp]", GridKt._get(errorRows, 0).message());
+        LocatorJ._get(errors, Paragraph.class, spec -> spec.withText(
+                "2 elementos fallidos; el servicio solo detalla los primeros 1. El informe descargable los trae todos."));
         errors.close();
 
         // Terminado todo, la pantalla deja de preguntar.
@@ -1824,6 +1891,146 @@ class ViewLayerTest {
         clearInvocations(jobsClient);
         LocatorJ._get(JobsView.class).pollOnce();
         verify(jobsClient, never()).list(anyInt(), anyInt(), any(), any());
+    }
+
+    /** Solo el fichero de una importacion es el informe de sus errores: un republicado no lo tiene. */
+    @Test
+    void onlyAnImportSaysItsReportBringsEveryError() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubJobHistory(List.of(new JobDto(JOB_ID, JobType.MASTER_DATA_REPUBLISH, JobStatus.COMPLETED_WITH_ERRORS,
+                Instant.parse("2026-08-27T09:12:03Z"), null, null, null, null, 10, 10, 7, 3, null, null, null)));
+        when(jobsClient.republishJob(JOB_ID)).thenReturn(new JobDto(JOB_ID, JobType.MASTER_DATA_REPUBLISH, JobStatus.COMPLETED_WITH_ERRORS,
+                Instant.parse("2026-08-27T09:12:03Z"), null, null, null, null, 10, 10, 7, 3, null, null,
+                List.of(new JobItemError(4, "publish", "AmqpException", "sin confirmacion"))));
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        Component actions = GridKt._getCellComponent(jobsGrid(), 0, "actions");
+        assertTrue(LocatorJ._find(actions, Anchor.class).isEmpty(), "un republicado no produce fichero");
+        LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withText("Errores")));
+
+        Dialog errors = LocatorJ._get(Dialog.class);
+        LocatorJ._get(errors, Paragraph.class, spec -> spec.withText("3 elementos fallidos; el servicio solo detalla los primeros 1."));
+    }
+
+    /**
+     * Un fallo al leer la lista no se notifica en cada pasada, que seria un aviso cada dos segundos:
+     * se ensena fijo encima de ella, con su referencia, mientras el ultimo intento falle. La pasada
+     * que falla deja las filas como estaban; la que sale bien quita el aviso.
+     */
+    @Test
+    void aFailedReadOfTheListIsShownAboveItWhileTheLastAttemptFails() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        List<JobDto> history = new ArrayList<>(List.of(job(JobType.PROFILE_EXPORT, JobStatus.RUNNING, 10, 4, 4, 0, null)));
+        stubJobHistory(history);
+        BackofficeApiException unavailable = BackofficeApiException.of(HttpStatus.SERVICE_UNAVAILABLE, ApiProblem.empty(), "corr-9",
+                Duration.ofSeconds(30), "GET /api/configuration/jobs");
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        assertTrue(jobsListNotice().isEmpty());
+
+        JobsView view = LocatorJ._get(JobsView.class);
+        doThrow(unavailable).when(jobsClient).list(anyInt(), anyInt(), any(), any());
+        view.pollOnce();
+        MockVaadin.clientRoundtrip();
+        Div notice = jobsListNotice().orElseThrow();
+        LocatorJ._get(notice, Span.class, spec -> spec.withText(
+                "No se ha podido leer la lista de trabajos: El servicio no esta disponible ahora mismo. Intentalo en 30 s."));
+        LocatorJ._get(notice, Span.class, spec -> spec.withText("Referencia: corr-9"));
+        assertEquals(1, GridKt._size(jobsGrid()), "la pasada que falla deja las filas como estaban");
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "ni un aviso por pasada");
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Recargar")));
+        assertTrue(jobsListNotice().isPresent(), "recargar a mano tambien lo dice ahi");
+        assertEquals(0, GridKt._size(jobsGrid()));
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
+
+        stubJobHistory(history);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Recargar")));
+        assertTrue(jobsListNotice().isEmpty());
+        assertEquals(1, GridKt._size(jobsGrid()));
+        doThrow(unavailable).when(jobsClient).list(anyInt(), anyInt(), any(), any());
+        view.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertTrue(jobsListNotice().isPresent());
+        stubJobHistory(history);
+        view.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertTrue(jobsListNotice().isEmpty(), "la pasada que sale bien lo quita");
+    }
+
+    /** El aviso fijo de la lista de trabajos, si se ve. */
+    private static Optional<Div> jobsListNotice() {
+        return LocatorJ._find(Div.class, spec -> spec.withId("jobs-list-error")).stream().findFirst();
+    }
+
+    /** Con la pestana oculta no se pregunta nada desde el hilo compartido: ni los trabajos ni la campana. */
+    @Test
+    void nothingIsAskedFromTheSharedThreadWhileTheTabIsHidden() {
+        loginAs("config.lector", "ROLE_CONFIG_READ", "ROLE_NOTIFICATION_INBOX");
+        stubJobHistory(List.of(job(JobType.PROFILE_EXPORT, JobStatus.RUNNING, 10, 4, 4, 0, null)));
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        JobsView view = LocatorJ._get(JobsView.class);
+        InboxBell bell = LocatorJ._get(InboxBell.class);
+        PageVisibility visibility = PageVisibility.of(UI.getCurrent());
+        assertTrue(visibility.isShown(), "hasta que el navegador diga otra cosa, se ve");
+
+        visibility.changed(false);
+        clearInvocations(jobsClient, notificationClient);
+        view.pollOnce();
+        bell.pollOnce();
+        MockVaadin.clientRoundtrip();
+        verify(jobsClient, never()).list(anyInt(), anyInt(), any(), any());
+        verify(notificationClient, never()).unreadCount();
+
+        visibility.changed(true);
+        view.pollOnce();
+        bell.pollOnce();
+        MockVaadin.clientRoundtrip();
+        verify(jobsClient).list(0, 20, null, null);
+        verify(notificationClient).unreadCount();
+    }
+
+    /** Quitar el fichero subido es no importar nada: el boton no sigue enviando el de antes. */
+    @Test
+    void removingTheUploadedFileLeavesNothingToImport() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_IMPORT");
+        stubJobHistory(List.of());
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        Upload upload = LocatorJ._get(Upload.class, spec -> spec.withId("import-profiles-upload"));
+        Button start = LocatorJ._get(Button.class, spec -> spec.withId("import-profiles"));
+        UploadKt._upload(upload, "profile-master.xlsx", JobsView.XLSX, "PK-xlsx".getBytes());
+        MockVaadin.clientRoundtrip();
+        assertTrue(start.isEnabled());
+
+        ComponentUtil.fireEvent(upload, new FileRemovedEvent(upload, "profile-master.xlsx"));
+        assertFalse(start.isEnabled());
+        verify(jobsClient, never()).importProfiles(any(), anyBoolean());
+    }
+
+    /**
+     * El navegador solo sabria que la descarga fallo: el enlace lo notifica en la pantalla con el
+     * motivo. Un 410 es el fichero de un trabajo que ya no esta en el servicio, y hay que relanzarlo.
+     */
+    @Test
+    void aFailedDownloadIsNotifiedAndAGoneFileAsksToRelaunchTheJob() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubJobHistory(List.of());
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        Anchor link = Downloads.link("download-" + JOB_ID, "Descargar", "perfiles-via-3.csv", () -> {
+            throw BackofficeApiException.of(HttpStatus.GONE, ApiProblem.empty(), "corr-11", null,
+                    "GET /api/configuration/profiles/jobs/" + JOB_ID + "/file");
+        });
+        UI.getCurrent().add(link);
+
+        DownloadKt._download(link);
+        MockVaadin.clientRoundtrip();
+
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size());
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("El fichero ya no esta en el servicio: vuelve a lanzar el trabajo."));
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("Referencia: corr-11"));
     }
 
     @Test

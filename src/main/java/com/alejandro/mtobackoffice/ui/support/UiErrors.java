@@ -112,6 +112,10 @@ public final class UiErrors {
                     "El servicio no ha podido completar la operacion." + detail(exception);
             case ServiceUnavailableApiException unavailable -> "El servicio no esta disponible ahora mismo."
                     + unavailable.getRetryAfter().map(d -> " Intentalo en " + d.toSeconds() + " s.").orElse(" Intentalo mas tarde.");
+            // El unico 410 del dominio es el fichero de un trabajo de mto-configuration que ya no esta
+            // (purgado, o generado en otra replica): reintentar no lo trae, hay que relanzar el trabajo.
+            case BackofficeApiException gone when gone.getStatus().value() == 410 ->
+                    "El fichero ya no esta en el servicio: vuelve a lanzar el trabajo.";
             default -> "Error inesperado (" + exception.getStatus().value() + ")." + detail(exception);
         };
     }

@@ -4,6 +4,7 @@ import com.alejandro.mtobackoffice.client.dto.notification.UnreadCountDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.notification.NotificationClient;
 import com.alejandro.mtobackoffice.configuration.security.CurrentPrincipal;
+import com.alejandro.mtobackoffice.ui.support.PageVisibility;
 import com.alejandro.mtobackoffice.ui.support.SharedPolling;
 import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.component.Component;
@@ -30,7 +31,8 @@ import java.util.stream.Stream;
  * <p>El contador se pide al entrar en cada pantalla y, mientras hay una abierta, cada
  * {@link #REFRESH_PERIOD} desde el hilo compartido ({@link SharedPolling}), con el principal fijado
  * y llevando el numero a la pantalla con {@code UI.access()}: es {@code @Push}, no un sondeo del
- * navegador. La bandeja lo refresca ademas al marcar algo como leido. El servicio acota el numero
+ * navegador; con la pestana oculta no se pide ({@link PageVisibility}). La bandeja lo refresca
+ * ademas al marcar algo como leido. El servicio acota el numero
  * ({@code capped}: «ese o mas»), y aqui se pinta con un {@code +}. Un fallo al pedirlo no molesta:
  * el numero se queda como estaba y la bandeja dira lo que pasa al abrirse.</p>
  */
@@ -47,6 +49,7 @@ public class InboxBell extends Div {
     private final String principal;
     private final Button button;
     private final Span badge = new Span();
+    private PageVisibility visibility;
     private ScheduledFuture<?> ticker;
 
     public InboxBell(NotificationClient client, SharedPolling polling, String principal) {
@@ -70,6 +73,7 @@ public class InboxBell extends Div {
         super.onAttach(attachEvent);
         refresh();
         UI ui = attachEvent.getUI();
+        visibility = PageVisibility.of(ui);
         ticker = polling.every(REFRESH_PERIOD, () -> poll(ui));
     }
 
@@ -87,8 +91,14 @@ public class InboxBell extends Div {
         show(fetch());
     }
 
-    /** Una pasada en el hilo compartido: pide fuera del bloqueo de la sesion y pinta con {@code UI.access()}. */
+    /**
+     * Una pasada en el hilo compartido: si la pestana se ve, pide fuera del bloqueo de la sesion y
+     * pinta con {@code UI.access()}.
+     */
     void poll(UI ui) {
+        if (visibility != null && !visibility.isShown()) {
+            return;
+        }
         UnreadCountDto count = fetch();
         if (count != null) {
             ui.access(() -> show(count));

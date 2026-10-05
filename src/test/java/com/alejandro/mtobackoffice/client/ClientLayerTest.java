@@ -968,6 +968,26 @@ class ClientLayerTest {
         server.verify();
     }
 
+    /** README_API.md §4: en una referencia a catalogo, null es «no la toques» y {} la vacia. */
+    @Test
+    void aClearedLovReferenceTravelsAsAnEmptyObjectAndAnUntouchedOneAsNull() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/profiles/7"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.poleType").isMap())
+                .andExpect(jsonPath("$.poleType").isEmpty())
+                .andExpect(jsonPath("$.supportType.id").value(5))
+                .andExpect(jsonPath("$.foundation").value(nullValue()))
+                .andRespond(withSuccess("{\"id\":7,\"versionNumber\":3}", MediaType.APPLICATION_JSON));
+
+        ProfileDto profile = new ProfileDto();
+        profile.setId(7L);
+        profile.setPoleType(new LovRef(null, null, null));
+        profile.setSupportType(new LovRef(5L, "ST1", "Soporte 1"));
+
+        asUser(() -> profileClient.update(7L, profile));
+        server.verify();
+    }
+
     /** README_API.md §4: la coleccion de hijos que se manda es el estado final; el 1:1 se manda entero para mantenerlo. */
     @Test
     void aProfileTravelsWithItsTypedCantileversTheirSteadyArmAndItsDisconnector() {

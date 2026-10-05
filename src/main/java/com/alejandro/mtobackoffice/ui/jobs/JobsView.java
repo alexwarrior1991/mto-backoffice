@@ -12,6 +12,7 @@ import com.alejandro.mtobackoffice.client.dto.jobs.JobStatus;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobType;
 import com.alejandro.mtobackoffice.client.dto.jobs.UploadedFile;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
 import com.alejandro.mtobackoffice.client.error.TooManyRequestsApiException;
 import com.alejandro.mtobackoffice.configuration.security.CurrentPrincipal;
 import com.alejandro.mtobackoffice.configuration.security.SecurityRoles;
@@ -20,6 +21,7 @@ import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.master.ReferenceCatalog;
 import com.alejandro.mtobackoffice.ui.support.Downloads;
+import com.alejandro.mtobackoffice.ui.support.PageVisibility;
 import com.alejandro.mtobackoffice.ui.support.SharedPolling;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.AttachEvent;
@@ -32,6 +34,7 @@ import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.html.Anchor;
+import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.html.Span;
@@ -85,7 +88,9 @@ import java.util.function.Supplier;
  * y se pinta encima. Seguirlos es lo que hace {@code @Push}: mientras esta pantalla esta abierta y
  * hay algo en curso, un hilo compartido ({@link SharedPolling}) vuelve a pedir la pagina cada pocos
  * segundos y lleva lo que cambio a la pantalla con {@code UI.access()}, sin que el navegador
- * pregunte; un trabajo de esta sesion que no este en la pagina se consulta por su familia.</p>
+ * pregunte; un trabajo de esta sesion que no este en la pagina se consulta por su familia. Con la
+ * pestana oculta no se pregunta ({@link PageVisibility}). Un fallo al leer la lista no se notifica
+ * en cada pasada: se ensena fijo encima de ella mientras el ultimo intento falle.</p>
  *
  * <p>El fichero de un trabajo se descarga a traves de esta aplicacion ({@link DownloadHandler}): el
  * token nunca llega al navegador, asi que el navegador no puede pedirlo al gateway. Los permisos
@@ -129,7 +134,9 @@ public class JobsView extends VerticalLayout {
     private final Button next = new Button("Siguientes", VaadinIcon.ANGLE_RIGHT.create());
     private final ComboBox<JobType> typeFilter = new ComboBox<>("Tipo");
     private final ComboBox<JobStatus> statusFilter = new ComboBox<>("Estado");
+    private final Div listError = new Div();
     private JobLog log;
+    private PageVisibility visibility;
     private String principal;
     private ScheduledFuture<?> ticker;
     private int currentPage;
@@ -166,7 +173,10 @@ public class JobsView extends VerticalLayout {
         launchers.setFlexWrap(FlexLayout.FlexWrap.WRAP);
         launchers.addClassNames(LumoUtility.Gap.MEDIUM);
 
-        add(new H2("Trabajos"), launchers, listHeader(), buildGrid());
+        listError.setId("jobs-list-error");
+        listError.addClassNames(LumoUtility.TextColor.ERROR, LumoUtility.FontSize.SMALL);
+        listError.setVisible(false);
+        add(new H2("Trabajos"), launchers, listHeader(), listError, buildGrid());
         expand(grid);
     }
 
@@ -176,6 +186,7 @@ public class JobsView extends VerticalLayout {
         log = JobLog.of(attachEvent.getSession());
         principal = authentication.getPrincipalName().orElse(null);
         UI ui = attachEvent.getUI();
+        visibility = PageVisibility.of(ui);
         load();
         ticker = polling.every(POLL_PERIOD, () -> poll(ui));
     }
@@ -233,6 +244,11 @@ public class JobsView extends VerticalLayout {
         upload.setAcceptedFileTypes(".xlsx", XLSX);
         upload.setMaxFiles(1);
         upload.setMaxFileSize(MAX_UPLOAD_BYTES);
+        // Quitar el fichero de la lista es no importar nada: el boton no puede seguir enviando el de antes.
+        upload.addFileRemovedListener(removed -> {
+            keep.accept(null);
+            start.setEnabled(false);
+        });
         Checkbox dryRun = new Checkbox("Simulacion: no escribe nada, solo el informe");
         start.addClickListener(click -> {
             UploadedFile file = loaded.get();
@@ -375,15 +391,37 @@ public class JobsView extends VerticalLayout {
         load();
     }
 
-    /** Pide al servicio la pagina actual con los filtros de la pantalla. En el hilo de la UI. */
+    /**
+     * Pide al servicio la pagina actual con los filtros de la pantalla. En el hilo de la UI. Un fallo
+     * se ensena encima de la lista; solo una sesion caducada se notifica, por su «Volver a entrar».
+     */
     void load() {
         Query query = new Query(currentPage, typeFilter.getValue(), statusFilter.getValue());
         lastQuery = query;
         try {
             show(query, client.list(query.page(), PAGE_SIZE, query.type(), query.status()));
+            listFailed(null);
         } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
+            if (failure instanceof SessionExpiredApiException) {
+                UiErrors.show(failure);
+            }
             show(query, new PageResponse<>(List.of(), new PageMetadata(query.page(), PAGE_SIZE, 0, 0)));
+            count.setText("");
+            listFailed(failure);
+        }
+    }
+
+    /** Lo que se ve encima de la lista mientras el ultimo intento de leerla falle; {@code null} lo quita. */
+    private void listFailed(BackofficeApiException failure) {
+        listError.removeAll();
+        listError.setVisible(failure != null);
+        if (failure == null) {
+            return;
+        }
+        listError.add(new Div(new Span("No se ha podido leer la lista de trabajos: " + UiErrors.message(failure))));
+        String reference = failure.getReference();
+        if (reference != null && !reference.isBlank()) {
+            listError.add(new Div(new Span("Referencia: " + reference)));
         }
     }
 
@@ -403,12 +441,12 @@ public class JobsView extends VerticalLayout {
 
     /**
      * Una pasada de consulta, en el hilo de {@link SharedPolling} (los tests la llaman directamente):
-     * si hay algo en curso —en la pagina o lanzado desde aqui— vuelve a pedir la pagina fuera del
-     * bloqueo de la sesion, pregunta por su familia a los trabajos de esta sesion que no esten en
-     * ella, y lleva lo que cambio a la pantalla con {@code UI.access()}.
+     * si la pestana se ve y hay algo en curso —en la pagina o lanzado desde aqui— vuelve a pedir la
+     * pagina fuera del bloqueo de la sesion, pregunta por su familia a los trabajos de esta sesion
+     * que no esten en ella, y lleva lo que cambio a la pantalla con {@code UI.access()}.
      */
     void poll(UI ui) {
-        if (log == null) {
+        if (log == null || (visibility != null && !visibility.isShown())) {
             return;
         }
         List<JobLog.Entry> own = log.active();
@@ -421,6 +459,11 @@ public class JobsView extends VerticalLayout {
             page = CurrentPrincipal.callAs(principal, () -> client.list(query.page(), PAGE_SIZE, query.type(), query.status()));
         } catch (BackofficeApiException failure) {
             LOGGER.warn("No se ha podido consultar la lista de trabajos: {}", failure.getMessage());
+            ui.access(() -> {
+                if (query.equals(lastQuery)) {
+                    listFailed(failure);
+                }
+            });
             return;
         }
         Map<UUID, JobDto> onPage = new HashMap<>();
@@ -449,6 +492,7 @@ public class JobsView extends VerticalLayout {
             }
             if (query.equals(lastQuery)) {
                 show(query, page);
+                listFailed(null);
             }
         });
     }
