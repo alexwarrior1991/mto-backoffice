@@ -36,6 +36,7 @@ ni de offline.
 ./mvnw test -Dtest='ViewLayerTest#theCatalogueOfTheRouteIsListedAndTheFilterIsLocal'
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev   # http://localhost:8085, abre el navegador
 ./mvnw -B verify                                   # incluye el build de producción del frontend
+../mto-platform/scripts/e2e.sh                     # el e2e de mto-frontend contra la plataforma entera, como el job e2e
 ```
 
 Entorno local: `cd ../mto-platform && docker compose --profile all up -d && ./keycloak/apply-partials.sh`
@@ -122,7 +123,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `ui/views/HomeView`,
   `ui/lov` (`LovCrudView` en `catalogos/:resource`, `LovEditorDialog` con `Binder` sobre el modelo
   mutable `LovForm`, `LovBulkCreateDialog` con su parser de líneas), `ui/master` (`MasterView<D>`,
-  la lista paginada en el servidor con `grid.setItems(fetch, count)` sobre `POST /filter`;
+  la lista paginada en el servidor con `LazyPages` (una petición por página) sobre `POST /filter`;
   `MasterEditorDialog<D>`, el `Binder` sobre el DTO leído; una vista y un editor por maestro;
   `ReferenceCatalog` y `LovCatalog`, los nombres y las entradas de catálogo cargados una vez por
   pantalla; `Pickers`, desplegables y conversores; `EnabledFilter`, el filtro de tres estados;
@@ -132,7 +133,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   de fila con el que `TracksView` pone el botón «Esquema»), `ui/jobs` (`JobsView` en `trabajos`: los lanzadores y la lista del servicio,
   paginada y filtrada; `JobLog`, lo que solo sabe la sesión de sus trabajos —la etiqueta y el
   último estado— en la `VaadinSession`; `JobErrorsDialog`), `ui/users` (`UsersView` en `usuarios`:
-  la lista paginada en el servidor con `grid.setItems(fetch, count)` sobre `GET /api/users` y
+  la lista paginada en el servidor con `LazyPages` sobre `GET /api/users` y
   `first`/`max`; `UserEditorDialog`, el `Binder` sobre el modelo mutable `UserForm`, cuyas
   propiedades se llaman como los campos del servicio para `ServerValidation`; `UserAttributes`,
   los atributos como texto `clave=valor` por línea; `UserDetailView` en `usuarios/:userId`, la
@@ -203,7 +204,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   pantalla abierta: los trabajos en curso y el contador de la campana; `PageVisibility`, si la
   pestaña del navegador se ve, para no preguntar con ella oculta; `TextMatching`, el orden natural
   y la comparación sin mayúsculas ni tildes de una lista que ya está entera en pantalla;
-  `Required`, lo obligatorio que no admite solo espacios).
+  `Required`, lo obligatorio que no admite solo espacios; `LazyPages`, la lista paginada en el
+  servidor con una sola petición por página; `RowActions`, cómo se abre una fila: doble clic o su
+  botón; `Numbers`, las comprobaciones de un número antes de llamar, con y sin `Binder`).
 - `configuration/vaadin` — `BackofficeSystemMessages`, los mensajes de sistema de Vaadin en
   castellano y con el aviso de sesión caducada apagado (recarga → login → SSO); `FrontendProperties`
   (`app.frontend.url`, la SPA: `linkTo(ruta)` da el enlace de «Abrir en mto-frontend», o nada si no
@@ -291,8 +294,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (la lista sigue con el último filtro bien formado, también al recargar). Nada de esto se arregla aquí con
   lógica propia: si la lista necesita orden u otro filtro, se pide en `mto-users`. En la ficha,
   asignar y quitar perfiles o roles y modificar **pintan lo que devuelve el servicio** (que lo relee
-  de Keycloak antes de contestar), sin releer; cambiar un perfil relee la pestaña de roles si se
-  abrió, fijar una contraseña relee la cabecera y las credenciales, y las sesiones normales y las
+  de Keycloak antes de contestar), sin releer; cambiar un perfil relee los roles de la persona
+  en su pestaña si se abrió, pero no el catálogo (los roles de cada cliente se piden una vez por
+  pantalla, también en `usuarios/roles`), fijar una contraseña relee la cabecera y las credenciales, y las sesiones normales y las
   offline se piden por separado; y las rutas estáticas del módulo (`usuarios/perfiles`, `usuarios/roles`) ganan a
   `usuarios/:userId` porque Vaadin resuelve antes los segmentos literales.
 - **Un catálogo de almacén no se borra: se retira.** `mto-stock` no tiene `DELETE` de maestros
@@ -460,11 +464,38 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   servicio lo rechaza con 400, y una notificación de un acceso no ofrece su línea del registro
   (sería un 404 `ACT-404`). Una IP se busca entera (`AccessView.isIpLiteral`, la regla de
   mto-frontend): a medio escribir no se pide nada. El registro pide la línea a su id para enseñar
-  su `payload`, que la lista no trae. Los tipos, los orígenes y los sujetos se escriben enteros y se
+  su `payload`, que la lista no trae; si ya no existe (`ACT-404`), su diálogo lo dice dentro, con su
+  referencia y sin aviso (`EventDetailDialog.openActivityEvent`), como en mto-frontend. Los tipos, los orígenes y los sujetos se escriben enteros y se
   comparan en el servicio: el catálogo de tipos es suyo y aquí no se copia. Lo fundido (el evento
   de administración de Keycloak que ya cuenta el de `mto-users` del mismo cambio) solo viaja como
   `includeSuperseded=true` cuando se pide. Una línea se enseña entera en `EventDetailDialog`, con
   su `payload` tal cual lo dejó la lista blanca del servicio: aquí no se interpreta nada.
+- **Una lista paginada en el servidor pide una vez cada página** (`LazyPages`). Vaadin pide por
+  separado el recuento y la página (`setItems(fetch, count)`), y los servicios devuelven las dos
+  cosas en la misma respuesta: el recuento pide la primera página con el tamaño y el orden del Grid
+  (su consulta no trae el orden: se lee de `getBackEndSorting()`) y la guarda hasta el final de esa
+  ida y vuelta (`beforeClientResponse`), para la petición de página que la sigue. Un fallo se
+  notifica una vez y deja la lista vacía hasta que se vuelva a pedir, y nunca se pinta una página
+  vieja. La usan todas las listas perezosas, y `RevisionsDialog` lee su 404 como una página vacía.
+- **Una fila se abre con doble clic o con su botón; un clic no abre nada** (`RowActions`), como en
+  mto-frontend: el clic sirve para seleccionar o copiar, y el botón, con el nombre de la fila en su
+  tooltip («Abrir MO-000012»), es lo que llega con el teclado. Las pestañas Defectos e Inspecciones
+  de una orden solo llevan el botón, y los miembros de un perfil o de un rol, el usuario como enlace.
+  Lo que es elegir y no abrir (los catálogos de perfiles y de roles, las plantillas, los bajo mínimo)
+  sigue con su clic.
+- **Los números se comprueban antes de llamar como en mto-frontend, con la columna del servicio**
+  (`Numbers`). Una cantidad de almacén o de mantenimiento es `numeric(19,6)`: 13 enteros y 6
+  decimales, mayor que cero en un movimiento, una reserva, una línea de conjunto o el material de una
+  tarea, y cero o más en el stock mínimo y en las líneas de material, también al modificarlas. Un KP
+  de mantenimiento y una medida de checklist llevan signo y son `numeric(12,3)`; el KP final de un
+  defecto puede ser el inicial, nunca menor. En infraestructura, el vano, las alturas, el viento y
+  los KP de agujas y aisladores no son negativos; lo que va en mm del perfil y el descentramiento son
+  enteros, la longitud de un paquete son solo cifras y el KP del perfil viaja recortado. Lo demás (un
+  rango, una regla de negocio) lo decide el servicio. El `Binder` aplica antes que nada la
+  comprobación propia del campo (su mínimo y lo que no sabe leer), así que un `IntegerField` con
+  mínimo lleva su mensaje (`Numbers.atLeast`); en un diálogo sin `Binder`, `Numbers.check` hace lo
+  mismo, porque lo que el campo no sabe leer lo da por vacío y viajaría como «vaciar»: borraría la
+  medida guardada.
 - **El menú no es una guarda.** `MainLayout` esconde lo que la persona no puede abrir; quien manda
   es `@RolesAllowed` en la vista y el 403 del servicio. Dentro de una vista pasa lo mismo: los
   botones de `LovCrudView` siguen los permisos del servicio (`config-write`+`lov-manage` para crear
@@ -695,4 +726,10 @@ convivencia con mto-frontend son casos de esas mismas clases: el enlace a la SPA
 tipo padre y los `extras` de un catálogo, la referencia vaciada, el aviso fijo de la lista de
 trabajos, la pestaña oculta, las descargas fallidas, los cambios de usuarios, los desempates, lo
 retirado en los filtros del almacén, las fichas de mantenimiento ante un fallo y los enlaces de
-las notificaciones. Todo corre en la JVM sin Docker.
+las notificaciones. Y las cinco diferencias que cerró la fase 9 de la SPA: una petición por página y
+un fallo avisado una vez, el catálogo de roles una vez por pantalla, las filas que se abren con doble
+clic o con su botón y no con un clic, el `ACT-404` dentro de su diálogo y los números de cada diálogo
+(lo que no cabe en la columna, el mínimo con su mensaje, la medida que el campo no sabe leer). Todo
+corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
+CI: `mto-platform/scripts/e2e.sh` construye la imagen de este commit, usa la publicada de cada
+hermano y corre el e2e de Playwright de mto-frontend, que recorre las dos aplicaciones.

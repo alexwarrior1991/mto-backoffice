@@ -44,6 +44,18 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   - una modificación de usuario sin cambios no llama;
   - una ficha de mantenimiento que no se puede leer ofrece reintentar;
   - el enlace de una notificación sigue la misma regla en las dos.
+
+  Con la fase 9 se cerraron las cinco diferencias que quedaban:
+  - cada página de una lista es una sola petición, con su total, y un fallo se avisa una vez;
+  - el catálogo de roles de un cliente se pide una vez por pantalla;
+  - una fila se abre con doble clic o con su botón, y un clic no abre nada;
+  - los números se comprueban igual antes de llamar, con los límites de la columna de cada servicio;
+  - una línea del registro que ya no existe se dice dentro de su diálogo.
+- **Se prueban juntas en el CI.** El job `e2e` de este repositorio (y los de `mto-frontend` y
+  `mto-platform`) levanta la plataforma entera con `mto-platform/scripts/e2e.sh`, con la imagen de
+  este commit construida desde el checkout, y corre el e2e de Playwright de `mto-frontend`, que
+  recorre las dos aplicaciones: también «Abrir en el backoffice» y vuelta, con la misma ruta, su
+  filtro y sin volver a entrar.
 - Los enlaces de los correos de `mto-notification` siguen apuntando al backoffice
   (`APP_NOTIFICATION_LINK_BASE_URL`): las rutas son las mismas en las dos, así que cambiarlo es solo
   esa variable.
@@ -69,7 +81,8 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   perfiles, seccionadores y aisladores de sección) bajo `infraestructura/*`, con **paginación en el
   servidor**: el grid pide cada página a `POST /{recurso}/filter` con la página, el tamaño, el orden
   de la columna y el texto de búsqueda (`searchText`, que el servicio aplica a varias columnas), y
-  el recuento sale de `totalElements`. Nunca se trae el maestro entero: los perfiles son miles.
+  el recuento sale de `totalElements` de esa misma respuesta: una petición por página. Nunca se trae
+  el maestro entero: los perfiles son miles.
   Cada maestro tiene su editor con las referencias resueltas (paquete, estación, vía y empresa en
   desplegables; el perfil de un seccionador se busca en el servidor mientras se escribe) y las
   entradas de catálogo como desplegables. La edición sigue la regla de `README_API.md` §4 del
@@ -499,6 +512,13 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 Una clase por capa: `ClientLayerTest` (`MockRestServiceServer`), `SecurityLayerTest`,
 `ViewLayerTest` (Karibu-Testing, Apache 2.0, sin navegador) y `MtoBackofficeApplicationTests`
 (contexto completo). TestBench, el equivalente de Vaadin, es de pago y no se usa.
+
+En un navegador de verdad, contra la plataforma entera, lo prueba el job `e2e` del CI, después de
+los tests: saca `mto-platform` (en la misma rama si la tiene) y corre su `scripts/e2e.sh`, que
+construye la imagen de este commit, usa la publicada de cada hermano, levanta todo y corre el e2e
+de Playwright de `mto-frontend` contra las dos aplicaciones. El informe, las trazas y los logs de
+compose quedan en el artefacto `e2e-report`. En local, con Docker y Node 22 y la plataforma parada,
+`../mto-platform/scripts/e2e.sh` hace lo mismo.
 
 ## Build de producción e imagen
 
