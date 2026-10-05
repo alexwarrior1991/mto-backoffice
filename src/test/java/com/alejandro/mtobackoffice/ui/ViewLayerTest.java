@@ -2197,10 +2197,25 @@ class ViewLayerTest {
         clearInvocations(usersClient);
         LocatorJ._setValue(attribute, "sin separador");
         assertTrue(attribute.isInvalid(), "clave:valor o nada");
-        verify(usersClient, never()).search(any(), any(), any(), any(), any(), any(), anyInt(), anyInt());
+        @SuppressWarnings("unchecked")
+        Select<EnabledFilter> state = LocatorJ._get(Select.class, spec -> spec.withLabel("Estado"));
+        LocatorJ._setValue(state, state.getListDataView().getItems().filter(filter -> Boolean.TRUE.equals(filter.value())).findFirst().orElseThrow());
+        // Con un atributo mal formado no se pide nada nuevo: ni el estado cambiado ni «Recargar» sueltan
+        // el ultimo filtro bien formado (el Grid puede volver a pedir, pero solo con el).
+        assertEquals(1, GridKt._size(userGrid()), "la lista sigue con lo ultimo que pidio");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Recargar")));
+        assertEquals(1, GridKt._size(userGrid()));
+        verify(usersClient, never()).search(any(), any(), any(), eq(true), any(), any(), anyInt(), anyInt());
+        verify(usersClient, never()).search(any(), any(), any(), any(), any(), argThat(attributes -> attributes == null || !attributes.equals(List.of("dept:taller"))),
+                anyInt(), anyInt());
+        LocatorJ._setValue(attribute, "dept:noche");
+        GridKt._size(userGrid());
+        verify(usersClient, atLeastOnce()).search(isNull(), isNull(), isNull(), eq(true), isNull(), eq(List.of("dept:noche")), eq(0), anyInt());
+        LocatorJ._setValue(state, state.getListDataView().getItems().filter(filter -> filter.value() == null).findFirst().orElseThrow());
 
         LocatorJ._setValue(attribute, "");
         assertTrue(search.isEnabled());
+        clearInvocations(usersClient);
         LocatorJ._setValue(search, "bru");
         assertFalse(attribute.isEnabled(), "con texto de busqueda el atributo se deshabilita");
         assertEquals(1, GridKt._size(userGrid()));
@@ -2266,7 +2281,7 @@ class ViewLayerTest {
         assertTrue(password.isInvalid(), "menos de ocho caracteres no viaja");
         verify(usersClient, never()).create(any());
 
-        LocatorJ._setValue(password, "Temporal-2026");
+        LocatorJ._setValue(password, " Temporal-2026 ");
         @SuppressWarnings("unchecked")
         MultiSelectComboBox<RequiredAction> actions = LocatorJ._get(dialog, MultiSelectComboBox.class, spec -> spec.withLabel("Acciones requeridas al entrar"));
         LocatorJ._setValue(actions, Set.of(RequiredAction.UPDATE_PASSWORD));
@@ -2278,7 +2293,7 @@ class ViewLayerTest {
                 && request.lastName() == null
                 && "dario@mto.local".equals(request.email())
                 && Boolean.TRUE.equals(request.enabled())
-                && "Temporal-2026".equals(request.temporaryPassword())
+                && " Temporal-2026 ".equals(request.temporaryPassword())
                 && List.of(RequiredAction.UPDATE_PASSWORD).equals(request.requiredActions())
                 && Map.of("dept", List.of("taller", "noche")).equals(request.attributes())));
         assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
@@ -2553,6 +2568,9 @@ class ViewLayerTest {
         when(usersClient.removeProfile(ANA_ID, "mto-users-viewer")).thenReturn(List.of(MANAGER));
 
         UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(1);
+        verify(usersClient, times(1)).userRoles(ANA_ID);
+        selectTab(0);
         @SuppressWarnings("unchecked")
         ComboBox<RealmProfileSummaryDto> picker = LocatorJ._get(ComboBox.class, spec -> spec.withId("profile-assign"));
         Button assign = detailButton("profile-assign-button");
@@ -2563,8 +2581,9 @@ class ViewLayerTest {
         LocatorJ._click(assign);
 
         verify(usersClient).assignProfile(ANA_ID, "mto-users-manager");
+        verify(usersClient, times(2)).userRoles(ANA_ID);
         Grid<Object> profiles = gridWithId("profiles-grid");
-        assertEquals(2, GridKt._size(profiles), "se pinta lo que devuelve el servicio");
+        assertEquals(2, GridKt._size(profiles), "se pinta lo que devuelve el servicio; los roles que concede, en su pestana, se releen");
         assertEquals(List.of(ADMIN), picker.getListDataView().getItems().toList());
         NotificationsKt.expectNotifications("Perfil mto-users-manager asignado");
 
@@ -2574,6 +2593,7 @@ class ViewLayerTest {
         assertEquals(1, GridKt._size(profiles));
         assertTrue(GridKt._getFormattedRow(profiles, 0).contains("mto-users-manager"));
         verify(usersClient, times(1)).userProfiles(ANA_ID);
+        verify(usersClient, times(3)).userRoles(ANA_ID);
     }
 
     @Test
@@ -2619,6 +2639,8 @@ class ViewLayerTest {
         stubUserDetail(ana());
 
         UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(3);
+        verify(usersClient, times(1)).credentials(ANA_ID);
         LocatorJ._click(detailButton("user-reset-password"));
         Dialog dialog = LocatorJ._get(Dialog.class);
         Checkbox temporary = LocatorJ._get(dialog, Checkbox.class);
@@ -2639,6 +2661,8 @@ class ViewLayerTest {
         verify(usersClient).resetPassword(ANA_ID, new ResetPasswordRequest("Temporal-2026", true));
         assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra");
         NotificationsKt.expectNotifications("Contrasena fijada para ana (temporal)");
+        verify(usersClient, times(2)).get(ANA_ID);
+        verify(usersClient, times(2)).credentials(ANA_ID);
     }
 
     @Test
@@ -2662,6 +2686,19 @@ class ViewLayerTest {
         assertTrue(password.isInvalid());
         assertEquals("invalidPasswordMinDigitsMessage", password.getErrorMessage());
         assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto para corregir");
+
+        // Lo que manda mto-users de verdad: el texto de Keycloak en el detalle y ningun error por campo.
+        // Aqui solo se escribe la contrasena, asi que el rechazo es suyo.
+        ApiProblem policy = new ApiProblem("about:blank", "Bad Request", 400, "Password policy not met", null,
+                "KC-400", null, null, null, false, null, null);
+        doThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, policy, "corr-u7", null, "POST /api/users/" + ANA_ID + "/reset-password"))
+                .when(usersClient).resetPassword(eq(ANA_ID), any());
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("reset-password-save")));
+        assertTrue(password.isInvalid());
+        assertEquals("La peticion no es valida. Password policy not met", password.getErrorMessage());
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "en el campo, no en una notificacion");
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty());
     }
 
     @Test
@@ -2723,11 +2760,10 @@ class ViewLayerTest {
     }
 
     @Test
-    void editingFromTheDetailReloadsTheHeader() {
+    void editingFromTheDetailPaintsWhatTheServiceAnswers() {
         loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
         UserDto renamed = user(ANA_ID, "ana", "Ana", "Alvarez Arias", "ana@mto.local", true, Map.of("dept", List.of("taller")));
         stubUserDetail(ana());
-        when(usersClient.get(ANA_ID)).thenReturn(ana(), renamed);
         when(usersClient.update(eq(ANA_ID), any())).thenReturn(renamed);
 
         UI.getCurrent().navigate(ANA_ROUTE);
@@ -2737,9 +2773,18 @@ class ViewLayerTest {
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
 
         verify(usersClient).update(eq(ANA_ID), argThat(request -> "Alvarez Arias".equals(request.lastName()) && request.firstName() == null));
-        verify(usersClient, times(2)).get(ANA_ID);
+        verify(usersClient, times(1)).get(ANA_ID);
         assertTrue(LocatorJ._find(Span.class).stream().anyMatch(span -> span.getText().startsWith("Ana Alvarez Arias · ana@mto.local")),
-                "la cabecera se repinta con lo releido");
+                "la cabecera pinta lo que devuelve el servicio, que lo relee de Keycloak antes de contestar: sin otro GET");
+
+        // Sin cambios no se llama: el dialogo se cierra y ya.
+        clearInvocations(usersClient);
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(detailButton("user-edit"));
+        LocatorJ._click(LocatorJ._get(LocatorJ._get(Dialog.class), Button.class, spec -> spec.withId("user-save")));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+        verify(usersClient, never()).update(any(), any());
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "nada que guardar, nada que avisar");
     }
 
     @Test
@@ -2804,6 +2849,21 @@ class ViewLayerTest {
         assertNull(offline.getColumnByKey("actions"));
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("sessions-revoke-all")).isEmpty());
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("offline-sessions-revoke-all")).isEmpty());
+    }
+
+    @Test
+    void theNormalAndOfflineSessionsAreLoadedEachOnItsOwn() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        stubUserDetail(ana());
+        when(usersClient.sessions(ANA_ID)).thenThrow(BackofficeApiException.of(HttpStatus.SERVICE_UNAVAILABLE, ApiProblem.empty(), "corr-u9",
+                null, "GET /api/users/" + ANA_ID + "/sessions"));
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(2);
+
+        assertEquals(1, NotificationsKt.getNotifications().size(), "el fallo de una se notifica");
+        assertEquals(1, GridKt._size(gridWithId("offline-sessions-grid")), "y la otra se ve igual");
+        LocatorJ._get(Span.class, spec -> spec.withText("1 sesion offline"));
     }
 
     @Test
@@ -2953,8 +3013,11 @@ class ViewLayerTest {
         verify(usersClient).setEnabled(ANA_ID, new UserEnabledRequest(false));
         verify(usersClient).revokeAllSessions(ANA_ID);
         verify(usersClient, never()).revokeAllOfflineSessions(any());
-        NotificationsKt.expectNotifications("No se ha podido sacar a ana: fallo al cerrar las sesiones (hecho: desactivar). "
-                + "El servicio no esta disponible ahora mismo. Intentalo mas tarde.");
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size());
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("No se ha podido sacar a ana: fallo al cerrar las sesiones "
+                + "(hecho: desactivar). El servicio no esta disponible ahora mismo. Intentalo mas tarde."));
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("Referencia: corr-u8"));
     }
 
     // --- Catalogos de perfiles y roles de cliente ---------------------------------------------------
@@ -2995,6 +3058,12 @@ class ViewLayerTest {
         assertEquals(3, GridKt._size(catalogue));
         LocatorJ._get(Span.class, spec -> spec.withText("3 perfiles"));
         verify(usersClient, never()).profile(any());
+        // El filtro es local y, como en mto-frontend, sin mirar mayusculas ni tildes.
+        TextField filter = LocatorJ._get(TextField.class, spec -> spec.withId("profile-filter"));
+        LocatorJ._setValue(filter, "GESTIÓN");
+        assertEquals(1, GridKt._size(catalogue));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 de 3 perfiles"));
+        LocatorJ._setValue(filter, "");
 
         catalogue.select(GridKt._get(catalogue, 2));
 
@@ -3060,6 +3129,8 @@ class ViewLayerTest {
         LocatorJ._setValue(filter, "write");
         assertEquals(1, GridKt._size(catalogue));
         LocatorJ._get(Span.class, spec -> spec.withText("1 de 3 roles"));
+        LocatorJ._setValue(filter, "LEÉR");
+        assertEquals(1, GridKt._size(catalogue), "sin mirar mayusculas ni tildes, como en mto-frontend");
         LocatorJ._setValue(filter, "");
         assertEquals(3, GridKt._size(catalogue));
 
@@ -3102,6 +3173,15 @@ class ViewLayerTest {
         return BackofficeApiException.of(HttpStatusCode.valueOf(status), problem, "corr-s9", null, "POST /api/stock/movements/outputs");
     }
 
+    /** mto-users: un nombre de usuario o un email repetido no se arregla recargando, asi que no se pide. */
+    @Test
+    void aRepeatedUsernameOrEmailDoesNotAskToReload() {
+        ApiProblem problem = new ApiProblem("about:blank", "Conflict", 409, "User exists with same username", null,
+                "USR-409", null, null, null, false, null, null);
+        assertEquals("Ya existe un usuario con ese nombre de usuario o ese email. User exists with same username",
+                UiErrors.message(BackofficeApiException.of(HttpStatus.CONFLICT, problem, "corr-u1", null, "POST /api/users")));
+    }
+
     /** Un 422 sin campos es una regla de negocio y un 409 STK-001 es falta de stock: no «peticion no valida» ni «recarga». */
     @Test
     void stockErrorsReadAsStockErrorsInTheNotifications() {
@@ -3109,8 +3189,10 @@ class ViewLayerTest {
                 UiErrors.message(stockError(422, "RES-001", "Only active reservations can be changed")));
         assertEquals("No hay stock disponible suficiente. Insufficient stock for material m in warehouse w: requested 5, available 2",
                 UiErrors.message(stockError(409, "STK-001", "Insufficient stock for material m in warehouse w: requested 5, available 2")));
-        assertEquals("Conflicto con otro cambio: recarga y vuelve a intentarlo. Material code 'MAT-001' already exists",
-                UiErrors.message(stockError(409, "MAT-409", "Material code 'MAT-001' already exists")));
+        for (String duplicated : List.of("MAT-409", "WH-409", "SUP-409", "PRJ-409", "ASM-409")) {
+            assertEquals("Ya existe otro con ese codigo.", UiErrors.message(stockError(409, duplicated, "Code 'X-1' already exists")),
+                    duplicated + ": un codigo repetido no se arregla recargando");
+        }
         assertEquals("La peticion no es valida. Material 'MAT-001' is inactive",
                 UiErrors.message(stockError(400, "VAL-001", "Material 'MAT-001' is inactive")));
     }

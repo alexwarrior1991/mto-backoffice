@@ -62,7 +62,8 @@ public class UserForm {
                 enabled,
                 attributesOrNull(),
                 requiredActions.isEmpty() ? null : List.copyOf(requiredActions),
-                nullIfBlank(temporaryPassword));
+                // Tal como se escribio: un espacio al principio o al final es parte de la contrasena.
+                temporaryPassword == null || temporaryPassword.isBlank() ? null : temporaryPassword);
     }
 
     /**

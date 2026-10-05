@@ -53,11 +53,15 @@ public class ResetPasswordDialog extends Dialog {
     private final Binder<Form> binder = new Binder<>(Form.class);
     private final Form form = new Form();
 
-    public ResetPasswordDialog(UserDto user, UsersClient client) {
+    private final Runnable onDone;
+    private final PasswordField password = new PasswordField("Contrasena nueva");
+
+    /** @param onDone que hacer tras fijarla (Keycloak anade la accion de cambiarla y una credencial) */
+    public ResetPasswordDialog(UserDto user, UsersClient client, Runnable onDone) {
+        this.onDone = onDone;
         setHeaderTitle("Contrasena para " + user.username());
         setCloseOnOutsideClick(false);
 
-        PasswordField password = new PasswordField("Contrasena nueva");
         password.setHelperText("Al menos " + UserEditorDialog.MIN_PASSWORD_LENGTH + " caracteres; la politica del realm puede pedir mas");
         password.setRequiredIndicatorVisible(true);
         Checkbox temporary = new Checkbox("Temporal: la persona tiene que cambiarla al entrar");
@@ -88,7 +92,15 @@ public class ResetPasswordDialog extends Dialog {
             close();
             Notification.show("Contrasena fijada para " + user.username() + (form.isTemporary() ? " (temporal)" : ""),
                     3000, Notification.Position.BOTTOM_START).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+            onDone.run();
         } catch (ValidationApiException validation) {
+            if (!validation.getProblem().hasFieldErrors()) {
+                // KC-400: la politica del realm, con el texto de Keycloak y sin campo. Aqui solo se
+                // escribe la contrasena, asi que el rechazo es suyo y el dialogo sigue abierto.
+                password.setErrorMessage(UiErrors.message(validation));
+                password.setInvalid(true);
+                return;
+            }
             List<String> unattributed = ServerValidation.apply(binder, validation);
             if (!unattributed.isEmpty()) {
                 Notification.show(String.join(". ", unattributed), 8000, Notification.Position.BOTTOM_START)

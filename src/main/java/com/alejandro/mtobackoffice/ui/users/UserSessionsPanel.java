@@ -94,12 +94,17 @@ class UserSessionsPanel extends LazyPanel {
         return grid;
     }
 
+    /** Las dos listas por separado: que falle una no deja sin la otra. */
     @Override
     protected void load() {
         try {
             List<UserSessionDto> normal = client.sessions(userId);
             sessions.setItems(normal);
             sessionsCount.setText(normal.size() == 1 ? "1 sesion" : normal.size() + " sesiones");
+        } catch (BackofficeApiException failure) {
+            UiErrors.show(failure);
+        }
+        try {
             List<UserSessionDto> off = client.offlineSessions(userId);
             offline.setItems(off);
             offlineCount.setText(off.size() == 1 ? "1 sesion offline" : off.size() + " sesiones offline");

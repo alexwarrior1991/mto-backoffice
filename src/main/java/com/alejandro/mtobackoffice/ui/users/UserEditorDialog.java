@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.ui.users;
 
 import com.alejandro.mtobackoffice.client.dto.users.RequiredAction;
+import com.alejandro.mtobackoffice.client.dto.users.UpdateUserRequest;
 import com.alejandro.mtobackoffice.client.dto.users.UserDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
@@ -24,12 +25,14 @@ import com.vaadin.flow.data.validator.EmailValidator;
 import com.vaadin.flow.data.validator.RegexpValidator;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Alta o modificacion de un usuario. Aqui solo se valida lo evidente (usuario obligatorio y con
  * la forma que exige el servicio, email con forma de email, contrasena de al menos ocho, atributos
  * legibles); la politica de contrasenas y lo demas lo dice el servicio y se ensena campo a campo.
- * En una modificacion el nombre de usuario se ensena pero no se toca, y solo viaja lo que cambio.
+ * En una modificacion el nombre de usuario se ensena pero no se toca, y solo viaja lo que cambio:
+ * sin cambios, no se llama.
  */
 public class UserEditorDialog extends Dialog {
 
@@ -41,13 +44,14 @@ public class UserEditorDialog extends Dialog {
     private final UserForm form;
     private final UserDto existing;
     private final UsersClient client;
-    private final Runnable onSaved;
+    private final Consumer<UserDto> onSaved;
 
     /**
      * @param existing usuario a modificar, o {@code null} para un alta
-     * @param onSaved  que hacer despues de guardar (recargar la lista o la ficha)
+     * @param onSaved  que hacer con lo que devuelve el servicio (recargar la lista, o pintarlo en la
+     *                 ficha: mto-users relee el usuario de Keycloak antes de contestar)
      */
-    public UserEditorDialog(UserDto existing, UsersClient client, Runnable onSaved) {
+    public UserEditorDialog(UserDto existing, UsersClient client, Consumer<UserDto> onSaved) {
         this.existing = existing;
         this.client = client;
         this.onSaved = onSaved;
@@ -127,14 +131,19 @@ public class UserEditorDialog extends Dialog {
         if (!binder.writeBeanIfValid(form)) {
             return;
         }
+        UpdateUserRequest changes = existing == null ? null : form.toUpdateRequest(existing);
+        if (changes != null && changes.changesNothing()) {
+            close();
+            return;
+        }
         try {
             UserDto saved = existing == null
                     ? client.create(form.toCreateRequest())
-                    : client.update(existing.id(), form.toUpdateRequest(existing));
+                    : client.update(existing.id(), changes);
             close();
             Notification.show("Guardado " + saved.username(), 3000, Notification.Position.BOTTOM_START)
                     .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
-            onSaved.run();
+            onSaved.accept(saved);
         } catch (ValidationApiException validation) {
             List<String> unattributed = ServerValidation.apply(binder, validation);
             if (!unattributed.isEmpty()) {

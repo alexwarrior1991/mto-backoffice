@@ -25,7 +25,8 @@ import java.util.stream.Collectors;
 /**
  * Los perfiles de una persona (roles compuestos de realm con prefijo {@code mto-}) y el alta de
  * uno mas. Asignar y quitar devuelven la lista del usuario, que es lo que se pinta: sin un GET
- * de mas. Los botones piden {@code users-profiles-write}.
+ * de mas; los roles de cliente que concede el perfil si cambian, y su pestana se relee si ya se
+ * abrio. Los botones piden {@code users-profiles-write}.
  */
 class UserProfilesPanel extends LazyPanel {
 
@@ -36,6 +37,7 @@ class UserProfilesPanel extends LazyPanel {
     private final String userId;
     private final UsersClient client;
     private final boolean canWrite;
+    private final Runnable onChanged;
 
     private final Grid<RealmProfileSummaryDto> grid = new Grid<>();
     private final ComboBox<RealmProfileSummaryDto> assignable = new ComboBox<>("Perfil");
@@ -44,10 +46,12 @@ class UserProfilesPanel extends LazyPanel {
     private List<RealmProfileSummaryDto> catalogue = List.of();
     private List<RealmProfileSummaryDto> assigned = List.of();
 
-    UserProfilesPanel(String userId, UsersClient client, boolean canWrite) {
+    /** @param onChanged que hacer tras asignar o quitar uno (los roles de cliente que concede cambian) */
+    UserProfilesPanel(String userId, UsersClient client, boolean canWrite, Runnable onChanged) {
         this.userId = userId;
         this.client = client;
         this.canWrite = canWrite;
+        this.onChanged = onChanged;
         add(new Paragraph("Un perfil es un rol compuesto de realm (mto-...) que concede roles de cliente. "
                 + "Aqui se ven las asignaciones directas: quien tiene un rol por un perfil aparece en el perfil, no en el rol."));
         grid.setId(GRID_ID);
@@ -118,6 +122,7 @@ class UserProfilesPanel extends LazyPanel {
             paint(client.assignProfile(userId, chosen.name()));
             Notification.show("Perfil " + chosen.name() + " asignado", 3000, Notification.Position.BOTTOM_START)
                     .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+            onChanged.run();
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }
@@ -128,6 +133,7 @@ class UserProfilesPanel extends LazyPanel {
             paint(client.removeProfile(userId, profile.name()));
             Notification.show("Perfil " + profile.name() + " quitado", 3000, Notification.Position.BOTTOM_START)
                     .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+            onChanged.run();
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }
