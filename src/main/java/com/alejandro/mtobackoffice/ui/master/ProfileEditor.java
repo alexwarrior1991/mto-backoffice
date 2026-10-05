@@ -5,11 +5,14 @@ import com.alejandro.mtobackoffice.client.configuration.MasterResource;
 import com.alejandro.mtobackoffice.client.dto.master.CantileverDto;
 import com.alejandro.mtobackoffice.client.dto.master.LovRef;
 import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.combobox.MultiSelectComboBox;
 import com.vaadin.flow.component.textfield.BigDecimalField;
 import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.data.binder.Result;
+import com.vaadin.flow.data.converter.Converter;
 import com.vaadin.flow.data.validator.RegexpValidator;
 
 import java.util.Arrays;
@@ -76,7 +79,9 @@ public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
         BigDecimalField railPoleDistance = new BigDecimalField("Distancia carril-poste (mm, con signo)");
 
         binder.forField(profileId).asRequired("El identificador es obligatorio").bind("profileId");
+        // Recortado antes de comprobarlo y de enviarlo, como en mto-frontend.
         binder.forField(kp).asRequired("El KP es obligatorio")
+                .withConverter(Converter.<String, String>from(text -> Result.ok(text == null ? null : text.trim()), value -> value == null ? "" : value))
                 .withValidator(new RegexpValidator("Numero con punto decimal, como 10.500", KP_PATTERN)).bind("kp");
         binder.forField(track).asRequired("La via es obligatoria").withConverter(Pickers.refToId(catalog::trackRef)).bind("trackId");
         binder.forField(orderInTrack).bind("orderInTrack");
@@ -91,10 +96,12 @@ public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
         binder.forField(sectionings).withConverter(Pickers.lovSetToList()).bind("sectionings");
         binder.forField(anchorages).withConverter(Pickers.lovSetToList()).bind("anchorages");
         binder.forField(sectioningFeedings).withConverter(Pickers.lovSetToList()).bind("sectioningFeedings");
-        binder.forField(span).bind("span");
-        binder.forField(heightCantileverSupport).bind("heightCantileverSupport");
-        binder.forField(poleGaugeLocation).bind("poleGaugeLocation");
-        binder.forField(railPoleDistance).bind("railPoleDistance");
+        // Las columnas de README_API.md §4 bis: el vano no es negativo, las tres en mm son enteras y
+        // solo la distancia carril-poste lleva signo. Los limites de cifras los dice el servicio.
+        binder.forField(span).withValidator(Numbers.nonNegative()).bind("span");
+        binder.forField(heightCantileverSupport).withValidator(Numbers.whole(false)).bind("heightCantileverSupport");
+        binder.forField(poleGaugeLocation).withValidator(Numbers.whole(false)).bind("poleGaugeLocation");
+        binder.forField(railPoleDistance).withValidator(Numbers.whole(true)).bind("railPoleDistance");
 
         // El seccionador se ensena, pero no pasa por el Binder ni se cambia aqui: ver la clase.
         TextField disconnector = new TextField("Seccionador");

@@ -9,6 +9,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -87,7 +88,7 @@ public class InspectionEditorDialog extends Dialog {
         // Siempre tiene uno (visual por defecto): vaciarlo no vaciaba nada y parecia guardado.
         binder.forField(kind).asRequired("El tipo es obligatorio").bind("inspectionKind");
         binder.forField(result).asRequired("El resultado es obligatorio").bind("result");
-        binder.forField(kp).bind("kp");
+        binder.forField(kp).withValidator(Numbers.kp()).bind("kp");
         binder.forField(description).bind("description");
         binder.forField(detectedDefects).bind("detectedDefects");
         binder.forField(recommendedActions).bind("recommendedActions");

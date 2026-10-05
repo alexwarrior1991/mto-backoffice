@@ -7,6 +7,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.ui.support.Formats;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -94,8 +95,13 @@ public class CheckItemsDialog extends Dialog {
         TextField notes = new TextField("Notas");
         notes.setId("check-notes-" + item.id());
         notes.setValue(item.notes() == null ? "" : item.notes());
-        Button save = new Button("Guardar", click -> save(item, patchOf(item, measured.getValue(), adjusted.getValue(), after.getValue(),
-                result.getValue(), notes.getValue())));
+        Button save = new Button("Guardar", click -> {
+            // Una medida que no se pudo leer viajaria como vaciada y borraria la guardada.
+            boolean valid = Numbers.check(measured, Numbers.measure()) & Numbers.check(after, Numbers.measure());
+            if (valid) {
+                save(item, patchOf(item, measured.getValue(), adjusted.getValue(), after.getValue(), result.getValue(), notes.getValue()));
+            }
+        });
         save.setId("check-save-" + item.id());
         save.addThemeVariants(ButtonVariant.LUMO_SMALL);
 

@@ -6,6 +6,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.StartShiftRequest;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.support.Formats;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.HasValidation;
@@ -16,6 +17,7 @@ import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.TextArea;
+import com.vaadin.flow.data.binder.Validator;
 
 import java.util.Map;
 import java.util.function.Consumer;
@@ -55,9 +57,8 @@ public class ShiftTransitionDialog extends Dialog {
         DateTimePicker cutoff = new DateTimePicker("Corte de tension");
         cutoff.setId("shift-transition-cutoff");
         cutoff.setValue(Formats.toLocalDateTime(shift.voltageCutoffAt()));
-        IntegerField netMinutes = new IntegerField("Minutos netos de trabajo");
+        IntegerField netMinutes = Numbers.atLeast(new IntegerField("Minutos netos de trabajo"), 0, "No puede ser negativo");
         netMinutes.setId("shift-transition-net-minutes");
-        netMinutes.setMin(0);
         netMinutes.setHelperText("Vacio: los calcula el servicio desde el corte de tension (o el inicio)");
         TextArea observations = new TextArea("Observaciones");
         observations.setId("shift-transition-observations");
@@ -70,6 +71,10 @@ public class ShiftTransitionDialog extends Dialog {
         add(layout);
 
         Button confirm = new Button(kind.label(), click -> {
+            // Sin Binder: el minimo del campo y lo que no sabe leer se comprueban aqui.
+            if (kind == Kind.CLOSE && !Numbers.check(netMinutes, Validator.alwaysPass())) {
+                return;
+            }
             try {
                 ShiftDto result = kind == Kind.START
                         ? clients.shifts().start(shift.id(), new StartShiftRequest(Formats.toInstant(when.getValue()), Formats.toInstant(cutoff.getValue())))

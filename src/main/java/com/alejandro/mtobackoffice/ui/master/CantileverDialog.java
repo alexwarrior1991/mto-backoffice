@@ -4,6 +4,7 @@ import com.alejandro.mtobackoffice.client.configuration.LovResource;
 import com.alejandro.mtobackoffice.client.dto.master.CantileverDto;
 import com.alejandro.mtobackoffice.client.dto.master.LovRef;
 import com.alejandro.mtobackoffice.client.dto.master.SteadyArmDto;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
@@ -42,16 +43,17 @@ public class CantileverDialog extends Dialog {
         BigDecimalField armAngle = new BigDecimalField("Angulo del brazo (grados)");
         Checkbox withArm = new Checkbox("Lleva brazo de atirantado");
         withArm.setId("cantilever-with-arm");
-        IntegerField armLength = new IntegerField("Longitud del brazo (mm)");
-        armLength.setMin(0);
+        IntegerField armLength = Numbers.atLeast(new IntegerField("Longitud del brazo (mm)"), 0, "No puede ser negativa");
         ComboBox<LovRef> armType = Pickers.lov("Tipo de brazo", lovs.of(LovResource.STEADY_ARM_TYPES));
 
         binder.forField(cantileverType).asRequired("El tipo de mensula es obligatorio").bind("cantileverType");
-        binder.forField(cwHeight).bind("cwHeight");
-        binder.forField(stagger).bind("stagger");
-        binder.forField(catenaryHeight).bind("catenaryHeight");
+        // Como en mto-frontend: las alturas y el viento no son negativos, el descentramiento es entero
+        // con signo; la elevacion y el angulo llevan signo y decimales.
+        binder.forField(cwHeight).withValidator(Numbers.nonNegative()).bind("cwHeight");
+        binder.forField(stagger).withValidator(Numbers.whole(true)).bind("stagger");
+        binder.forField(catenaryHeight).withValidator(Numbers.nonNegative()).bind("catenaryHeight");
         binder.forField(cwElevation).bind("cwElevation");
-        binder.forField(windDeflection).bind("windDeflection");
+        binder.forField(windDeflection).withValidator(Numbers.nonNegative()).bind("windDeflection");
         binder.forField(armAngle).bind("armAngle");
         armBinder.forField(armLength).withConverter(Converter.<Integer, Long>from(
                 value -> Result.ok(value == null ? null : value.longValue()),

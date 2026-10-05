@@ -36,6 +36,8 @@ import com.alejandro.mtobackoffice.client.dto.users.UserCredentialDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
 import com.alejandro.mtobackoffice.ui.support.RowActions;
+import com.alejandro.mtobackoffice.ui.maintenance.CheckItemsDialog;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.alejandro.mtobackoffice.ui.users.TakeOut;
 import com.github.mvysny.kaributesting.v10.RouterLinkKt;
 import com.vaadin.flow.router.RouterLink;
@@ -330,6 +332,8 @@ import com.alejandro.mtobackoffice.ui.master.SwitchDialog;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.textfield.BigDecimalField;
 import com.vaadin.flow.component.textfield.IntegerField;
+import com.vaadin.flow.internal.nodefeature.PropertyChangeDeniedException;
+import com.vaadin.flow.internal.nodefeature.ElementPropertyMap;
 import com.vaadin.flow.server.SystemMessages;
 import com.vaadin.flow.server.VaadinService;
 import java.math.BigDecimal;
@@ -1431,6 +1435,114 @@ class ViewLayerTest {
 
         assertTrue(kp.isInvalid());
         verify(profileClient, never()).create(any());
+    }
+
+    /**
+     * Las medidas de infraestructura, con la forma que mto-frontend les exige antes de llamar: el vano,
+     * las alturas, el viento y los KP de agujas y aisladores no son negativos; lo que va en mm en el
+     * perfil y el descentramiento son enteros (solo la distancia carril-poste y el descentramiento
+     * llevan signo), y la longitud de un paquete son solo cifras. El KP del perfil viaja recortado.
+     */
+    @Test
+    void theInfrastructureMeasuresAreCheckedLikeInTheSpaBeforeCalling() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null, null)));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        when(profileClient.create(any())).thenAnswer(call -> {
+            ProfileDto created = call.getArgument(0);
+            created.setId(99L);
+            return created;
+        });
+
+        UI.getCurrent().navigate(PROFILES_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Identificador")), "P-9");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("KP")), " 10.500 ");
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> track = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via"));
+        LocatorJ._setValue(track, new RefItem(3L, "TRACK 1 (EP4)"));
+        @SuppressWarnings("unchecked")
+        ComboBox<LovRef> status = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Estado"));
+        LocatorJ._setValue(status, new LovRef(5L, "PT1", "Poste tipo 1"));
+        BigDecimalField span = LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withLabel("Vano hasta el siguiente (m)"));
+        BigDecimalField support = LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withLabel("Altura del soporte de mensula (mm)"));
+        BigDecimalField railPole = LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withLabel("Distancia carril-poste (mm, con signo)"));
+        LocatorJ._setValue(span, new BigDecimal("-47.970"));
+        LocatorJ._setValue(support, new BigDecimal("5300.5"));
+        LocatorJ._setValue(railPole, new BigDecimal("-2400"));
+        Button save = LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar"));
+        LocatorJ._click(save);
+        assertEquals("No puede ser negativo", span.getErrorMessage());
+        assertEquals("Un numero entero, sin decimales", support.getErrorMessage());
+        assertTrue(span.isInvalid() && support.isInvalid());
+        assertFalse(railPole.isInvalid(), "la distancia carril-poste lleva signo");
+        verify(profileClient, never()).create(any());
+
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("cantilevers-add")));
+        CantileverDialog cantilever = LocatorJ._get(CantileverDialog.class);
+        @SuppressWarnings("unchecked")
+        ComboBox<LovRef> type = LocatorJ._get(cantilever, ComboBox.class, spec -> spec.withLabel("Tipo de mensula"));
+        LocatorJ._setValue(type, new LovRef(5L, "PT1", "Poste tipo 1"));
+        BigDecimalField cwHeight = LocatorJ._get(cantilever, BigDecimalField.class, spec -> spec.withLabel("Altura del hilo de contacto (mm)"));
+        BigDecimalField stagger = LocatorJ._get(cantilever, BigDecimalField.class, spec -> spec.withLabel("Descentramiento (mm)"));
+        BigDecimalField elevation = LocatorJ._get(cantilever, BigDecimalField.class, spec -> spec.withLabel("Elevacion del hilo (mm)"));
+        LocatorJ._setValue(cwHeight, new BigDecimal("-5300"));
+        LocatorJ._setValue(stagger, new BigDecimal("200.5"));
+        LocatorJ._setValue(elevation, new BigDecimal("-0.050"));
+        Button accept = LocatorJ._get(cantilever, Button.class, spec -> spec.withId("cantilever-accept"));
+        LocatorJ._click(accept);
+        assertTrue(cwHeight.isInvalid() && stagger.isInvalid(), "la altura no es negativa y el descentramiento es entero");
+        assertFalse(elevation.isInvalid(), "la elevacion lleva signo y decimales");
+        assertFalse(LocatorJ._find(CantileverDialog.class).isEmpty(), "la mensula sigue abierta con lo escrito");
+        LocatorJ._setValue(cwHeight, new BigDecimal("5300"));
+        LocatorJ._setValue(stagger, new BigDecimal("-200"));
+        LocatorJ._click(accept);
+        assertTrue(LocatorJ._find(CantileverDialog.class).isEmpty());
+
+        LocatorJ._setValue(span, new BigDecimal("47.970"));
+        LocatorJ._setValue(support, new BigDecimal("5300"));
+        LocatorJ._click(save);
+        verify(profileClient).create(argThat(dto -> "10.500".equals(dto.getKp())
+                && new BigDecimal("47.970").equals(dto.getSpan())
+                && new BigDecimal("5300").equals(dto.getHeightCantileverSupport())
+                && new BigDecimal("-2400").equals(dto.getRailPoleDistance())
+                && dto.getCantilevers().size() == 1
+                && new BigDecimal("-200").equals(dto.getCantilevers().getFirst().getStagger())));
+
+        UI.getCurrent().navigate(SECTION_INSULATORS_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        Dialog insulator = LocatorJ._get(Dialog.class);
+        BigDecimalField insulatorKp = LocatorJ._get(insulator, BigDecimalField.class, spec -> spec.withLabel("KP (m)"));
+        LocatorJ._setValue(insulatorKp, new BigDecimal("-110176"));
+        LocatorJ._click(LocatorJ._get(insulator, Button.class, spec -> spec.withId("switches-add")));
+        SwitchDialog aguja = LocatorJ._get(SwitchDialog.class);
+        LocatorJ._setValue(LocatorJ._get(aguja, TextField.class, spec -> spec.withLabel("Codigo")), "W41");
+        BigDecimalField switchKp = LocatorJ._get(aguja, BigDecimalField.class, spec -> spec.withLabel("KP (m)"));
+        IntegerField turnout = LocatorJ._get(aguja, IntegerField.class, spec -> spec.withLabel("Denominador de la tangente (1:n)"));
+        LocatorJ._setValue(switchKp, new BigDecimal("-110249"));
+        LocatorJ._setValue(turnout, 0);
+        LocatorJ._click(LocatorJ._get(aguja, Button.class, spec -> spec.withId("switch-accept")));
+        assertTrue(switchKp.isInvalid(), "el KP de una aguja no es negativo");
+        assertEquals("Tiene que ser 1 o mas", turnout.getErrorMessage());
+        assertFalse(LocatorJ._find(SwitchDialog.class).isEmpty());
+        aguja.close();
+        LocatorJ._click(LocatorJ._get(insulator, Button.class, spec -> spec.withText("Guardar")));
+        assertTrue(insulatorKp.isInvalid(), "el KP de un aislador no es negativo");
+        verify(sectionInsulatorClient, never()).create(any());
+        insulator.close();
+
+        UI.getCurrent().navigate("infraestructura/paquetes");
+        LocatorJ._click(button("Nuevo"));
+        Dialog executionPackage = LocatorJ._get(Dialog.class);
+        TextField length = LocatorJ._get(executionPackage, TextField.class, spec -> spec.withLabel("Longitud"));
+        for (String typed : List.of("1.000", "-5", "+5", "12 m")) {
+            LocatorJ._setValue(length, typed);
+            LocatorJ._click(LocatorJ._get(executionPackage, Button.class, spec -> spec.withText("Guardar")));
+            assertTrue(length.isInvalid(), "\"" + typed + "\" no es una longitud: solo cifras");
+        }
+        verify(executionPackageClient, never()).create(any());
     }
 
     private static final String DISCONNECTORS_ROUTE = "infraestructura/seccionadores";
@@ -3636,6 +3748,78 @@ class ViewLayerTest {
         verify(materialClient, times(2)).stock(MAT1, null);
     }
 
+    /**
+     * Una cantidad de almacen es numeric(19,6): lo que no cabe (siete decimales, catorce cifras
+     * enteras) no llega al servicio desde ningun dialogo, como en mto-frontend.
+     */
+    @Test
+    void aStockQuantityThatDoesNotFitTheServiceColumnNeverReachesIt() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        when(materialClient.stock(any(), any())).thenReturn(stockOf(new BigDecimal("10"), false));
+        when(movementClient.entry(any())).thenReturn(movement(MovementType.ENTRY, "1.123456"));
+        when(materialClient.create(any())).thenAnswer(call -> new MaterialDto(UUID.randomUUID(), ((MaterialRequest) call.getArgument(0)).code(), "Hilo", "m",
+                BigDecimal.ZERO, true, null));
+        stubReservations();
+
+        UI.getCurrent().navigate(StockRoutes.PREFIX);
+        LocatorJ._setValue(ViewLayerTest.<MaterialSummaryDto>combo("stock-material"), HILO);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("operation-entry")));
+        Dialog entry = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(entry, ComboBox.class, spec -> spec.withId("movement-warehouse")), CENTRAL);
+        BigDecimalField quantity = LocatorJ._get(entry, BigDecimalField.class, spec -> spec.withId("movement-quantity"));
+        Button saveEntry = LocatorJ._get(entry, Button.class, spec -> spec.withId("movement-save"));
+        LocatorJ._setValue(quantity, new BigDecimal("1.1234567"));
+        LocatorJ._click(saveEntry);
+        assertEquals("Como mucho 6 decimales", quantity.getErrorMessage());
+        LocatorJ._setValue(quantity, new BigDecimal("12345678901234"));
+        LocatorJ._click(saveEntry);
+        assertEquals("Como mucho 13 cifras enteras", quantity.getErrorMessage());
+        verify(movementClient, never()).entry(any());
+        LocatorJ._setValue(quantity, new BigDecimal("1.123456"));
+        LocatorJ._click(saveEntry);
+        verify(movementClient).entry(argThat(request -> new BigDecimal("1.123456").equals(request.quantity())));
+
+        UI.getCurrent().navigate(StockRoutes.RESERVATIONS);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("reservation-create")));
+        Dialog reservation = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(reservation, ComboBox.class, spec -> spec.withId("reservation-material")), HILO);
+        LocatorJ._setValue(LocatorJ._get(reservation, ComboBox.class, spec -> spec.withId("reservation-warehouse")), CENTRAL);
+        LocatorJ._setValue(LocatorJ._get(reservation, ComboBox.class, spec -> spec.withId("reservation-project")), TRAMO);
+        BigDecimalField reserved = LocatorJ._get(reservation, BigDecimalField.class, spec -> spec.withId("reservation-quantity"));
+        LocatorJ._setValue(reserved, new BigDecimal("0.0000001"));
+        LocatorJ._click(LocatorJ._get(reservation, Button.class, spec -> spec.withId("reservation-save")));
+        assertEquals("Como mucho 6 decimales", reserved.getErrorMessage());
+        verify(reservationClient, never()).create(any());
+        reservation.close();
+
+        UI.getCurrent().navigate(StockRoutes.MATERIALS);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("stock-create")));
+        Dialog material = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(material, TextField.class, spec -> spec.withLabel("Codigo")), "MAT-010");
+        LocatorJ._setValue(LocatorJ._get(material, TextField.class, spec -> spec.withLabel("Nombre")), "Hilo");
+        LocatorJ._setValue(LocatorJ._get(material, TextField.class, spec -> spec.withLabel("Unidad de medida")), "m");
+        BigDecimalField minimum = LocatorJ._get(material, BigDecimalField.class, spec -> spec.withLabel("Stock minimo"));
+        LocatorJ._setValue(minimum, new BigDecimal("0.1234567"));
+        LocatorJ._click(LocatorJ._get(material, Button.class, spec -> spec.withId("material-save")));
+        assertEquals("Como mucho 6 decimales", minimum.getErrorMessage());
+        verify(materialClient, never()).create(any());
+        LocatorJ._setValue(minimum, BigDecimal.ZERO);
+        LocatorJ._click(LocatorJ._get(material, Button.class, spec -> spec.withId("material-save")));
+        verify(materialClient).create(new MaterialRequest("MAT-010", "Hilo", "m", BigDecimal.ZERO));
+
+        UI.getCurrent().navigate(StockRoutes.ASSEMBLIES);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("stock-create")));
+        Dialog assembly = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        ComboBox<MaterialSummaryDto> component = LocatorJ._get(assembly, ComboBox.class, spec -> spec.withId("bom-material"));
+        BigDecimalField perAssembly = LocatorJ._get(assembly, BigDecimalField.class, spec -> spec.withId("bom-quantity"));
+        LocatorJ._setValue(component, HILO);
+        LocatorJ._setValue(perAssembly, new BigDecimal("2.1234567"));
+        LocatorJ._click(LocatorJ._get(assembly, Button.class, spec -> spec.withId("bom-add")));
+        assertEquals("Como mucho 6 decimales", perAssembly.getErrorMessage());
+        assertEquals(0, GridKt._size(gridWithId("bom-grid")), "la linea no entra en la lista");
+    }
+
     @Test
     void anOutputWithoutStockShowsTheStockMessageAndKeepsTheDialogOpen() {
         loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
@@ -5221,6 +5405,165 @@ class ViewLayerTest {
                 List.of(new InlineDefectRequest(DefectSeverity.HIGH, "Pendola rota", null, null, null)),
                 List.of(new TaskMaterialRequest(MAT1, null, WH1, new BigDecimal("2"), "ud")), null));
         assertTrue(LocatorJ._find(CompleteTaskDialog.class).isEmpty());
+    }
+
+    /**
+     * Un KP de mantenimiento es numeric(12,3): lo que no cabe no llega al servicio desde ningun
+     * dialogo, como en mto-frontend. El KP final de un defecto puede ser el inicial (un defecto en un
+     * punto), nunca menor.
+     */
+    @Test
+    void aMaintenanceKpThatDoesNotFitTheServiceColumnNeverReachesIt() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ASSETS);
+        click("asset-create");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("asset-code")), "TS-0003");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("asset-name")), "Tramo 14");
+        LocatorJ._setValue(comboWithId("asset-track"), new RefItem(12L, "VIA 1 (PAQ NORTE)"));
+        BigDecimalField assetStart = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("asset-start-kp"));
+        BigDecimalField assetEnd = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("asset-end-kp"));
+        LocatorJ._setValue(assetStart, new BigDecimal("13.4505"));
+        LocatorJ._setValue(assetEnd, new BigDecimal("1234567890"));
+        IntegerField interval = LocatorJ._get(IntegerField.class, spec -> spec.withId("asset-interval"));
+        LocatorJ._setValue(interval, 0);
+        click(AssetEditorDialog.SAVE_ID);
+        assertEquals("Tiene que ser mayor que cero", interval.getErrorMessage(), "un intervalo de cero dias no es un plan");
+        assertEquals("Como mucho 3 decimales", assetStart.getErrorMessage());
+        assertEquals("Como mucho 9 cifras enteras", assetEnd.getErrorMessage());
+        verify(assetClient, never()).create(any());
+        LocatorJ._get(AssetEditorDialog.class).close();
+
+        UI.getCurrent().navigate(MaintenanceRoutes.SHIFTS);
+        click("shift-create");
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("shift-date")), LocalDate.of(2026, 10, 5));
+        LocatorJ._setValue(comboWithId("shift-possession"), PossessionType.FULL);
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RefItem> tracks = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-tracks"));
+        LocatorJ._setValue(tracks, Set.of(new RefItem(12L, "VIA 1 (PAQ NORTE)")));
+        BigDecimalField shiftStart = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("shift-start-kp"));
+        LocatorJ._setValue(shiftStart, new BigDecimal("12.0001"));
+        click(ShiftEditorDialog.SAVE_ID);
+        assertEquals("Como mucho 3 decimales", shiftStart.getErrorMessage());
+        verify(shiftClient, never()).create(any());
+        LocatorJ._get(ShiftEditorDialog.class).close();
+
+        UI.getCurrent().navigate(MaintenanceRoutes.INSPECTIONS);
+        click("inspection-create");
+        LocatorJ._setValue(comboWithId("inspection-asset"), profileSummary());
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("inspection-date")), LocalDate.of(2026, 9, 20));
+        BigDecimalField inspectionKp = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("inspection-kp"));
+        LocatorJ._setValue(inspectionKp, new BigDecimal("-12.2705"));
+        click(InspectionEditorDialog.SAVE_ID);
+        assertEquals("Como mucho 3 decimales", inspectionKp.getErrorMessage());
+        verify(inspectionClient, never()).create(any());
+        LocatorJ._get(InspectionEditorDialog.class).close();
+
+        when(defectClient.create(any())).thenReturn(defectOf(DefectStatus.OPEN));
+        when(defectClient.findById(DEFECT1)).thenReturn(defectOf(DefectStatus.OPEN));
+        when(defectClient.history(DEFECT1)).thenReturn(List.of());
+        UI.getCurrent().navigate(MaintenanceRoutes.DEFECTS);
+        click("defect-create");
+        LocatorJ._setValue(comboWithId("defect-asset"), profileSummary());
+        LocatorJ._setValue(comboWithId("defect-severity"), DefectSeverity.HIGH);
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("defect-description")), "Pendola rota");
+        BigDecimalField defectStart = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("defect-start-kp"));
+        BigDecimalField defectEnd = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("defect-end-kp"));
+        LocatorJ._setValue(defectStart, new BigDecimal("12.270"));
+        LocatorJ._setValue(defectEnd, new BigDecimal("12.100"));
+        click(DefectEditorDialog.SAVE_ID);
+        assertEquals("El KP final no puede ser menor que el inicial", defectEnd.getErrorMessage());
+        verify(defectClient, never()).create(any());
+        LocatorJ._setValue(defectEnd, new BigDecimal("12.270"));
+        click(DefectEditorDialog.SAVE_ID);
+        verify(defectClient).create(argThat(request -> new BigDecimal("12.270").equals(request.startKp())
+                && new BigDecimal("12.270").equals(request.endKp())));
+        LocatorJ._get(DefectDetailView.class);
+    }
+
+    /**
+     * Las cantidades de mantenimiento son numeric(19,6) y los minutos netos no son negativos, tambien
+     * en los dialogos sin Binder. Una medida que el campo no pudo leer no viaja como vaciada: borraria
+     * la que habia.
+     */
+    @Test
+    void maintenanceQuantitiesMinutesAndMeasuresAreCheckedBeforeCalling() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        TaskDto base = taskWithChecklist(MaintenanceTaskStatus.IN_PROGRESS);
+        CheckItemDto measuredBefore = new CheckItemDto(ITEM1, "P-01", "Altura del hilo", "mm", new BigDecimal("5300"), new BigDecimal("5700"),
+                true, new BigDecimal("5400"), false, null, CheckItemResult.OK, null, 1, false, 1L);
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of(new TaskDto(base.id(), base.orderId(), base.sequence(), base.description(),
+                base.status(), null, base.asset(), SHIFT1, null, null, null, null, List.of(), base.taskTypeCodes(), List.of(measuredBefore),
+                null, null)));
+        when(orderClient.findById(ORDER1)).thenReturn(orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE));
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        openShift(shiftOf(ShiftStatus.IN_PROGRESS));
+
+        click("shift-close");
+        IntegerField netMinutes = LocatorJ._get(IntegerField.class, spec -> spec.withId("shift-transition-net-minutes"));
+        LocatorJ._setValue(netMinutes, -30);
+        click(ShiftTransitionDialog.CONFIRM_ID);
+        assertEquals("No puede ser negativo", netMinutes.getErrorMessage());
+        verify(shiftClient, never()).close(any(), any());
+        LocatorJ._get(ShiftTransitionDialog.class).close();
+
+        Grid<Object> tasks = gridWithId("shift-tasks-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("shift-task-checklist-" + TASK1)));
+        BigDecimalField measured = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("check-measured-" + ITEM1));
+        LocatorJ._setValue(measured, new BigDecimal("5250.0001"));
+        click("check-save-" + ITEM1);
+        assertEquals("Como mucho 3 decimales", measured.getErrorMessage());
+        LocatorJ._setValue(measured, null);
+        typeFromTheBrowser(measured, "5,250,5");
+        click("check-save-" + ITEM1);
+        assertEquals(Numbers.UNREADABLE, measured.getErrorMessage());
+        verify(orderClient, never()).updateCheckItem(any(), any(), any(), any());
+        LocatorJ._get(CheckItemsDialog.class).close();
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("shift-task-complete-" + TASK1)));
+        click("complete-task-material-add");
+        LocatorJ._setValue(comboWithId("material-line-material"), new MaterialSummaryDto(MAT1, "MAT-001", "Pendola", "ud", true));
+        LocatorJ._setValue(comboWithId("material-line-warehouse"), new WarehouseSummaryDto(WH1, "WH-000", "Central", true));
+        BigDecimalField used = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-line-quantity"));
+        LocatorJ._setValue(used, new BigDecimal("2.1234567"));
+        click("material-line-add");
+        assertEquals("Como mucho 6 decimales", used.getErrorMessage());
+        assertFalse(LocatorJ._find(BigDecimalField.class, spec -> spec.withId("material-line-quantity")).isEmpty(), "la linea sigue abierta");
+        LocatorJ._get(CompleteTaskDialog.class).close();
+        verify(orderClient, never()).completeTask(any(), any(), any());
+
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(line(LINE_FAILED, StockSyncStatus.FAILED, null)));
+        click("material-add");
+        LocatorJ._setValue(comboWithId("material-material"), new MaterialSummaryDto(MAT1, "MAT-001", "Pendola", "ud", true));
+        LocatorJ._setValue(comboWithId("material-warehouse"), new WarehouseSummaryDto(WH1, "WH-000", "Central", true));
+        BigDecimalField planned = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-planned"));
+        LocatorJ._setValue(planned, new BigDecimal("4.1234567"));
+        click(MaterialUsageDialog.SAVE_ID);
+        assertEquals("Como mucho 6 decimales", planned.getErrorMessage());
+        verify(orderClient, never()).registerMaterial(any(), any());
+        LocatorJ._get(MaterialUsageDialog.class).close();
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("order-materials-grid"), 0, "actions"), Button.class,
+                spec -> spec.withId("material-edit-" + LINE_FAILED)));
+        BigDecimalField consumed = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-consumed"));
+        LocatorJ._setValue(consumed, new BigDecimal("-1"));
+        click(MaterialUsageDialog.SAVE_ID);
+        assertEquals("No puede ser negativo", consumed.getErrorMessage());
+        verify(orderClient, never()).updateMaterial(any(), any(), any());
+    }
+
+    /**
+     * Lo que la persona escribe y el campo no sabe leer, como llega del navegador: el campo se queda
+     * sin valor, pero con el texto. Puesto desde el servidor, el campo lo volveria a leer y lo borraria.
+     */
+    private static void typeFromTheBrowser(BigDecimalField field, String text) {
+        try {
+            field.getElement().getNode().getFeature(ElementPropertyMap.class).deferredUpdateFromClient("value", text).run();
+        } catch (PropertyChangeDeniedException denied) {
+            throw new AssertionError(denied);
+        }
     }
 
     @Test

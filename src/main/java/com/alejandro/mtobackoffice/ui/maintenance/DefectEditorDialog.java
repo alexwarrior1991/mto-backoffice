@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -22,6 +23,7 @@ import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.binder.Binder;
 
+import java.math.BigDecimal;
 import java.util.function.Consumer;
 
 /**
@@ -85,8 +87,14 @@ public class DefectEditorDialog extends Dialog {
             BigDecimalField endKp = new BigDecimalField("KP final");
             endKp.setId("defect-end-kp");
             binder.forField(detectedAt).bind("detectedAt");
-            binder.forField(startKp).bind("startKp");
-            binder.forField(endKp).bind("endKp");
+            binder.forField(startKp).withValidator(Numbers.kp()).bind("startKp");
+            // Un defecto puede estar en un punto: el final puede ser el inicial, nunca menor (como el servicio).
+            Binder.Binding<DefectForm, BigDecimal> end = binder.forField(endKp)
+                    .withValidator(Numbers.kp())
+                    .withValidator(kp -> kp == null || startKp.getValue() == null || kp.compareTo(startKp.getValue()) >= 0,
+                            "El KP final no puede ser menor que el inicial")
+                    .bind("endKp");
+            startKp.addValueChangeListener(change -> end.validate());
             layout.add(detectedAt, startKp, endKp);
         }
         binder.forField(severity).asRequired("La gravedad es obligatoria").bind("severity");

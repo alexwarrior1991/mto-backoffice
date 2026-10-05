@@ -7,6 +7,7 @@ import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.datepicker.DatePicker;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.converter.StringToLongConverter;
+import com.vaadin.flow.data.validator.RegexpValidator;
 
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -34,7 +35,9 @@ public class ExecutionPackageEditor extends MasterEditorDialog<ExecutionPackageD
         binder.forField(name).asRequired("El nombre es obligatorio").bind("name");
         binder.forField(company).asRequired("La empresa es obligatoria")
                 .withConverter(Pickers.refToId(catalog::companyRef)).bind("companyId");
+        // Solo cifras, como en mto-frontend: ni signo ni separador de miles (que el conversor admitia).
         binder.forField(length).asRequired("La longitud es obligatoria").withNullRepresentation("")
+                .withValidator(new RegexpValidator("Un numero entero, sin signo ni separadores", "\\s*\\d+\\s*"))
                 .withConverter(new StringToLongConverter("Debe ser un numero entero")).bind("length");
         binder.forField(startDate).asRequired("La fecha de inicio es obligatoria").bind("startDate");
         binder.forField(endDate).asRequired("La fecha de fin es obligatoria").bind("endDate");

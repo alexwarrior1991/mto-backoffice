@@ -4,6 +4,7 @@ import com.alejandro.mtobackoffice.client.dto.stock.MaterialDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.client.stock.MaterialClient;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.alejandro.mtobackoffice.ui.support.Required;
 import com.alejandro.mtobackoffice.ui.support.ServerValidation;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
@@ -60,7 +61,7 @@ public class MaterialEditorDialog extends Dialog {
         binder.forField(name).asRequired(Required.text("El nombre es obligatorio")).bind("name");
         binder.forField(unit).asRequired(Required.text("La unidad es obligatoria")).bind("unitOfMeasure");
         binder.forField(minimum).asRequired("El stock minimo es obligatorio")
-                .withValidator(value -> value.signum() >= 0, "No puede ser negativo")
+                .withValidator(Numbers.quantity())
                 .bind("minimumStockLevel");
         if (!creating) {
             binder.forField(active).bind("active");
