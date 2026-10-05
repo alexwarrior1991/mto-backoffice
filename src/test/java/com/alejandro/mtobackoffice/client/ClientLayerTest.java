@@ -2544,7 +2544,7 @@ class ClientLayerTest {
                 .andRespond(withSuccess(stockPage(inboxItemJson(NOTIFICATION_ID, false, "CRITICAL") + "," + inboxItemJson(NOTIFICATION_ID_2, true, "FATAL"),
                         0, 20, 2), MediaType.APPLICATION_JSON));
         // Sin filtros no viaja ninguno: para el servicio un filtro ausente no filtra.
-        server.expect(requestTo(NOTIFICATIONS + "/inbox?page=1&size=20&sort=severity%2Casc"))
+        server.expect(requestTo(NOTIFICATIONS + "/inbox?page=1&size=20&sort=severity%2Casc&sort=createdAt%2Cdesc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage("", 1, 20, 0), MediaType.APPLICATION_JSON));
 
@@ -2608,7 +2608,7 @@ class ClientLayerTest {
     void theActivityLogIsSearchedWithEveryFilterAndTheDetailBringsThePayload() {
         server.expect(requestTo(NOTIFICATIONS + "/activity?category=USERS&type=users.user.created&actorUsername=usuarios.responsable"
                         + "&subjectType=user&subjectId=u-1&severity=INFO&sourceService=mto-users&from=2026-09-01T00%3A00%3A00Z"
-                        + "&to=2026-09-30T23%3A59%3A59.999Z&includeSuperseded=true&page=0&size=50&sort=occurredAt%2Cdesc"))
+                        + "&to=2026-09-30T23%3A59%3A59.999Z&includeSuperseded=true&page=0&size=50&sort=occurredAt%2Cdesc&sort=seq%2Cdesc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage(activityEventJson(EVENT_ID, "USERS", "PERSON", null) + ","
                         + activityEventJson(NOTIFICATION_ID_2, "FIELD", "ROBOT", EVENT_ID), 0, 50, 2), MediaType.APPLICATION_JSON));
@@ -2650,7 +2650,7 @@ class ClientLayerTest {
     @Test
     void theAccessesAreSearchedByUserIpTypeAndOutcome() {
         server.expect(requestTo(NOTIFICATIONS + "/access?username=config.lector&ipAddress=10.0.0.7&type=access.login.failed&outcome=FAILURE"
-                        + "&page=0&size=50&sort=occurredAt%2Cdesc"))
+                        + "&page=0&size=50&sort=occurredAt%2Cdesc&sort=seq%2Cdesc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage(
                         "{\"id\":\"" + EVENT_ID + "\",\"seq\":7,\"type\":\"access.login.failed\",\"severity\":\"WARNING\",\"outcome\":\"FAILURE\","
@@ -2681,7 +2681,7 @@ class ClientLayerTest {
     /** Un {@code sort} que el servicio no admite es 400 {@code REQ-400} sin errores por campo: una regla, no un formulario. */
     @Test
     void anUnknownSortIsA400OfTheNotificationServiceReadByAlias() {
-        server.expect(requestTo(NOTIFICATIONS + "/activity?page=0&size=50&sort=payload%2Casc")).andExpect(method(HttpMethod.GET))
+        server.expect(requestTo(NOTIFICATIONS + "/activity?page=0&size=50&sort=payload%2Casc&sort=seq%2Cdesc")).andExpect(method(HttpMethod.GET))
                 .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON).header("X-Correlation-Id", "corr-n2")
                         .body("{\"timestamp\":\"2026-09-28T06:07:00Z\",\"status\":400,\"error\":\"BAD_REQUEST\","
                                 + "\"message\":\"Unknown sort property 'payload'\",\"path\":\"/api/v1/notifications/activity\",\"method\":\"GET\","

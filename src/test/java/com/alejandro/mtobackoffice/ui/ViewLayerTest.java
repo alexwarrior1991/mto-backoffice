@@ -6136,6 +6136,45 @@ class ViewLayerTest {
         GridKt._size(activityGrid());
         verify(notificationClient, atLeastOnce()).activity(eq(new ActivityFilter(ActivityCategory.SYSTEM, "system.source.stalled", null, null, null,
                 null, null, null, null, false)), eq(0), anyInt(), eq(List.of("occurredAt,desc")));
+
+        // Otro enlace con la pantalla ya abierta parte de cero: el tipo de antes no se queda.
+        NotificationLinks.open(UI.getCurrent(), "/actividad?category=MAINTENANCE");
+        assertEquals(ActivityCategory.MAINTENANCE, LocatorJ._get(ComboBox.class, spec -> spec.withId("activity-category")).getValue());
+        assertEquals("", LocatorJ._get(TextField.class, spec -> spec.withId("activity-type")).getValue());
+    }
+
+    /**
+     * El enlace de una notificacion, como en mto-frontend: una ruta empieza por una sola barra y una
+     * direccion http(s) se abre en otra pestana; cualquier otra cosa no es un destino y no lleva
+     * flecha. Un acceso nunca ofrece su linea del registro, que seria un 404 ACT-404.
+     */
+    @Test
+    void onlyARouteOrAnHttpAddressIsALinkToOpenAndAnAccessOffersNoLogLine() {
+        loginAs("auditor", "ROLE_NOTIFICATION_INBOX", "ROLE_NOTIFICATION_ACTIVITY_READ");
+        UUID external = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000503");
+        UUID access = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000504");
+        stubInbox(List.of(
+                notification(NOTIFICATION1, "Raro", "javascript:alert(1)", false, ActivitySeverity.INFO, ActivityCategory.CONFIGURATION),
+                notification(NOTIFICATION2, "Sin barra", "mantenimiento/ordenes", false, ActivitySeverity.INFO, ActivityCategory.MAINTENANCE),
+                notification(external, "Fuera", "https://estado.mto.local", false, ActivitySeverity.INFO, ActivityCategory.SYSTEM),
+                notification(access, "Acceso fallido", "/actividad/accesos?username=config.lector", false, ActivitySeverity.WARNING,
+                        ActivityCategory.ACCESS)));
+
+        UI.getCurrent().navigate(NotificationRoutes.INBOX);
+        Grid<InboxItemDto> grid = inboxGrid();
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, NotificationsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("open-" + NOTIFICATION1)).isEmpty(), "otro esquema se descarta");
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 1, NotificationsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("open-" + NOTIFICATION2)).isEmpty(), "una ruta empieza por una sola barra");
+        Component externalActions = GridKt._getCellComponent(grid, 2, NotificationsView.ACTIONS_COLUMN);
+        LocatorJ._get(externalActions, Button.class, spec -> spec.withId("open-" + external));
+        LocatorJ._get(externalActions, Button.class, spec -> spec.withId("event-" + external));
+        Component accessActions = GridKt._getCellComponent(grid, 3, NotificationsView.ACTIONS_COLUMN);
+        LocatorJ._get(accessActions, Button.class, spec -> spec.withId("open-" + access));
+        assertTrue(LocatorJ._find(accessActions, Button.class, spec -> spec.withId("event-" + access)).isEmpty(),
+                "un acceso nunca sale por el registro");
+        assertTrue(NotificationLinks.target("//otro.sitio/x").isEmpty());
+        assertTrue(NotificationLinks.target(" /mantenimiento ").map(NotificationLinks.Target::external).map(external1 -> !external1).orElse(false));
     }
 
     @Test
@@ -6271,11 +6310,24 @@ class ViewLayerTest {
         GridKt._get(grid, 0);
         verify(notificationClient, atLeastOnce()).activity(any(ActivityFilter.class), anyInt(), anyInt(), eq(List.of("type,asc")));
 
+        // La fila no trae el payload: la linea entera se pide a su id, como en mto-frontend.
+        when(notificationClient.activityEvent(EVENT1)).thenReturn(event(EVENT1, ActivityCategory.MAINTENANCE, "maintenance.order.created",
+                ActivitySeverity.CRITICAL, Map.of("code", "MO-000012")));
         GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        verify(notificationClient).activityEvent(EVENT1);
         Dialog dialog = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
         LocatorJ._get(dialog, Span.class, spec -> spec.withText("corr-1"));
-        LocatorJ._get(dialog, Span.class, spec -> spec.withText("Sin datos publicados"));
-        assertTrue(LocatorJ._find(dialog, Grid.class, spec -> spec.withId(EventDetailDialog.PAYLOAD_ID)).isEmpty());
+        Grid<?> payload = LocatorJ._get(dialog, Grid.class, spec -> spec.withId(EventDetailDialog.PAYLOAD_ID));
+        assertEquals(1, GridKt._size(payload));
+        dialog.close();
+
+        // Una linea que ya no existe (ACT-404) se notifica y no abre nada.
+        ApiProblem gone = new ApiProblem(null, "Not Found", 404, "ActivityEvent was not found", null, "ACT-404", null, null, null, false, null, null);
+        when(notificationClient.activityEvent(EVENT2)).thenThrow(BackofficeApiException.of(HttpStatus.NOT_FOUND, gone, "corr-n7", null,
+                "GET /api/notifications/activity/" + EVENT2));
+        GridKt._clickItem(grid, 1, 1, false, false, false, false);
+        assertTrue(LocatorJ._find(Dialog.class, spec -> spec.withId(EventDetailDialog.ID)).isEmpty());
+        assertEquals(1, NotificationsKt.getNotifications().size());
     }
 
     /** Los enlaces de las reglas llegan con el usuario o la IP en la URL; el resto de filtros se manda al servicio. */
@@ -6308,6 +6360,19 @@ class ViewLayerTest {
         verify(notificationClient, atLeastOnce()).access(eq(new AccessFilter("config.lector", "10.0.0.7", null, AccessOutcome.FAILURE, null, null)),
                 anyInt(), anyInt(), anyList());
 
+        // Una IP se busca entera, como en mto-frontend: a medio escribir no se pide nada y la lista sigue.
+        clearInvocations(notificationClient);
+        TextField ip = LocatorJ._get(TextField.class, spec -> spec.withId("access-ip"));
+        LocatorJ._setValue(ip, "10.0.0");
+        assertEquals(2, GridKt._size(grid));
+        assertTrue(ip.isInvalid());
+        verify(notificationClient, never()).access(argThat(filter -> filter != null && "10.0.0".equals(filter.ipAddress())), anyInt(), anyInt(),
+                anyList());
+        assertTrue(AccessView.isIpLiteral("::ffff:10.0.0.7") && AccessView.isIpLiteral("fe80::1") && !AccessView.isIpLiteral("10.0.0.256")
+                && !AccessView.isIpLiteral("intranet.local"));
+        LocatorJ._setValue(ip, "10.0.0.7");
+        assertFalse(ip.isInvalid());
+
         GridKt._clickItem(grid, 0, 1, false, false, false, false);
         Dialog dialog = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
         LocatorJ._get(dialog, Span.class, spec -> spec.withText("10.0.0.7"));
@@ -6315,5 +6380,12 @@ class ViewLayerTest {
         @SuppressWarnings("unchecked")
         Grid<EventDetailDialog.PayloadEntry> payload = LocatorJ._get(dialog, Grid.class, spec -> spec.withId(EventDetailDialog.PAYLOAD_ID));
         assertEquals(new EventDetailDialog.PayloadEntry("error", "invalid_user_credentials"), GridKt._get(payload, 0));
+        dialog.close();
+
+        // Entrar por otro enlace parte de cero: lo que no viene en la URL se queda vacio.
+        NotificationLinks.open(UI.getCurrent(), "/actividad/accesos?ipAddress=10.0.0.9");
+        assertEquals("", LocatorJ._get(TextField.class, spec -> spec.withId("access-username")).getValue());
+        assertEquals("10.0.0.9", LocatorJ._get(TextField.class, spec -> spec.withId("access-ip")).getValue());
+        assertNull(LocatorJ._get(ComboBox.class, spec -> spec.withId("access-outcome")).getValue());
     }
 }

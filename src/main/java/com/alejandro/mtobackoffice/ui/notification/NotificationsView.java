@@ -137,7 +137,7 @@ public class NotificationsView extends VerticalLayout {
     private Component rowActions(InboxItemDto item) {
         HorizontalLayout actions = new HorizontalLayout();
         actions.setSpacing(false);
-        if (item.hasLink()) {
+        if (NotificationLinks.target(item.link()).isPresent()) {
             Button open = new Button(VaadinIcon.ARROW_RIGHT.create(), click -> open(item));
             open.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
             open.setTooltipText("Abrir " + item.link());
@@ -155,7 +155,8 @@ public class NotificationsView extends VerticalLayout {
             read.setId("read-" + item.id());
             actions.add(read);
         }
-        if (canReadActivity && item.activityEventId() != null) {
+        // Un acceso nunca sale por el registro: su linea seria un 404 ACT-404.
+        if (canReadActivity && item.activityEventId() != null && item.category() != ActivityCategory.ACCESS) {
             Button event = new Button(VaadinIcon.SEARCH.create(), click -> showEvent(item.activityEventId()));
             event.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
             event.setTooltipText("Ver la linea del registro que la causo");
@@ -175,7 +176,7 @@ public class NotificationsView extends VerticalLayout {
         if (current == null) {
             return;
         }
-        if (current.hasLink()) {
+        if (NotificationLinks.target(current.link()).isPresent()) {
             NotificationLinks.open(UI.getCurrent(), current.link());
         } else {
             refresh();

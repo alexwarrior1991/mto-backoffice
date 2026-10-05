@@ -35,6 +35,8 @@ import com.vaadin.flow.router.Route;
 import jakarta.annotation.security.RolesAllowed;
 
 import java.util.List;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 import java.util.stream.Stream;
 
 /**
@@ -62,6 +64,10 @@ public class AccessView extends VerticalLayout implements BeforeEnterObserver {
     private final DatePicker to = new DatePicker("Hasta");
     private final Span count = new Span();
     private final Grid<AccessEventDto> grid = new Grid<>();
+    private static final Pattern IPV4 = Pattern.compile("^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$");
+    private static final Pattern IPV6 = Pattern.compile("^[0-9a-fA-F:.]{2,45}$");
+    /** Lo que pide la lista: el ultimo filtro con la IP entera (o sin IP). */
+    private AccessFilter applied = AccessFilter.NONE;
 
     public AccessView(NotificationClient client) {
         this.client = client;
@@ -81,8 +87,9 @@ public class AccessView extends VerticalLayout implements BeforeEnterObserver {
         outcome.setClearButtonVisible(true);
         from.setId("access-from");
         to.setId("access-to");
+        ipAddress.setErrorMessage("Una IP entera: 10.0.0.7 o 2001:db8::1");
         for (HasValue<?, ?> filter : List.<HasValue<?, ?>>of(username, ipAddress, type, outcome, from, to)) {
-            filter.addValueChangeListener(change -> refresh());
+            filter.addValueChangeListener(change -> applyFilters());
         }
         Button reload = new Button("Recargar", VaadinIcon.REFRESH.create(), click -> refresh());
 
@@ -117,8 +124,12 @@ public class AccessView extends VerticalLayout implements BeforeEnterObserver {
         expand(grid);
     }
 
+    /** Los filtros de la URL; lo que no viene se queda vacio, aunque la pantalla ya estuviera abierta. */
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
+        for (HasValue<?, ?> filter : List.<HasValue<?, ?>>of(username, ipAddress, type, outcome, from, to)) {
+            filter.clear();
+        }
         QueryParameters parameters = event.getLocation().getQueryParameters();
         parameters.getSingleParameter("username").ifPresent(username::setValue);
         parameters.getSingleParameter("ipAddress").ifPresent(ipAddress::setValue);
@@ -126,13 +137,47 @@ public class AccessView extends VerticalLayout implements BeforeEnterObserver {
         parameters.getSingleParameter("outcome").map(AccessOutcome::of).filter(AccessOutcome.selectable()::contains).ifPresent(outcome::setValue);
     }
 
+    /** Vuelve a pedir la lista con el filtro que ya pidio. */
     void refresh() {
         grid.getDataProvider().refreshAll();
     }
 
+    /**
+     * Un filtro cambio. Una IP se busca entera: mientras no lo sea no se pide nada y la lista sigue con
+     * lo ultimo que pidio, como en mto-frontend (el servicio la rechazaria con un 400).
+     */
+    private void applyFilters() {
+        String ip = ActivityView.blankToNull(ipAddress.getValue());
+        boolean validIp = ip == null || isIpLiteral(ip);
+        ipAddress.setInvalid(!validIp);
+        if (!validIp) {
+            return;
+        }
+        applied = new AccessFilter(ActivityView.blankToNull(username.getValue()), ip, ActivityView.blankToNull(type.getValue()),
+                outcome.getValue(), Formats.startOfDay(from.getValue()), Formats.endOfDay(to.getValue()));
+        refresh();
+    }
+
+    /**
+     * Si un texto es una IP que el servicio lee como literal, con la misma regla que mto-frontend: una
+     * IPv4 entera (10.0.0.7) o algo con forma de IPv6 (::1, fe80::1, ::ffff:10.0.0.7). Sin DNS.
+     */
+    public static boolean isIpLiteral(String value) {
+        String text = value == null ? "" : value.trim();
+        Matcher ipv4 = IPV4.matcher(text);
+        if (ipv4.matches()) {
+            for (int part = 1; part <= 4; part++) {
+                if (Integer.parseInt(ipv4.group(part)) > 255) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return text.contains(":") && IPV6.matcher(text).matches();
+    }
+
     private AccessFilter filter() {
-        return new AccessFilter(ActivityView.blankToNull(username.getValue()), ActivityView.blankToNull(ipAddress.getValue()),
-                ActivityView.blankToNull(type.getValue()), outcome.getValue(), Formats.startOfDay(from.getValue()), Formats.endOfDay(to.getValue()));
+        return applied;
     }
 
     private Stream<AccessEventDto> fetch(Query<AccessEventDto, Void> query) {
