@@ -340,6 +340,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -4751,6 +4752,42 @@ class ViewLayerTest {
         verify(orderClient, atLeast(4)).findById(ORDER1);
     }
 
+    /** Los tipos que el catalogo no trae vuelven tal cual, se comparan como conjunto y quitarlos todos los vacia. */
+    @Test
+    void aTaskKeepsTheTypesTheCatalogueDoesNotNameAndEmptyingThemClearsThem() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        TaskDto base = task(TASK1, 1, MaintenanceTaskStatus.PENDING);
+        TaskDto withRetired = new TaskDto(TASK1, ORDER1, 1, base.description(), MaintenanceTaskStatus.PENDING, null, base.asset(), null, null,
+                null, null, null, List.of(), List.of("RP-99", "RG-01"), List.of(), null, 2L);
+        TaskDto onlyKnown = new TaskDto(TASK2, ORDER1, 2, base.description(), MaintenanceTaskStatus.PENDING, null, base.asset(), null, null,
+                null, null, null, List.of(), List.of("RG-01"), List.of(), null, 2L);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of(withRetired, onlyKnown));
+        when(orderClient.updateTask(eq(ORDER1), any(), any())).thenAnswer(call -> TASK1.equals(call.getArgument(1)) ? withRetired : onlyKnown);
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+        Grid<Object> tasks = gridWithId("order-tasks-grid");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("task-edit-" + TASK1)));
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("task-notes")), "Falta la llave");
+        click(TaskEditorDialog.SAVE_ID);
+        verify(orderClient).updateTask(ORDER1, TASK1, MergePatch.of(new TaskUpdateRequest(null, null, null, "Falta la llave", null, null), 2L));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("task-edit-" + TASK1)));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<TaskTypeDto> types = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("task-types"));
+        LocatorJ._setValue(types, Set.of());
+        click(TaskEditorDialog.SAVE_ID);
+        verify(orderClient).updateTask(ORDER1, TASK1, MergePatch.of(new TaskUpdateRequest(null, null, List.of("RP-99"), null, null, null), 2L));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 1, "actions"), Button.class, spec -> spec.withId("task-edit-" + TASK2)));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<TaskTypeDto> known = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("task-types"));
+        LocatorJ._setValue(known, Set.of());
+        click(TaskEditorDialog.SAVE_ID);
+        verify(orderClient).updateTask(ORDER1, TASK2, new MergePatch<>(new TaskUpdateRequest(null, null, null, null, null, null),
+                Set.of("taskTypeCodes"), 2L));
+    }
+
     @Test
     void theHistoryTabNamesTheStatesAndAnAssetRowShowsItsOrders() {
         loginAs("mantenimiento.lector", MAINTENANCE_READER);
@@ -4777,7 +4814,8 @@ class ViewLayerTest {
                 spec -> spec.withId("asset-orders-" + ASSET_OWN)));
         Grid<Object> orders = gridWithId("asset-orders-grid");
         assertEquals("MO-000001", GridKt._getFormattedRow(orders, 0).getFirst());
-        verify(assetClient, atLeastOnce()).orders(eq(ASSET_OWN), eq(0), anyInt(), eq(List.of("createdAt,desc")));
+        verify(assetClient, atLeastOnce()).orders(eq(ASSET_OWN), eq(0), anyInt(), eq(List.of("createdAt,desc", "id,asc")));
+        verify(assetClient, never()).orders(any(), anyInt(), anyInt(), argThat(sort -> !sort.contains("id,asc")));
         GridKt._clickItem(orders, 0, 1, false, false, false, false);
         LocatorJ._get(OrderDetailView.class);
     }
@@ -4873,6 +4911,47 @@ class ViewLayerTest {
         LocatorJ._get(ShiftDetailView.class);
     }
 
+    /**
+     * Una ficha que no se puede leer por algo que no es un 404 no vuelve a la lista: dice por que y
+     * ofrece volver o reintentar, como en mto-frontend. Lo mismo en las cuatro fichas.
+     */
+    @Test
+    void aDetailThatCannotBeReadStaysWithItsReasonBackAndRetry() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        stubReferencesForMaintenance();
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        when(orderClient.findById(ORDER1)).thenThrow(maintenanceError(503, null, null))
+                .thenReturn(orderOf(MaintenanceOrderStatus.PLANNED, MaintenanceOrderType.PREVENTIVE));
+
+        UI.getCurrent().navigate(OrderDetailView.class, OrderDetailView.parametersOf(ORDER1));
+        LocatorJ._get(OrderDetailView.class);
+        Component failure = LocatorJ._get(Component.class, spec -> spec.withId("detail-load-failure"));
+        LocatorJ._get(failure, Paragraph.class, spec -> spec.withText(
+                "No se ha podido leer la orden: El servicio no esta disponible ahora mismo. Intentalo mas tarde."));
+        assertEquals(1, NotificationsKt.getNotifications().size(), "y se notifica, con su referencia");
+        assertTrue(LocatorJ._find(Span.class, spec -> spec.withId("order-status")).isEmpty(), "la cabecera vacia no se ensena");
+
+        click("detail-load-retry");
+        assertTrue(LocatorJ._find(Component.class, spec -> spec.withId("detail-load-failure")).isEmpty());
+        assertEquals("Planificada", spanText("order-status"));
+
+        when(inspectionClient.findById(INSPECTION1)).thenThrow(maintenanceError(503, null, null));
+        UI.getCurrent().navigate(InspectionDetailView.class, InspectionDetailView.parametersOf(INSPECTION1));
+        LocatorJ._get(InspectionDetailView.class);
+        LocatorJ._get(Component.class, spec -> spec.withId("detail-load-failure"));
+        when(defectClient.findById(DEFECT1)).thenThrow(maintenanceError(503, null, null));
+        UI.getCurrent().navigate(DefectDetailView.class, DefectDetailView.parametersOf(DEFECT1));
+        LocatorJ._get(DefectDetailView.class);
+        LocatorJ._get(Component.class, spec -> spec.withId("detail-load-failure"));
+
+        stubShifts(List.of());
+        when(shiftClient.findById(SHIFT1)).thenThrow(maintenanceError(503, null, null));
+        UI.getCurrent().navigate(ShiftDetailView.class, ShiftDetailView.parametersOf(SHIFT1));
+        LocatorJ._get(Component.class, spec -> spec.withId("detail-load-failure"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Volver a la lista")));
+        assertTrue(LocatorJ._find(ShiftDetailView.class).isEmpty(), "de vuelta a la lista de turnos");
+    }
+
     @Test
     void theShiftDetailOffersWhatItsStateAdmitsAndStartsAndClosesTheShift() {
         loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
@@ -4896,6 +4975,64 @@ class ViewLayerTest {
         verify(shiftClient).close(SHIFT1, new CloseShiftRequest(null, null, 240, null));
         assertEquals("Cerrado", spanText("shift-status"));
         assertFalse(hasButton("shift-edit") || hasButton("shift-close") || hasButton("shift-cancel"), "un turno cerrado no ofrece nada");
+    }
+
+    /** Quitar todos los seccionadores de un turno los vacia: viajan a null en el merge-patch, como en mto-frontend. */
+    @Test
+    void emptyingTheDisconnectorsOfAShiftClearsThem() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        when(shiftClient.update(eq(SHIFT1), any())).thenReturn(shiftOf(ShiftStatus.PLANNED));
+        openShift(shiftOf(ShiftStatus.PLANNED));
+
+        click("shift-edit");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<AssetSummaryDto> disconnectors = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-disconnectors"));
+        assertEquals(1, disconnectors.getValue().size());
+        LocatorJ._setValue(disconnectors, Set.of());
+        click(ShiftEditorDialog.SAVE_ID);
+
+        verify(shiftClient).update(eq(SHIFT1), argThat(patch -> patch.cleared().equals(Set.of("blockingDisconnectorIds"))
+                && patch.values().blockingDisconnectorIds() == null && patch.values().trackIds() == null));
+    }
+
+    /** Lo que el servicio dice de un campo cae en el suyo, tambien en los dialogos sin Binder; el dialogo sigue abierto. */
+    @Test
+    void theFieldErrorsOfTheServiceLandOnTheirFieldsInTheMaintenanceDialogs() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        ApiProblem future = new ApiProblem(null, "Bad Request", 400, "Validation failed", null, "VAL-001", null, null, null, false,
+                List.of(new ApiFieldError("actualStart", null, "must not be in the future")), null);
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        when(shiftClient.start(eq(SHIFT1), any())).thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, future, "corr-m2", null,
+                "POST /api/maintenance/shifts/" + SHIFT1 + "/start"));
+        openShift(shiftOf(ShiftStatus.PLANNED));
+        click("shift-start");
+        click(ShiftTransitionDialog.CONFIRM_ID);
+        DateTimePicker when = LocatorJ._get(DateTimePicker.class, spec -> spec.withId("shift-transition-when"));
+        assertTrue(when.isInvalid(), "actualStart es el inicio real del dialogo");
+        assertEquals("must not be in the future", when.getErrorMessage());
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
+        assertFalse(LocatorJ._find(ShiftTransitionDialog.class).isEmpty());
+
+        ApiProblem material = new ApiProblem(null, "Bad Request", 400, "Validation failed", null, "VAL-001", null, null, null, false,
+                List.of(new ApiFieldError("plannedQuantity", null, "must be greater than 0"),
+                        new ApiFieldError("hasMaterialReference", null, "materialId or materialReference is required")), null);
+        when(orderClient.registerMaterial(eq(ORDER1), any())).thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, material, "corr-m3", null,
+                "POST /api/maintenance/orders/" + ORDER1 + "/materials"));
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of());
+        click("material-add");
+        ComboBox<MaterialSummaryDto> picked = comboWithId("material-material");
+        LocatorJ._setValue(picked, new MaterialSummaryDto(MAT1, "MAT-001", "Pendola", "ud", true));
+        LocatorJ._setValue(comboWithId("material-warehouse"), new WarehouseSummaryDto(WH1, "WH-000", "Central", true));
+        BigDecimalField planned = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-planned"));
+        LocatorJ._setValue(planned, new BigDecimal("4"));
+        click(MaterialUsageDialog.SAVE_ID);
+        assertEquals("must be greater than 0", planned.getErrorMessage());
+        assertTrue(planned.isInvalid());
+        assertTrue(picked.isInvalid(), "la referencia del material es el material del dialogo");
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
     }
 
     /** El texto de un Span por su id. */
@@ -5010,6 +5147,32 @@ class ViewLayerTest {
         verify(orderClient).completeTask(ORDER1, TASK1, new CompleteTaskRequest(SHIFT1, null, null, null, null, null, null, null, null));
     }
 
+    /** Al completar, los tipos que el catalogo no trae tambien se conservan si se cambian los demas. */
+    @Test
+    void completingATaskKeepsTheTypesTheCatalogueDoesNotName() {
+        loginAs("mantenimiento.sin-almacen", "ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_CONFIG_READ");
+        List<TaskTypeDto> catalogue = twoTaskTypes();
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(catalogue);
+        TaskDto base = task(TASK1, 1, MaintenanceTaskStatus.PENDING);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of(new TaskDto(TASK1, ORDER1, 1, base.description(), MaintenanceTaskStatus.PENDING, null,
+                base.asset(), null, null, null, null, null, List.of(), List.of("RP-99", "RG-01"), List.of(), null, 2L)));
+        when(shiftClient.search(eq(ShiftFilter.inProgressOn(12L)), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.of(shiftOf(ShiftStatus.IN_PROGRESS)), 0, 50));
+        when(orderClient.completeTask(eq(ORDER1), eq(TASK1), any())).thenReturn(task(TASK1, 1, MaintenanceTaskStatus.COMPLETED));
+        openOrder(orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("order-tasks-grid"), 0, "actions"), Button.class,
+                spec -> spec.withId("task-complete-" + TASK1)));
+        ComboBoxKt.selectByLabel(comboWithId("complete-task-shift"), "SH-000001 · 05/10/2026 · EQ-01 - Brigada norte");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<TaskTypeDto> types = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("complete-task-types"));
+        LocatorJ._setValue(types, Set.copyOf(catalogue));
+        click(CompleteTaskDialog.CONFIRM_ID);
+
+        verify(orderClient).completeTask(eq(ORDER1), eq(TASK1), argThat(request -> request.taskTypeCodes() != null
+                && Set.copyOf(request.taskTypeCodes()).equals(Set.of("RG-01", "RG-04", "RP-99"))));
+    }
+
     // --- Mantenimiento: inspecciones y defectos -----------------------------------------------------
 
     private static final UUID INSPECTION1 = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000041");
@@ -5103,6 +5266,23 @@ class ViewLayerTest {
         click("inspection-order-confirm");
         verify(inspectionClient).createCorrectiveOrder(INSPECTION1, new CreateCorrectiveOrderRequest(null, null, MaintenancePriority.HIGH, null, null));
         LocatorJ._get(OrderDetailView.class);
+    }
+
+    /** Una inspeccion tiene siempre su tipo: vaciarlo no se guarda, como en mto-frontend (visual por defecto). */
+    @Test
+    void theKindOfAnInspectionCannotBeEmptied() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        openInspection(inspectionOf(InspectionResult.MAJOR_DEFECT, null, ORDER1));
+
+        click("inspection-edit");
+        ComboBox<InspectionKind> kind = comboWithId("inspection-kind");
+        assertNotNull(kind.getValue());
+        LocatorJ._setValue(kind, null);
+        click(InspectionEditorDialog.SAVE_ID);
+
+        assertTrue(kind.isInvalid());
+        verify(inspectionClient, never()).update(any(), any());
     }
 
     @Test
@@ -5308,6 +5488,22 @@ class ViewLayerTest {
         stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(line(LINE_FAILED, StockSyncStatus.FAILED, null)));
         assertEquals(List.of(), materialActions(gridWithId("order-materials-grid"), 0));
         assertFalse(hasButton("material-add"));
+    }
+
+    /**
+     * Un estado de linea que el servicio estrene no ofrece nada, y una sin pedir solo se reintenta con
+     * el estado de la orden conocido, como en mto-frontend.
+     */
+    @Test
+    void aLineInAStateTheScreenDoesNotKnowOffersNothing() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        UUID unknownLine = UUID.fromString("3c3c3c3c-0000-4000-8000-00000000005a");
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(line(unknownLine, StockSyncStatus.UNKNOWN, null)));
+        assertEquals(List.of(), materialActions(gridWithId("order-materials-grid"), 0), "ni modificar, ni sincronizar, ni quitar");
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        stubMaterials(MaintenanceOrderStatus.UNKNOWN, List.of(line(LINE_FAILED, StockSyncStatus.NOT_REQUESTED, null)));
+        assertEquals(List.of(), materialActions(gridWithId("order-materials-grid"), 0));
     }
 
     @Test
@@ -5559,6 +5755,17 @@ class ViewLayerTest {
                 GridKt._getFormattedRow(gridWithId("progress-grid"), 0));
         assertEquals("Excel", anchorWithId("progress-xlsx").getText());
         assertEquals("PDF", anchorWithId("progress-pdf").getText());
+
+        // Una consulta que falla no deja a la vista la anterior, ni sus descargas, que serian de otra cosa.
+        for (String id : List.of("progress-package", "progress-track", "progress-type")) {
+            LocatorJ._setValue(comboWithId(id), null);
+        }
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("progress-from")), null);
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("progress-to")), null);
+        click("progress-query");
+        assertTrue(LocatorJ._find(Anchor.class, spec -> spec.withId("progress-xlsx")).isEmpty());
+        assertEquals(0, GridKt._size(gridWithId("progress-grid")));
+        assertEquals("", textOf("progress-summary"));
     }
 
     /**

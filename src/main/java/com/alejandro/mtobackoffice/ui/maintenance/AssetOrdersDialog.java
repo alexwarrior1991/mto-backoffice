@@ -49,8 +49,8 @@ public class AssetOrdersDialog extends Dialog {
     private static Stream<OrderDto> fetch(MaintenanceClients clients, AssetDto asset, Query<OrderDto, Void> query) {
         try {
             int size = Math.max(1, query.getLimit());
-            List<String> sort = MasterFilters.sort(query.getSortOrders());
-            PageResponse<OrderDto> page = clients.assets().orders(asset.id(), query.getOffset() / size, size, sort.isEmpty() ? DEFAULT_SORT : sort);
+            PageResponse<OrderDto> page = clients.assets().orders(asset.id(), query.getOffset() / size, size,
+                    MasterFilters.sort(query.getSortOrders(), DEFAULT_SORT, MasterFilters.BY_ID));
             return page.content().stream();
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
@@ -60,7 +60,8 @@ public class AssetOrdersDialog extends Dialog {
 
     private static int count(MaintenanceClients clients, AssetDto asset) {
         try {
-            return (int) Math.min(Integer.MAX_VALUE, clients.assets().orders(asset.id(), 0, 1, DEFAULT_SORT).page().totalElements());
+            return (int) Math.min(Integer.MAX_VALUE, clients.assets().orders(asset.id(), 0, 1,
+                    MasterFilters.withTieBreak(DEFAULT_SORT, MasterFilters.BY_ID)).page().totalElements());
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
             return 0;

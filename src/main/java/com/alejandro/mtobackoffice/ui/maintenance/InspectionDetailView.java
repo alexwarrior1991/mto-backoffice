@@ -12,6 +12,7 @@ import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
@@ -32,6 +33,7 @@ import jakarta.annotation.security.RolesAllowed;
 
 import java.util.Comparator;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * La ficha de una inspeccion: su cabecera, sus puntos (contestables con {@code maintenance-write})
@@ -89,15 +91,24 @@ public class InspectionDetailView extends VerticalLayout implements BeforeEnterO
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
         String id = event.getRouteParameters().get(INSPECTION_ID_PARAMETER).orElse("");
+        load(id, target -> event.forwardTo(target));
+    }
+
+    /**
+     * Lee la ficha y la pinta. Si no existe, se dice y de vuelta a la lista; cualquier otro fallo
+     * deja la ficha con el motivo, «Volver a la lista» y «Reintentar», como en mto-frontend.
+     */
+    private void load(String id, Consumer<Class<? extends Component>> toList) {
         try {
             paint(clients.inspections().findById(UUID.fromString(id)));
         } catch (IllegalArgumentException | NotFoundApiException missing) {
             Notification.show("No existe la inspeccion " + id, 5000, Notification.Position.BOTTOM_START)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
-            event.forwardTo(InspectionsView.class);
+            toList.accept(InspectionsView.class);
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
-            event.forwardTo(InspectionsView.class);
+            MaintenanceUi.showLoadFailure(this, "la inspeccion", failure, () -> UI.getCurrent().navigate(InspectionsView.class),
+                    () -> load(id, target -> UI.getCurrent().navigate(target)));
         }
     }
 
@@ -115,6 +126,7 @@ public class InspectionDetailView extends VerticalLayout implements BeforeEnterO
     }
 
     private void paint(InspectionDto loaded) {
+        MaintenanceUi.clearLoadFailure(this);
         inspection = loaded;
         title.setText(loaded.code() + " · " + MaintenanceFormats.date(loaded.inspectionDate()));
         InspectionResult result = loaded.result();

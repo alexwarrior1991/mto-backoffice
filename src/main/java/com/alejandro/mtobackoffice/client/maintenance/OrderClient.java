@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.maintenance;
 
+import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssignOrderRequest;
@@ -91,10 +92,11 @@ public interface OrderClient {
                                   @RequestParam("page") int page, @RequestParam("size") int size,
                                   @RequestParam("sort") List<String> sort);
 
+    /** Con el id para desempatar al final: un {@code sort} solo no deja el orden entero (dos del mismo dia). */
     default PageResponse<OrderDto> search(OrderFilter filter, int page, int size, List<String> sort) {
         return search(filter.status(), filter.type(), filter.priority(), filter.assetId(), filter.assetType(),
                 filter.trackId(), filter.stationId(), filter.executionPackageId(), filter.plannedFrom(),
-                filter.plannedTo(), filter.assignedUser(), filter.teamId(), filter.code(), page, size, sort);
+                filter.plannedTo(), filter.assignedUser(), filter.teamId(), filter.code(), page, size, MasterFilters.withTieBreak(sort, MasterFilters.BY_ID));
     }
 
     // --- Transiciones: 409 TRN-001 desde un estado que no la admite ---------------------------------

@@ -1699,7 +1699,7 @@ class ClientLayerTest {
     void ordersArePagedWithTheirFiltersAndAnUnknownValueIsReadAsUnknown() {
         server.expect(requestTo(MAINTENANCE + "/orders?status=IN_PROGRESS&type=PREVENTIVE&assetType=TRACK_SECTION&trackId=12"
                         + "&plannedFrom=2026-09-01&plannedTo=2026-09-30&teamId=" + TEAM_ID + "&code=MO-0000&page=1&size=50"
-                        + "&sort=plannedDate%2Casc&sort=code%2Cdesc"))
+                        + "&sort=plannedDate%2Casc&sort=code%2Cdesc&sort=id%2Casc"))
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer token-for-" + PRINCIPAL))
                 .andRespond(withSuccess(stockPage(orderJson(ORDER_ID, "MO-000001", "IN_PROGRESS", "HIGH") + ","
@@ -1738,7 +1738,7 @@ class ClientLayerTest {
     /** mto-maintenance manda el mismo JSON de error que mto-stock, con path y method de mas: se lee por los mismos alias. */
     @Test
     void theMaintenanceErrorJsonIsReadThroughItsAliases() {
-        server.expect(requestTo(MAINTENANCE + "/orders?page=0&size=50&sort=nope%2Casc")).andExpect(method(HttpMethod.GET))
+        server.expect(requestTo(MAINTENANCE + "/orders?page=0&size=50&sort=nope%2Casc&sort=id%2Casc")).andExpect(method(HttpMethod.GET))
                 .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON)
                         .header("X-Correlation-Id", "corr-m1")
                         .body("{\"timestamp\":\"2026-09-26T10:00:00Z\",\"status\":400,\"error\":\"BAD_REQUEST\",\"message\":\"Invalid request parameter.\","
@@ -1781,7 +1781,7 @@ class ClientLayerTest {
     @Test
     void assetsAreSearchedCreatedPartiallyUpdatedAndDisabled() {
         server.expect(requestTo(MAINTENANCE + "/assets?type=SECTION_INSULATOR&trackId=12&enabled=true&name=AS&preventiveDueBefore=2026-10-01T22%3A00%3A00Z"
-                        + "&page=0&size=50&sort=trackId%2Casc&sort=startKp%2Casc"))
+                        + "&page=0&size=50&sort=trackId%2Casc&sort=startKp%2Casc&sort=id%2Casc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage(INSULATOR_JSON + "," + INSULATOR_JSON.replace("SECTION_INSULATOR", "CANTILEVER")
                         .replace(ASSET_ID, "2b3c4d5e-0000-4000-8000-00000000000b")
@@ -2033,7 +2033,7 @@ class ClientLayerTest {
         org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
         String shifts = MAINTENANCE + "/shifts";
         server.expect(requestTo(shifts + "?dateFrom=2026-10-01&dateTo=2026-10-31&trackId=12&status=IN_PROGRESS&possessionType=FULL"
-                        + "&page=0&size=50&sort=shiftDate%2Cdesc"))
+                        + "&page=0&size=50&sort=shiftDate%2Cdesc&sort=id%2Casc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage(shiftJson("IN_PROGRESS"), 0, 50, 1), MediaType.APPLICATION_JSON));
         server.expect(requestTo(shifts)).andExpect(method(HttpMethod.POST))
@@ -2041,7 +2041,7 @@ class ClientLayerTest {
                         + "\"plannedStart\":\"2026-10-05T21:30:00Z\"}", strict))
                 .andRespond(withSuccess(shiftJson("PLANNED"), MediaType.APPLICATION_JSON));
         server.expect(requestTo(shifts + "/" + SHIFT_ID)).andExpect(method(HttpMethod.PATCH)).andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
-                .andExpect(content().json("{\"trackIds\":[12,13],\"blockingDisconnectorIds\":[],\"version\":5}", strict))
+                .andExpect(content().json("{\"trackIds\":[12,13],\"blockingDisconnectorIds\":null,\"version\":5}", strict))
                 .andRespond(withSuccess(shiftJson("PLANNED"), MediaType.APPLICATION_JSON));
         server.expect(requestTo(shifts + "/" + SHIFT_ID + "/start")).andExpect(method(HttpMethod.POST))
                 .andExpect(content().json(STRICT_EMPTY, strict))
@@ -2066,8 +2066,8 @@ class ClientLayerTest {
                 12L, null, ShiftStatus.IN_PROGRESS, PossessionType.FULL), 0, 50, List.of("shiftDate,desc")));
         asUser(() -> shiftClient.create(new ShiftRequest(LocalDate.of(2026, 10, 5), null, null, null, PossessionType.PARTIAL,
                 Instant.parse("2026-10-05T21:30:00Z"), null, null, null, null, null, Set.of(12L), null, null, null, null, null)));
-        asUser(() -> shiftClient.update(id, MergePatch.of(new ShiftUpdateRequest(null, null, null, null, null, null, null, Set.of(), null, null, null,
-                new java.util.TreeSet<>(Set.of(12L, 13L)), null, null, null, null, null), 5L)));
+        asUser(() -> shiftClient.update(id, new MergePatch<>(new ShiftUpdateRequest(null, null, null, null, null, null, null, null, null, null, null,
+                new java.util.TreeSet<>(Set.of(12L, 13L)), null, null, null, null, null), Set.of("blockingDisconnectorIds"), 5L)));
         ShiftDto started = asUser(() -> shiftClient.start(id, new StartShiftRequest(null, null)));
         ShiftDto closed = asUser(() -> shiftClient.close(id, new CloseShiftRequest(null, null, 240, "Sin incidencias")));
         ShiftDto cancelled = asUser(() -> shiftClient.cancel(id, new ReasonRequest("Lluvia")));
@@ -2152,7 +2152,7 @@ class ClientLayerTest {
         org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
         String inspections = MAINTENANCE + "/inspections";
         server.expect(requestTo(inspections + "?result=MAJOR_DEFECT&inspectionFrom=2026-09-01&inspectionTo=2026-09-30&originOrderId=" + ORDER_ID
-                        + "&page=0&size=50&sort=inspectionDate%2Cdesc"))
+                        + "&page=0&size=50&sort=inspectionDate%2Cdesc&sort=id%2Casc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage(inspectionJson("MAJOR_DEFECT", null), 0, 50, 1), MediaType.APPLICATION_JSON));
         server.expect(requestTo(inspections)).andExpect(method(HttpMethod.POST))
@@ -2202,7 +2202,7 @@ class ClientLayerTest {
         org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
         String defects = MAINTENANCE + "/defects";
         server.expect(requestTo(defects + "?severity=HIGH&status=OPEN&trackId=12&detectedFrom=2026-09-01T00%3A00%3A00Z&page=0&size=50"
-                        + "&sort=detectedAt%2Cdesc"))
+                        + "&sort=detectedAt%2Cdesc&sort=id%2Casc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage(defectJson("OPEN"), 0, 50, 1), MediaType.APPLICATION_JSON));
         server.expect(requestTo(defects)).andExpect(method(HttpMethod.POST))

@@ -68,7 +68,8 @@ public final class ServerValidation {
         return unattributed;
     }
 
-    private static String message(ApiFieldError error) {
+    /** El texto de un error por campo: su mensaje, o su codigo si no trae mensaje. */
+    public static String message(ApiFieldError error) {
         if (error.message() != null && !error.message().isBlank()) {
             return error.message();
         }

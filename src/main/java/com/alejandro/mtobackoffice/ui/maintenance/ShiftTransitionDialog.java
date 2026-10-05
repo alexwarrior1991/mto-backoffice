@@ -4,9 +4,11 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.CloseShiftRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.StartShiftRequest;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.HasValidation;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.datetimepicker.DateTimePicker;
 import com.vaadin.flow.component.dialog.Dialog;
@@ -15,6 +17,7 @@ import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.TextArea;
 
+import java.util.Map;
 import java.util.function.Consumer;
 
 /**
@@ -75,6 +78,10 @@ public class ShiftTransitionDialog extends Dialog {
                 close();
                 MaintenanceUi.success(result.code() + ": " + result.status().label().toLowerCase());
                 done.accept(result);
+            } catch (ValidationApiException validation) {
+                // El inicio y el fin reales son el mismo campo del dialogo.
+                MaintenanceUi.showValidation(Map.<String, HasValidation>of("actualStart", when, "actualEnd", when, "voltageCutoffAt", cutoff,
+                        "netWorkMinutes", netMinutes, "observations", observations), validation);
             } catch (BackofficeApiException failure) {
                 UiErrors.show(failure);
             }

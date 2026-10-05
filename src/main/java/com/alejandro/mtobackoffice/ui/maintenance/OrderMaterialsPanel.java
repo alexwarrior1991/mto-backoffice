@@ -97,18 +97,20 @@ class OrderMaterialsPanel extends LazyPanel {
         MaintenanceOrderStatus orderStatus = current.status();
         boolean orderOpen = orderStatus != null && orderStatus.isOpen();
         StockSyncStatus status = line.stockSyncStatus();
-        if (canWrite && orderOpen && status != StockSyncStatus.CONSUMED) {
+        boolean changeable = status != null && status.isChangeable();
+        if (canWrite && orderOpen && changeable) {
             actions.add(MaintenanceUi.rowButton("material-edit-" + line.id(), VaadinIcon.EDIT, "Modificar",
                     click -> new MaterialUsageDialog(current, line, openTasks(), clients, this::reload).open()));
         }
         boolean retryable = (status != null && status.isSyncFailed())
-                || (status == StockSyncStatus.NOT_REQUESTED && orderStatus != MaintenanceOrderStatus.DRAFT);
+                || (status == StockSyncStatus.NOT_REQUESTED && orderStatus != null && orderStatus != MaintenanceOrderStatus.UNKNOWN
+                && orderStatus != MaintenanceOrderStatus.DRAFT);
         boolean checkable = status == StockSyncStatus.RESERVED && orderOpen;
         if (canWrite && (retryable || checkable)) {
             actions.add(MaintenanceUi.rowButton("material-sync-" + line.id(), VaadinIcon.REFRESH,
                     checkable ? "Comprobar la reserva en el almacen" : "Sincronizar con el almacen", click -> sync(line)));
         }
-        if (canDelete && orderOpen && status != StockSyncStatus.CONSUMED && line.isRemovable()) {
+        if (canDelete && orderOpen && changeable && line.isRemovable()) {
             Button remove = MaintenanceUi.rowButton("material-remove-" + line.id(), VaadinIcon.TRASH, "Quitar", click -> MaintenanceUi.confirm(
                     "Quitar " + line.materialLabel(), removal(line), "Quitar", () -> remove(line)));
             remove.addThemeVariants(ButtonVariant.LUMO_ERROR);

@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.maintenance;
 
+import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
@@ -63,9 +64,10 @@ public interface ShiftClient {
                                   @RequestParam("page") int page, @RequestParam("size") int size,
                                   @RequestParam("sort") List<String> sort);
 
+    /** Con el id para desempatar al final: un {@code sort} solo no deja el orden entero (dos del mismo dia). */
     default PageResponse<ShiftDto> search(ShiftFilter filter, int page, int size, List<String> sort) {
         return search(filter.dateFrom(), filter.dateTo(), filter.teamId(), filter.trackId(), filter.executionPackageId(), filter.status(),
-                filter.possessionType(), page, size, sort);
+                filter.possessionType(), page, size, MasterFilters.withTieBreak(sort, MasterFilters.BY_ID));
     }
 
     @PostExchange("/{id}/start")

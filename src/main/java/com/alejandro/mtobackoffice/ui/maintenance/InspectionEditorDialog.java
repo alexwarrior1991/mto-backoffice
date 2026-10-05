@@ -84,7 +84,8 @@ public class InspectionEditorDialog extends Dialog {
         }
         binder.forField(date).asRequired("La fecha es obligatoria").bind("inspectionDate");
         binder.forField(inspector).bind("inspector");
-        binder.forField(kind).bind("inspectionKind");
+        // Siempre tiene uno (visual por defecto): vaciarlo no vaciaba nada y parecia guardado.
+        binder.forField(kind).asRequired("El tipo es obligatorio").bind("inspectionKind");
         binder.forField(result).asRequired("El resultado es obligatorio").bind("result");
         binder.forField(kp).bind("kp");
         binder.forField(description).bind("description");

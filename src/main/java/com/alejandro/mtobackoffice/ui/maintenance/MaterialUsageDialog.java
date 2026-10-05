@@ -10,9 +10,11 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
 import com.alejandro.mtobackoffice.client.dto.stock.MaterialSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.stock.WarehouseSummaryDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.stock.StockPickers;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.HasValidation;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -23,6 +25,7 @@ import com.vaadin.flow.component.textfield.BigDecimalField;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -107,6 +110,11 @@ public class MaterialUsageDialog extends Dialog {
                 close();
                 MaintenanceUi.success("Material guardado");
                 saved.run();
+            } catch (ValidationApiException validation) {
+                // La referencia del material es el material del dialogo, como en mto-frontend.
+                MaintenanceUi.showValidation(Map.<String, HasValidation>of("materialId", material, "materialReference", material,
+                        "hasMaterialReference", material, "warehouseId", warehouse, "plannedQuantity", planned,
+                        "consumedQuantity", consumed, "taskId", task), validation);
             } catch (BackofficeApiException failure) {
                 UiErrors.show(failure);
             }

@@ -12,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /** Modelo mutable del editor de una tarea, con las propiedades llamadas como los campos de la peticion. */
 public class TaskForm {
@@ -20,6 +21,8 @@ public class TaskForm {
     private AssetSummaryDto assetId;
     private String assignedUser = "";
     private Set<TaskTypeDto> taskTypeCodes = new LinkedHashSet<>();
+    /** Los codigos de la tarea que el catalogo no trae (un tipo retirado): no se ofrecen, pero vuelven tal cual. */
+    private List<String> unknownCodes = List.of();
     private boolean withChecklist;
     private String notes = "";
     private String defectsFound = "";
@@ -33,6 +36,7 @@ public class TaskForm {
             form.setAssignedUser(orEmpty(dto.assignedUser()));
             form.setTaskTypeCodes(types.stream().filter(type -> dto.taskTypeCodes().contains(type.code()))
                     .collect(Collectors.toCollection(LinkedHashSet::new)));
+            form.unknownCodes = unknownCodes(dto.taskTypeCodes(), types);
             form.setNotes(orEmpty(dto.notes()));
             form.setDefectsFound(orEmpty(dto.defectsFound()));
         }
@@ -45,16 +49,18 @@ public class TaskForm {
     }
 
     /**
-     * Lo que cambio, lo vaciado y la version leida; los tipos, si cambiaron, van enteros (sustituyen
-     * a los que tenia).
+     * Lo que cambio, lo vaciado y la version leida. Los tipos se comparan como conjunto y, si
+     * cambiaron, van enteros (sustituyen a los que tenia), con los que el catalogo no trae; sin
+     * ninguno, se vacian ({@code null} en el merge-patch), como en mto-frontend.
      */
     public MergePatch<TaskUpdateRequest> toPatch(TaskDto original) {
         Changes changes = new Changes();
         List<String> codes = codes();
+        boolean sameTypes = Set.copyOf(codes).equals(Set.copyOf(original.taskTypeCodes()));
         TaskUpdateRequest values = new TaskUpdateRequest(
                 changes.text("description", description, original.description()),
                 changes.text("assignedUser", assignedUser, original.assignedUser()),
-                Set.copyOf(codes).equals(Set.copyOf(original.taskTypeCodes())) ? null : codes,
+                sameTypes ? null : codes.isEmpty() ? changes.value("taskTypeCodes", null, original.taskTypeCodes()) : codes,
                 changes.text("notes", notes, original.notes()),
                 changes.text("defectsFound", defectsFound, original.defectsFound()),
                 null);
@@ -62,7 +68,12 @@ public class TaskForm {
     }
 
     private List<String> codes() {
-        return taskTypeCodes.stream().map(TaskTypeDto::code).toList();
+        return Stream.concat(taskTypeCodes.stream().map(TaskTypeDto::code), unknownCodes.stream()).distinct().toList();
+    }
+
+    /** Los codigos de una tarea que el catalogo no trae: lo que la pantalla no sabe nombrar no se pierde. */
+    static List<String> unknownCodes(List<String> codes, Collection<TaskTypeDto> types) {
+        return codes.stream().filter(code -> types.stream().noneMatch(type -> type.code().equals(code))).toList();
     }
 
     private static String nullIfBlank(String value) {

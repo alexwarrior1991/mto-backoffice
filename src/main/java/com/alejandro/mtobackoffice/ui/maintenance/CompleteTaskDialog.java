@@ -11,10 +11,12 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeDto;
 import com.alejandro.mtobackoffice.client.dto.stock.MaterialSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.stock.WarehouseSummaryDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.stock.StockPickers;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.HasValidation;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -34,6 +36,7 @@ import com.vaadin.flow.data.renderer.ComponentRenderer;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -124,9 +127,11 @@ public class CompleteTaskDialog extends Dialog {
                 shiftPicker.setInvalid(true);
                 return;
             }
-            List<String> codes = types.getValue().stream().map(TaskTypeDto::code).toList();
+            // Lo que el catalogo no trae vuelve tal cual; sin cambios (como conjunto) o sin ninguno, los de la tarea.
+            List<String> codes = java.util.stream.Stream.concat(types.getValue().stream().map(TaskTypeDto::code),
+                    TaskForm.unknownCodes(task.taskTypeCodes(), catalog).stream()).distinct().toList();
             CompleteTaskRequest request = new CompleteTaskRequest(shiftPicker.getValue().id(),
-                    types.getValue().equals(originalTypes) || codes.isEmpty() ? null : codes,
+                    Set.copyOf(codes).equals(Set.copyOf(task.taskTypeCodes())) || codes.isEmpty() ? null : codes,
                     changed(notes.getValue(), task.notes()), changed(defectsFound.getValue(), task.defectsFound()),
                     workComplete.getValue() ? null : Boolean.FALSE, workComplete.getValue() ? null : repairPlannedDate.getValue(),
                     defects.isEmpty() ? null : List.copyOf(defects),
@@ -136,6 +141,9 @@ public class CompleteTaskDialog extends Dialog {
                 close();
                 MaintenanceUi.success("Tarea " + task.sequence() + " completada");
                 done.run();
+            } catch (ValidationApiException validation) {
+                MaintenanceUi.showValidation(Map.<String, HasValidation>of("shiftId", shiftPicker, "taskTypeCodes", types, "notes", notes,
+                        "defectsFound", defectsFound, "repairPlannedDate", repairPlannedDate), validation);
             } catch (BackofficeApiException failure) {
                 UiErrors.show(failure);
             }
