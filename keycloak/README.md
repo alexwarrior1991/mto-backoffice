@@ -44,7 +44,9 @@ para que existan los roles que los demás nombran.
 - Sin PKCE: es un cliente confidencial con secreto. Se puede añadir (`pkce.code.challenge.method`
   en el cliente y `withPkce()` en Spring), pero entonces hay que hacerlo en los dos sitios.
 
-`mto-frontend` (público, PKCE, `localhost:4200`) queda intacto: está reservado a una futura SPA.
+`mto-frontend` (público, PKCE, `localhost:4200`) es el cliente de la SPA con la que convive esta
+aplicación: las dos entran por el mismo SSO, y quien ya entró en una no vuelve a escribir la
+contraseña en la otra.
 
 ## La trampa de los roles
 
