@@ -85,11 +85,11 @@ public class ReservationsView extends VerticalLayout {
         status.setItemLabelGenerator(ReservationStatus::label);
         status.setClearButtonVisible(true);
         status.setValue(ReservationStatus.ACTIVE);
-        warehouse = StockPickers.warehouse("Almacen", warehouses);
+        warehouse = StockPickers.warehouse("Almacen", warehouses, true);
         warehouse.setId("reservations-warehouse");
-        material = StockPickers.material("Material", materials);
+        material = StockPickers.material("Material", materials, true);
         material.setId("reservations-material");
-        project = StockPickers.project("Proyecto", projects);
+        project = StockPickers.project("Proyecto", projects, true);
         project.setId("reservations-project");
         for (Component filter : List.of(status, warehouse, material, project)) {
             ((com.vaadin.flow.component.HasValue<?, ?>) filter).addValueChangeListener(change -> refresh());
@@ -222,8 +222,8 @@ public class ReservationsView extends VerticalLayout {
     private Stream<ReservationDto> fetch(Query<ReservationDto, Void> query) {
         try {
             int size = Math.max(1, query.getLimit());
-            List<String> sort = MasterFilters.sort(query.getSortOrders());
-            PageResponse<ReservationDto> page = search(query.getOffset() / size, size, sort.isEmpty() ? DEFAULT_SORT : sort);
+            PageResponse<ReservationDto> page = search(query.getOffset() / size, size,
+                    MasterFilters.sort(query.getSortOrders(), DEFAULT_SORT, MasterFilters.BY_ID));
             count.setText(page.page().totalElements() + " reservas");
             return page.content().stream();
         } catch (BackofficeApiException failure) {
@@ -234,7 +234,7 @@ public class ReservationsView extends VerticalLayout {
 
     private int count(Query<ReservationDto, Void> query) {
         try {
-            long total = search(0, 1, DEFAULT_SORT).page().totalElements();
+            long total = search(0, 1, MasterFilters.withTieBreak(DEFAULT_SORT, MasterFilters.BY_ID)).page().totalElements();
             count.setText(total + " reservas");
             return (int) Math.min(Integer.MAX_VALUE, total);
         } catch (BackofficeApiException failure) {

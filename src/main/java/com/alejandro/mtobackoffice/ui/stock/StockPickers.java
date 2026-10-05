@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.ui.stock;
 
+import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.stock.MaterialDto;
 import com.alejandro.mtobackoffice.client.dto.stock.MaterialSummaryDto;
@@ -20,43 +21,65 @@ import java.util.stream.Stream;
 
 /**
  * Desplegables de referencias del almacen que buscan <b>en el servidor</b> mientras se escribe
- * ({@code search} por codigo o nombre, solo lo activo): materiales y proyectos son miles y no se
- * cargan enteros. El valor es el resumen del catalogo, que es lo que llevan los movimientos y las
- * reservas.
+ * ({@code search} por codigo o nombre): materiales y proyectos son miles y no se cargan enteros. El
+ * valor es el resumen del catalogo, que es lo que llevan los movimientos y las reservas.
+ *
+ * <p>En un dialogo solo se ofrece lo activo, porque el servicio rechaza lo retirado. En un filtro y
+ * en Existencias ({@code includeRetired}) tambien lo retirado, marcado como tal, para encontrar lo
+ * de antes, como en mto-frontend.</p>
  */
 public final class StockPickers {
 
-    private static final List<String> BY_CODE = List.of("code,asc");
+    private static final List<String> BY_CODE = MasterFilters.withTieBreak(List.of("code,asc"), MasterFilters.BY_ID);
+    static final String RETIRED = " (retirado)";
 
     private StockPickers() {
     }
 
     public static ComboBox<MaterialSummaryDto> material(String label, StockCatalogueClient<MaterialDto, ?, ?> materials) {
-        return lazy(label, "Escribe el codigo o el nombre del material", materials, MaterialDto::summary, MaterialSummaryDto::label);
+        return material(label, materials, false);
+    }
+
+    public static ComboBox<MaterialSummaryDto> material(String label, StockCatalogueClient<MaterialDto, ?, ?> materials, boolean includeRetired) {
+        return lazy(label, "Escribe el codigo o el nombre del material", materials, MaterialDto::summary, MaterialSummaryDto::label,
+                MaterialSummaryDto::active, includeRetired);
     }
 
     public static ComboBox<WarehouseSummaryDto> warehouse(String label, StockCatalogueClient<WarehouseDto, ?, ?> warehouses) {
-        return lazy(label, "Escribe el codigo o el nombre del almacen", warehouses, WarehouseDto::summary, WarehouseSummaryDto::label);
+        return warehouse(label, warehouses, false);
+    }
+
+    public static ComboBox<WarehouseSummaryDto> warehouse(String label, StockCatalogueClient<WarehouseDto, ?, ?> warehouses, boolean includeRetired) {
+        return lazy(label, "Escribe el codigo o el nombre del almacen", warehouses, WarehouseDto::summary, WarehouseSummaryDto::label,
+                WarehouseSummaryDto::active, includeRetired);
     }
 
     public static ComboBox<SupplierSummaryDto> supplier(String label, StockCatalogueClient<SupplierDto, ?, ?> suppliers) {
-        return lazy(label, "Escribe el codigo o el nombre del proveedor", suppliers, SupplierDto::summary, SupplierSummaryDto::label);
+        return lazy(label, "Escribe el codigo o el nombre del proveedor", suppliers, SupplierDto::summary, SupplierSummaryDto::label,
+                SupplierSummaryDto::active, false);
     }
 
     public static ComboBox<ProjectSummaryDto> project(String label, StockCatalogueClient<ProjectDto, ?, ?> projects) {
-        return lazy(label, "Escribe el codigo o el nombre del proyecto", projects, ProjectDto::summary, ProjectSummaryDto::label);
+        return project(label, projects, false);
+    }
+
+    public static ComboBox<ProjectSummaryDto> project(String label, StockCatalogueClient<ProjectDto, ?, ?> projects, boolean includeRetired) {
+        return lazy(label, "Escribe el codigo o el nombre del proyecto", projects, ProjectDto::summary, ProjectSummaryDto::label,
+                ProjectSummaryDto::active, includeRetired);
     }
 
     private static <D, S> ComboBox<S> lazy(String label, String placeholder, StockCatalogueClient<D, ?, ?> client,
-                                           Function<D, S> summary, Function<S, String> itemLabel) {
+                                           Function<D, S> summary, Function<S, String> itemLabel, Function<S, Boolean> active,
+                                           boolean includeRetired) {
         ComboBox<S> combo = new ComboBox<>(label);
-        combo.setItemLabelGenerator(itemLabel::apply);
+        combo.setItemLabelGenerator(item -> Boolean.FALSE.equals(active.apply(item)) ? itemLabel.apply(item) + RETIRED : itemLabel.apply(item));
         combo.setClearButtonVisible(true);
         combo.setPlaceholder(placeholder);
         combo.setItems(query -> {
             try {
                 String text = query.getFilter().orElse("").trim();
-                PageResponse<D> page = client.search(text.isEmpty() ? null : text, true, query.getPage(), query.getPageSize(), BY_CODE);
+                PageResponse<D> page = client.search(text.isEmpty() ? null : text, includeRetired ? null : Boolean.TRUE,
+                        query.getPage(), query.getPageSize(), BY_CODE);
                 return page.content().stream().map(summary);
             } catch (BackofficeApiException failure) {
                 UiErrors.show(failure);

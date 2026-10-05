@@ -162,9 +162,8 @@ public abstract class StockCatalogueView<D> extends VerticalLayout {
     private Stream<D> fetch(Query<D, Void> query) {
         try {
             int size = Math.max(1, query.getLimit());
-            List<String> sort = MasterFilters.sort(query.getSortOrders());
             PageResponse<D> page = client.search(searchText(), state.getValue().value(), query.getOffset() / size, size,
-                    sort.isEmpty() ? DEFAULT_SORT : sort);
+                    MasterFilters.sort(query.getSortOrders(), DEFAULT_SORT, MasterFilters.BY_ID));
             showCount(page.page() == null ? page.content().size() : page.page().totalElements());
             return page.content().stream();
         } catch (BackofficeApiException failure) {
@@ -175,7 +174,8 @@ public abstract class StockCatalogueView<D> extends VerticalLayout {
 
     private int count(Query<D, Void> query) {
         try {
-            PageResponse<D> page = client.search(searchText(), state.getValue().value(), 0, 1, DEFAULT_SORT);
+            PageResponse<D> page = client.search(searchText(), state.getValue().value(), 0, 1,
+                    MasterFilters.withTieBreak(DEFAULT_SORT, MasterFilters.BY_ID));
             long total = page.page() == null ? page.content().size() : page.page().totalElements();
             showCount(total);
             return (int) Math.min(Integer.MAX_VALUE, total);

@@ -61,8 +61,11 @@ public class AssembliesView extends StockCatalogueView<AssemblyDto> {
 
     @Override
     protected void addRowActions(AssemblyDto row, HorizontalLayout actions) {
-        actions.add(rowButton("availability-" + row.id(), VaadinIcon.CALC, "Disponibilidad por almacen",
-                click -> new AssemblyAvailabilityDialog(row, client, warehouses).open()));
+        // Un conjunto retirado no se monta: su disponibilidad no responde a nada que se vaya a hacer.
+        if (Boolean.TRUE.equals(row.active())) {
+            actions.add(rowButton("availability-" + row.id(), VaadinIcon.CALC, "Disponibilidad por almacen",
+                    click -> new AssemblyAvailabilityDialog(row, client, warehouses).open()));
+        }
     }
 
     @Override

@@ -3260,7 +3260,7 @@ class ViewLayerTest {
         LocatorJ._get(Span.class, spec -> spec.withText("120 almacenes"));
         assertEquals("WH-000", ((WarehouseDto) GridKt._get(grid, 0)).code());
         assertEquals("WH-077", ((WarehouseDto) GridKt._get(grid, 77)).code(), "la segunda pagina se pide con su page");
-        verify(warehouseClient, atLeastOnce()).search(isNull(), isNull(), intThat(page -> page > 0), anyInt(), eq(List.of("code,asc")));
+        verify(warehouseClient, atLeastOnce()).search(isNull(), isNull(), intThat(page -> page > 0), anyInt(), eq(List.of("code,asc", "id,asc")));
 
         LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("stock-search")), "nave 1");
         assertEquals(31, GridKt._size(grid), "Nave 1, Nave 10..19 y Nave 100..119");
@@ -3275,7 +3275,7 @@ class ViewLayerTest {
 
         grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("name"), SortDirection.DESCENDING)));
         GridKt._get(grid, 0);
-        verify(warehouseClient, atLeastOnce()).search(any(), any(), anyInt(), anyInt(), eq(List.of("name,desc")));
+        verify(warehouseClient, atLeastOnce()).search(any(), any(), anyInt(), anyInt(), eq(List.of("name,desc", "id,asc")));
     }
 
     @Test
@@ -3308,6 +3308,10 @@ class ViewLayerTest {
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("catalogue-save")));
         TextField code = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Codigo"));
         assertTrue(code.isInvalid());
+        verify(warehouseClient, never()).create(any());
+        LocatorJ._setValue(code, "   ");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("catalogue-save")));
+        assertTrue(code.isInvalid(), "solo espacios es un codigo vacio, como en mto-frontend");
         verify(warehouseClient, never()).create(any());
         LocatorJ._setValue(code, "WH-009");
         LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Nombre")), " Nave 9 ");
@@ -3480,7 +3484,8 @@ class ViewLayerTest {
         assertEquals(1, GridKt._size(grid));
         LocatorJ._get(Span.class, spec -> spec.withText("1 movimientos"));
         assertTrue(GridKt._getFormattedRow(grid, 0).contains("MAT-001 - Hilo de contacto"));
-        verify(movementClient, atLeastOnce()).search(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(0), anyInt(), eq(List.of("occurredAt,desc")));
+        verify(movementClient, atLeastOnce()).search(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(0), anyInt(),
+                eq(List.of("occurredAt,desc", "id,asc")));
 
         LocatorJ._setValue(ViewLayerTest.<MovementType>combo("movements-type"), MovementType.ENTRY);
         LocatorJ._setValue(ViewLayerTest.<WarehouseSummaryDto>combo("movements-warehouse"), CENTRAL);
@@ -3586,6 +3591,62 @@ class ViewLayerTest {
         NotificationsKt.expectNotifications("Transferencia registrada: 3 m de MAT-001");
     }
 
+    /**
+     * Un desplegable del almacen busca en el servidor, con su orden y el id para desempatar. En un
+     * filtro ofrece tambien lo retirado, marcado, para encontrar lo de antes; en un dialogo, solo lo
+     * activo, porque el servicio rechaza lo retirado.
+     */
+    @Test
+    void theFiltersOfferWhatIsRetiredMarkedAndTheDialogsOnlyWhatIsActive() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        UUID oldWarehouse = UUID.fromString("2b2b2b2b-0000-4000-8000-00000000000b");
+        stubCatalogue(warehouseClient, List.of(warehouse(WH1, "WH-000", "Central", true), warehouse(oldWarehouse, "WH-009", "Antigua", false)),
+                WarehouseDto::code, WarehouseDto::name, WarehouseDto::active);
+
+        UI.getCurrent().navigate(StockRoutes.MOVEMENTS);
+        assertEquals(List.of("WH-000 - Central", "WH-009 - Antigua (retirado)"),
+                ComboBoxKt.getSuggestions(ViewLayerTest.<WarehouseSummaryDto>combo("movements-warehouse")));
+        verify(warehouseClient, atLeastOnce()).search(isNull(), isNull(), anyInt(), anyInt(), eq(List.of("code,asc", "id,asc")));
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("operation-transfer")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        ComboBox<WarehouseSummaryDto> source = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("movement-warehouse"));
+        assertEquals(List.of("WH-000 - Central"), ComboBoxKt.getSuggestions(source));
+        verify(warehouseClient, atLeastOnce()).search(isNull(), eq(true), anyInt(), anyInt(), eq(List.of("code,asc", "id,asc")));
+    }
+
+    /** Lo que el servicio dice de una transferencia cae en su campo aunque alli se llame de otra forma. */
+    @Test
+    void aTransferRejectedByTheServicePutsEachErrorOnItsField() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        ApiProblem problem = new ApiProblem(null, "Bad Request", 400, "Validation failed", null, "REQ-VALIDATION", null, null, null, false,
+                List.of(new ApiFieldError("sourceWarehouseId", null, "Warehouse WH-000 is inactive"),
+                        new ApiFieldError("differentWarehouses", null, "Source and target warehouses must be different")), null);
+        when(movementClient.transfer(any())).thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, problem, "corr-s4", null,
+                "POST /api/stock/movements/transfers"));
+
+        UI.getCurrent().navigate(StockRoutes.MOVEMENTS);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("operation-transfer")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("movement-material")), HILO);
+        @SuppressWarnings("unchecked")
+        ComboBox<WarehouseSummaryDto> source = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("movement-warehouse"));
+        LocatorJ._setValue(source, CENTRAL);
+        @SuppressWarnings("unchecked")
+        ComboBox<WarehouseSummaryDto> target = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("movement-target"));
+        LocatorJ._setValue(target, NAVE2);
+        LocatorJ._setValue(LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withId("movement-quantity")), new BigDecimal("3"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("movement-save")));
+
+        assertTrue(source.isInvalid());
+        assertEquals("Warehouse WH-000 is inactive", source.getErrorMessage(), "sourceWarehouseId es el almacen de origen del dialogo");
+        assertTrue(target.isInvalid());
+        assertEquals("Source and target warehouses must be different", target.getErrorMessage(), "la regla de clase es del destino");
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "todo cayo en un campo: nada que notificar");
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty());
+    }
+
     @Test
     void anAdjustmentNeedsTheAdjustPermissionOnTopOfWrite() {
         loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
@@ -3648,7 +3709,8 @@ class ViewLayerTest {
         LocatorJ._get(Span.class, spec -> spec.withText("2 reservas"));
         List<String> row = GridKt._getFormattedRow(grid, 0);
         assertTrue(row.contains("MAT-001 - Hilo de contacto") && row.contains("PRJ-001") && row.contains("Activa"), row.toString());
-        verify(reservationClient, atLeastOnce()).search(isNull(), eq(ReservationStatus.ACTIVE), isNull(), isNull(), eq(0), anyInt(), eq(List.of("reservedAt,desc")));
+        verify(reservationClient, atLeastOnce()).search(isNull(), eq(ReservationStatus.ACTIVE), isNull(), isNull(), eq(0), anyInt(),
+                eq(List.of("reservedAt,desc", "id,asc")));
 
         rowAction(grid, 0, "edit-" + RES1);
         rowAction(grid, 0, "output-" + RES1);
@@ -3668,7 +3730,7 @@ class ViewLayerTest {
         verify(reservationClient, atLeastOnce()).search(eq(WH1), isNull(), eq(PRJ_MANUAL), eq(MAT1), eq(0), anyInt(), anyList());
         grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("quantity"), SortDirection.DESCENDING)));
         GridKt._get(grid, 0);
-        verify(reservationClient, atLeastOnce()).search(any(), any(), any(), any(), anyInt(), anyInt(), eq(List.of("quantity,desc")));
+        verify(reservationClient, atLeastOnce()).search(any(), any(), any(), any(), anyInt(), anyInt(), eq(List.of("quantity,desc", "id,asc")));
     }
 
     /**
@@ -3832,15 +3894,20 @@ class ViewLayerTest {
     @Test
     void theAssembliesListShowsTheirLinesAndAReaderCanOnlyAskForAvailability() {
         loginAs("almacen.lector", "ROLE_STOCK_READ");
-        stubCatalogue(assemblyClient, List.of(mensula()), AssemblyDto::code, AssemblyDto::name, AssemblyDto::active);
+        UUID retiredId = UUID.fromString("2b2b2b2b-0000-4000-8000-00000000000a");
+        AssemblyDto retired = new AssemblyDto(retiredId, "ASM-009", "Mensula vieja", false,
+                List.of(new AssemblyComponentDto(UUID.randomUUID(), HILO, new BigDecimal("1"))), null);
+        stubCatalogue(assemblyClient, List.of(mensula(), retired), AssemblyDto::code, AssemblyDto::name, AssemblyDto::active);
 
         UI.getCurrent().navigate(StockRoutes.ASSEMBLIES);
         Grid<Object> grid = stockGrid();
 
-        assertEquals(1, GridKt._size(grid));
+        assertEquals(2, GridKt._size(grid));
         List<String> row = GridKt._getFormattedRow(grid, 0);
         assertTrue(row.contains("ASM-001") && row.contains("2"), row.toString());
-        LocatorJ._get(Span.class, spec -> spec.withText("1 conjuntos"));
+        LocatorJ._get(Span.class, spec -> spec.withText("2 conjuntos"));
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 1, StockCatalogueView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("availability-" + retiredId)).isEmpty(), "un conjunto retirado no se monta: sin disponibilidad");
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("stock-create")).isEmpty());
         assemblyAction("availability-" + ASM1);
         assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, StockCatalogueView.ACTIONS_COLUMN), Button.class, spec -> spec.withId("edit-" + ASM1)).isEmpty(),
@@ -3873,7 +3940,11 @@ class ViewLayerTest {
     @Test
     void anAssemblyIsCreatedWithItsLinesAndAnEmptyListIsRefusedBeforeCalling() {
         loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
-        when(assemblyClient.create(any())).thenReturn(mensula());
+        ApiProblem bomRejected = new ApiProblem(null, "Bad Request", 400, "Validation failed", null, "REQ-VALIDATION", null, null, null, false,
+                List.of(new ApiFieldError("components[1].quantity", null, "must be greater than 0")), null);
+        when(assemblyClient.create(any()))
+                .thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, bomRejected, "corr-s3", null, "POST /api/stock/assemblies"))
+                .thenReturn(mensula());
 
         UI.getCurrent().navigate(StockRoutes.ASSEMBLIES);
         LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("stock-create")));
@@ -3903,8 +3974,12 @@ class ViewLayerTest {
         assertTrue(GridKt._getFormattedRow(bom, 0).contains("3 m"), GridKt._getFormattedRow(bom, 0).toString());
         assertNull(material.getValue(), "la linea de alta se vacia tras anadir");
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("assembly-save")));
+        assertEquals("must be greater than 0", LocatorJ._get(dialog, Span.class, spec -> spec.withId("bom-error")).getText(),
+                "el error del servicio sobre una linea va a la lista de materiales");
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("assembly-save")));
 
-        verify(assemblyClient).create(new AssemblyRequest("ASM-002", "Mensula doble", List.of(
+        verify(assemblyClient, times(2)).create(new AssemblyRequest("ASM-002", "Mensula doble", List.of(
                 new AssemblyComponentRequest(MAT1, new BigDecimal("3")), new AssemblyComponentRequest(MAT2, new BigDecimal("4")))));
         assertTrue(LocatorJ._find(Dialog.class).isEmpty());
         NotificationsKt.expectNotifications("Guardado ASM-002");

@@ -26,6 +26,7 @@ import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.binder.Binder;
 
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 /**
@@ -39,6 +40,11 @@ public class MovementDialog extends Dialog {
 
     public static final String SAVE_ID = "movement-save";
     static final int REFERENCE_LENGTH = 128;
+    /**
+     * Los campos del servicio que aqui se llaman de otra forma: el origen de una transferencia es
+     * el almacen del dialogo, y la regla de clase «dos almacenes distintos» es del destino.
+     */
+    static final Map<String, String> FIELD_ALIASES = Map.of("sourceWarehouseId", "warehouseId", "differentWarehouses", "targetWarehouseId");
 
     public enum Kind {
         ENTRY("Entrada", "Entrada registrada"),
@@ -170,7 +176,7 @@ public class MovementDialog extends Dialog {
                     .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
             done.accept(movement);
         } catch (ValidationApiException validation) {
-            List<String> unattributed = ServerValidation.apply(binder, validation);
+            List<String> unattributed = ServerValidation.apply(binder, validation, FIELD_ALIASES, Map.of());
             if (!unattributed.isEmpty()) {
                 Notification.show(String.join(". ", unattributed), 8000, Notification.Position.BOTTOM_START)
                         .addThemeVariants(NotificationVariant.LUMO_ERROR);

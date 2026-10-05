@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
 import com.alejandro.mtobackoffice.client.stock.StockCatalogueClient;
+import com.alejandro.mtobackoffice.ui.support.Required;
 import com.alejandro.mtobackoffice.ui.support.ServerValidation;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
@@ -21,6 +22,7 @@ import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.binder.Binder;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Alta o modificacion de un conjunto: codigo, nombre, en la modificacion el estado, y su lista de
@@ -54,8 +56,8 @@ public class AssemblyEditorDialog extends Dialog {
         Checkbox active = new Checkbox("Activo");
         active.setHelperText("Desmarcarlo lo retira");
 
-        binder.forField(code).asRequired("El codigo es obligatorio").bind("code");
-        binder.forField(name).asRequired("El nombre es obligatorio").bind("name");
+        binder.forField(code).asRequired(Required.text("El codigo es obligatorio")).bind("code");
+        binder.forField(name).asRequired(Required.text("El nombre es obligatorio")).bind("name");
         if (!creating) {
             binder.forField(active).bind("active");
         }
@@ -95,7 +97,7 @@ public class AssemblyEditorDialog extends Dialog {
                     .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
             saved.run();
         } catch (ValidationApiException validation) {
-            List<String> unattributed = ServerValidation.apply(binder, validation);
+            List<String> unattributed = ServerValidation.apply(binder, validation, Map.of(), Map.of("components", bom::showError));
             if (!unattributed.isEmpty()) {
                 Notification.show(String.join(". ", unattributed), 8000, Notification.Position.BOTTOM_START)
                         .addThemeVariants(NotificationVariant.LUMO_ERROR);

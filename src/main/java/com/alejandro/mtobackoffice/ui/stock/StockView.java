@@ -54,7 +54,7 @@ public class StockView extends VerticalLayout {
 
     static final int PAGE_SIZE = 50;
     private static final List<String> LEDGER_SORT = List.of("occurredAt,desc");
-    private static final List<String> BY_CODE = List.of("code,asc");
+    private static final List<String> BY_CODE = MasterFilters.withTieBreak(List.of("code,asc"), MasterFilters.BY_ID);
 
     private final StockClients clients;
 
@@ -75,11 +75,11 @@ public class StockView extends VerticalLayout {
                      MovementClient movements, ReservationClient reservations, AssemblyClient assemblies, AuthenticationContext authentication) {
         this.clients = new StockClients(materials, warehouses, suppliers, projects, movements, reservations, assemblies);
         setSizeFull();
-        warehouse = StockPickers.warehouse("Almacen", warehouses);
+        warehouse = StockPickers.warehouse("Almacen", warehouses, true);
         warehouse.setId("stock-warehouse");
         warehouse.setPlaceholder("Todos los almacenes");
         warehouse.addValueChangeListener(change -> refresh());
-        material = StockPickers.material("Material", materials);
+        material = StockPickers.material("Material", materials, true);
         material.setId("stock-material");
         material.setWidth("28rem");
         material.addValueChangeListener(change -> refresh());
@@ -185,9 +185,8 @@ public class StockView extends VerticalLayout {
         }
         try {
             int size = Math.max(1, query.getLimit());
-            List<String> sort = MasterFilters.sort(query.getSortOrders());
             return clients.materials().movements(chosen.id(), warehouseId(), null, null, null, query.getOffset() / size, size,
-                    sort.isEmpty() ? LEDGER_SORT : sort).content().stream();
+                    MasterFilters.sort(query.getSortOrders(), LEDGER_SORT, MasterFilters.BY_ID)).content().stream();
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
             return Stream.empty();
@@ -200,7 +199,8 @@ public class StockView extends VerticalLayout {
             return 0;
         }
         try {
-            return (int) Math.min(Integer.MAX_VALUE, clients.materials().movements(chosen.id(), warehouseId(), null, null, null, 0, 1, LEDGER_SORT)
+            return (int) Math.min(Integer.MAX_VALUE, clients.materials().movements(chosen.id(), warehouseId(), null, null, null, 0, 1,
+                            MasterFilters.withTieBreak(LEDGER_SORT, MasterFilters.BY_ID))
                     .page().totalElements());
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
