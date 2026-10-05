@@ -4,6 +4,7 @@ import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.ui.support.LazyPages;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.dialog.Dialog;
@@ -35,9 +36,9 @@ public class AssetOrdersDialog extends Dialog {
                 .setKey("tasks").setAutoWidth(true);
         grid.setSizeFull();
         LazyPages.of(grid, (offset, limit, sort) -> load(clients, asset, offset, limit, sort));
-        grid.addItemClickListener(click -> {
+        RowActions.openWithDoubleClickOrButton(grid, OrderDto::id, order -> "Abrir " + order.code(), order -> {
             close();
-            UI.getCurrent().navigate(OrderDetailView.class, OrderDetailView.parametersOf(click.getItem().id()));
+            UI.getCurrent().navigate(OrderDetailView.class, OrderDetailView.parametersOf(order.id()));
         });
         add(grid);
         getFooter().add(new Button("Cerrar", click -> close()));

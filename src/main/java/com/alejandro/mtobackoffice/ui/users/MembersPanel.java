@@ -4,11 +4,11 @@ import com.alejandro.mtobackoffice.client.dto.users.UserDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.ui.support.OffsetPager;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
-import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.html.H4;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.router.RouterLink;
 
 import java.util.List;
 import java.util.function.IntFunction;
@@ -16,7 +16,8 @@ import java.util.function.IntFunction;
 /**
  * Quien tiene un perfil o un rol: la lista plana y sin total que devuelve mto-users, paseada con
  * {@link OffsetPager}. Solo asignaciones directas: quien tiene un rol por un perfil aparece en el
- * perfil, no en el rol, y eso esta documentado alli, no arreglado aqui. Una fila abre la ficha.
+ * perfil, no en el rol, y eso esta documentado alli, no arreglado aqui. El usuario es el enlace a
+ * su ficha, como en mto-frontend; la fila no se abre con un clic.
  */
 class MembersPanel extends VerticalLayout {
 
@@ -33,12 +34,12 @@ class MembersPanel extends VerticalLayout {
         setPadding(false);
         pager = new OffsetPager(idPrefix, PAGE_SIZE, this::load);
         grid.setId(idPrefix + "-grid");
-        grid.addColumn(UserDto::username).setHeader("Usuario").setKey("username").setAutoWidth(true);
+        grid.addComponentColumn(dto -> new RouterLink(dto.username(), UserDetailView.class, UserDetailView.parametersOf(dto.id())))
+                .setHeader("Usuario").setKey("username").setAutoWidth(true);
         grid.addColumn(UserDto::fullName).setHeader("Nombre").setKey("name").setFlexGrow(1);
         grid.addColumn(dto -> dto.email() == null ? "" : dto.email()).setHeader("Email").setKey("email").setAutoWidth(true);
         grid.addColumn(dto -> dto.isEnabled() ? "Si" : "No").setHeader("Activo").setKey("enabled").setAutoWidth(true);
         grid.setAllRowsVisible(true);
-        grid.addItemClickListener(event -> UI.getCurrent().navigate(UserDetailView.class, UserDetailView.parametersOf(event.getItem().id())));
         add(title, new Paragraph(note), grid, pager);
         setVisible(false);
     }

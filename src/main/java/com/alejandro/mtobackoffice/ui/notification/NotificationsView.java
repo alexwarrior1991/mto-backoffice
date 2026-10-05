@@ -120,7 +120,7 @@ public class NotificationsView extends VerticalLayout {
         grid.setMultiSort(false);
         grid.setSizeFull();
         pages = LazyPages.of(grid, this::load, total -> count.setText(countText(total)));
-        grid.addItemClickListener(click -> open(click.getItem()));
+        grid.addItemDoubleClickListener(click -> open(click.getItem()));
 
         add(new H2("Notificaciones"), filters, toolbar, grid);
         expand(grid);

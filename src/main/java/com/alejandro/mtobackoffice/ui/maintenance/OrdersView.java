@@ -12,6 +12,7 @@ import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.support.LazyPages;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.vaadin.flow.component.HasValue;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -155,7 +156,8 @@ public class OrdersView extends VerticalLayout {
         grid.setMultiSort(false);
         grid.setSizeFull();
         pages = LazyPages.of(grid, this::load, total -> count.setText(total + " ordenes"));
-        grid.addItemClickListener(click -> UI.getCurrent().navigate(OrderDetailView.class, OrderDetailView.parametersOf(click.getItem().id())));
+        RowActions.openWithDoubleClickOrButton(grid, OrderDto::id, order -> "Abrir " + order.code(),
+                order -> UI.getCurrent().navigate(OrderDetailView.class, OrderDetailView.parametersOf(order.id())));
         return grid;
     }
 

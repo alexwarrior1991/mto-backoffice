@@ -6,6 +6,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPanel;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -40,7 +41,8 @@ class OrderDefectsPanel extends LazyPanel {
         grid.addColumn(defect -> defect.status() == null ? "" : defect.status().label()).setHeader("Estado").setAutoWidth(true);
         grid.addColumn(DefectDto::description).setHeader("Descripcion").setFlexGrow(1);
         grid.setAllRowsVisible(true);
-        grid.addItemClickListener(click -> UI.getCurrent().navigate(DefectDetailView.class, DefectDetailView.parametersOf(click.getItem().id())));
+        RowActions.openButton(grid, DefectDto::id, defect -> "Abrir " + defect.code(),
+                defect -> UI.getCurrent().navigate(DefectDetailView.class, DefectDetailView.parametersOf(defect.id())));
         add(create, grid);
     }
 

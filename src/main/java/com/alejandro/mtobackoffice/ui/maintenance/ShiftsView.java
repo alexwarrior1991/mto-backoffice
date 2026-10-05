@@ -12,6 +12,7 @@ import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPages;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.vaadin.flow.component.HasValue;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -131,7 +132,8 @@ public class ShiftsView extends VerticalLayout {
         grid.setMultiSort(false);
         grid.setSizeFull();
         pages = LazyPages.of(grid, this::load, total -> count.setText(total + " turnos"));
-        grid.addItemClickListener(click -> UI.getCurrent().navigate(ShiftDetailView.class, ShiftDetailView.parametersOf(click.getItem().id())));
+        RowActions.openWithDoubleClickOrButton(grid, ShiftDto::id, shift -> "Abrir " + shift.code(),
+                shift -> UI.getCurrent().navigate(ShiftDetailView.class, ShiftDetailView.parametersOf(shift.id())));
         return grid;
     }
 

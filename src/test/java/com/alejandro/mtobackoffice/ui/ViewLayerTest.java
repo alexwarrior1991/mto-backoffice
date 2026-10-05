@@ -35,7 +35,10 @@ import com.alejandro.mtobackoffice.client.dto.users.RoleNamesRequest;
 import com.alejandro.mtobackoffice.client.dto.users.UserCredentialDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.alejandro.mtobackoffice.ui.users.TakeOut;
+import com.github.mvysny.kaributesting.v10.RouterLinkKt;
+import com.vaadin.flow.router.RouterLink;
 import org.mockito.InOrder;
 import com.alejandro.mtobackoffice.client.dto.users.RealmProfileDto;
 import com.alejandro.mtobackoffice.ui.users.ClientRolesView;
@@ -3219,7 +3222,7 @@ class ViewLayerTest {
         verify(usersClient).clientRoleMembers("mto-users-api", "users-read", 0, 50);
         Grid<Object> members = gridWithId("role-members-grid");
         assertEquals(2, GridKt._size(members));
-        assertTrue(GridKt._getFormattedRow(members, 0).contains("ana"));
+        assertEquals("ana", ((RouterLink) GridKt._getCellComponent(members, 0, "username")).getText());
         LocatorJ._get(H4.class, spec -> spec.withText("Miembros de mto-users-api / users-read"));
         assertFalse(detailButton("role-members-next").isEnabled());
         assertFalse(detailButton("role-members-previous").isEnabled());
@@ -3233,7 +3236,7 @@ class ViewLayerTest {
     }
 
     @Test
-    void aMemberRowOpensTheUserDetail() {
+    void aMembersUsernameLinksToTheUserDetail() {
         loginAs("usuarios.lector", "ROLE_USERS_READ");
         when(usersClient.clients()).thenReturn(List.of(USERS_API));
         when(usersClient.clientRoles("mto-users-api")).thenReturn(List.of(new ClientRoleDto("users-read", null, false)));
@@ -3246,7 +3249,10 @@ class ViewLayerTest {
         LocatorJ._setValue(picker, USERS_API);
         Grid<Object> catalogue = gridWithId("roles-catalogue");
         catalogue.select(GridKt._get(catalogue, 0));
-        GridKt._clickItem(gridWithId("role-members-grid"), 0, 1, false, false, false, false);
+        Grid<Object> members = gridWithId("role-members-grid");
+        GridKt._clickItem(members, 0, 1, false, false, false, false);
+        assertTrue(LocatorJ._find(UserDetailView.class).isEmpty(), "un clic en la fila no abre nada, como en mto-frontend");
+        RouterLinkKt._click((RouterLink) GridKt._getCellComponent(members, 0, "username"));
 
         LocatorJ._get(UserDetailView.class);
         LocatorJ._get(H2.class, spec -> spec.withText("ana"));
@@ -4257,7 +4263,8 @@ class ViewLayerTest {
         Grid<Object> grid = gridWithId("orders-grid");
         assertEquals(1, GridKt._size(grid));
         assertEquals(List.of("MO-000001", "Revision tramo 12", "Preventiva", "En curso", "Alta", "TS-0001 - Tramo 12", "VIA 1 (PAQ NORTE)",
-                "12.1 - 13.45", "PAQ NORTE", "14/09/2026", "EQ-01 - Brigada norte", "3/10", "mantenimiento.tecnico"), GridKt._getFormattedRow(grid, 0));
+                "12.1 - 13.45", "PAQ NORTE", "14/09/2026", "EQ-01 - Brigada norte", "3/10", "mantenimiento.tecnico"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 13));
         LocatorJ._get(Span.class, spec -> spec.withText("1 ordenes"));
         verify(orderClient, atLeastOnce()).search(eq(OrderFilter.NONE), eq(0), anyInt(), eq(List.of("createdAt,desc")));
 
@@ -4623,6 +4630,8 @@ class ViewLayerTest {
         assertFalse(hasButton("order-create"), "sin write no hay alta");
 
         GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        assertTrue(LocatorJ._find(OrderDetailView.class).isEmpty(), "un clic simple no abre nada, como en mto-frontend");
+        GridKt._doubleClickItem(grid, 0, 1, false, false, false, false);
         LocatorJ._get(OrderDetailView.class);
         LocatorJ._get(H2.class, spec -> spec.withText("MO-000001 · Revision tramo 12"));
         assertFalse(hasButton("order-edit"), "quien solo lee no ve ningun boton de escritura");
@@ -4902,7 +4911,7 @@ class ViewLayerTest {
         assertEquals("MO-000001", GridKt._getFormattedRow(orders, 0).getFirst());
         verify(assetClient, atLeastOnce()).orders(eq(ASSET_OWN), eq(0), anyInt(), eq(List.of("createdAt,desc", "id,asc")));
         verify(assetClient, never()).orders(any(), anyInt(), anyInt(), argThat(sort -> !sort.contains("id,asc")));
-        GridKt._clickItem(orders, 0, 1, false, false, false, false);
+        GridKt._doubleClickItem(orders, 0, 1, false, false, false, false);
         LocatorJ._get(OrderDetailView.class);
     }
 
@@ -4963,7 +4972,10 @@ class ViewLayerTest {
                 ShiftStatus.IN_PROGRESS, PossessionType.FULL)), eq(0), anyInt(), anyList());
         assertFalse(hasButton("shift-create"));
 
-        GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        Button open = LocatorJ._get(GridKt._getCellComponent(grid, 0, RowActions.OPEN_COLUMN), Button.class,
+                spec -> spec.withId("open-" + SHIFT1));
+        assertEquals("Abrir SH-000001", open.getTooltip().getText());
+        LocatorJ._click(open);
         LocatorJ._get(H2.class, spec -> spec.withText("SH-000001 · 05/10/2026"));
         assertFalse(hasButton("shift-edit") || hasButton("shift-close"), "quien solo lee no ve botones de escritura");
     }
@@ -5311,7 +5323,7 @@ class ViewLayerTest {
         GridKt._size(grid);
         verify(inspectionClient, atLeastOnce()).search(eq(new InspectionFilter(InspectionResult.MAJOR_DEFECT, null, null, null,
                 LocalDate.of(2026, 9, 1), null, "ana", null)), eq(0), anyInt(), anyList());
-        GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        GridKt._doubleClickItem(grid, 0, 1, false, false, false, false);
 
         LocatorJ._get(InspectionDetailView.class);
         assertTrue(hasButton("inspection-create-defect") && hasButton("inspection-create-order"));
@@ -5415,7 +5427,7 @@ class ViewLayerTest {
         GridKt._size(grid);
         verify(defectClient, atLeastOnce()).search(eq(new DefectFilter(DefectSeverity.HIGH, DefectStatus.OPEN, null, null, null, null,
                 Formats.startOfDay(LocalDate.of(2026, 9, 1)), null)), eq(0), anyInt(), anyList());
-        GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, RowActions.OPEN_COLUMN), Button.class));
 
         LocatorJ._get(DefectDetailView.class);
         assertEquals("Abierto", GridKt._getFormattedRow(gridWithId("defect-history-grid"), 0).get(2));
@@ -5475,6 +5487,39 @@ class ViewLayerTest {
         click("reason-confirm");
         verify(defectClient).discard(DEFECT1, new ReasonRequest("Duplicado"));
         assertEquals("Descartado", spanText("defect-status"));
+    }
+
+    /** En las pestanas Defectos e Inspecciones de una orden, una fila se abre con su boton, como en mto-frontend. */
+    @Test
+    void anOrdersDefectAndInspectionRowsOpenWithTheirButton() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        DefectDto defect = defectOf(DefectStatus.IN_PROGRESS);
+        InspectionDto inspection = inspectionOf(InspectionResult.OK, null, null);
+        when(defectClient.search(eq(DefectFilter.ofOrder(ORDER1)), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(defect), 0, 100));
+        when(inspectionClient.search(eq(InspectionFilter.ofOrder(ORDER1)), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.of(inspection), 0, 100));
+        when(defectClient.findById(defect.id())).thenReturn(defect);
+        when(defectClient.history(defect.id())).thenReturn(List.of());
+        when(inspectionClient.findById(inspection.id())).thenReturn(inspection);
+        OrderDto order = orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.CORRECTIVE);
+        openOrder(order);
+
+        selectTab(2);
+        Grid<Object> defects = gridWithId("order-defects-grid");
+        GridKt._clickItem(defects, 0, 1, false, false, false, false);
+        GridKt._doubleClickItem(defects, 0, 1, false, false, false, false);
+        assertTrue(LocatorJ._find(DefectDetailView.class).isEmpty(), "ni el clic ni el doble clic: su boton, como en mto-frontend");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(defects, 0, RowActions.OPEN_COLUMN), Button.class,
+                spec -> spec.withId("open-" + defect.id())));
+        LocatorJ._get(DefectDetailView.class);
+
+        openOrder(order);
+        selectTab(3);
+        Grid<Object> inspections = gridWithId("order-inspections-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(inspections, 0, RowActions.OPEN_COLUMN), Button.class,
+                spec -> spec.withId("open-" + inspection.id())));
+        LocatorJ._get(InspectionDetailView.class);
     }
 
     @Test
@@ -6322,7 +6367,7 @@ class ViewLayerTest {
                 "POST /api/notifications/inbox/" + NOTIFICATION1 + "/read"));
 
         UI.getCurrent().navigate(NotificationRoutes.INBOX);
-        GridKt._clickItem(inboxGrid(), 0, 1, false, false, false, false);
+        GridKt._doubleClickItem(inboxGrid(), 0, 1, false, false, false, false);
 
         List<Notification> notifications = NotificationsKt.getNotifications();
         assertEquals(1, notifications.size());
@@ -6400,6 +6445,9 @@ class ViewLayerTest {
         when(notificationClient.activityEvent(EVENT1)).thenReturn(event(EVENT1, ActivityCategory.MAINTENANCE, "maintenance.order.created",
                 ActivitySeverity.CRITICAL, Map.of("code", "MO-000012")));
         GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        verify(notificationClient, never()).activityEvent(any());
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, RowActions.OPEN_COLUMN), Button.class,
+                spec -> spec.withId("open-" + EVENT1)));
         verify(notificationClient).activityEvent(EVENT1);
         Dialog dialog = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
         LocatorJ._get(dialog, Span.class, spec -> spec.withText("corr-1"));
@@ -6411,7 +6459,7 @@ class ViewLayerTest {
         ApiProblem gone = new ApiProblem(null, "Not Found", 404, "ActivityEvent was not found", null, "ACT-404", null, null, null, false, null, null);
         when(notificationClient.activityEvent(EVENT2)).thenThrow(BackofficeApiException.of(HttpStatus.NOT_FOUND, gone, "corr-n7", null,
                 "GET /api/notifications/activity/" + EVENT2));
-        GridKt._clickItem(grid, 1, 1, false, false, false, false);
+        GridKt._doubleClickItem(grid, 1, 1, false, false, false, false);
         assertTrue(LocatorJ._find(Dialog.class, spec -> spec.withId(EventDetailDialog.ID)).isEmpty());
         assertEquals(1, NotificationsKt.getNotifications().size());
     }
@@ -6459,7 +6507,7 @@ class ViewLayerTest {
         LocatorJ._setValue(ip, "10.0.0.7");
         assertFalse(ip.isInvalid());
 
-        GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        GridKt._doubleClickItem(grid, 0, 1, false, false, false, false);
         Dialog dialog = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
         LocatorJ._get(dialog, Span.class, spec -> spec.withText("10.0.0.7"));
         LocatorJ._get(dialog, Span.class, spec -> spec.withText("Fallido"));

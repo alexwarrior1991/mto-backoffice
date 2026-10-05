@@ -7,6 +7,7 @@ import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.SecurityRoles;
 import com.alejandro.mtobackoffice.ui.support.LazyPages;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.button.Button;
@@ -172,11 +173,7 @@ public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
 
     protected static Button rowButton(String id, VaadinIcon icon, String tooltip,
                                       ComponentEventListener<ClickEvent<Button>> listener) {
-        Button button = new Button(icon.create(), listener);
-        button.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
-        button.setTooltipText(tooltip);
-        button.setId(id);
-        return button;
+        return RowActions.button(id, icon, tooltip, listener);
     }
 
     private Map<String, Object> filterBody() {

@@ -6,6 +6,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.ui.support.LazyPanel;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -48,8 +49,8 @@ class OrderInspectionsPanel extends LazyPanel {
         grid.addColumn(inspection -> inspection.result() == null ? "" : inspection.result().label()).setHeader("Resultado").setAutoWidth(true);
         grid.addColumn(InspectionDto::inspector).setHeader("Inspector").setFlexGrow(1);
         grid.setAllRowsVisible(true);
-        grid.addItemClickListener(click -> UI.getCurrent().navigate(InspectionDetailView.class,
-                InspectionDetailView.parametersOf(click.getItem().id())));
+        RowActions.openButton(grid, InspectionDto::id, inspection -> "Abrir " + inspection.code(),
+                inspection -> UI.getCurrent().navigate(InspectionDetailView.class, InspectionDetailView.parametersOf(inspection.id())));
         add(create, grid);
     }
 

@@ -11,6 +11,7 @@ import com.alejandro.mtobackoffice.configuration.security.NotificationRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPages;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.HasValue;
 import com.vaadin.flow.component.button.Button;
@@ -131,7 +132,7 @@ public class ActivityView extends VerticalLayout implements BeforeEnterObserver 
         grid.setMultiSort(false);
         grid.setSizeFull();
         pages = LazyPages.of(grid, this::load, total -> count.setText(total + " eventos"));
-        grid.addItemClickListener(click -> showEvent(click.getItem()));
+        RowActions.openWithDoubleClickOrButton(grid, ActivityEventDto::id, row -> "Ver el detalle de " + row.type(), this::showEvent);
 
         add(new H2("Actividad"), filters, toolbar, grid);
         expand(grid);

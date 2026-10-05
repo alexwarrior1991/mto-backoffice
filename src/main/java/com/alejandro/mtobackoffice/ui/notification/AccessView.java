@@ -9,6 +9,7 @@ import com.alejandro.mtobackoffice.configuration.security.NotificationRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPages;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.vaadin.flow.component.HasValue;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -116,7 +117,8 @@ public class AccessView extends VerticalLayout implements BeforeEnterObserver {
         grid.setMultiSort(false);
         grid.setSizeFull();
         pages = LazyPages.of(grid, this::load, total -> count.setText(total + " accesos"));
-        grid.addItemClickListener(click -> EventDetailDialog.of(click.getItem()).open());
+        RowActions.openWithDoubleClickOrButton(grid, AccessEventDto::id, row -> "Ver el detalle de " + row.type(),
+                row -> EventDetailDialog.of(row).open());
 
         add(new H2("Accesos"), filters, toolbar, grid);
         expand(grid);
