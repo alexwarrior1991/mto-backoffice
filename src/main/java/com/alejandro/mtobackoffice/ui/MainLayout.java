@@ -3,6 +3,7 @@ package com.alejandro.mtobackoffice.ui;
 import com.alejandro.mtobackoffice.client.configuration.LovResource;
 import com.alejandro.mtobackoffice.client.notification.NotificationClient;
 import com.alejandro.mtobackoffice.configuration.security.NotificationRoles;
+import com.alejandro.mtobackoffice.configuration.vaadin.FrontendProperties;
 import com.alejandro.mtobackoffice.ui.lov.LovCrudView;
 import com.alejandro.mtobackoffice.ui.maintenance.MaintenanceRoutes;
 import com.alejandro.mtobackoffice.ui.master.MasterView;
@@ -16,6 +17,8 @@ import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.applayout.DrawerToggle;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.html.Anchor;
+import com.vaadin.flow.component.html.AnchorTarget;
 import com.vaadin.flow.component.html.H1;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.Icon;
@@ -23,6 +26,8 @@ import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.sidenav.SideNav;
 import com.vaadin.flow.component.sidenav.SideNavItem;
+import com.vaadin.flow.router.AfterNavigationEvent;
+import com.vaadin.flow.router.AfterNavigationObserver;
 import com.vaadin.flow.server.auth.AccessAnnotationChecker;
 import com.vaadin.flow.server.menu.MenuConfiguration;
 import com.vaadin.flow.server.menu.MenuEntry;
@@ -47,23 +52,30 @@ import java.util.Map;
  * ({@code notification-inbox}): cuantas notificaciones tiene sin leer, refrescadas desde el hilo
  * compartido mientras hay una pantalla abierta, y el camino a la bandeja.</p>
  *
+ * <p>«Abrir en mto-frontend» lleva a la misma pantalla en la SPA, que tiene las mismas rutas: las dos
+ * aplicaciones se usan indistintamente. Sigue a cada navegacion con su query, se abre en otra pestana
+ * para no perder lo que haya en esta, y solo sale si {@link FrontendProperties} tiene la direccion.</p>
+ *
  * <p>{@code @PermitAll} porque Vaadin comprueba tambien el layout padre: basta con haber entrado,
  * y son las vistas las que piden un rol concreto.</p>
  */
 @PermitAll
-public class MainLayout extends AppLayout {
+public class MainLayout extends AppLayout implements AfterNavigationObserver {
 
     private final AuthenticationContext authenticationContext;
     private final AccessAnnotationChecker accessChecker;
     private final NotificationClient notifications;
     private final SharedPolling polling;
+    private final FrontendProperties frontend;
+    private Anchor frontendLink;
 
     public MainLayout(AuthenticationContext authenticationContext, AccessAnnotationChecker accessChecker,
-                      NotificationClient notifications, SharedPolling polling) {
+                      NotificationClient notifications, SharedPolling polling, FrontendProperties frontend) {
         this.authenticationContext = authenticationContext;
         this.accessChecker = accessChecker;
         this.notifications = notifications;
         this.polling = polling;
+        this.frontend = frontend;
         setPrimarySection(Section.DRAWER);
         addToNavbar(header());
         addToDrawer(menu());
@@ -80,6 +92,13 @@ public class MainLayout extends AppLayout {
         logout.addThemeVariants(ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SMALL);
 
         HorizontalLayout header = new HorizontalLayout(new DrawerToggle(), title, user);
+        frontend.linkTo("").ifPresent(href -> {
+            frontendLink = new Anchor(href, "Abrir en mto-frontend");
+            frontendLink.setTarget(AnchorTarget.BLANK);
+            frontendLink.getElement().setAttribute("rel", "noopener noreferrer");
+            frontendLink.addClassNames(LumoUtility.FontSize.SMALL);
+            header.add(frontendLink);
+        });
         if (authenticationContext.hasRole(NotificationRoles.NOTIFICATION_INBOX)) {
             header.add(new InboxBell(notifications, polling, authenticationContext.getPrincipalName().orElse(null)));
         }
@@ -89,6 +108,14 @@ public class MainLayout extends AppLayout {
         header.expand(title);
         header.addClassNames(LumoUtility.Padding.Horizontal.MEDIUM);
         return header;
+    }
+
+    /** El enlace a la SPA sigue a la pantalla en la que se esta, con su query. */
+    @Override
+    public void afterNavigation(AfterNavigationEvent event) {
+        if (frontendLink != null) {
+            frontend.linkTo(event.getLocation().getPathWithQueryParameters()).ifPresent(frontendLink::setHref);
+        }
     }
 
     /** Un grupo del menu: las vistas cuya ruta empieza por su prefijo cuelgan de el. */

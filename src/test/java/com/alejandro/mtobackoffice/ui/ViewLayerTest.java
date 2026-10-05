@@ -49,6 +49,7 @@ import com.alejandro.mtobackoffice.client.dto.users.UserEnabledRequest;
 import com.alejandro.mtobackoffice.client.dto.users.UsersPage;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.client.notification.NotificationClient;
+import com.alejandro.mtobackoffice.configuration.vaadin.FrontendProperties;
 import com.alejandro.mtobackoffice.client.dto.notification.AccessEventDto;
 import com.alejandro.mtobackoffice.client.dto.notification.AccessFilter;
 import com.alejandro.mtobackoffice.client.dto.notification.AccessOutcome;
@@ -165,6 +166,7 @@ import com.vaadin.flow.component.grid.GridSortOrder;
 import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.data.provider.SortDirection;
 import com.vaadin.flow.component.html.Anchor;
+import com.vaadin.flow.router.QueryParameters;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderStatus;
@@ -308,6 +310,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.alejandro.mtobackoffice.client.dto.master.CantileverDto;
@@ -533,6 +536,39 @@ class ViewLayerTest {
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("delete-1")).isEmpty());
     }
 
+    // --- La SPA: las mismas pantallas, a un clic --------------------------------------------------
+
+    @Test
+    void theHeaderOpensTheSameScreenInTheSpaWithItsQueryInAnotherTab() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        Anchor link = LocatorJ._get(Anchor.class, spec -> spec.withText("Abrir en mto-frontend"));
+        assertEquals("http://frontend.test/", link.getHref());
+        assertEquals(Optional.of("_blank"), link.getTarget());
+        assertEquals("noopener noreferrer", link.getElement().getAttribute("rel"));
+
+        // Sigue a la pantalla en la que se esta, con sus parametros: las rutas son las mismas.
+        UI.getCurrent().navigate(CATALOGUE_ROUTE, QueryParameters.simple(Map.of("q", "borrador")));
+
+        assertEquals("http://frontend.test/" + CATALOGUE_ROUTE + "?q=borrador",
+                LocatorJ._get(Anchor.class, spec -> spec.withText("Abrir en mto-frontend")).getHref());
+    }
+
+    @Test
+    void theSpaLinkNeedsAnHttpAddressAndKeepsTheRoute() {
+        assertEquals(Optional.of("http://spa.example/usuarios/u-1?x=1"),
+                new FrontendProperties(" http://spa.example/ ").linkTo("usuarios/u-1?x=1"));
+        assertEquals(Optional.of("https://spa.example/"), new FrontendProperties("https://spa.example").linkTo(""));
+        assertEquals(Optional.empty(), new FrontendProperties(null).linkTo(""));
+        assertEquals(Optional.empty(), new FrontendProperties(" ").linkTo(""));
+        assertEquals(Optional.empty(), new FrontendProperties("javascript:alert(1)").linkTo(""));
+        assertEquals(Optional.empty(), new FrontendProperties("ftp://spa.example").linkTo(""));
+        assertEquals(Optional.empty(), new FrontendProperties("localhost:4200").linkTo(""));
+    }
+
     // --- La vista de catalogos --------------------------------------------------------------------
 
     @Test
@@ -545,7 +581,8 @@ class ViewLayerTest {
         LocatorJ._get(H2.class, spec -> spec.withText("Estados de perfil"));
         Grid<LovDto> grid = grid();
         assertEquals(3, GridKt._size(grid));
-        assertEquals("DRAFT", GridKt._get(grid, 0).code());
+        // Por codigo, en orden natural: no en el orden en que los manda el servicio.
+        assertEquals(List.of("DEFINITIVE", "DRAFT", "PROVISIONAL"), GridKt._findAll(grid).stream().map(LovDto::code).toList());
         LocatorJ._get(Span.class, spec -> spec.withText("3 entradas"));
 
         TextField filter = LocatorJ._get(TextField.class, spec -> spec.withPlaceholder("Filtrar por codigo o descripcion"));
@@ -632,8 +669,14 @@ class ViewLayerTest {
         assertEquals(1, NotificationsKt.getNotifications().size(), "lo no atribuible a un campo se notifica");
     }
 
+    /** La fila de una entrada del catalogo, que llega por codigo y no en el orden del servicio. */
+    private static int rowOfEntry(long id) {
+        return GridKt._findAll(grid()).stream().map(LovDto::id).toList().indexOf(id);
+    }
+
+    /** Modifica la descripcion de la entrada 1 (DRAFT), este en la fila que este. */
     private static void editTheFirstRowDescription(String description) {
-        Component actions = GridKt._getCellComponent(grid(), 0, "actions");
+        Component actions = GridKt._getCellComponent(grid(), rowOfEntry(1L), "actions");
         LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withId("edit-1")));
         LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withLabel("Descripcion")), description);
         LocatorJ._click(button("Guardar"));
@@ -722,7 +765,7 @@ class ViewLayerTest {
         when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
 
         UI.getCurrent().navigate(CATALOGUE_ROUTE);
-        Component actions = GridKt._getCellComponent(grid(), 0, "actions");
+        Component actions = GridKt._getCellComponent(grid(), rowOfEntry(1L), "actions");
         LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withId("delete-1")));
 
         verify(lovClient, times(0)).delete(any(), any());
@@ -769,6 +812,137 @@ class ViewLayerTest {
                 () -> LovBulkCreateDialog.parse("PT1;Poste tipo 1\nSIN-DESCRIPCION\n"));
         assertTrue(invalid.getMessage().contains("linea 2"));
         assertThrows(IllegalArgumentException.class, () -> LovBulkCreateDialog.parse("  \n"));
+    }
+
+    @Test
+    void anOverLongLineIsRejectedWithItsNumberBeforeCalling() {
+        IllegalArgumentException code = assertThrows(IllegalArgumentException.class,
+                () -> LovBulkCreateDialog.parse("PT1;Poste tipo 1\n" + "C".repeat(41) + ";Demasiado largo"));
+        assertTrue(code.getMessage().contains("linea 2"), code.getMessage());
+        assertTrue(code.getMessage().contains("codigo"), code.getMessage());
+        IllegalArgumentException description = assertThrows(IllegalArgumentException.class,
+                () -> LovBulkCreateDialog.parse("PT1;" + "d".repeat(201)));
+        assertTrue(description.getMessage().contains("linea 1"), description.getMessage());
+        assertEquals(1, LovBulkCreateDialog.parse("C".repeat(40) + ";" + "d".repeat(200)).size());
+    }
+
+    @Test
+    void theFilterIgnoresAccentsAndTheCatalogueComesInNaturalOrder() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(List.of(
+                new LovDto(1L, "PT10", "Poste diez", true, 1, null, null),
+                new LovDto(2L, "PT2", "Explotación", true, 1, null, null),
+                new LovDto(3L, "pt1", "Poste uno", true, 1, null, null)));
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+
+        assertEquals(List.of("pt1", "PT2", "PT10"), GridKt._findAll(grid()).stream().map(LovDto::code).toList());
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withPlaceholder("Filtrar por codigo o descripcion")), "EXPLOTACION");
+        assertEquals(List.of("PT2"), GridKt._findAll(grid()).stream().map(LovDto::code).toList());
+    }
+
+    private static final String FOUNDATIONS_ROUTE = "catalogos/foundations";
+
+    private List<LovDto> foundationTypes() {
+        List<LovDto> types = List.of(new LovDto(7L, "FT-B", "Tipo B", true, 1, null, null),
+                new LovDto(6L, "FT-A", "Tipo A", true, 1, null, null));
+        when(lovClient.findAll("foundation-types")).thenReturn(types);
+        return types;
+    }
+
+    private static LovDto foundationRead() {
+        return new LovDto(5L, "C-1", "Cimentacion 1", true, 2, null, null, Map.of(
+                "drawingNumber", "D-12",
+                "foundationType", Map.of("id", 3, "code", "FT-OLD", "description", "Tipo retirado")));
+    }
+
+    @Test
+    void aCatalogueWithATypeShowsItAndEditsKeepingWhatTheScreenDoesNotShow() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_LOV_MANAGE");
+        when(lovClient.findAll("foundations")).thenReturn(List.of(foundationRead()));
+        List<LovDto> types = foundationTypes();
+        when(lovClient.update(eq("foundations"), eq(5L), any())).thenAnswer(call -> call.getArgument(2));
+
+        UI.getCurrent().navigate(FOUNDATIONS_ROUTE);
+
+        assertTrue(grid().getColumnByKey("parent").isVisible());
+        assertEquals("FT-OLD", GridKt._getFormatted(grid(), 0, "parent"));
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid(), 0, "actions"), Button.class, spec -> spec.withId("edit-5")));
+        @SuppressWarnings("unchecked")
+        ComboBox<LovDto> type = LocatorJ._get(ComboBox.class, spec -> spec.withLabel("Tipo de cimentacion"));
+        // El tipo que ya tiene sale aunque no este en la lista, y la lista va por codigo.
+        assertEquals(3L, type.getValue().id());
+        assertEquals(List.of("FT-OLD", "FT-A", "FT-B"),
+                type.getListDataView().getItems().map(LovDto::code).toList());
+        type.setValue(types.getFirst());
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withLabel("Descripcion")), "Cimentacion uno");
+        LocatorJ._click(button("Guardar"));
+
+        verify(lovClient).update(eq("foundations"), eq(5L), argThat(sent -> "Cimentacion uno".equals(sent.description())
+                && sent.versionNumber() == 2
+                && "D-12".equals(sent.extras().get("drawingNumber"))
+                && Map.of("id", 7L).equals(sent.extras().get("foundationType"))));
+    }
+
+    @Test
+    void creatingInACatalogueWithATypeRequiresItAndSendsItById() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_LOV_MANAGE");
+        when(lovClient.findAll("foundations")).thenReturn(List.of());
+        List<LovDto> types = foundationTypes();
+        when(lovClient.create(eq("foundations"), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(FOUNDATIONS_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withLabel("Codigo")), "C-2");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withLabel("Descripcion")), "Cimentacion 2");
+        LocatorJ._click(button("Guardar"));
+
+        verify(lovClient, never()).create(any(), any());
+        @SuppressWarnings("unchecked")
+        ComboBox<LovDto> type = LocatorJ._get(ComboBox.class, spec -> spec.withLabel("Tipo de cimentacion"));
+        assertTrue(type.isInvalid(), "sin tipo no se llama: el servicio responderia 400");
+        type.setValue(types.get(1));
+        LocatorJ._click(button("Guardar"));
+
+        verify(lovClient).create(eq("foundations"), argThat(sent -> "C-2".equals(sent.code()) && sent.id() == null
+                && Map.of("id", 6L).equals(sent.extras().get("foundationType"))));
+    }
+
+    @Test
+    void aBulkCreateInACatalogueWithATypeAsksForItOnceForEveryLine() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_IMPORT", "ROLE_LOV_MANAGE");
+        when(lovClient.findAll("foundations")).thenReturn(List.of());
+        List<LovDto> types = foundationTypes();
+        when(lovClient.bulkCreate(eq("foundations"), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(FOUNDATIONS_ROUTE);
+        LocatorJ._click(button("Alta multiple"));
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withLabel("Entradas")), "C-3;Tres\nC-4;Cuatro");
+        LocatorJ._click(button("Crear"));
+        verify(lovClient, never()).bulkCreate(any(), any());
+
+        @SuppressWarnings("unchecked")
+        ComboBox<LovDto> type = LocatorJ._get(ComboBox.class, spec -> spec.withLabel("Tipo de cimentacion"));
+        type.setValue(types.getFirst());
+        LocatorJ._click(button("Crear"));
+
+        verify(lovClient).bulkCreate(eq("foundations"), argThat(entries -> entries.size() == 2
+                && entries.stream().allMatch(entry -> Map.of("id", 7L).equals(entry.extras().get("foundationType")))));
+    }
+
+    @Test
+    void aBulkDisableSendsBackWhatEachEntryDoesNotModel() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_IMPORT", "ROLE_LOV_MANAGE");
+        LovDto read = foundationRead();
+        when(lovClient.findAll("foundations")).thenReturn(List.of(read));
+        when(lovClient.bulkUpdate(eq("foundations"), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(FOUNDATIONS_ROUTE);
+        grid().select(read);
+        LocatorJ._click(button("Desactivar seleccionados"));
+
+        verify(lovClient).bulkUpdate(eq("foundations"), argThat(entries -> entries.size() == 1
+                && !entries.getFirst().isEnabled() && read.extras().equals(entries.getFirst().extras())));
     }
 
     // --- Inicio ----------------------------------------------------------------------------------

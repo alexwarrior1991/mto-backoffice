@@ -6,6 +6,7 @@ import com.alejandro.mtobackoffice.client.dto.LovDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.SecurityRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
+import com.alejandro.mtobackoffice.ui.support.TextMatching;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.button.Button;
@@ -33,6 +34,7 @@ import com.vaadin.flow.spring.security.AuthenticationContext;
 import jakarta.annotation.security.RolesAllowed;
 
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -73,6 +75,7 @@ public class LovCrudView extends VerticalLayout implements BeforeEnterObserver, 
     private final Button enableSelected = new Button("Activar seleccionados", VaadinIcon.CHECK.create());
     private final Button disableSelected = new Button("Desactivar seleccionados", VaadinIcon.BAN.create());
     private final Grid<LovDto> grid = new Grid<>();
+    private Grid.Column<LovDto> parentColumn;
 
     private LovResource resource;
     private List<LovDto> catalogue = List.of();
@@ -101,6 +104,8 @@ public class LovCrudView extends VerticalLayout implements BeforeEnterObserver, 
         }
         resource = found.get();
         title.setText(resource.title());
+        parentColumn.setVisible(resource.parent().isPresent());
+        resource.parent().ifPresent(type -> parentColumn.setHeader(type.label()));
         load();
     }
 
@@ -140,8 +145,16 @@ public class LovCrudView extends VerticalLayout implements BeforeEnterObserver, 
     }
 
     private Component buildGrid() {
-        grid.addColumn(LovDto::code).setHeader("Codigo").setKey("code").setAutoWidth(true).setSortable(true);
-        grid.addColumn(LovDto::description).setHeader("Descripcion").setKey("description").setFlexGrow(1).setSortable(true);
+        // Orden natural y sin mirar tildes, como la lista de partida: PT2 antes que PT10.
+        grid.addColumn(LovDto::code).setHeader("Codigo").setKey("code").setAutoWidth(true)
+                .setComparator(Comparator.comparing(LovDto::code, TextMatching.NATURAL_ORDER));
+        grid.addColumn(LovDto::description).setHeader("Descripcion").setKey("description").setFlexGrow(1)
+                .setComparator(Comparator.comparing(LovDto::description, TextMatching.NATURAL_ORDER));
+        // El tipo de los tres catalogos que lo tienen, por su codigo; en los demas no se ve.
+        parentColumn = grid.addColumn(dto -> resource == null ? "" : resource.parent()
+                        .flatMap(type -> dto.parent(type.field())).map(LovDto::code).orElse(""))
+                .setKey("parent").setAutoWidth(true);
+        parentColumn.setVisible(false);
         grid.addColumn(dto -> dto.isEnabled() ? "Si" : "No").setHeader("Activo").setKey("enabled").setAutoWidth(true);
         grid.addColumn(dto -> dto.versionDate() == null ? "" : DATE_TIME.format(dto.versionDate()))
                 .setHeader("Modificado").setKey("versionDate").setAutoWidth(true);
@@ -184,7 +197,9 @@ public class LovCrudView extends VerticalLayout implements BeforeEnterObserver, 
 
     void load() {
         try {
-            catalogue = client.findAll(resource.path());
+            catalogue = client.findAll(resource.path()).stream()
+                    .sorted(Comparator.comparing(LovDto::code, TextMatching.NATURAL_ORDER))
+                    .toList();
         } catch (BackofficeApiException failure) {
             catalogue = List.of();
             UiErrors.show(failure);
@@ -192,12 +207,13 @@ public class LovCrudView extends VerticalLayout implements BeforeEnterObserver, 
         applyFilter();
     }
 
+    /** El filtro es local (el catalogo llega entero) y no distingue mayusculas ni tildes. */
     private void applyFilter() {
-        String text = filter.getValue() == null ? "" : filter.getValue().trim().toLowerCase(Locale.ROOT);
+        String text = filter.getValue() == null ? "" : filter.getValue();
         boolean enabledOnly = Boolean.TRUE.equals(onlyEnabled.getValue());
         List<LovDto> shown = catalogue.stream()
                 .filter(dto -> !enabledOnly || dto.isEnabled())
-                .filter(dto -> text.isEmpty() || contains(dto.code(), text) || contains(dto.description(), text))
+                .filter(dto -> TextMatching.contains(dto.code(), text) || TextMatching.contains(dto.description(), text))
                 .toList();
         grid.deselectAll();
         grid.setItems(shown);
@@ -206,25 +222,37 @@ public class LovCrudView extends VerticalLayout implements BeforeEnterObserver, 
                 : shown.size() + " de " + catalogue.size() + " entradas");
     }
 
-    private static boolean contains(String value, String text) {
-        return value != null && value.toLowerCase(Locale.ROOT).contains(text);
-    }
-
     private void openEditor(LovDto existing) {
         String path = resource.path();
-        new LovEditorDialog(resource.title(), existing,
+        new LovEditorDialog(resource, existing, parents(),
                 dto -> existing == null ? client.create(path, dto) : client.update(path, existing.id(), dto),
                 saved -> load()).open();
     }
 
     private void openBulkCreate() {
         String path = resource.path();
-        new LovBulkCreateDialog(resource.title(), entries -> client.bulkCreate(path, entries), created -> load()).open();
+        new LovBulkCreateDialog(resource, parents(), entries -> client.bulkCreate(path, entries), created -> load()).open();
+    }
+
+    /**
+     * Las entradas del catalogo del tipo, en los tres catalogos que lo tienen. Si no se pueden leer se
+     * avisa y el dialogo se abre igual: una modificacion conserva el tipo que ya tenia la entrada.
+     */
+    private List<LovDto> parents() {
+        return resource.parent().map(type -> {
+            try {
+                return client.findAll(type.path());
+            } catch (BackofficeApiException failure) {
+                UiErrors.show(failure);
+                return List.<LovDto>of();
+            }
+        }).orElse(List.of());
     }
 
     private void confirmDelete(LovDto dto) {
+        // El servicio borra la fila de verdad, y no borra una entrada que otro registro usa (409 BUS-002).
         ConfirmDialog dialog = new ConfirmDialog("Borrar " + dto.code(),
-                "La entrada desaparece del catalogo (borrado logico en el servicio). ¿Seguro?",
+                "La entrada se borra del catalogo. Si algun registro la usa, el servicio no la borra: desactivala. ¿Seguro?",
                 "Borrar", confirm -> delete(dto), "Cancelar", cancel -> { });
         dialog.setConfirmButtonTheme("error primary");
         dialog.open();

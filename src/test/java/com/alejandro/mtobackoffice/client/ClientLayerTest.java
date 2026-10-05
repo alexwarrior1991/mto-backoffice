@@ -301,7 +301,7 @@ class ClientLayerTest {
     }
 
     @Test
-    void lovListIsReadThroughTheGatewayPrefixAndUnknownFieldsAreIgnored() {
+    void lovListIsReadThroughTheGatewayPrefixAndKeepsWhatItDoesNotModel() {
         server.expect(requestTo(GATEWAY + "/api/configuration/profile-statuses"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("""
@@ -313,8 +313,47 @@ class ClientLayerTest {
         List<LovDto> statuses = asUser(() -> lovClient.findAll(LovResource.PROFILE_STATUSES));
 
         assertEquals(1, statuses.size());
-        assertEquals(new LovDto(1L, "DRAFT", "Borrador", true, 0, LocalDateTime.parse("2026-08-02T11:00:00"), "config.responsable"),
-                statuses.getFirst());
+        LovDto status = statuses.getFirst();
+        assertEquals(new LovDto(1L, "DRAFT", "Borrador", true, 0, LocalDateTime.parse("2026-08-02T11:00:00"), "config.responsable",
+                status.extras()), status);
+        // Lo que no tiene campo se guarda para devolverlo en un PUT, que sustituye la entrada entera.
+        assertEquals(Set.of("type", "createDate", "unknownTomorrow"), status.extras().keySet());
+        server.verify();
+    }
+
+    @Test
+    void anUpdateSendsBackWhatTheEntryDoesNotModelAndTheParentTypeById() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/foundations"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        [{"id":5,"code":"C-1","description":"Cimentacion 1","enabled":true,"versionNumber":2,
+                          "drawingNumber":"D-12","foundationType":{"id":3,"code":"FT-A","description":"Tipo A"}}]
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/foundations/5"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.description").value("Cimentacion uno"))
+                .andExpect(jsonPath("$.versionNumber").value(2))
+                .andExpect(jsonPath("$.drawingNumber").value("D-12"))
+                .andExpect(jsonPath("$.foundationType.id").value(7))
+                .andExpect(jsonPath("$.foundationType.code").doesNotExist())
+                .andExpect(jsonPath("$.extras").doesNotExist())
+                .andRespond(withSuccess("""
+                        {"id":5,"code":"C-1","description":"Cimentacion uno","enabled":true,"versionNumber":3,
+                          "drawingNumber":"D-12","foundationType":{"id":7,"code":"FT-B","description":"Tipo B"}}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/foundations/bulk"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$[0].enabled").value(false))
+                .andExpect(jsonPath("$[0].drawingNumber").value("D-12"))
+                .andExpect(jsonPath("$[0].foundationType.id").value(7))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+        LovDto read = asUser(() -> lovClient.findAll(LovResource.FOUNDATIONS)).getFirst();
+        assertEquals("FT-A", read.parent("foundationType").orElseThrow().code());
+        LovDto saved = asUser(() -> lovClient.update("foundations", 5L,
+                read.withValues("C-1", "Cimentacion uno", true).withParent("foundationType", 7L)));
+        assertEquals("FT-B", saved.parent("foundationType").orElseThrow().code());
+        asUser(() -> lovClient.bulkUpdate("foundations", List.of(saved.withEnabled(false))));
         server.verify();
     }
 
