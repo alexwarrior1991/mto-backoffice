@@ -503,9 +503,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   lotes) con `AuthenticationContext.hasAllRoles`, y un 403 igualmente se traduce a notificación.
 - **«Abrir en mto-frontend» lleva a la misma pantalla allí** (`MainLayout`): la ruta en la que se
   está, con su query (`afterNavigation`), sobre `app.frontend.url`, en otra pestaña con
-  `noopener noreferrer`. Sin dirección, o sin `http(s)://`, la barra no lo ofrece
-  (`FrontendProperties.linkTo`). Las dos aplicaciones entran por el mismo SSO de Keycloak, y la
-  SPA tiene el enlace de vuelta.
+  `noopener noreferrer`. La query va sin el `continue` con el que Spring Security vuelve del login
+  a la URL pedida (`MainLayout.SAVED_REQUEST_PARAMETER`): es suyo, no de la pantalla. Sin
+  dirección, o sin `http(s)://`, la barra no lo ofrece (`FrontendProperties.linkTo`). Las dos
+  aplicaciones entran por el mismo SSO de Keycloak, y la SPA tiene el enlace de vuelta.
 - **Una vista por familia de endpoints, no por recurso.** Los 17 catálogos comparten controlador
   base y DTO en `mto-configuration`; aquí son una `LovCrudView` con el recurso en la ruta. Un
   catálogo nuevo allí es una constante más en `LovResource`, nada más.

@@ -28,6 +28,7 @@ import com.vaadin.flow.component.sidenav.SideNav;
 import com.vaadin.flow.component.sidenav.SideNavItem;
 import com.vaadin.flow.router.AfterNavigationEvent;
 import com.vaadin.flow.router.AfterNavigationObserver;
+import com.vaadin.flow.router.Location;
 import com.vaadin.flow.server.auth.AccessAnnotationChecker;
 import com.vaadin.flow.server.menu.MenuConfiguration;
 import com.vaadin.flow.server.menu.MenuEntry;
@@ -61,6 +62,9 @@ import java.util.Map;
  */
 @PermitAll
 public class MainLayout extends AppLayout implements AfterNavigationObserver {
+
+    /** El parametro con el que Spring Security marca la vuelta a una peticion guardada (HttpSessionRequestCache). */
+    static final String SAVED_REQUEST_PARAMETER = "continue";
 
     private final AuthenticationContext authenticationContext;
     private final AccessAnnotationChecker accessChecker;
@@ -110,11 +114,16 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
         return header;
     }
 
-    /** El enlace a la SPA sigue a la pantalla en la que se esta, con su query. */
+    /**
+     * El enlace a la SPA sigue a la pantalla en la que se esta, con su query, menos el "continue" con
+     * el que Spring Security vuelve del login a la URL pedida: es suyo, no de la pantalla.
+     */
     @Override
     public void afterNavigation(AfterNavigationEvent event) {
         if (frontendLink != null) {
-            frontend.linkTo(event.getLocation().getPathWithQueryParameters()).ifPresent(frontendLink::setHref);
+            Location location = event.getLocation();
+            Location screen = new Location(location.getSegments(), location.getQueryParameters().excluding(SAVED_REQUEST_PARAMETER));
+            frontend.linkTo(screen.getPathWithQueryParameters()).ifPresent(frontendLink::setHref);
         }
     }
 

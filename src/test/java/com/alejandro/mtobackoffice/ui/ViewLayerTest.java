@@ -570,6 +570,19 @@ class ViewLayerTest {
     }
 
     @Test
+    void theSpaLinkLeavesOutTheContinueThatSpringSecurityAddsAfterTheLogin() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
+
+        // Tras entrar por el SSO, Spring Security vuelve a la URL pedida con su marca "continue": es
+        // suya, no de la pantalla, y la SPA no tiene por que recibirla.
+        UI.getCurrent().navigate(CATALOGUE_ROUTE, QueryParameters.fromString("q=borrador&continue"));
+
+        assertEquals("http://frontend.test/" + CATALOGUE_ROUTE + "?q=borrador",
+                LocatorJ._get(Anchor.class, spec -> spec.withText("Abrir en mto-frontend")).getHref());
+    }
+
+    @Test
     void theSpaLinkNeedsAnHttpAddressAndKeepsTheRoute() {
         assertEquals(Optional.of("http://spa.example/usuarios/u-1?x=1"),
                 new FrontendProperties(" http://spa.example/ ").linkTo("usuarios/u-1?x=1"));
