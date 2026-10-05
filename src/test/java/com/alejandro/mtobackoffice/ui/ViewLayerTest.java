@@ -2685,6 +2685,33 @@ class ViewLayerTest {
         assertEquals(1, GridKt._size(roles));
         assertTrue(GridKt._getFormattedRow(roles, 0).contains("users-write"));
         verify(usersClient, times(1)).userRoles(ANA_ID);
+        assertEquals(List.of("users-read", "users-delete"), rolePicker.getListDataView().getItems().toList(),
+                "las opciones se rehacen aqui con lo que devolvio el servicio");
+        verify(usersClient, times(1)).clientRoles("mto-users-api");
+    }
+
+    /** Cambiar un perfil relee los roles de la persona, no el catalogo, como en mto-frontend. */
+    @Test
+    void aProfileChangeRereadsThePersonsRolesButNotTheCatalogue() {
+        loginAs("usuarios.responsable", "ROLE_USERS_READ", "ROLE_USERS_PROFILES_WRITE", "ROLE_USERS_ROLES_WRITE");
+        stubUserDetail(ana());
+        when(usersClient.assignProfile(ANA_ID, "mto-users-manager")).thenReturn(List.of(VIEWER, MANAGER));
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(1);
+        @SuppressWarnings("unchecked")
+        ComboBox<ClientDto> clientPicker = LocatorJ._get(ComboBox.class, spec -> spec.withId("role-client"));
+        LocatorJ._setValue(clientPicker, USERS_API);
+        selectTab(0);
+        @SuppressWarnings("unchecked")
+        ComboBox<RealmProfileSummaryDto> picker = LocatorJ._get(ComboBox.class, spec -> spec.withId("profile-assign"));
+        LocatorJ._setValue(picker, MANAGER);
+        LocatorJ._click(detailButton("profile-assign-button"));
+
+        verify(usersClient, times(2)).userRoles(ANA_ID);
+        verify(usersClient, times(1)).clients();
+        verify(usersClient, times(1)).clientRoles("mto-users-api");
+        assertEquals(USERS_API, clientPicker.getValue(), "el cliente elegido sigue elegido");
     }
 
     @Test
@@ -3197,6 +3224,12 @@ class ViewLayerTest {
         assertFalse(detailButton("role-members-next").isEnabled());
         assertFalse(detailButton("role-members-previous").isEnabled());
         verify(usersClient, times(1)).clients();
+
+        // Volver a un cliente ya elegido no vuelve a pedir sus roles mientras dura la pantalla.
+        LocatorJ._setValue(picker, CONFIGURATION_API);
+        LocatorJ._setValue(picker, USERS_API);
+        assertEquals(3, GridKt._size(catalogue));
+        verify(usersClient, times(1)).clientRoles("mto-users-api");
     }
 
     @Test

@@ -25,7 +25,9 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -34,6 +36,10 @@ import java.util.stream.Collectors;
  * cliente, luego los roles que aun no tiene. Quitar uno es el {@code DELETE} con cuerpo de
  * mto-users. Los roles de realm se ensenan a titulo informativo (los perfiles estan entre ellos).
  * Los controles piden {@code users-roles-write}.
+ *
+ * <p>El catalogo (los clientes y los roles de cada cliente elegido) se pide una vez mientras dura la
+ * pantalla, como en mto-frontend: asignar, quitar o cambiar un perfil solo cambian los roles de la
+ * persona, que se pintan de la respuesta o se releen, y las opciones se rehacen aqui.</p>
  */
 class UserRolesPanel extends LazyPanel {
 
@@ -57,6 +63,8 @@ class UserRolesPanel extends LazyPanel {
     private final Button assign = new Button("Asignar", VaadinIcon.PLUS.create(), click -> assign());
 
     private UserRolesDto current = new UserRolesDto(List.of(), List.of());
+    private final Map<String, List<String>> rolesByClient = new HashMap<>();
+    private boolean clientsLoaded;
 
     UserRolesPanel(String userId, UsersClient client, boolean canWrite) {
         this.userId = userId;
@@ -100,9 +108,10 @@ class UserRolesPanel extends LazyPanel {
     protected void load() {
         try {
             paint(client.userRoles(userId));
-            if (canWrite) {
+            if (canWrite && !clientsLoaded) {
                 clientPicker.setItems(client.clients());
                 clientPicker.clear();
+                clientsLoaded = true;
             }
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
@@ -141,8 +150,7 @@ class UserRolesPanel extends LazyPanel {
                     .filter(assignment -> chosen.clientId().equals(assignment.clientId()))
                     .flatMap(assignment -> assignment.roles().stream())
                     .collect(Collectors.toSet());
-            rolePicker.setItems(client.clientRoles(chosen.clientId()).stream()
-                    .map(ClientRoleDto::name)
+            rolePicker.setItems(rolesOf(chosen.clientId()).stream()
                     .filter(name -> !assigned.contains(name))
                     .toList());
             rolePicker.setEnabled(true);
@@ -151,6 +159,11 @@ class UserRolesPanel extends LazyPanel {
             rolePicker.setEnabled(false);
             UiErrors.show(failure);
         }
+    }
+
+    /** Los roles de un cliente, pedidos la primera vez que se elige mientras dura la pantalla. */
+    private List<String> rolesOf(String clientId) {
+        return rolesByClient.computeIfAbsent(clientId, id -> client.clientRoles(id).stream().map(ClientRoleDto::name).toList());
     }
 
     private void assign() {
