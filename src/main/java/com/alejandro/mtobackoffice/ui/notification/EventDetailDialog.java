@@ -2,7 +2,11 @@ package com.alejandro.mtobackoffice.ui.notification;
 
 import com.alejandro.mtobackoffice.client.dto.notification.AccessEventDto;
 import com.alejandro.mtobackoffice.client.dto.notification.ActivityEventDto;
+import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
+import com.alejandro.mtobackoffice.client.notification.NotificationClient;
 import com.alejandro.mtobackoffice.ui.support.Formats;
+import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
@@ -16,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
+import java.util.UUID;
 
 /**
  * Una linea del registro, o un acceso, entera: la cabecera y el {@code payload} clave a clave, tal
@@ -25,6 +30,7 @@ public class EventDetailDialog extends Dialog {
 
     public static final String ID = "event-detail";
     public static final String PAYLOAD_ID = "event-payload";
+    public static final String ERROR_ID = "event-error";
 
     /** Una clave del payload con su valor como texto (un valor anidado se pinta tal cual). */
     public record PayloadEntry(String key, String value) {
@@ -61,6 +67,41 @@ public class EventDetailDialog extends Dialog {
         }
         add(layout);
         getFooter().add(new Button("Cerrar", click -> close()));
+    }
+
+    /** La linea que no se ha podido leer: el dialogo dice dentro por que, con su referencia. */
+    private EventDetailDialog(BackofficeApiException failure) {
+        setId(ID);
+        setHeaderTitle("Linea del registro");
+        setWidth("min(60rem, 96vw)");
+        Span message = new Span(UiErrors.message(failure));
+        message.setId(ERROR_ID);
+        VerticalLayout layout = new VerticalLayout(message);
+        layout.setPadding(false);
+        String reference = failure.getReference();
+        if (reference != null && !reference.isBlank()) {
+            Span ref = new Span("Referencia: " + reference);
+            ref.addClassNames(LumoUtility.FontSize.XSMALL, LumoUtility.TextColor.SECONDARY);
+            layout.add(ref);
+        }
+        add(layout);
+        getFooter().add(new Button("Cerrar", click -> close()));
+    }
+
+    /**
+     * Abre la linea del registro {@code id}, pedida a su id porque la lista no trae el payload. Si no
+     * se puede leer, el dialogo se abre igual y dice dentro por que, con su referencia y sin aviso
+     * aparte, como en mto-frontend: un ACT-404 es que esa linea ya no existe. Solo una sesion
+     * caducada se avisa fuera, por su «Volver a entrar».
+     */
+    public static void openActivityEvent(NotificationClient client, UUID id) {
+        try {
+            of(client.activityEvent(id)).open();
+        } catch (SessionExpiredApiException expired) {
+            UiErrors.show(expired);
+        } catch (BackofficeApiException failure) {
+            new EventDetailDialog(failure).open();
+        }
     }
 
     public static EventDetailDialog of(ActivityEventDto event) {

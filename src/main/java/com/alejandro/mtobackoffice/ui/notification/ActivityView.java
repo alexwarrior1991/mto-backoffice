@@ -5,14 +5,12 @@ import com.alejandro.mtobackoffice.client.dto.notification.ActivityCategory;
 import com.alejandro.mtobackoffice.client.dto.notification.ActivityEventDto;
 import com.alejandro.mtobackoffice.client.dto.notification.ActivityFilter;
 import com.alejandro.mtobackoffice.client.dto.notification.ActivitySeverity;
-import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.notification.NotificationClient;
 import com.alejandro.mtobackoffice.configuration.security.NotificationRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPages;
 import com.alejandro.mtobackoffice.ui.support.RowActions;
-import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.HasValue;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.checkbox.Checkbox;
@@ -167,11 +165,7 @@ public class ActivityView extends VerticalLayout implements BeforeEnterObserver 
 
     /** La fila no trae el payload: la linea entera se pide a su id, como en mto-frontend. */
     private void showEvent(ActivityEventDto row) {
-        try {
-            EventDetailDialog.of(client.activityEvent(row.id())).open();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-        }
+        EventDetailDialog.openActivityEvent(client, row.id());
     }
 
     private ActivityFilter filter() {

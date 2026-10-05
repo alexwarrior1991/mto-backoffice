@@ -208,11 +208,7 @@ public class NotificationsView extends VerticalLayout {
     }
 
     private void showEvent(UUID eventId) {
-        try {
-            EventDetailDialog.of(client.activityEvent(eventId)).open();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-        }
+        EventDetailDialog.openActivityEvent(client, eventId);
     }
 
     private InboxFilter filter() {

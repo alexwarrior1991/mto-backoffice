@@ -6372,7 +6372,7 @@ class ViewLayerTest {
         List<Notification> notifications = NotificationsKt.getNotifications();
         assertEquals(1, notifications.size());
         LocatorJ._get(notifications.getFirst(), Span.class,
-                spec -> spec.withText("No se ha encontrado lo que se pedia. Notification " + NOTIFICATION1 + " is not addressed to config.lector"));
+                spec -> spec.withText("Esa notificacion ya no existe o no va dirigida a ti."));
         LocatorJ._get(NotificationsView.class);
         assertTrue(LocatorJ._find(HomeView.class).isEmpty(), "sin marcar no se sigue el enlace");
     }
@@ -6397,6 +6397,19 @@ class ViewLayerTest {
         assertEquals(2, GridKt._size(payload));
         assertEquals(new EventDetailDialog.PayloadEntry("code", "MO-000012"), GridKt._get(payload, 0));
         assertEquals(new EventDetailDialog.PayloadEntry("type", "URGENT"), GridKt._get(payload, 1));
+        dialog.close();
+
+        // Si la linea ya no existe (ACT-404), su dialogo lo dice dentro, tambien desde la notificacion.
+        doThrow(BackofficeApiException.of(HttpStatus.NOT_FOUND,
+                new ApiProblem(null, "Not Found", 404, "ActivityEvent was not found", null, "ACT-404", null, null, null, false, null, null),
+                "corr-n8", null, "GET /api/notifications/activity/" + EVENT1)).when(notificationClient).activityEvent(EVENT1);
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(inboxGrid(), 0, NotificationsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("event-" + NOTIFICATION1)));
+        Dialog missing = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
+        LocatorJ._get(missing, Span.class, spec -> spec.withId(EventDetailDialog.ERROR_ID).withText("Esa linea del registro ya no existe."));
+        LocatorJ._get(missing, Span.class, spec -> spec.withText("Referencia: corr-n8"));
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
     }
 
     @Test
@@ -6455,13 +6468,18 @@ class ViewLayerTest {
         assertEquals(1, GridKt._size(payload));
         dialog.close();
 
-        // Una linea que ya no existe (ACT-404) se notifica y no abre nada.
+        // Una linea que ya no existe (ACT-404) abre su dialogo, que lo dice dentro con su referencia, sin
+        // aviso aparte, como en mto-frontend.
         ApiProblem gone = new ApiProblem(null, "Not Found", 404, "ActivityEvent was not found", null, "ACT-404", null, null, null, false, null, null);
         when(notificationClient.activityEvent(EVENT2)).thenThrow(BackofficeApiException.of(HttpStatus.NOT_FOUND, gone, "corr-n7", null,
                 "GET /api/notifications/activity/" + EVENT2));
+        NotificationsKt.clearNotifications();
         GridKt._doubleClickItem(grid, 1, 1, false, false, false, false);
-        assertTrue(LocatorJ._find(Dialog.class, spec -> spec.withId(EventDetailDialog.ID)).isEmpty());
-        assertEquals(1, NotificationsKt.getNotifications().size());
+        Dialog missing = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
+        assertEquals("Linea del registro", missing.getHeaderTitle());
+        LocatorJ._get(missing, Span.class, spec -> spec.withId(EventDetailDialog.ERROR_ID).withText("Esa linea del registro ya no existe."));
+        LocatorJ._get(missing, Span.class, spec -> spec.withText("Referencia: corr-n7"));
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "el error esta en el dialogo, no en un aviso");
     }
 
     /** Los enlaces de las reglas llegan con el usuario o la IP en la URL; el resto de filtros se manda al servicio. */
