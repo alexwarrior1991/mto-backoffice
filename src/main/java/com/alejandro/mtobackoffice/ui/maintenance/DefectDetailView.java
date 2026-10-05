@@ -12,6 +12,7 @@ import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
@@ -31,6 +32,7 @@ import com.vaadin.flow.spring.security.AuthenticationContext;
 import jakarta.annotation.security.RolesAllowed;
 
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -83,15 +85,24 @@ public class DefectDetailView extends VerticalLayout implements BeforeEnterObser
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
         String id = event.getRouteParameters().get(DEFECT_ID_PARAMETER).orElse("");
+        load(id, target -> event.forwardTo(target));
+    }
+
+    /**
+     * Lee la ficha y la pinta. Si no existe, se dice y de vuelta a la lista; cualquier otro fallo
+     * deja la ficha con el motivo, «Volver a la lista» y «Reintentar», como en mto-frontend.
+     */
+    private void load(String id, Consumer<Class<? extends Component>> toList) {
         try {
             paint(clients.defects().findById(UUID.fromString(id)));
             history.reload();
         } catch (IllegalArgumentException | NotFoundApiException missing) {
             Notification.show("No existe el defecto " + id, 5000, Notification.Position.BOTTOM_START).addThemeVariants(NotificationVariant.LUMO_ERROR);
-            event.forwardTo(DefectsView.class);
+            toList.accept(DefectsView.class);
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
-            event.forwardTo(DefectsView.class);
+            MaintenanceUi.showLoadFailure(this, "el defecto", failure, () -> UI.getCurrent().navigate(DefectsView.class),
+                    () -> load(id, target -> UI.getCurrent().navigate(target)));
         }
     }
 
@@ -106,6 +117,7 @@ public class DefectDetailView extends VerticalLayout implements BeforeEnterObser
     }
 
     private void paint(DefectDto loaded) {
+        MaintenanceUi.clearLoadFailure(this);
         defect = loaded;
         title.setText(loaded.code());
         severityBadge.setText(loaded.severity() == null ? "" : "Gravedad " + loaded.severity().label().toLowerCase());

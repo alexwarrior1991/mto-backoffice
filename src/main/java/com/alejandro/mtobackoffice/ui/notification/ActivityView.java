@@ -131,15 +131,22 @@ public class ActivityView extends VerticalLayout implements BeforeEnterObserver 
         grid.setMultiSort(false);
         grid.setSizeFull();
         grid.setItems(this::fetch, this::count);
-        grid.addItemClickListener(click -> EventDetailDialog.of(click.getItem()).open());
+        grid.addItemClickListener(click -> showEvent(click.getItem()));
 
         add(new H2("Actividad"), filters, toolbar, grid);
         expand(grid);
     }
 
-    /** Los filtros que vienen en la URL (los enlaces de las notificaciones): lo que no se conoce se ignora. */
+    /**
+     * Los filtros que vienen en la URL (los enlaces de las notificaciones): lo que no se conoce se
+     * ignora, y lo que no viene se queda vacio, aunque la pantalla ya estuviera abierta con otros.
+     */
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
+        for (HasValue<?, ?> filter : List.<HasValue<?, ?>>of(category, type, actor, subjectType, subjectId, severity, sourceService, from, to)) {
+            filter.clear();
+        }
+        includeSuperseded.setValue(false);
         QueryParameters parameters = event.getLocation().getQueryParameters();
         parameters.getSingleParameter("category").map(ActivityCategory::of)
                 .filter(ActivityCategory.selectableForActivity()::contains).ifPresent(category::setValue);
@@ -155,6 +162,15 @@ public class ActivityView extends VerticalLayout implements BeforeEnterObserver 
 
     void refresh() {
         grid.getDataProvider().refreshAll();
+    }
+
+    /** La fila no trae el payload: la linea entera se pide a su id, como en mto-frontend. */
+    private void showEvent(ActivityEventDto row) {
+        try {
+            EventDetailDialog.of(client.activityEvent(row.id())).open();
+        } catch (BackofficeApiException failure) {
+            UiErrors.show(failure);
+        }
     }
 
     private ActivityFilter filter() {

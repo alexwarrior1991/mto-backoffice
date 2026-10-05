@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.notification;
 
+import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.notification.AccessEventDto;
 import com.alejandro.mtobackoffice.client.dto.notification.AccessFilter;
@@ -52,6 +53,11 @@ import java.util.UUID;
 @HttpExchange("/api/notifications")
 public interface NotificationClient {
 
+    /** El desempate de la bandeja, como en mto-frontend: la fecha, porque el id no se puede ordenar. */
+    String INBOX_TIE_BREAK = "createdAt,desc";
+    /** El del registro y los accesos: la secuencia, que no se repite. */
+    String LOG_TIE_BREAK = "seq,desc";
+
     // --- Mi bandeja -------------------------------------------------------------------------------
 
     @GetExchange("/inbox")
@@ -63,8 +69,10 @@ public interface NotificationClient {
                                      @RequestParam("page") int page, @RequestParam("size") int size,
                                      @RequestParam("sort") List<String> sort);
 
+    /** La bandeja desempata por la fecha de creacion: el servicio no la deja ordenar por el id. */
     default PageResponse<InboxItemDto> inbox(InboxFilter filter, int page, int size, List<String> sort) {
-        return inbox(filter.unread(), filter.category(), filter.severity(), filter.from(), filter.to(), page, size, sort);
+        return inbox(filter.unread(), filter.category(), filter.severity(), filter.from(), filter.to(), page, size,
+                MasterFilters.withTieBreak(sort, INBOX_TIE_BREAK));
     }
 
     /** Para la campana; acotado. */
@@ -94,10 +102,11 @@ public interface NotificationClient {
                                             @RequestParam("page") int page, @RequestParam("size") int size,
                                             @RequestParam("sort") List<String> sort);
 
+    /** El registro desempata por su secuencia, que no se repite. */
     default PageResponse<ActivityEventDto> activity(ActivityFilter filter, int page, int size, List<String> sort) {
         return activity(filter.category(), filter.type(), filter.actorUsername(), filter.subjectType(), filter.subjectId(),
                 filter.severity(), filter.sourceService(), filter.from(), filter.to(), filter.includeSuperseded() ? Boolean.TRUE : null,
-                page, size, sort);
+                page, size, MasterFilters.withTieBreak(sort, LOG_TIE_BREAK));
     }
 
     /** Una linea con su {@code payload}; 404 {@code ACT-404} si no existe o es un acceso. */
@@ -116,7 +125,9 @@ public interface NotificationClient {
                                         @RequestParam("page") int page, @RequestParam("size") int size,
                                         @RequestParam("sort") List<String> sort);
 
+    /** Los accesos tambien desempatan por su secuencia. */
     default PageResponse<AccessEventDto> access(AccessFilter filter, int page, int size, List<String> sort) {
-        return access(filter.username(), filter.ipAddress(), filter.type(), filter.outcome(), filter.from(), filter.to(), page, size, sort);
+        return access(filter.username(), filter.ipAddress(), filter.type(), filter.outcome(), filter.from(), filter.to(), page, size,
+                MasterFilters.withTieBreak(sort, LOG_TIE_BREAK));
     }
 }

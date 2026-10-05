@@ -38,6 +38,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
@@ -81,6 +82,12 @@ public class UsersView extends VerticalLayout {
     private final Span count = new Span();
     private final Grid<UserDto> grid = new Grid<>();
 
+    /** Lo que pide la lista: el ultimo filtro bien formado de la pantalla. */
+    private record ListFilter(String search, Boolean enabled, List<String> attributes) {
+    }
+
+    private ListFilter applied = new ListFilter(null, null, null);
+
     public UsersView(UsersClient client, AuthenticationContext authentication) {
         this.client = client;
         this.canWrite = authentication.hasRole(UserRoles.USERS_WRITE);
@@ -98,7 +105,7 @@ public class UsersView extends VerticalLayout {
         search.setValueChangeMode(ValueChangeMode.LAZY);
         search.addValueChangeListener(change -> {
             attribute.setEnabled(isBlank(change.getValue()));
-            refresh();
+            applyFilters();
         });
         attribute.setId("users-attribute");
         attribute.setPlaceholder("Atributo clave:valor");
@@ -111,11 +118,9 @@ public class UsersView extends VerticalLayout {
             boolean valid = value.isEmpty() || value.matches(ATTRIBUTE_PATTERN);
             attribute.setInvalid(!valid);
             search.setEnabled(value.isEmpty());
-            if (valid) {
-                refresh();
-            }
+            applyFilters();
         });
-        state.addValueChangeListener(change -> refresh());
+        state.addValueChangeListener(change -> applyFilters());
 
         Button reload = new Button("Recargar", VaadinIcon.REFRESH.create(), click -> refresh());
         Button create = new Button("Nuevo", VaadinIcon.PLUS.create(), click -> openEditor(null));
@@ -211,24 +216,38 @@ public class UsersView extends VerticalLayout {
     }
 
     private UsersPage<UserDto> search(int first, int max) {
-        return client.search(searchText(), null, null, state.getValue().value(), null, attributes(), first, max);
+        return client.search(applied.search(), null, null, applied.enabled(), null, applied.attributes(), first, max);
     }
 
-    /** El texto de busqueda, o nada si esta deshabilitado por el atributo o vacio. */
-    private String searchText() {
-        return search.isEnabled() && !isBlank(search.getValue()) ? search.getValue().trim() : null;
+    /**
+     * El filtro de la pantalla, o nada si el atributo esta mal formado. Lo deshabilitado no viaja:
+     * la busqueda y el atributo se excluyen porque el servicio los rechaza juntos.
+     */
+    private Optional<ListFilter> currentFilter() {
+        String pair = attribute.isEnabled() ? trimmed(attribute.getValue()) : "";
+        if (!pair.isEmpty() && !pair.matches(ATTRIBUTE_PATTERN)) {
+            return Optional.empty();
+        }
+        String text = search.isEnabled() && !isBlank(search.getValue()) ? search.getValue().trim() : null;
+        return Optional.of(new ListFilter(text, state.getValue().value(), pair.isEmpty() ? null : List.of(pair)));
     }
 
-    /** El atributo, o nada si esta deshabilitado por la busqueda, vacio o mal formado. */
-    private List<String> attributes() {
-        String value = attribute.isEnabled() ? trimmed(attribute.getValue()) : "";
-        return value.isEmpty() || !value.matches(ATTRIBUTE_PATTERN) ? null : List.of(value);
+    /**
+     * Un filtro cambio: la lista se pide con el nuevo. Con un atributo mal formado no se pide nada y
+     * la lista sigue con lo ultimo que pidio, como en mto-frontend.
+     */
+    private void applyFilters() {
+        currentFilter().ifPresent(filter -> {
+            applied = filter;
+            refresh();
+        });
     }
 
     private void showCount(long total) {
         count.setText(total == 1 ? "1 usuario" : total + " usuarios");
     }
 
+    /** Vuelve a pedir la lista con el filtro que ya pidio (tras guardar, borrar o «Recargar»). */
     public void refresh() {
         grid.deselectAll();
         grid.getDataProvider().refreshAll();
@@ -239,7 +258,7 @@ public class UsersView extends VerticalLayout {
     }
 
     private void openEditor(UserDto existing) {
-        new UserEditorDialog(existing, client, this::refresh).open();
+        new UserEditorDialog(existing, client, saved -> refresh()).open();
     }
 
     /** Reversible, asi que sin confirmacion. No cierra sesiones: para eso esta la ficha. */

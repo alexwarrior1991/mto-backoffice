@@ -56,7 +56,11 @@ public class SectionInsulatorEditor extends MasterEditorDialog<SectionInsulatorD
         binder.forField(kp).bind("kp");
         binder.forField(installationType).asRequired("Hay que decir como esta instalado").bind("installationType");
         binder.forField(track).asRequired("La via es obligatoria").withConverter(Pickers.refToId(catalog::trackRef)).bind("trackId");
-        binder.forField(connectedTrack).withConverter(Pickers.refToId(catalog::trackRef)).bind("connectedTrackId");
+        // Una conexion entre vias necesita la otra via: sin ella, el servicio rechaza el aislador.
+        binder.forField(connectedTrack)
+                .withValidator(value -> value != null || installationType.getValue() != SectionInsulatorInstallationType.TRACK_CONNECTION,
+                        "Una conexion entre vias necesita la via conectada")
+                .withConverter(Pickers.refToId(catalog::trackRef)).bind("connectedTrackId");
         binder.forField(enabled).bind("enabled");
 
         switches = new ChildrenEditor<>("Agujas", "switches", dto.getSwitches(), Integer.MAX_VALUE, SectionInsulatorSwitchDto::new,

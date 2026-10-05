@@ -72,11 +72,11 @@ public class MovementsView extends VerticalLayout {
         type.setItems(MovementType.selectable());
         type.setItemLabelGenerator(MovementType::label);
         type.setClearButtonVisible(true);
-        warehouse = StockPickers.warehouse("Almacen", warehouses);
+        warehouse = StockPickers.warehouse("Almacen", warehouses, true);
         warehouse.setId("movements-warehouse");
-        material = StockPickers.material("Material", materials);
+        material = StockPickers.material("Material", materials, true);
         material.setId("movements-material");
-        project = StockPickers.project("Proyecto", projects);
+        project = StockPickers.project("Proyecto", projects, true);
         project.setId("movements-project");
         from.setId("movements-from");
         to.setId("movements-to");
@@ -127,8 +127,8 @@ public class MovementsView extends VerticalLayout {
     private Stream<MovementDto> fetch(Query<MovementDto, Void> query) {
         try {
             int size = Math.max(1, query.getLimit());
-            List<String> sort = MasterFilters.sort(query.getSortOrders());
-            PageResponse<MovementDto> page = search(query.getOffset() / size, size, sort.isEmpty() ? DEFAULT_SORT : sort);
+            PageResponse<MovementDto> page = search(query.getOffset() / size, size,
+                    MasterFilters.sort(query.getSortOrders(), DEFAULT_SORT, MasterFilters.BY_ID));
             count.setText(page.page().totalElements() + " movimientos");
             return page.content().stream();
         } catch (BackofficeApiException failure) {
@@ -139,7 +139,7 @@ public class MovementsView extends VerticalLayout {
 
     private int count(Query<MovementDto, Void> query) {
         try {
-            long total = search(0, 1, DEFAULT_SORT).page().totalElements();
+            long total = search(0, 1, MasterFilters.withTieBreak(DEFAULT_SORT, MasterFilters.BY_ID)).page().totalElements();
             count.setText(total + " movimientos");
             return (int) Math.min(Integer.MAX_VALUE, total);
         } catch (BackofficeApiException failure) {

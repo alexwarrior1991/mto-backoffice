@@ -79,7 +79,9 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
     private final Div tabsHolder = new Div();
 
     private UserDto user;
+    private UserRolesPanel roles;
     private UserSessionsPanel sessions;
+    private UserCredentialsPanel credentials;
 
     public static RouteParameters parametersOf(String userId) {
         return new RouteParameters(USER_ID_PARAMETER, userId);
@@ -127,7 +129,7 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
         Button back = new Button("Volver a la lista", VaadinIcon.ARROW_LEFT.create(), click -> UI.getCurrent().navigate(UsersView.class));
         buttons.add(back);
         if (canWrite) {
-            Button edit = new Button("Modificar", VaadinIcon.EDIT.create(), click -> new UserEditorDialog(user, client, this::reload).open());
+            Button edit = new Button("Modificar", VaadinIcon.EDIT.create(), click -> new UserEditorDialog(user, client, this::paint).open());
             edit.setId(EDIT_ID);
             edit.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
             toggle.setId(TOGGLE_ID);
@@ -135,7 +137,11 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
             buttons.add(edit, toggle);
         }
         if (authentication.hasRole(UserRoles.USERS_PASSWORD_RESET)) {
-            Button reset = new Button("Contrasena temporal", VaadinIcon.KEY.create(), click -> new ResetPasswordDialog(user, client).open());
+            Button reset = new Button("Contrasena temporal", VaadinIcon.KEY.create(), click -> new ResetPasswordDialog(user, client, () -> {
+                // Keycloak anade «cambiar la contrasena» a sus acciones y una credencial de tipo password.
+                reload();
+                credentials.reloadIfLoaded();
+            }).open());
             reset.setId(RESET_PASSWORD_ID);
             buttons.add(reset);
         }
@@ -163,11 +169,15 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
         paint(loaded);
         TabSheet tabs = new TabSheet();
         tabs.setWidthFull();
-        tabs.add(PROFILES_TAB, new UserProfilesPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_PROFILES_WRITE)));
-        tabs.add(ROLES_TAB, new UserRolesPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_ROLES_WRITE)));
+        roles = new UserRolesPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_ROLES_WRITE));
+        // Un perfil es un rol de realm que concede roles de cliente: cambiarlo cambia la pestana de roles.
+        tabs.add(PROFILES_TAB, new UserProfilesPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_PROFILES_WRITE),
+                () -> roles.reloadIfLoaded()));
+        tabs.add(ROLES_TAB, roles);
         sessions = new UserSessionsPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_SESSIONS_WRITE));
         tabs.add(SESSIONS_TAB, sessions);
-        tabs.add(CREDENTIALS_TAB, new UserCredentialsPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_CREDENTIALS_WRITE)));
+        credentials = new UserCredentialsPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_CREDENTIALS_WRITE));
+        tabs.add(CREDENTIALS_TAB, credentials);
         tabs.addSelectedChangeListener(change -> loadTab(tabs, change.getSelectedTab()));
         tabsHolder.removeAll();
         tabsHolder.add(tabs);
@@ -256,9 +266,8 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
                     5000, Notification.Position.BOTTOM_START).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
         } else {
             String done = result.done().isEmpty() ? "nada" : String.join(" y ", result.done().stream().map(TakeOut.Step::label).toList());
-            Notification.show("No se ha podido sacar a " + user.username() + ": fallo al " + result.failed().label()
-                            + " (hecho: " + done + "). " + UiErrors.message(result.failure()),
-                    10000, Notification.Position.BOTTOM_START).addThemeVariants(NotificationVariant.LUMO_ERROR);
+            UiErrors.show(result.failure(), "No se ha podido sacar a " + user.username() + ": fallo al " + result.failed().label()
+                    + " (hecho: " + done + "). " + UiErrors.message(result.failure()));
         }
         reload();
         sessions.reloadIfLoaded();

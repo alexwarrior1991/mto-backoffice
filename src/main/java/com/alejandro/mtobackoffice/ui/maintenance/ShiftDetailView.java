@@ -15,6 +15,7 @@ import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Span;
@@ -37,6 +38,7 @@ import jakarta.annotation.security.RolesAllowed;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
@@ -96,14 +98,23 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
         String id = event.getRouteParameters().get(SHIFT_ID_PARAMETER).orElse("");
+        load(id, target -> event.forwardTo(target));
+    }
+
+    /**
+     * Lee la ficha y la pinta. Si no existe, se dice y de vuelta a la lista; cualquier otro fallo
+     * deja la ficha con el motivo, «Volver a la lista» y «Reintentar», como en mto-frontend.
+     */
+    private void load(String id, Consumer<Class<? extends Component>> toList) {
         try {
             show(clients.shifts().findById(UUID.fromString(id)));
         } catch (IllegalArgumentException | NotFoundApiException missing) {
             Notification.show("No existe el turno " + id, 5000, Notification.Position.BOTTOM_START).addThemeVariants(NotificationVariant.LUMO_ERROR);
-            event.forwardTo(ShiftsView.class);
+            toList.accept(ShiftsView.class);
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
-            event.forwardTo(ShiftsView.class);
+            MaintenanceUi.showLoadFailure(this, "el turno", failure, () -> UI.getCurrent().navigate(ShiftsView.class),
+                    () -> load(id, target -> UI.getCurrent().navigate(target)));
         }
     }
 
@@ -117,6 +128,7 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
     }
 
     private void show(ShiftDto loaded) {
+        MaintenanceUi.clearLoadFailure(this);
         paint(loaded);
         TabSheet tabs = new TabSheet();
         tabs.setWidthFull();

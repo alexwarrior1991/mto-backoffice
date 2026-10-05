@@ -49,6 +49,7 @@ import com.alejandro.mtobackoffice.client.dto.users.UserEnabledRequest;
 import com.alejandro.mtobackoffice.client.dto.users.UsersPage;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.client.notification.NotificationClient;
+import com.alejandro.mtobackoffice.configuration.vaadin.FrontendProperties;
 import com.alejandro.mtobackoffice.client.dto.notification.AccessEventDto;
 import com.alejandro.mtobackoffice.client.dto.notification.AccessFilter;
 import com.alejandro.mtobackoffice.client.dto.notification.AccessOutcome;
@@ -71,6 +72,7 @@ import com.alejandro.mtobackoffice.ui.notification.NotificationLinks;
 import com.alejandro.mtobackoffice.ui.notification.NotificationRoutes;
 import com.alejandro.mtobackoffice.ui.notification.NotificationsView;
 import com.alejandro.mtobackoffice.ui.users.UserAttributes;
+import com.alejandro.mtobackoffice.ui.support.PageVisibility;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.alejandro.mtobackoffice.ui.users.UsersView;
 import com.alejandro.mtobackoffice.client.dto.stock.CatalogueRequest;
@@ -122,6 +124,7 @@ import com.alejandro.mtobackoffice.ui.stock.StockView;
 import com.alejandro.mtobackoffice.ui.stock.MaterialsView;
 import com.vaadin.flow.component.datepicker.DatePicker;
 import com.vaadin.flow.component.datetimepicker.DateTimePicker;
+import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.html.Div;
 import java.time.LocalDate;
 import com.alejandro.mtobackoffice.ui.stock.ProjectsView;
@@ -165,6 +168,7 @@ import com.vaadin.flow.component.grid.GridSortOrder;
 import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.data.provider.SortDirection;
 import com.vaadin.flow.component.html.Anchor;
+import com.vaadin.flow.router.QueryParameters;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderStatus;
@@ -282,6 +286,7 @@ import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.sidenav.SideNavItem;
 import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.component.upload.FileRemovedEvent;
 import com.vaadin.flow.component.upload.Upload;
 import kotlin.jvm.functions.Function0;
 import org.junit.jupiter.api.AfterEach;
@@ -308,6 +313,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.alejandro.mtobackoffice.client.dto.master.CantileverDto;
@@ -334,10 +340,12 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -533,6 +541,39 @@ class ViewLayerTest {
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("delete-1")).isEmpty());
     }
 
+    // --- La SPA: las mismas pantallas, a un clic --------------------------------------------------
+
+    @Test
+    void theHeaderOpensTheSameScreenInTheSpaWithItsQueryInAnotherTab() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
+
+        UI.getCurrent().navigate(HomeView.class);
+
+        Anchor link = LocatorJ._get(Anchor.class, spec -> spec.withText("Abrir en mto-frontend"));
+        assertEquals("http://frontend.test/", link.getHref());
+        assertEquals(Optional.of("_blank"), link.getTarget());
+        assertEquals("noopener noreferrer", link.getElement().getAttribute("rel"));
+
+        // Sigue a la pantalla en la que se esta, con sus parametros: las rutas son las mismas.
+        UI.getCurrent().navigate(CATALOGUE_ROUTE, QueryParameters.simple(Map.of("q", "borrador")));
+
+        assertEquals("http://frontend.test/" + CATALOGUE_ROUTE + "?q=borrador",
+                LocatorJ._get(Anchor.class, spec -> spec.withText("Abrir en mto-frontend")).getHref());
+    }
+
+    @Test
+    void theSpaLinkNeedsAnHttpAddressAndKeepsTheRoute() {
+        assertEquals(Optional.of("http://spa.example/usuarios/u-1?x=1"),
+                new FrontendProperties(" http://spa.example/ ").linkTo("usuarios/u-1?x=1"));
+        assertEquals(Optional.of("https://spa.example/"), new FrontendProperties("https://spa.example").linkTo(""));
+        assertEquals(Optional.empty(), new FrontendProperties(null).linkTo(""));
+        assertEquals(Optional.empty(), new FrontendProperties(" ").linkTo(""));
+        assertEquals(Optional.empty(), new FrontendProperties("javascript:alert(1)").linkTo(""));
+        assertEquals(Optional.empty(), new FrontendProperties("ftp://spa.example").linkTo(""));
+        assertEquals(Optional.empty(), new FrontendProperties("localhost:4200").linkTo(""));
+    }
+
     // --- La vista de catalogos --------------------------------------------------------------------
 
     @Test
@@ -545,7 +586,8 @@ class ViewLayerTest {
         LocatorJ._get(H2.class, spec -> spec.withText("Estados de perfil"));
         Grid<LovDto> grid = grid();
         assertEquals(3, GridKt._size(grid));
-        assertEquals("DRAFT", GridKt._get(grid, 0).code());
+        // Por codigo, en orden natural: no en el orden en que los manda el servicio.
+        assertEquals(List.of("DEFINITIVE", "DRAFT", "PROVISIONAL"), GridKt._findAll(grid).stream().map(LovDto::code).toList());
         LocatorJ._get(Span.class, spec -> spec.withText("3 entradas"));
 
         TextField filter = LocatorJ._get(TextField.class, spec -> spec.withPlaceholder("Filtrar por codigo o descripcion"));
@@ -632,8 +674,14 @@ class ViewLayerTest {
         assertEquals(1, NotificationsKt.getNotifications().size(), "lo no atribuible a un campo se notifica");
     }
 
+    /** La fila de una entrada del catalogo, que llega por codigo y no en el orden del servicio. */
+    private static int rowOfEntry(long id) {
+        return GridKt._findAll(grid()).stream().map(LovDto::id).toList().indexOf(id);
+    }
+
+    /** Modifica la descripcion de la entrada 1 (DRAFT), este en la fila que este. */
     private static void editTheFirstRowDescription(String description) {
-        Component actions = GridKt._getCellComponent(grid(), 0, "actions");
+        Component actions = GridKt._getCellComponent(grid(), rowOfEntry(1L), "actions");
         LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withId("edit-1")));
         LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withLabel("Descripcion")), description);
         LocatorJ._click(button("Guardar"));
@@ -722,7 +770,7 @@ class ViewLayerTest {
         when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
 
         UI.getCurrent().navigate(CATALOGUE_ROUTE);
-        Component actions = GridKt._getCellComponent(grid(), 0, "actions");
+        Component actions = GridKt._getCellComponent(grid(), rowOfEntry(1L), "actions");
         LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withId("delete-1")));
 
         verify(lovClient, times(0)).delete(any(), any());
@@ -769,6 +817,137 @@ class ViewLayerTest {
                 () -> LovBulkCreateDialog.parse("PT1;Poste tipo 1\nSIN-DESCRIPCION\n"));
         assertTrue(invalid.getMessage().contains("linea 2"));
         assertThrows(IllegalArgumentException.class, () -> LovBulkCreateDialog.parse("  \n"));
+    }
+
+    @Test
+    void anOverLongLineIsRejectedWithItsNumberBeforeCalling() {
+        IllegalArgumentException code = assertThrows(IllegalArgumentException.class,
+                () -> LovBulkCreateDialog.parse("PT1;Poste tipo 1\n" + "C".repeat(41) + ";Demasiado largo"));
+        assertTrue(code.getMessage().contains("linea 2"), code.getMessage());
+        assertTrue(code.getMessage().contains("codigo"), code.getMessage());
+        IllegalArgumentException description = assertThrows(IllegalArgumentException.class,
+                () -> LovBulkCreateDialog.parse("PT1;" + "d".repeat(201)));
+        assertTrue(description.getMessage().contains("linea 1"), description.getMessage());
+        assertEquals(1, LovBulkCreateDialog.parse("C".repeat(40) + ";" + "d".repeat(200)).size());
+    }
+
+    @Test
+    void theFilterIgnoresAccentsAndTheCatalogueComesInNaturalOrder() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(List.of(
+                new LovDto(1L, "PT10", "Poste diez", true, 1, null, null),
+                new LovDto(2L, "PT2", "Explotación", true, 1, null, null),
+                new LovDto(3L, "pt1", "Poste uno", true, 1, null, null)));
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+
+        assertEquals(List.of("pt1", "PT2", "PT10"), GridKt._findAll(grid()).stream().map(LovDto::code).toList());
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withPlaceholder("Filtrar por codigo o descripcion")), "EXPLOTACION");
+        assertEquals(List.of("PT2"), GridKt._findAll(grid()).stream().map(LovDto::code).toList());
+    }
+
+    private static final String FOUNDATIONS_ROUTE = "catalogos/foundations";
+
+    private List<LovDto> foundationTypes() {
+        List<LovDto> types = List.of(new LovDto(7L, "FT-B", "Tipo B", true, 1, null, null),
+                new LovDto(6L, "FT-A", "Tipo A", true, 1, null, null));
+        when(lovClient.findAll("foundation-types")).thenReturn(types);
+        return types;
+    }
+
+    private static LovDto foundationRead() {
+        return new LovDto(5L, "C-1", "Cimentacion 1", true, 2, null, null, Map.of(
+                "drawingNumber", "D-12",
+                "foundationType", Map.of("id", 3, "code", "FT-OLD", "description", "Tipo retirado")));
+    }
+
+    @Test
+    void aCatalogueWithATypeShowsItAndEditsKeepingWhatTheScreenDoesNotShow() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_LOV_MANAGE");
+        when(lovClient.findAll("foundations")).thenReturn(List.of(foundationRead()));
+        List<LovDto> types = foundationTypes();
+        when(lovClient.update(eq("foundations"), eq(5L), any())).thenAnswer(call -> call.getArgument(2));
+
+        UI.getCurrent().navigate(FOUNDATIONS_ROUTE);
+
+        assertTrue(grid().getColumnByKey("parent").isVisible());
+        assertEquals("FT-OLD", GridKt._getFormatted(grid(), 0, "parent"));
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid(), 0, "actions"), Button.class, spec -> spec.withId("edit-5")));
+        @SuppressWarnings("unchecked")
+        ComboBox<LovDto> type = LocatorJ._get(ComboBox.class, spec -> spec.withLabel("Tipo de cimentacion"));
+        // El tipo que ya tiene sale aunque no este en la lista, y la lista va por codigo.
+        assertEquals(3L, type.getValue().id());
+        assertEquals(List.of("FT-OLD", "FT-A", "FT-B"),
+                type.getListDataView().getItems().map(LovDto::code).toList());
+        type.setValue(types.getFirst());
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withLabel("Descripcion")), "Cimentacion uno");
+        LocatorJ._click(button("Guardar"));
+
+        verify(lovClient).update(eq("foundations"), eq(5L), argThat(sent -> "Cimentacion uno".equals(sent.description())
+                && sent.versionNumber() == 2
+                && "D-12".equals(sent.extras().get("drawingNumber"))
+                && Map.of("id", 7L).equals(sent.extras().get("foundationType"))));
+    }
+
+    @Test
+    void creatingInACatalogueWithATypeRequiresItAndSendsItById() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_LOV_MANAGE");
+        when(lovClient.findAll("foundations")).thenReturn(List.of());
+        List<LovDto> types = foundationTypes();
+        when(lovClient.create(eq("foundations"), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(FOUNDATIONS_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withLabel("Codigo")), "C-2");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withLabel("Descripcion")), "Cimentacion 2");
+        LocatorJ._click(button("Guardar"));
+
+        verify(lovClient, never()).create(any(), any());
+        @SuppressWarnings("unchecked")
+        ComboBox<LovDto> type = LocatorJ._get(ComboBox.class, spec -> spec.withLabel("Tipo de cimentacion"));
+        assertTrue(type.isInvalid(), "sin tipo no se llama: el servicio responderia 400");
+        type.setValue(types.get(1));
+        LocatorJ._click(button("Guardar"));
+
+        verify(lovClient).create(eq("foundations"), argThat(sent -> "C-2".equals(sent.code()) && sent.id() == null
+                && Map.of("id", 6L).equals(sent.extras().get("foundationType"))));
+    }
+
+    @Test
+    void aBulkCreateInACatalogueWithATypeAsksForItOnceForEveryLine() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_IMPORT", "ROLE_LOV_MANAGE");
+        when(lovClient.findAll("foundations")).thenReturn(List.of());
+        List<LovDto> types = foundationTypes();
+        when(lovClient.bulkCreate(eq("foundations"), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(FOUNDATIONS_ROUTE);
+        LocatorJ._click(button("Alta multiple"));
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withLabel("Entradas")), "C-3;Tres\nC-4;Cuatro");
+        LocatorJ._click(button("Crear"));
+        verify(lovClient, never()).bulkCreate(any(), any());
+
+        @SuppressWarnings("unchecked")
+        ComboBox<LovDto> type = LocatorJ._get(ComboBox.class, spec -> spec.withLabel("Tipo de cimentacion"));
+        type.setValue(types.getFirst());
+        LocatorJ._click(button("Crear"));
+
+        verify(lovClient).bulkCreate(eq("foundations"), argThat(entries -> entries.size() == 2
+                && entries.stream().allMatch(entry -> Map.of("id", 7L).equals(entry.extras().get("foundationType")))));
+    }
+
+    @Test
+    void aBulkDisableSendsBackWhatEachEntryDoesNotModel() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_IMPORT", "ROLE_LOV_MANAGE");
+        LovDto read = foundationRead();
+        when(lovClient.findAll("foundations")).thenReturn(List.of(read));
+        when(lovClient.bulkUpdate(eq("foundations"), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(FOUNDATIONS_ROUTE);
+        grid().select(read);
+        LocatorJ._click(button("Desactivar seleccionados"));
+
+        verify(lovClient).bulkUpdate(eq("foundations"), argThat(entries -> entries.size() == 1
+                && !entries.getFirst().isEnabled() && read.extras().equals(entries.getFirst().extras())));
     }
 
     // --- Inicio ----------------------------------------------------------------------------------
@@ -1231,6 +1410,67 @@ class ViewLayerTest {
         return dto;
     }
 
+    /**
+     * README_API.md §4: en una referencia a catalogo, {@code null} es «no la toques». Vaciar la que tenia
+     * valor viaja como {@code {}}, y la que nadie toco vuelve como se leyo, igual que en mto-frontend.
+     */
+    @Test
+    void clearingAnOptionalReferenceOfAProfileSendsAnEmptyReferenceAndAnUntouchedOneTravelsAsRead() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null, null)));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        ProfileDto read = profileWithOneCantilever();
+        read.setPoleType(new LovRef(5L, "PT1", "Poste tipo 1"));
+        read.setSupportType(new LovRef(5L, "PT1", "Poste tipo 1"));
+        when(profileClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(read), 0, 50));
+        when(profileClient.update(eq(7L), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(PROFILES_ROUTE);
+        @SuppressWarnings("unchecked")
+        Grid<ProfileDto> profiles = LocatorJ._get(Grid.class);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(profiles, 0, "actions"), Button.class, spec -> spec.withId("edit-7")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        ComboBox<LovRef> poleType = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Tipo de poste"));
+        LocatorJ._setValue(poleType, null);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        verify(profileClient).update(eq(7L), argThat(dto -> dto.getPoleType() != null && dto.getPoleType().id() == null
+                && dto.getPoleType().code() == null
+                && Long.valueOf(5L).equals(dto.getSupportType().id())
+                && dto.getFoundation() == null));
+    }
+
+    @Test
+    void aTrackConnectionInsulatorWithoutItsConnectedTrackNeverReachesTheService() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(station(12L, "ATOCHA", 100L)), 0, 50));
+
+        UI.getCurrent().navigate(SECTION_INSULATORS_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Nombre")), "AS-1");
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> stationBox = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Estacion"));
+        LocatorJ._setValue(stationBox, stationBox.getListDataView().getItems().findFirst().orElseThrow());
+        @SuppressWarnings("unchecked")
+        ComboBox<SectionInsulatorInstallationType> installation = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Instalacion"));
+        LocatorJ._setValue(installation, SectionInsulatorInstallationType.TRACK_CONNECTION);
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> trackBox = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via"));
+        LocatorJ._setValue(trackBox, new RefItem(3L, "TRACK 1 (EP4)"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> connected = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via conectada"));
+        assertTrue(connected.isInvalid(), "el servicio rechazaria la conexion sin la otra via");
+        verify(sectionInsulatorClient, never()).create(any());
+    }
+
     /** README_API.md §4: sin tocar las mensulas van a null; tocadas, va la lista entera, con el brazo 1:1 de cada una. */
     @Test
     void theCantileversOfAProfileGoAsNullUntouchedAndWholeWhenEdited() {
@@ -1442,7 +1682,7 @@ class ViewLayerTest {
 
     /** El servicio simulado: GET /jobs devuelve lo que haya en la lista, paginado y filtrado por tipo y estado. */
     private void stubJobHistory(List<JobDto> history) {
-        when(jobsClient.list(anyInt(), anyInt(), any(), any())).thenAnswer(call -> {
+        doAnswer(call -> {
             JobType type = call.getArgument(2);
             JobStatus status = call.getArgument(3);
             List<JobDto> matching = history.stream()
@@ -1450,7 +1690,7 @@ class ViewLayerTest {
                     .filter(job -> status == null || job.status() == status)
                     .toList();
             return page(matching, call.getArgument(0), call.getArgument(1));
-        });
+        }).when(jobsClient).list(anyInt(), anyInt(), any(), any());
     }
 
     /** Subir, lanzar, y ver el progreso llegar por @Push sin que el navegador pregunte. */
@@ -1507,6 +1747,8 @@ class ViewLayerTest {
         Grid<JobItemError> errorRows = LocatorJ._get(errors, Grid.class);
         assertEquals(1, GridKt._size(errorRows));
         assertEquals("kp obligatorio [kp]", GridKt._get(errorRows, 0).message());
+        LocatorJ._get(errors, Paragraph.class, spec -> spec.withText(
+                "2 elementos fallidos; el servicio solo detalla los primeros 1. El informe descargable los trae todos."));
         errors.close();
 
         // Terminado todo, la pantalla deja de preguntar.
@@ -1650,6 +1892,146 @@ class ViewLayerTest {
         clearInvocations(jobsClient);
         LocatorJ._get(JobsView.class).pollOnce();
         verify(jobsClient, never()).list(anyInt(), anyInt(), any(), any());
+    }
+
+    /** Solo el fichero de una importacion es el informe de sus errores: un republicado no lo tiene. */
+    @Test
+    void onlyAnImportSaysItsReportBringsEveryError() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubJobHistory(List.of(new JobDto(JOB_ID, JobType.MASTER_DATA_REPUBLISH, JobStatus.COMPLETED_WITH_ERRORS,
+                Instant.parse("2026-08-27T09:12:03Z"), null, null, null, null, 10, 10, 7, 3, null, null, null)));
+        when(jobsClient.republishJob(JOB_ID)).thenReturn(new JobDto(JOB_ID, JobType.MASTER_DATA_REPUBLISH, JobStatus.COMPLETED_WITH_ERRORS,
+                Instant.parse("2026-08-27T09:12:03Z"), null, null, null, null, 10, 10, 7, 3, null, null,
+                List.of(new JobItemError(4, "publish", "AmqpException", "sin confirmacion"))));
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        Component actions = GridKt._getCellComponent(jobsGrid(), 0, "actions");
+        assertTrue(LocatorJ._find(actions, Anchor.class).isEmpty(), "un republicado no produce fichero");
+        LocatorJ._click(LocatorJ._get(actions, Button.class, spec -> spec.withText("Errores")));
+
+        Dialog errors = LocatorJ._get(Dialog.class);
+        LocatorJ._get(errors, Paragraph.class, spec -> spec.withText("3 elementos fallidos; el servicio solo detalla los primeros 1."));
+    }
+
+    /**
+     * Un fallo al leer la lista no se notifica en cada pasada, que seria un aviso cada dos segundos:
+     * se ensena fijo encima de ella, con su referencia, mientras el ultimo intento falle. La pasada
+     * que falla deja las filas como estaban; la que sale bien quita el aviso.
+     */
+    @Test
+    void aFailedReadOfTheListIsShownAboveItWhileTheLastAttemptFails() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        List<JobDto> history = new ArrayList<>(List.of(job(JobType.PROFILE_EXPORT, JobStatus.RUNNING, 10, 4, 4, 0, null)));
+        stubJobHistory(history);
+        BackofficeApiException unavailable = BackofficeApiException.of(HttpStatus.SERVICE_UNAVAILABLE, ApiProblem.empty(), "corr-9",
+                Duration.ofSeconds(30), "GET /api/configuration/jobs");
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        assertTrue(jobsListNotice().isEmpty());
+
+        JobsView view = LocatorJ._get(JobsView.class);
+        doThrow(unavailable).when(jobsClient).list(anyInt(), anyInt(), any(), any());
+        view.pollOnce();
+        MockVaadin.clientRoundtrip();
+        Div notice = jobsListNotice().orElseThrow();
+        LocatorJ._get(notice, Span.class, spec -> spec.withText(
+                "No se ha podido leer la lista de trabajos: El servicio no esta disponible ahora mismo. Intentalo en 30 s."));
+        LocatorJ._get(notice, Span.class, spec -> spec.withText("Referencia: corr-9"));
+        assertEquals(1, GridKt._size(jobsGrid()), "la pasada que falla deja las filas como estaban");
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "ni un aviso por pasada");
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Recargar")));
+        assertTrue(jobsListNotice().isPresent(), "recargar a mano tambien lo dice ahi");
+        assertEquals(0, GridKt._size(jobsGrid()));
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
+
+        stubJobHistory(history);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Recargar")));
+        assertTrue(jobsListNotice().isEmpty());
+        assertEquals(1, GridKt._size(jobsGrid()));
+        doThrow(unavailable).when(jobsClient).list(anyInt(), anyInt(), any(), any());
+        view.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertTrue(jobsListNotice().isPresent());
+        stubJobHistory(history);
+        view.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertTrue(jobsListNotice().isEmpty(), "la pasada que sale bien lo quita");
+    }
+
+    /** El aviso fijo de la lista de trabajos, si se ve. */
+    private static Optional<Div> jobsListNotice() {
+        return LocatorJ._find(Div.class, spec -> spec.withId("jobs-list-error")).stream().findFirst();
+    }
+
+    /** Con la pestana oculta no se pregunta nada desde el hilo compartido: ni los trabajos ni la campana. */
+    @Test
+    void nothingIsAskedFromTheSharedThreadWhileTheTabIsHidden() {
+        loginAs("config.lector", "ROLE_CONFIG_READ", "ROLE_NOTIFICATION_INBOX");
+        stubJobHistory(List.of(job(JobType.PROFILE_EXPORT, JobStatus.RUNNING, 10, 4, 4, 0, null)));
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        JobsView view = LocatorJ._get(JobsView.class);
+        InboxBell bell = LocatorJ._get(InboxBell.class);
+        PageVisibility visibility = PageVisibility.of(UI.getCurrent());
+        assertTrue(visibility.isShown(), "hasta que el navegador diga otra cosa, se ve");
+
+        visibility.changed(false);
+        clearInvocations(jobsClient, notificationClient);
+        view.pollOnce();
+        bell.pollOnce();
+        MockVaadin.clientRoundtrip();
+        verify(jobsClient, never()).list(anyInt(), anyInt(), any(), any());
+        verify(notificationClient, never()).unreadCount();
+
+        visibility.changed(true);
+        view.pollOnce();
+        bell.pollOnce();
+        MockVaadin.clientRoundtrip();
+        verify(jobsClient).list(0, 20, null, null);
+        verify(notificationClient).unreadCount();
+    }
+
+    /** Quitar el fichero subido es no importar nada: el boton no sigue enviando el de antes. */
+    @Test
+    void removingTheUploadedFileLeavesNothingToImport() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_IMPORT");
+        stubJobHistory(List.of());
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        Upload upload = LocatorJ._get(Upload.class, spec -> spec.withId("import-profiles-upload"));
+        Button start = LocatorJ._get(Button.class, spec -> spec.withId("import-profiles"));
+        UploadKt._upload(upload, "profile-master.xlsx", JobsView.XLSX, "PK-xlsx".getBytes());
+        MockVaadin.clientRoundtrip();
+        assertTrue(start.isEnabled());
+
+        ComponentUtil.fireEvent(upload, new FileRemovedEvent(upload, "profile-master.xlsx"));
+        assertFalse(start.isEnabled());
+        verify(jobsClient, never()).importProfiles(any(), anyBoolean());
+    }
+
+    /**
+     * El navegador solo sabria que la descarga fallo: el enlace lo notifica en la pantalla con el
+     * motivo. Un 410 es el fichero de un trabajo que ya no esta en el servicio, y hay que relanzarlo.
+     */
+    @Test
+    void aFailedDownloadIsNotifiedAndAGoneFileAsksToRelaunchTheJob() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubJobHistory(List.of());
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        Anchor link = Downloads.link("download-" + JOB_ID, "Descargar", "perfiles-via-3.csv", () -> {
+            throw BackofficeApiException.of(HttpStatus.GONE, ApiProblem.empty(), "corr-11", null,
+                    "GET /api/configuration/profiles/jobs/" + JOB_ID + "/file");
+        });
+        UI.getCurrent().add(link);
+
+        DownloadKt._download(link);
+        MockVaadin.clientRoundtrip();
+
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size());
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("El fichero ya no esta en el servicio: vuelve a lanzar el trabajo."));
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("Referencia: corr-11"));
     }
 
     @Test
@@ -1816,10 +2198,25 @@ class ViewLayerTest {
         clearInvocations(usersClient);
         LocatorJ._setValue(attribute, "sin separador");
         assertTrue(attribute.isInvalid(), "clave:valor o nada");
-        verify(usersClient, never()).search(any(), any(), any(), any(), any(), any(), anyInt(), anyInt());
+        @SuppressWarnings("unchecked")
+        Select<EnabledFilter> state = LocatorJ._get(Select.class, spec -> spec.withLabel("Estado"));
+        LocatorJ._setValue(state, state.getListDataView().getItems().filter(filter -> Boolean.TRUE.equals(filter.value())).findFirst().orElseThrow());
+        // Con un atributo mal formado no se pide nada nuevo: ni el estado cambiado ni «Recargar» sueltan
+        // el ultimo filtro bien formado (el Grid puede volver a pedir, pero solo con el).
+        assertEquals(1, GridKt._size(userGrid()), "la lista sigue con lo ultimo que pidio");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Recargar")));
+        assertEquals(1, GridKt._size(userGrid()));
+        verify(usersClient, never()).search(any(), any(), any(), eq(true), any(), any(), anyInt(), anyInt());
+        verify(usersClient, never()).search(any(), any(), any(), any(), any(), argThat(attributes -> attributes == null || !attributes.equals(List.of("dept:taller"))),
+                anyInt(), anyInt());
+        LocatorJ._setValue(attribute, "dept:noche");
+        GridKt._size(userGrid());
+        verify(usersClient, atLeastOnce()).search(isNull(), isNull(), isNull(), eq(true), isNull(), eq(List.of("dept:noche")), eq(0), anyInt());
+        LocatorJ._setValue(state, state.getListDataView().getItems().filter(filter -> filter.value() == null).findFirst().orElseThrow());
 
         LocatorJ._setValue(attribute, "");
         assertTrue(search.isEnabled());
+        clearInvocations(usersClient);
         LocatorJ._setValue(search, "bru");
         assertFalse(attribute.isEnabled(), "con texto de busqueda el atributo se deshabilita");
         assertEquals(1, GridKt._size(userGrid()));
@@ -1885,7 +2282,7 @@ class ViewLayerTest {
         assertTrue(password.isInvalid(), "menos de ocho caracteres no viaja");
         verify(usersClient, never()).create(any());
 
-        LocatorJ._setValue(password, "Temporal-2026");
+        LocatorJ._setValue(password, " Temporal-2026 ");
         @SuppressWarnings("unchecked")
         MultiSelectComboBox<RequiredAction> actions = LocatorJ._get(dialog, MultiSelectComboBox.class, spec -> spec.withLabel("Acciones requeridas al entrar"));
         LocatorJ._setValue(actions, Set.of(RequiredAction.UPDATE_PASSWORD));
@@ -1897,7 +2294,7 @@ class ViewLayerTest {
                 && request.lastName() == null
                 && "dario@mto.local".equals(request.email())
                 && Boolean.TRUE.equals(request.enabled())
-                && "Temporal-2026".equals(request.temporaryPassword())
+                && " Temporal-2026 ".equals(request.temporaryPassword())
                 && List.of(RequiredAction.UPDATE_PASSWORD).equals(request.requiredActions())
                 && Map.of("dept", List.of("taller", "noche")).equals(request.attributes())));
         assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
@@ -2172,6 +2569,9 @@ class ViewLayerTest {
         when(usersClient.removeProfile(ANA_ID, "mto-users-viewer")).thenReturn(List.of(MANAGER));
 
         UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(1);
+        verify(usersClient, times(1)).userRoles(ANA_ID);
+        selectTab(0);
         @SuppressWarnings("unchecked")
         ComboBox<RealmProfileSummaryDto> picker = LocatorJ._get(ComboBox.class, spec -> spec.withId("profile-assign"));
         Button assign = detailButton("profile-assign-button");
@@ -2182,8 +2582,9 @@ class ViewLayerTest {
         LocatorJ._click(assign);
 
         verify(usersClient).assignProfile(ANA_ID, "mto-users-manager");
+        verify(usersClient, times(2)).userRoles(ANA_ID);
         Grid<Object> profiles = gridWithId("profiles-grid");
-        assertEquals(2, GridKt._size(profiles), "se pinta lo que devuelve el servicio");
+        assertEquals(2, GridKt._size(profiles), "se pinta lo que devuelve el servicio; los roles que concede, en su pestana, se releen");
         assertEquals(List.of(ADMIN), picker.getListDataView().getItems().toList());
         NotificationsKt.expectNotifications("Perfil mto-users-manager asignado");
 
@@ -2193,6 +2594,7 @@ class ViewLayerTest {
         assertEquals(1, GridKt._size(profiles));
         assertTrue(GridKt._getFormattedRow(profiles, 0).contains("mto-users-manager"));
         verify(usersClient, times(1)).userProfiles(ANA_ID);
+        verify(usersClient, times(3)).userRoles(ANA_ID);
     }
 
     @Test
@@ -2238,6 +2640,8 @@ class ViewLayerTest {
         stubUserDetail(ana());
 
         UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(3);
+        verify(usersClient, times(1)).credentials(ANA_ID);
         LocatorJ._click(detailButton("user-reset-password"));
         Dialog dialog = LocatorJ._get(Dialog.class);
         Checkbox temporary = LocatorJ._get(dialog, Checkbox.class);
@@ -2258,6 +2662,8 @@ class ViewLayerTest {
         verify(usersClient).resetPassword(ANA_ID, new ResetPasswordRequest("Temporal-2026", true));
         assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra");
         NotificationsKt.expectNotifications("Contrasena fijada para ana (temporal)");
+        verify(usersClient, times(2)).get(ANA_ID);
+        verify(usersClient, times(2)).credentials(ANA_ID);
     }
 
     @Test
@@ -2281,6 +2687,19 @@ class ViewLayerTest {
         assertTrue(password.isInvalid());
         assertEquals("invalidPasswordMinDigitsMessage", password.getErrorMessage());
         assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto para corregir");
+
+        // Lo que manda mto-users de verdad: el texto de Keycloak en el detalle y ningun error por campo.
+        // Aqui solo se escribe la contrasena, asi que el rechazo es suyo.
+        ApiProblem policy = new ApiProblem("about:blank", "Bad Request", 400, "Password policy not met", null,
+                "KC-400", null, null, null, false, null, null);
+        doThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, policy, "corr-u7", null, "POST /api/users/" + ANA_ID + "/reset-password"))
+                .when(usersClient).resetPassword(eq(ANA_ID), any());
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("reset-password-save")));
+        assertTrue(password.isInvalid());
+        assertEquals("La peticion no es valida. Password policy not met", password.getErrorMessage());
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "en el campo, no en una notificacion");
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty());
     }
 
     @Test
@@ -2342,11 +2761,10 @@ class ViewLayerTest {
     }
 
     @Test
-    void editingFromTheDetailReloadsTheHeader() {
+    void editingFromTheDetailPaintsWhatTheServiceAnswers() {
         loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
         UserDto renamed = user(ANA_ID, "ana", "Ana", "Alvarez Arias", "ana@mto.local", true, Map.of("dept", List.of("taller")));
         stubUserDetail(ana());
-        when(usersClient.get(ANA_ID)).thenReturn(ana(), renamed);
         when(usersClient.update(eq(ANA_ID), any())).thenReturn(renamed);
 
         UI.getCurrent().navigate(ANA_ROUTE);
@@ -2356,9 +2774,18 @@ class ViewLayerTest {
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
 
         verify(usersClient).update(eq(ANA_ID), argThat(request -> "Alvarez Arias".equals(request.lastName()) && request.firstName() == null));
-        verify(usersClient, times(2)).get(ANA_ID);
+        verify(usersClient, times(1)).get(ANA_ID);
         assertTrue(LocatorJ._find(Span.class).stream().anyMatch(span -> span.getText().startsWith("Ana Alvarez Arias · ana@mto.local")),
-                "la cabecera se repinta con lo releido");
+                "la cabecera pinta lo que devuelve el servicio, que lo relee de Keycloak antes de contestar: sin otro GET");
+
+        // Sin cambios no se llama: el dialogo se cierra y ya.
+        clearInvocations(usersClient);
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(detailButton("user-edit"));
+        LocatorJ._click(LocatorJ._get(LocatorJ._get(Dialog.class), Button.class, spec -> spec.withId("user-save")));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+        verify(usersClient, never()).update(any(), any());
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "nada que guardar, nada que avisar");
     }
 
     @Test
@@ -2423,6 +2850,21 @@ class ViewLayerTest {
         assertNull(offline.getColumnByKey("actions"));
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("sessions-revoke-all")).isEmpty());
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("offline-sessions-revoke-all")).isEmpty());
+    }
+
+    @Test
+    void theNormalAndOfflineSessionsAreLoadedEachOnItsOwn() {
+        loginAs("usuarios.lector", "ROLE_USERS_READ");
+        stubUserDetail(ana());
+        when(usersClient.sessions(ANA_ID)).thenThrow(BackofficeApiException.of(HttpStatus.SERVICE_UNAVAILABLE, ApiProblem.empty(), "corr-u9",
+                null, "GET /api/users/" + ANA_ID + "/sessions"));
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(2);
+
+        assertEquals(1, NotificationsKt.getNotifications().size(), "el fallo de una se notifica");
+        assertEquals(1, GridKt._size(gridWithId("offline-sessions-grid")), "y la otra se ve igual");
+        LocatorJ._get(Span.class, spec -> spec.withText("1 sesion offline"));
     }
 
     @Test
@@ -2572,8 +3014,11 @@ class ViewLayerTest {
         verify(usersClient).setEnabled(ANA_ID, new UserEnabledRequest(false));
         verify(usersClient).revokeAllSessions(ANA_ID);
         verify(usersClient, never()).revokeAllOfflineSessions(any());
-        NotificationsKt.expectNotifications("No se ha podido sacar a ana: fallo al cerrar las sesiones (hecho: desactivar). "
-                + "El servicio no esta disponible ahora mismo. Intentalo mas tarde.");
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size());
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("No se ha podido sacar a ana: fallo al cerrar las sesiones "
+                + "(hecho: desactivar). El servicio no esta disponible ahora mismo. Intentalo mas tarde."));
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("Referencia: corr-u8"));
     }
 
     // --- Catalogos de perfiles y roles de cliente ---------------------------------------------------
@@ -2614,6 +3059,12 @@ class ViewLayerTest {
         assertEquals(3, GridKt._size(catalogue));
         LocatorJ._get(Span.class, spec -> spec.withText("3 perfiles"));
         verify(usersClient, never()).profile(any());
+        // El filtro es local y, como en mto-frontend, sin mirar mayusculas ni tildes.
+        TextField filter = LocatorJ._get(TextField.class, spec -> spec.withId("profile-filter"));
+        LocatorJ._setValue(filter, "GESTIÓN");
+        assertEquals(1, GridKt._size(catalogue));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 de 3 perfiles"));
+        LocatorJ._setValue(filter, "");
 
         catalogue.select(GridKt._get(catalogue, 2));
 
@@ -2679,6 +3130,8 @@ class ViewLayerTest {
         LocatorJ._setValue(filter, "write");
         assertEquals(1, GridKt._size(catalogue));
         LocatorJ._get(Span.class, spec -> spec.withText("1 de 3 roles"));
+        LocatorJ._setValue(filter, "LEÉR");
+        assertEquals(1, GridKt._size(catalogue), "sin mirar mayusculas ni tildes, como en mto-frontend");
         LocatorJ._setValue(filter, "");
         assertEquals(3, GridKt._size(catalogue));
 
@@ -2721,6 +3174,15 @@ class ViewLayerTest {
         return BackofficeApiException.of(HttpStatusCode.valueOf(status), problem, "corr-s9", null, "POST /api/stock/movements/outputs");
     }
 
+    /** mto-users: un nombre de usuario o un email repetido no se arregla recargando, asi que no se pide. */
+    @Test
+    void aRepeatedUsernameOrEmailDoesNotAskToReload() {
+        ApiProblem problem = new ApiProblem("about:blank", "Conflict", 409, "User exists with same username", null,
+                "USR-409", null, null, null, false, null, null);
+        assertEquals("Ya existe un usuario con ese nombre de usuario o ese email. User exists with same username",
+                UiErrors.message(BackofficeApiException.of(HttpStatus.CONFLICT, problem, "corr-u1", null, "POST /api/users")));
+    }
+
     /** Un 422 sin campos es una regla de negocio y un 409 STK-001 es falta de stock: no «peticion no valida» ni «recarga». */
     @Test
     void stockErrorsReadAsStockErrorsInTheNotifications() {
@@ -2728,8 +3190,10 @@ class ViewLayerTest {
                 UiErrors.message(stockError(422, "RES-001", "Only active reservations can be changed")));
         assertEquals("No hay stock disponible suficiente. Insufficient stock for material m in warehouse w: requested 5, available 2",
                 UiErrors.message(stockError(409, "STK-001", "Insufficient stock for material m in warehouse w: requested 5, available 2")));
-        assertEquals("Conflicto con otro cambio: recarga y vuelve a intentarlo. Material code 'MAT-001' already exists",
-                UiErrors.message(stockError(409, "MAT-409", "Material code 'MAT-001' already exists")));
+        for (String duplicated : List.of("MAT-409", "WH-409", "SUP-409", "PRJ-409", "ASM-409")) {
+            assertEquals("Ya existe otro con ese codigo.", UiErrors.message(stockError(409, duplicated, "Code 'X-1' already exists")),
+                    duplicated + ": un codigo repetido no se arregla recargando");
+        }
         assertEquals("La peticion no es valida. Material 'MAT-001' is inactive",
                 UiErrors.message(stockError(400, "VAL-001", "Material 'MAT-001' is inactive")));
     }
@@ -2797,7 +3261,7 @@ class ViewLayerTest {
         LocatorJ._get(Span.class, spec -> spec.withText("120 almacenes"));
         assertEquals("WH-000", ((WarehouseDto) GridKt._get(grid, 0)).code());
         assertEquals("WH-077", ((WarehouseDto) GridKt._get(grid, 77)).code(), "la segunda pagina se pide con su page");
-        verify(warehouseClient, atLeastOnce()).search(isNull(), isNull(), intThat(page -> page > 0), anyInt(), eq(List.of("code,asc")));
+        verify(warehouseClient, atLeastOnce()).search(isNull(), isNull(), intThat(page -> page > 0), anyInt(), eq(List.of("code,asc", "id,asc")));
 
         LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("stock-search")), "nave 1");
         assertEquals(31, GridKt._size(grid), "Nave 1, Nave 10..19 y Nave 100..119");
@@ -2812,7 +3276,7 @@ class ViewLayerTest {
 
         grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("name"), SortDirection.DESCENDING)));
         GridKt._get(grid, 0);
-        verify(warehouseClient, atLeastOnce()).search(any(), any(), anyInt(), anyInt(), eq(List.of("name,desc")));
+        verify(warehouseClient, atLeastOnce()).search(any(), any(), anyInt(), anyInt(), eq(List.of("name,desc", "id,asc")));
     }
 
     @Test
@@ -2845,6 +3309,10 @@ class ViewLayerTest {
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("catalogue-save")));
         TextField code = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Codigo"));
         assertTrue(code.isInvalid());
+        verify(warehouseClient, never()).create(any());
+        LocatorJ._setValue(code, "   ");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("catalogue-save")));
+        assertTrue(code.isInvalid(), "solo espacios es un codigo vacio, como en mto-frontend");
         verify(warehouseClient, never()).create(any());
         LocatorJ._setValue(code, "WH-009");
         LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Nombre")), " Nave 9 ");
@@ -3017,7 +3485,8 @@ class ViewLayerTest {
         assertEquals(1, GridKt._size(grid));
         LocatorJ._get(Span.class, spec -> spec.withText("1 movimientos"));
         assertTrue(GridKt._getFormattedRow(grid, 0).contains("MAT-001 - Hilo de contacto"));
-        verify(movementClient, atLeastOnce()).search(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(0), anyInt(), eq(List.of("occurredAt,desc")));
+        verify(movementClient, atLeastOnce()).search(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(0), anyInt(),
+                eq(List.of("occurredAt,desc", "id,asc")));
 
         LocatorJ._setValue(ViewLayerTest.<MovementType>combo("movements-type"), MovementType.ENTRY);
         LocatorJ._setValue(ViewLayerTest.<WarehouseSummaryDto>combo("movements-warehouse"), CENTRAL);
@@ -3123,6 +3592,62 @@ class ViewLayerTest {
         NotificationsKt.expectNotifications("Transferencia registrada: 3 m de MAT-001");
     }
 
+    /**
+     * Un desplegable del almacen busca en el servidor, con su orden y el id para desempatar. En un
+     * filtro ofrece tambien lo retirado, marcado, para encontrar lo de antes; en un dialogo, solo lo
+     * activo, porque el servicio rechaza lo retirado.
+     */
+    @Test
+    void theFiltersOfferWhatIsRetiredMarkedAndTheDialogsOnlyWhatIsActive() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        UUID oldWarehouse = UUID.fromString("2b2b2b2b-0000-4000-8000-00000000000b");
+        stubCatalogue(warehouseClient, List.of(warehouse(WH1, "WH-000", "Central", true), warehouse(oldWarehouse, "WH-009", "Antigua", false)),
+                WarehouseDto::code, WarehouseDto::name, WarehouseDto::active);
+
+        UI.getCurrent().navigate(StockRoutes.MOVEMENTS);
+        assertEquals(List.of("WH-000 - Central", "WH-009 - Antigua (retirado)"),
+                ComboBoxKt.getSuggestions(ViewLayerTest.<WarehouseSummaryDto>combo("movements-warehouse")));
+        verify(warehouseClient, atLeastOnce()).search(isNull(), isNull(), anyInt(), anyInt(), eq(List.of("code,asc", "id,asc")));
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("operation-transfer")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        ComboBox<WarehouseSummaryDto> source = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("movement-warehouse"));
+        assertEquals(List.of("WH-000 - Central"), ComboBoxKt.getSuggestions(source));
+        verify(warehouseClient, atLeastOnce()).search(isNull(), eq(true), anyInt(), anyInt(), eq(List.of("code,asc", "id,asc")));
+    }
+
+    /** Lo que el servicio dice de una transferencia cae en su campo aunque alli se llame de otra forma. */
+    @Test
+    void aTransferRejectedByTheServicePutsEachErrorOnItsField() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        ApiProblem problem = new ApiProblem(null, "Bad Request", 400, "Validation failed", null, "REQ-VALIDATION", null, null, null, false,
+                List.of(new ApiFieldError("sourceWarehouseId", null, "Warehouse WH-000 is inactive"),
+                        new ApiFieldError("differentWarehouses", null, "Source and target warehouses must be different")), null);
+        when(movementClient.transfer(any())).thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, problem, "corr-s4", null,
+                "POST /api/stock/movements/transfers"));
+
+        UI.getCurrent().navigate(StockRoutes.MOVEMENTS);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("operation-transfer")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("movement-material")), HILO);
+        @SuppressWarnings("unchecked")
+        ComboBox<WarehouseSummaryDto> source = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("movement-warehouse"));
+        LocatorJ._setValue(source, CENTRAL);
+        @SuppressWarnings("unchecked")
+        ComboBox<WarehouseSummaryDto> target = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withId("movement-target"));
+        LocatorJ._setValue(target, NAVE2);
+        LocatorJ._setValue(LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withId("movement-quantity")), new BigDecimal("3"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("movement-save")));
+
+        assertTrue(source.isInvalid());
+        assertEquals("Warehouse WH-000 is inactive", source.getErrorMessage(), "sourceWarehouseId es el almacen de origen del dialogo");
+        assertTrue(target.isInvalid());
+        assertEquals("Source and target warehouses must be different", target.getErrorMessage(), "la regla de clase es del destino");
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "todo cayo en un campo: nada que notificar");
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty());
+    }
+
     @Test
     void anAdjustmentNeedsTheAdjustPermissionOnTopOfWrite() {
         loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
@@ -3185,7 +3710,8 @@ class ViewLayerTest {
         LocatorJ._get(Span.class, spec -> spec.withText("2 reservas"));
         List<String> row = GridKt._getFormattedRow(grid, 0);
         assertTrue(row.contains("MAT-001 - Hilo de contacto") && row.contains("PRJ-001") && row.contains("Activa"), row.toString());
-        verify(reservationClient, atLeastOnce()).search(isNull(), eq(ReservationStatus.ACTIVE), isNull(), isNull(), eq(0), anyInt(), eq(List.of("reservedAt,desc")));
+        verify(reservationClient, atLeastOnce()).search(isNull(), eq(ReservationStatus.ACTIVE), isNull(), isNull(), eq(0), anyInt(),
+                eq(List.of("reservedAt,desc", "id,asc")));
 
         rowAction(grid, 0, "edit-" + RES1);
         rowAction(grid, 0, "output-" + RES1);
@@ -3205,7 +3731,7 @@ class ViewLayerTest {
         verify(reservationClient, atLeastOnce()).search(eq(WH1), isNull(), eq(PRJ_MANUAL), eq(MAT1), eq(0), anyInt(), anyList());
         grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("quantity"), SortDirection.DESCENDING)));
         GridKt._get(grid, 0);
-        verify(reservationClient, atLeastOnce()).search(any(), any(), any(), any(), anyInt(), anyInt(), eq(List.of("quantity,desc")));
+        verify(reservationClient, atLeastOnce()).search(any(), any(), any(), any(), anyInt(), anyInt(), eq(List.of("quantity,desc", "id,asc")));
     }
 
     /**
@@ -3369,15 +3895,20 @@ class ViewLayerTest {
     @Test
     void theAssembliesListShowsTheirLinesAndAReaderCanOnlyAskForAvailability() {
         loginAs("almacen.lector", "ROLE_STOCK_READ");
-        stubCatalogue(assemblyClient, List.of(mensula()), AssemblyDto::code, AssemblyDto::name, AssemblyDto::active);
+        UUID retiredId = UUID.fromString("2b2b2b2b-0000-4000-8000-00000000000a");
+        AssemblyDto retired = new AssemblyDto(retiredId, "ASM-009", "Mensula vieja", false,
+                List.of(new AssemblyComponentDto(UUID.randomUUID(), HILO, new BigDecimal("1"))), null);
+        stubCatalogue(assemblyClient, List.of(mensula(), retired), AssemblyDto::code, AssemblyDto::name, AssemblyDto::active);
 
         UI.getCurrent().navigate(StockRoutes.ASSEMBLIES);
         Grid<Object> grid = stockGrid();
 
-        assertEquals(1, GridKt._size(grid));
+        assertEquals(2, GridKt._size(grid));
         List<String> row = GridKt._getFormattedRow(grid, 0);
         assertTrue(row.contains("ASM-001") && row.contains("2"), row.toString());
-        LocatorJ._get(Span.class, spec -> spec.withText("1 conjuntos"));
+        LocatorJ._get(Span.class, spec -> spec.withText("2 conjuntos"));
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 1, StockCatalogueView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("availability-" + retiredId)).isEmpty(), "un conjunto retirado no se monta: sin disponibilidad");
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("stock-create")).isEmpty());
         assemblyAction("availability-" + ASM1);
         assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, StockCatalogueView.ACTIONS_COLUMN), Button.class, spec -> spec.withId("edit-" + ASM1)).isEmpty(),
@@ -3410,7 +3941,11 @@ class ViewLayerTest {
     @Test
     void anAssemblyIsCreatedWithItsLinesAndAnEmptyListIsRefusedBeforeCalling() {
         loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
-        when(assemblyClient.create(any())).thenReturn(mensula());
+        ApiProblem bomRejected = new ApiProblem(null, "Bad Request", 400, "Validation failed", null, "REQ-VALIDATION", null, null, null, false,
+                List.of(new ApiFieldError("components[1].quantity", null, "must be greater than 0")), null);
+        when(assemblyClient.create(any()))
+                .thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, bomRejected, "corr-s3", null, "POST /api/stock/assemblies"))
+                .thenReturn(mensula());
 
         UI.getCurrent().navigate(StockRoutes.ASSEMBLIES);
         LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("stock-create")));
@@ -3440,8 +3975,12 @@ class ViewLayerTest {
         assertTrue(GridKt._getFormattedRow(bom, 0).contains("3 m"), GridKt._getFormattedRow(bom, 0).toString());
         assertNull(material.getValue(), "la linea de alta se vacia tras anadir");
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("assembly-save")));
+        assertEquals("must be greater than 0", LocatorJ._get(dialog, Span.class, spec -> spec.withId("bom-error")).getText(),
+                "el error del servicio sobre una linea va a la lista de materiales");
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("assembly-save")));
 
-        verify(assemblyClient).create(new AssemblyRequest("ASM-002", "Mensula doble", List.of(
+        verify(assemblyClient, times(2)).create(new AssemblyRequest("ASM-002", "Mensula doble", List.of(
                 new AssemblyComponentRequest(MAT1, new BigDecimal("3")), new AssemblyComponentRequest(MAT2, new BigDecimal("4")))));
         assertTrue(LocatorJ._find(Dialog.class).isEmpty());
         NotificationsKt.expectNotifications("Guardado ASM-002");
@@ -4213,6 +4752,42 @@ class ViewLayerTest {
         verify(orderClient, atLeast(4)).findById(ORDER1);
     }
 
+    /** Los tipos que el catalogo no trae vuelven tal cual, se comparan como conjunto y quitarlos todos los vacia. */
+    @Test
+    void aTaskKeepsTheTypesTheCatalogueDoesNotNameAndEmptyingThemClearsThem() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        TaskDto base = task(TASK1, 1, MaintenanceTaskStatus.PENDING);
+        TaskDto withRetired = new TaskDto(TASK1, ORDER1, 1, base.description(), MaintenanceTaskStatus.PENDING, null, base.asset(), null, null,
+                null, null, null, List.of(), List.of("RP-99", "RG-01"), List.of(), null, 2L);
+        TaskDto onlyKnown = new TaskDto(TASK2, ORDER1, 2, base.description(), MaintenanceTaskStatus.PENDING, null, base.asset(), null, null,
+                null, null, null, List.of(), List.of("RG-01"), List.of(), null, 2L);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of(withRetired, onlyKnown));
+        when(orderClient.updateTask(eq(ORDER1), any(), any())).thenAnswer(call -> TASK1.equals(call.getArgument(1)) ? withRetired : onlyKnown);
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+        Grid<Object> tasks = gridWithId("order-tasks-grid");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("task-edit-" + TASK1)));
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("task-notes")), "Falta la llave");
+        click(TaskEditorDialog.SAVE_ID);
+        verify(orderClient).updateTask(ORDER1, TASK1, MergePatch.of(new TaskUpdateRequest(null, null, null, "Falta la llave", null, null), 2L));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("task-edit-" + TASK1)));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<TaskTypeDto> types = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("task-types"));
+        LocatorJ._setValue(types, Set.of());
+        click(TaskEditorDialog.SAVE_ID);
+        verify(orderClient).updateTask(ORDER1, TASK1, MergePatch.of(new TaskUpdateRequest(null, null, List.of("RP-99"), null, null, null), 2L));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 1, "actions"), Button.class, spec -> spec.withId("task-edit-" + TASK2)));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<TaskTypeDto> known = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("task-types"));
+        LocatorJ._setValue(known, Set.of());
+        click(TaskEditorDialog.SAVE_ID);
+        verify(orderClient).updateTask(ORDER1, TASK2, new MergePatch<>(new TaskUpdateRequest(null, null, null, null, null, null),
+                Set.of("taskTypeCodes"), 2L));
+    }
+
     @Test
     void theHistoryTabNamesTheStatesAndAnAssetRowShowsItsOrders() {
         loginAs("mantenimiento.lector", MAINTENANCE_READER);
@@ -4239,7 +4814,8 @@ class ViewLayerTest {
                 spec -> spec.withId("asset-orders-" + ASSET_OWN)));
         Grid<Object> orders = gridWithId("asset-orders-grid");
         assertEquals("MO-000001", GridKt._getFormattedRow(orders, 0).getFirst());
-        verify(assetClient, atLeastOnce()).orders(eq(ASSET_OWN), eq(0), anyInt(), eq(List.of("createdAt,desc")));
+        verify(assetClient, atLeastOnce()).orders(eq(ASSET_OWN), eq(0), anyInt(), eq(List.of("createdAt,desc", "id,asc")));
+        verify(assetClient, never()).orders(any(), anyInt(), anyInt(), argThat(sort -> !sort.contains("id,asc")));
         GridKt._clickItem(orders, 0, 1, false, false, false, false);
         LocatorJ._get(OrderDetailView.class);
     }
@@ -4335,6 +4911,47 @@ class ViewLayerTest {
         LocatorJ._get(ShiftDetailView.class);
     }
 
+    /**
+     * Una ficha que no se puede leer por algo que no es un 404 no vuelve a la lista: dice por que y
+     * ofrece volver o reintentar, como en mto-frontend. Lo mismo en las cuatro fichas.
+     */
+    @Test
+    void aDetailThatCannotBeReadStaysWithItsReasonBackAndRetry() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        stubReferencesForMaintenance();
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        when(orderClient.findById(ORDER1)).thenThrow(maintenanceError(503, null, null))
+                .thenReturn(orderOf(MaintenanceOrderStatus.PLANNED, MaintenanceOrderType.PREVENTIVE));
+
+        UI.getCurrent().navigate(OrderDetailView.class, OrderDetailView.parametersOf(ORDER1));
+        LocatorJ._get(OrderDetailView.class);
+        Component failure = LocatorJ._get(Component.class, spec -> spec.withId("detail-load-failure"));
+        LocatorJ._get(failure, Paragraph.class, spec -> spec.withText(
+                "No se ha podido leer la orden: El servicio no esta disponible ahora mismo. Intentalo mas tarde."));
+        assertEquals(1, NotificationsKt.getNotifications().size(), "y se notifica, con su referencia");
+        assertTrue(LocatorJ._find(Span.class, spec -> spec.withId("order-status")).isEmpty(), "la cabecera vacia no se ensena");
+
+        click("detail-load-retry");
+        assertTrue(LocatorJ._find(Component.class, spec -> spec.withId("detail-load-failure")).isEmpty());
+        assertEquals("Planificada", spanText("order-status"));
+
+        when(inspectionClient.findById(INSPECTION1)).thenThrow(maintenanceError(503, null, null));
+        UI.getCurrent().navigate(InspectionDetailView.class, InspectionDetailView.parametersOf(INSPECTION1));
+        LocatorJ._get(InspectionDetailView.class);
+        LocatorJ._get(Component.class, spec -> spec.withId("detail-load-failure"));
+        when(defectClient.findById(DEFECT1)).thenThrow(maintenanceError(503, null, null));
+        UI.getCurrent().navigate(DefectDetailView.class, DefectDetailView.parametersOf(DEFECT1));
+        LocatorJ._get(DefectDetailView.class);
+        LocatorJ._get(Component.class, spec -> spec.withId("detail-load-failure"));
+
+        stubShifts(List.of());
+        when(shiftClient.findById(SHIFT1)).thenThrow(maintenanceError(503, null, null));
+        UI.getCurrent().navigate(ShiftDetailView.class, ShiftDetailView.parametersOf(SHIFT1));
+        LocatorJ._get(Component.class, spec -> spec.withId("detail-load-failure"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Volver a la lista")));
+        assertTrue(LocatorJ._find(ShiftDetailView.class).isEmpty(), "de vuelta a la lista de turnos");
+    }
+
     @Test
     void theShiftDetailOffersWhatItsStateAdmitsAndStartsAndClosesTheShift() {
         loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
@@ -4358,6 +4975,64 @@ class ViewLayerTest {
         verify(shiftClient).close(SHIFT1, new CloseShiftRequest(null, null, 240, null));
         assertEquals("Cerrado", spanText("shift-status"));
         assertFalse(hasButton("shift-edit") || hasButton("shift-close") || hasButton("shift-cancel"), "un turno cerrado no ofrece nada");
+    }
+
+    /** Quitar todos los seccionadores de un turno los vacia: viajan a null en el merge-patch, como en mto-frontend. */
+    @Test
+    void emptyingTheDisconnectorsOfAShiftClearsThem() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        when(shiftClient.update(eq(SHIFT1), any())).thenReturn(shiftOf(ShiftStatus.PLANNED));
+        openShift(shiftOf(ShiftStatus.PLANNED));
+
+        click("shift-edit");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<AssetSummaryDto> disconnectors = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-disconnectors"));
+        assertEquals(1, disconnectors.getValue().size());
+        LocatorJ._setValue(disconnectors, Set.of());
+        click(ShiftEditorDialog.SAVE_ID);
+
+        verify(shiftClient).update(eq(SHIFT1), argThat(patch -> patch.cleared().equals(Set.of("blockingDisconnectorIds"))
+                && patch.values().blockingDisconnectorIds() == null && patch.values().trackIds() == null));
+    }
+
+    /** Lo que el servicio dice de un campo cae en el suyo, tambien en los dialogos sin Binder; el dialogo sigue abierto. */
+    @Test
+    void theFieldErrorsOfTheServiceLandOnTheirFieldsInTheMaintenanceDialogs() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        ApiProblem future = new ApiProblem(null, "Bad Request", 400, "Validation failed", null, "VAL-001", null, null, null, false,
+                List.of(new ApiFieldError("actualStart", null, "must not be in the future")), null);
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        when(shiftClient.start(eq(SHIFT1), any())).thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, future, "corr-m2", null,
+                "POST /api/maintenance/shifts/" + SHIFT1 + "/start"));
+        openShift(shiftOf(ShiftStatus.PLANNED));
+        click("shift-start");
+        click(ShiftTransitionDialog.CONFIRM_ID);
+        DateTimePicker when = LocatorJ._get(DateTimePicker.class, spec -> spec.withId("shift-transition-when"));
+        assertTrue(when.isInvalid(), "actualStart es el inicio real del dialogo");
+        assertEquals("must not be in the future", when.getErrorMessage());
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
+        assertFalse(LocatorJ._find(ShiftTransitionDialog.class).isEmpty());
+
+        ApiProblem material = new ApiProblem(null, "Bad Request", 400, "Validation failed", null, "VAL-001", null, null, null, false,
+                List.of(new ApiFieldError("plannedQuantity", null, "must be greater than 0"),
+                        new ApiFieldError("hasMaterialReference", null, "materialId or materialReference is required")), null);
+        when(orderClient.registerMaterial(eq(ORDER1), any())).thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, material, "corr-m3", null,
+                "POST /api/maintenance/orders/" + ORDER1 + "/materials"));
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of());
+        click("material-add");
+        ComboBox<MaterialSummaryDto> picked = comboWithId("material-material");
+        LocatorJ._setValue(picked, new MaterialSummaryDto(MAT1, "MAT-001", "Pendola", "ud", true));
+        LocatorJ._setValue(comboWithId("material-warehouse"), new WarehouseSummaryDto(WH1, "WH-000", "Central", true));
+        BigDecimalField planned = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-planned"));
+        LocatorJ._setValue(planned, new BigDecimal("4"));
+        click(MaterialUsageDialog.SAVE_ID);
+        assertEquals("must be greater than 0", planned.getErrorMessage());
+        assertTrue(planned.isInvalid());
+        assertTrue(picked.isInvalid(), "la referencia del material es el material del dialogo");
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
     }
 
     /** El texto de un Span por su id. */
@@ -4472,6 +5147,32 @@ class ViewLayerTest {
         verify(orderClient).completeTask(ORDER1, TASK1, new CompleteTaskRequest(SHIFT1, null, null, null, null, null, null, null, null));
     }
 
+    /** Al completar, los tipos que el catalogo no trae tambien se conservan si se cambian los demas. */
+    @Test
+    void completingATaskKeepsTheTypesTheCatalogueDoesNotName() {
+        loginAs("mantenimiento.sin-almacen", "ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_CONFIG_READ");
+        List<TaskTypeDto> catalogue = twoTaskTypes();
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(catalogue);
+        TaskDto base = task(TASK1, 1, MaintenanceTaskStatus.PENDING);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of(new TaskDto(TASK1, ORDER1, 1, base.description(), MaintenanceTaskStatus.PENDING, null,
+                base.asset(), null, null, null, null, null, List.of(), List.of("RP-99", "RG-01"), List.of(), null, 2L)));
+        when(shiftClient.search(eq(ShiftFilter.inProgressOn(12L)), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.of(shiftOf(ShiftStatus.IN_PROGRESS)), 0, 50));
+        when(orderClient.completeTask(eq(ORDER1), eq(TASK1), any())).thenReturn(task(TASK1, 1, MaintenanceTaskStatus.COMPLETED));
+        openOrder(orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("order-tasks-grid"), 0, "actions"), Button.class,
+                spec -> spec.withId("task-complete-" + TASK1)));
+        ComboBoxKt.selectByLabel(comboWithId("complete-task-shift"), "SH-000001 · 05/10/2026 · EQ-01 - Brigada norte");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<TaskTypeDto> types = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("complete-task-types"));
+        LocatorJ._setValue(types, Set.copyOf(catalogue));
+        click(CompleteTaskDialog.CONFIRM_ID);
+
+        verify(orderClient).completeTask(eq(ORDER1), eq(TASK1), argThat(request -> request.taskTypeCodes() != null
+                && Set.copyOf(request.taskTypeCodes()).equals(Set.of("RG-01", "RG-04", "RP-99"))));
+    }
+
     // --- Mantenimiento: inspecciones y defectos -----------------------------------------------------
 
     private static final UUID INSPECTION1 = UUID.fromString("3c3c3c3c-0000-4000-8000-000000000041");
@@ -4565,6 +5266,23 @@ class ViewLayerTest {
         click("inspection-order-confirm");
         verify(inspectionClient).createCorrectiveOrder(INSPECTION1, new CreateCorrectiveOrderRequest(null, null, MaintenancePriority.HIGH, null, null));
         LocatorJ._get(OrderDetailView.class);
+    }
+
+    /** Una inspeccion tiene siempre su tipo: vaciarlo no se guarda, como en mto-frontend (visual por defecto). */
+    @Test
+    void theKindOfAnInspectionCannotBeEmptied() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        openInspection(inspectionOf(InspectionResult.MAJOR_DEFECT, null, ORDER1));
+
+        click("inspection-edit");
+        ComboBox<InspectionKind> kind = comboWithId("inspection-kind");
+        assertNotNull(kind.getValue());
+        LocatorJ._setValue(kind, null);
+        click(InspectionEditorDialog.SAVE_ID);
+
+        assertTrue(kind.isInvalid());
+        verify(inspectionClient, never()).update(any(), any());
     }
 
     @Test
@@ -4770,6 +5488,22 @@ class ViewLayerTest {
         stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(line(LINE_FAILED, StockSyncStatus.FAILED, null)));
         assertEquals(List.of(), materialActions(gridWithId("order-materials-grid"), 0));
         assertFalse(hasButton("material-add"));
+    }
+
+    /**
+     * Un estado de linea que el servicio estrene no ofrece nada, y una sin pedir solo se reintenta con
+     * el estado de la orden conocido, como en mto-frontend.
+     */
+    @Test
+    void aLineInAStateTheScreenDoesNotKnowOffersNothing() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        UUID unknownLine = UUID.fromString("3c3c3c3c-0000-4000-8000-00000000005a");
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(line(unknownLine, StockSyncStatus.UNKNOWN, null)));
+        assertEquals(List.of(), materialActions(gridWithId("order-materials-grid"), 0), "ni modificar, ni sincronizar, ni quitar");
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        stubMaterials(MaintenanceOrderStatus.UNKNOWN, List.of(line(LINE_FAILED, StockSyncStatus.NOT_REQUESTED, null)));
+        assertEquals(List.of(), materialActions(gridWithId("order-materials-grid"), 0));
     }
 
     @Test
@@ -5021,6 +5755,17 @@ class ViewLayerTest {
                 GridKt._getFormattedRow(gridWithId("progress-grid"), 0));
         assertEquals("Excel", anchorWithId("progress-xlsx").getText());
         assertEquals("PDF", anchorWithId("progress-pdf").getText());
+
+        // Una consulta que falla no deja a la vista la anterior, ni sus descargas, que serian de otra cosa.
+        for (String id : List.of("progress-package", "progress-track", "progress-type")) {
+            LocatorJ._setValue(comboWithId(id), null);
+        }
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("progress-from")), null);
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("progress-to")), null);
+        click("progress-query");
+        assertTrue(LocatorJ._find(Anchor.class, spec -> spec.withId("progress-xlsx")).isEmpty());
+        assertEquals(0, GridKt._size(gridWithId("progress-grid")));
+        assertEquals("", textOf("progress-summary"));
     }
 
     /**
@@ -5391,6 +6136,45 @@ class ViewLayerTest {
         GridKt._size(activityGrid());
         verify(notificationClient, atLeastOnce()).activity(eq(new ActivityFilter(ActivityCategory.SYSTEM, "system.source.stalled", null, null, null,
                 null, null, null, null, false)), eq(0), anyInt(), eq(List.of("occurredAt,desc")));
+
+        // Otro enlace con la pantalla ya abierta parte de cero: el tipo de antes no se queda.
+        NotificationLinks.open(UI.getCurrent(), "/actividad?category=MAINTENANCE");
+        assertEquals(ActivityCategory.MAINTENANCE, LocatorJ._get(ComboBox.class, spec -> spec.withId("activity-category")).getValue());
+        assertEquals("", LocatorJ._get(TextField.class, spec -> spec.withId("activity-type")).getValue());
+    }
+
+    /**
+     * El enlace de una notificacion, como en mto-frontend: una ruta empieza por una sola barra y una
+     * direccion http(s) se abre en otra pestana; cualquier otra cosa no es un destino y no lleva
+     * flecha. Un acceso nunca ofrece su linea del registro, que seria un 404 ACT-404.
+     */
+    @Test
+    void onlyARouteOrAnHttpAddressIsALinkToOpenAndAnAccessOffersNoLogLine() {
+        loginAs("auditor", "ROLE_NOTIFICATION_INBOX", "ROLE_NOTIFICATION_ACTIVITY_READ");
+        UUID external = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000503");
+        UUID access = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000504");
+        stubInbox(List.of(
+                notification(NOTIFICATION1, "Raro", "javascript:alert(1)", false, ActivitySeverity.INFO, ActivityCategory.CONFIGURATION),
+                notification(NOTIFICATION2, "Sin barra", "mantenimiento/ordenes", false, ActivitySeverity.INFO, ActivityCategory.MAINTENANCE),
+                notification(external, "Fuera", "https://estado.mto.local", false, ActivitySeverity.INFO, ActivityCategory.SYSTEM),
+                notification(access, "Acceso fallido", "/actividad/accesos?username=config.lector", false, ActivitySeverity.WARNING,
+                        ActivityCategory.ACCESS)));
+
+        UI.getCurrent().navigate(NotificationRoutes.INBOX);
+        Grid<InboxItemDto> grid = inboxGrid();
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, NotificationsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("open-" + NOTIFICATION1)).isEmpty(), "otro esquema se descarta");
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 1, NotificationsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("open-" + NOTIFICATION2)).isEmpty(), "una ruta empieza por una sola barra");
+        Component externalActions = GridKt._getCellComponent(grid, 2, NotificationsView.ACTIONS_COLUMN);
+        LocatorJ._get(externalActions, Button.class, spec -> spec.withId("open-" + external));
+        LocatorJ._get(externalActions, Button.class, spec -> spec.withId("event-" + external));
+        Component accessActions = GridKt._getCellComponent(grid, 3, NotificationsView.ACTIONS_COLUMN);
+        LocatorJ._get(accessActions, Button.class, spec -> spec.withId("open-" + access));
+        assertTrue(LocatorJ._find(accessActions, Button.class, spec -> spec.withId("event-" + access)).isEmpty(),
+                "un acceso nunca sale por el registro");
+        assertTrue(NotificationLinks.target("//otro.sitio/x").isEmpty());
+        assertTrue(NotificationLinks.target(" /mantenimiento ").map(NotificationLinks.Target::external).map(external1 -> !external1).orElse(false));
     }
 
     @Test
@@ -5526,11 +6310,24 @@ class ViewLayerTest {
         GridKt._get(grid, 0);
         verify(notificationClient, atLeastOnce()).activity(any(ActivityFilter.class), anyInt(), anyInt(), eq(List.of("type,asc")));
 
+        // La fila no trae el payload: la linea entera se pide a su id, como en mto-frontend.
+        when(notificationClient.activityEvent(EVENT1)).thenReturn(event(EVENT1, ActivityCategory.MAINTENANCE, "maintenance.order.created",
+                ActivitySeverity.CRITICAL, Map.of("code", "MO-000012")));
         GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        verify(notificationClient).activityEvent(EVENT1);
         Dialog dialog = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
         LocatorJ._get(dialog, Span.class, spec -> spec.withText("corr-1"));
-        LocatorJ._get(dialog, Span.class, spec -> spec.withText("Sin datos publicados"));
-        assertTrue(LocatorJ._find(dialog, Grid.class, spec -> spec.withId(EventDetailDialog.PAYLOAD_ID)).isEmpty());
+        Grid<?> payload = LocatorJ._get(dialog, Grid.class, spec -> spec.withId(EventDetailDialog.PAYLOAD_ID));
+        assertEquals(1, GridKt._size(payload));
+        dialog.close();
+
+        // Una linea que ya no existe (ACT-404) se notifica y no abre nada.
+        ApiProblem gone = new ApiProblem(null, "Not Found", 404, "ActivityEvent was not found", null, "ACT-404", null, null, null, false, null, null);
+        when(notificationClient.activityEvent(EVENT2)).thenThrow(BackofficeApiException.of(HttpStatus.NOT_FOUND, gone, "corr-n7", null,
+                "GET /api/notifications/activity/" + EVENT2));
+        GridKt._clickItem(grid, 1, 1, false, false, false, false);
+        assertTrue(LocatorJ._find(Dialog.class, spec -> spec.withId(EventDetailDialog.ID)).isEmpty());
+        assertEquals(1, NotificationsKt.getNotifications().size());
     }
 
     /** Los enlaces de las reglas llegan con el usuario o la IP en la URL; el resto de filtros se manda al servicio. */
@@ -5563,6 +6360,19 @@ class ViewLayerTest {
         verify(notificationClient, atLeastOnce()).access(eq(new AccessFilter("config.lector", "10.0.0.7", null, AccessOutcome.FAILURE, null, null)),
                 anyInt(), anyInt(), anyList());
 
+        // Una IP se busca entera, como en mto-frontend: a medio escribir no se pide nada y la lista sigue.
+        clearInvocations(notificationClient);
+        TextField ip = LocatorJ._get(TextField.class, spec -> spec.withId("access-ip"));
+        LocatorJ._setValue(ip, "10.0.0");
+        assertEquals(2, GridKt._size(grid));
+        assertTrue(ip.isInvalid());
+        verify(notificationClient, never()).access(argThat(filter -> filter != null && "10.0.0".equals(filter.ipAddress())), anyInt(), anyInt(),
+                anyList());
+        assertTrue(AccessView.isIpLiteral("::ffff:10.0.0.7") && AccessView.isIpLiteral("fe80::1") && !AccessView.isIpLiteral("10.0.0.256")
+                && !AccessView.isIpLiteral("intranet.local"));
+        LocatorJ._setValue(ip, "10.0.0.7");
+        assertFalse(ip.isInvalid());
+
         GridKt._clickItem(grid, 0, 1, false, false, false, false);
         Dialog dialog = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
         LocatorJ._get(dialog, Span.class, spec -> spec.withText("10.0.0.7"));
@@ -5570,5 +6380,12 @@ class ViewLayerTest {
         @SuppressWarnings("unchecked")
         Grid<EventDetailDialog.PayloadEntry> payload = LocatorJ._get(dialog, Grid.class, spec -> spec.withId(EventDetailDialog.PAYLOAD_ID));
         assertEquals(new EventDetailDialog.PayloadEntry("error", "invalid_user_credentials"), GridKt._get(payload, 0));
+        dialog.close();
+
+        // Entrar por otro enlace parte de cero: lo que no viene en la URL se queda vacio.
+        NotificationLinks.open(UI.getCurrent(), "/actividad/accesos?ipAddress=10.0.0.9");
+        assertEquals("", LocatorJ._get(TextField.class, spec -> spec.withId("access-username")).getValue());
+        assertEquals("10.0.0.9", LocatorJ._get(TextField.class, spec -> spec.withId("access-ip")).getValue());
+        assertNull(LocatorJ._get(ComboBox.class, spec -> spec.withId("access-outcome")).getValue());
     }
 }

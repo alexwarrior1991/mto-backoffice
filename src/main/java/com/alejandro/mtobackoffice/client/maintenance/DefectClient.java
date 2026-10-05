@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.maintenance;
 
+import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectDto;
@@ -59,9 +60,10 @@ public interface DefectClient {
                                    @RequestParam("page") int page, @RequestParam("size") int size,
                                    @RequestParam("sort") List<String> sort);
 
+    /** Con el id para desempatar al final: un {@code sort} solo no deja el orden entero (dos del mismo dia). */
     default PageResponse<DefectDto> search(DefectFilter filter, int page, int size, List<String> sort) {
         return search(filter.severity(), filter.status(), filter.assetId(), filter.orderId(), filter.trackId(), filter.executionPackageId(),
-                filter.detectedFrom(), filter.detectedTo(), page, size, sort);
+                filter.detectedFrom(), filter.detectedTo(), page, size, MasterFilters.withTieBreak(sort, MasterFilters.BY_ID));
     }
 
     @PostExchange("/{id}/resolve")

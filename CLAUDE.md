@@ -11,6 +11,13 @@ datos, sin broker, sin lógica de negocio. Lo que una pantalla necesita y la API
 arregla en el servicio (`mto-configuration`, `mto-users`, `mto-stock` o `mto-maintenance`), no aquí. `README.md` es la referencia funcional y
 operativa; `keycloak/README.md`, la del cliente OIDC en el realm.
 
+⚠️ **Convive con `mto-frontend`**, la SPA en React del dominio: las dos aplicaciones se usan
+indistintamente, con las mismas pantallas, las mismas rutas y las mismas reglas, y entran por el
+mismo SSO. Se mantienen a la par: un cambio de comportamiento en una (una regla, un fallo arreglado,
+una llamada distinta, lo que se ofrece, cómo se dice un error) se lleva a la otra en el mismo
+cambio; los textos no tienen que coincidir (aquí siguen sin tildes). «Abrir en mto-frontend», en la
+barra, lleva a la misma pantalla allí, y la SPA tiene el enlace de vuelta.
+
 ⚠️ `mto-configuration`, `mto-stock`, `mto-maintenance`, `mto-users` y `mto-gateway` son **repos
 hermanos independientes**. La infraestructura local (Keycloak, el gateway, los servicios) la levanta
 `mto-platform`, cuyo `keycloak/apply-partials.sh` aplica `keycloak/mto-backoffice-partial-import.json`
@@ -32,7 +39,7 @@ ni de offline.
 ```
 
 Entorno local: `cd ../mto-platform && docker compose --profile all up -d && ./keycloak/apply-partials.sh`
-(con `127.0.0.1 auth.mto.local otel.mto.local` en `/etc/hosts`). Perfiles `dev`, `test`, `prod`.
+(con `127.0.0.1 auth.mto.local otel.mto.local` en `/etc/hosts`; levanta también `mto-frontend`, en el 4200). Perfiles `dev`, `test`, `prod`.
 Puerto **8085** (`dev`); el contenedor escucha en 8080 y se publica en 8085. Usuarios de desarrollo:
 `config.responsable` (todo), `config.lector` (solo lectura), contraseña `local`.
 
@@ -108,7 +115,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `ClientEnums`, lo que comparten los enumerados tolerantes (`parse` y `selectable`). Los
   errores en `client/error` (`ApiProblem`, `ApiErrorDecoder` y la jerarquía
   `BackofficeApiException`, con `TooManyRequestsApiException` llevando el cuerpo del 429).
-- `ui` — `MainLayout` (AppLayout; el menú lo dan las vistas anotadas con `@Menu`, filtradas por
+- `ui` — `MainLayout` (AppLayout, con «Abrir en mto-frontend» en la barra; el menú lo dan las vistas anotadas con `@Menu`, filtradas por
   `AccessAnnotationChecker`; las rutas con prefijo conocido (`infraestructura/*`, `usuarios/*`,
   `almacen/*`, `mantenimiento/*`) se agrupan por prefijo (`MainLayout.GROUPS`), una entrada cuya ruta es el propio prefijo es el
   nodo del grupo, y los catálogos se listan a mano porque su vista lleva el recurso en la ruta),
@@ -191,11 +198,16 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   llena es la única señal de que hay más; `RevisionsDialog<D>`, el historial de cualquier fila
   (paginado, la más reciente primero; el 404 es «sin historial»); `LazyPanel`, la pestaña que
   pide sus datos al abrirse; `Downloads`, el fichero de un servicio servido a través de esta
-  aplicación con `DownloadHandler`; `Formats`, cantidades y fechas; `SharedPolling`, el hilo
-  compartido que vuelve a preguntar al servicio mientras hay una pantalla abierta: los trabajos
-  en curso y el contador de la campana).
+  aplicación con `DownloadHandler`, que notifica en la pantalla un fallo; `Formats`, cantidades y
+  fechas; `SharedPolling`, el hilo compartido que vuelve a preguntar al servicio mientras hay una
+  pantalla abierta: los trabajos en curso y el contador de la campana; `PageVisibility`, si la
+  pestaña del navegador se ve, para no preguntar con ella oculta; `TextMatching`, el orden natural
+  y la comparación sin mayúsculas ni tildes de una lista que ya está entera en pantalla;
+  `Required`, lo obligatorio que no admite solo espacios).
 - `configuration/vaadin` — `BackofficeSystemMessages`, los mensajes de sistema de Vaadin en
-  castellano y con el aviso de sesión caducada apagado (recarga → login → SSO). El tema no vive
+  castellano y con el aviso de sesión caducada apagado (recarga → login → SSO); `FrontendProperties`
+  (`app.frontend.url`, la SPA: `linkTo(ruta)` da el enlace de «Abrir en mto-frontend», o nada si no
+  es una dirección `http(s)`) y `FrontendConfiguration`, que la registra. El tema no vive
   aquí sino en `MtoBackofficeApplication`, el `AppShellConfigurator`: `@StyleSheet(Lumo.STYLESHEET)`
   y `@StyleSheet(Lumo.UTILITY_STYLESHEET)`. En Vaadin 25 un shell sin ellos deja la aplicación con
   la letra y los colores del navegador, y las clases de `LumoUtility` sin efecto.
@@ -261,17 +273,27 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   servicio responde 500) con la misma página anidada, que `PageResponse<T>` ya lee. La de
   mantenimiento es la misma (un `sort` desconocido allí es 400 `REQ-400`), y lo que el servicio
   calcula (el próximo preventivo, el avance de una orden) no se ordena. Sus listas anidadas (tareas
-  de una orden o de un turno, líneas de material, equipos, tipos de tarea) llegan enteras.
+  de una orden o de un turno, líneas de material, equipos, tipos de tarea) llegan enteras. Como en
+  mto-frontend, toda lista de almacén y de mantenimiento lleva el id para desempatar al final de su
+  orden (`MasterFilters.withTieBreak` con `BY_ID`; en mantenimiento, dentro de los `default search`
+  de cada cliente), y las de `mto-notification` lo que el servicio deja ordenar: la bandeja
+  `createdAt,desc` (no admite el id), el registro y los accesos `seq,desc`. Sin desempate, dos filas
+  iguales en la columna (los dos apuntes de una transferencia) podrían salir en dos páginas o en
+  ninguna.
 - **Un usuario se modifica con lo que cambió, y la lista se pide como la pide Keycloak.** El
   `PUT /api/users/{id}` de `mto-users` es parcial: `null` es «no tocar» y la cadena vacía, «vaciar»,
-  así que `UserForm.toUpdateRequest(original)` compara con lo leído y solo manda lo distinto; el
-  nombre de usuario no viaja nunca. La lista pide cada tramo con `first`/`max` en trozos de como
+  así que `UserForm.toUpdateRequest(original)` compara con lo leído y solo manda lo distinto, y sin
+  cambios no se llama (`UpdateUserRequest.changesNothing()`); el nombre de usuario no viaja nunca y
+  la contraseña temporal del alta viaja tal como se escribió. La lista pide cada tramo con `first`/`max` en trozos de como
   mucho 200 (`UsersView.MAX_PAGE`, el tope del servicio) y no ordena porque la API no ordena. La
   búsqueda por texto y el filtro por atributo se excluyen en la pantalla porque el servicio los
-  rechaza juntos (`SEARCH-400`): lo deshabilitado no viaja. Nada de esto se arregla aquí con
+  rechaza juntos (`SEARCH-400`): lo deshabilitado no viaja, y un atributo mal formado no pide nada
+  (la lista sigue con el último filtro bien formado, también al recargar). Nada de esto se arregla aquí con
   lógica propia: si la lista necesita orden u otro filtro, se pide en `mto-users`. En la ficha,
-  asignar y quitar perfiles o roles **pintan lo que devuelve el servicio** (la lista actualizada),
-  sin releer; y las rutas estáticas del módulo (`usuarios/perfiles`, `usuarios/roles`) ganan a
+  asignar y quitar perfiles o roles y modificar **pintan lo que devuelve el servicio** (que lo relee
+  de Keycloak antes de contestar), sin releer; cambiar un perfil relee la pestaña de roles si se
+  abrió, fijar una contraseña relee la cabecera y las credenciales, y las sesiones normales y las
+  offline se piden por separado; y las rutas estáticas del módulo (`usuarios/perfiles`, `usuarios/roles`) ganan a
   `usuarios/:userId` porque Vaadin resuelve antes los segmentos literales.
 - **Un catálogo de almacén no se borra: se retira.** `mto-stock` no tiene `DELETE` de maestros
   (`stock_movement` y `reservation` los referencian); el editor de modificación lleva `active` y
@@ -319,7 +341,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   diálogo abierto. Cada transición es su llamada, con su cuerpo, y no se funden. `maintenance-supervise`
   va siempre **junto con** `maintenance-write` (`hasAllRoles`): cancelar una orden, completarla con
   `force` y resolver, cerrar o descartar un defecto; `force` ni se ve sin él. Tras guardar, la ficha
-  pinta lo que devuelve el servicio o relee.
+  pinta lo que devuelve el servicio o relee. Una ficha (orden, turno, inspección, defecto) que no se
+  puede leer por algo que no es un 404 se queda con el motivo, «Volver a la lista» y «Reintentar»
+  (`MaintenanceUi.showLoadFailure`); un 404 dice que no existe y vuelve a la lista.
 - **Una modificación de mantenimiento es un `PATCH` merge-patch con la versión leída.** Cada
   `*Form.toPatch(original)` compara con lo leído (`Changes`) y arma un `MergePatch`
   (`application/merge-patch+json`, RFC 7396): lo que cambió viaja con su valor, lo que se vació
@@ -332,7 +356,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   rechaza antes de llamar un campo a vaciar que su record no tiene. Los equipos son la excepción: su
   `PUT` es completo (base y vehículo a `null` los borran) y por eso `TeamRequest` no lleva
   `NON_NULL`. Un record de petición no lleva métodos `isX()`/`getX()`: Jackson los serializa como
-  propiedades (`isEmpty()` salió como `"empty":false`); por eso se llaman `changesNothing()`.
+  propiedades (`isEmpty()` salió como `"empty":false`); por eso se llaman `changesNothing()`. Como
+  en mto-frontend, los tipos de una tarea (al modificarla y al completarla) y los seccionadores de
+  un turno se comparan como conjunto, los tipos que el catálogo no trae se conservan, y quitarlos
+  todos viaja como `null` (el servicio los deja vaciar), no como lista vacía.
 - **Un activo sincronizado es de `mto-configuration`, pero su desactivación también es de
   mantenimiento.** Perfiles, seccionadores y aisladores llegan por datos maestros
   (`sourceService`); de ellos solo se ofrecen la descripción y el intervalo del preventivo, porque
@@ -382,7 +409,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `ClientEnums.parse` y `selectable()` sin `UNKNOWN` para los desplegables: un valor nuevo en el
   servicio se lee como desconocido en vez de romper la página entera, que además fallaría sin
   aviso, porque ese fallo de lectura no es un `BackofficeApiException`. Lo desconocido no abre
-  nada: una reserva `UNKNOWN` no es activa; un trabajo en un estado `UNKNOWN` se da por terminado,
+  nada: una reserva `UNKNOWN` no es activa; una línea de material `UNKNOWN` no ofrece ni modificar,
+  ni sincronizar, ni quitar (`StockSyncStatus.isChangeable`); un trabajo en un estado `UNKNOWN` se da por terminado,
   para no consultarlo sin fin; y uno de un tipo `UNKNOWN` no tiene familia, así que ni se consulta
   por separado ni se descarga. No se toca el mapper global. Quedan fuera, a propósito, los que solo
   viajan en peticiones (`AdjustmentDirection`, `RequiredAction`, `ReportFormat`) y el de los
@@ -409,7 +437,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   token.** `mto-notification` resuelve al leer, por usuario, perfil y rol de cliente, qué
   notificaciones son mías; aquí no se filtra por nadie ni se cuenta nada: el contador es el de
   `GET /inbox/unread-count`, acotado (`capped` → «100+»), pedido al entrar y cada 30 s desde
-  `SharedPolling` (`InboxBell.REFRESH_PERIOD`) con `CurrentPrincipal.callAs` + `UI.access()`, y
+  `SharedPolling` (`InboxBell.REFRESH_PERIOD`) con `CurrentPrincipal.callAs` + `UI.access()` (con
+  la pestaña oculta no se pide: `PageVisibility`), y
   un fallo al pedirlo deja el número como estaba sin notificar nada (cada 30 s y por cada
   pantalla abierta, un aviso sería ruido; la bandeja lo dirá al abrirse). La campana existe solo
   con `notification-inbox`, que llevan todos los perfiles del dominio. La bandeja abre con las no
@@ -419,13 +448,19 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   «Marcar todas como leídas» es `POST /inbox/read-all`, que va hasta la más reciente visible, no
   hasta ahora. El enlace es una ruta de esta aplicación que ponen las reglas del servicio
   (`/mantenimiento/ordenes/{id}`, `/actividad?category=SYSTEM`, `/actividad/accesos?username=`):
-  `NotificationLinks` la navega con sus parámetros (un absoluto se abre en otra pestaña) y
-  `ActivityView` y `AccessView` aplican al entrar los filtros que llegan en la URL.
+  `NotificationLinks` la navega con sus parámetros. Qué es un destino lo dice
+  `NotificationLinks.target`, con la regla de mto-frontend: una ruta empieza por una sola barra, un
+  `http(s)` se abre en otra pestaña con `noopener`, y cualquier otra cosa no lleva flecha.
+  `ActivityView` y `AccessView` ponen a cero sus filtros al entrar (la pantalla puede estar ya
+  abierta con otros) y aplican los que llegan en la URL.
 - **Los accesos tienen su permiso aparte, y el registro nunca los enseña.** `actividad/accesos`
   pide `notification-access-read`, que no viene con `notification-activity-read` ni al revés (un
   permiso nunca implica otro, como en el servicio), porque un acceso lleva usuario e IP. El
   registro no ofrece `ACCESS` como categoría (`ActivityCategory.selectableForActivity`): el
-  servicio lo rechaza con 400. Los tipos, los orígenes y los sujetos se escriben enteros y se
+  servicio lo rechaza con 400, y una notificación de un acceso no ofrece su línea del registro
+  (sería un 404 `ACT-404`). Una IP se busca entera (`AccessView.isIpLiteral`, la regla de
+  mto-frontend): a medio escribir no se pide nada. El registro pide la línea a su id para enseñar
+  su `payload`, que la lista no trae. Los tipos, los orígenes y los sujetos se escriben enteros y se
   comparan en el servicio: el catálogo de tipos es suyo y aquí no se copia. Lo fundido (el evento
   de administración de Keycloak que ya cuenta el de `mto-users` del mismo cambio) solo viaja como
   `includeSuperseded=true` cuando se pide. Una línea se enseña entera en `EventDetailDialog`, con
@@ -435,6 +470,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   botones de `LovCrudView` siguen los permisos del servicio (`config-write`+`lov-manage` para crear
   y modificar, `config-delete`+`lov-manage` para borrar, `config-import`+`lov-manage` para los
   lotes) con `AuthenticationContext.hasAllRoles`, y un 403 igualmente se traduce a notificación.
+- **«Abrir en mto-frontend» lleva a la misma pantalla allí** (`MainLayout`): la ruta en la que se
+  está, con su query (`afterNavigation`), sobre `app.frontend.url`, en otra pestaña con
+  `noopener noreferrer`. Sin dirección, o sin `http(s)://`, la barra no lo ofrece
+  (`FrontendProperties.linkTo`). Las dos aplicaciones entran por el mismo SSO de Keycloak, y la
+  SPA tiene el enlace de vuelta.
 - **Una vista por familia de endpoints, no por recurso.** Los 17 catálogos comparten controlador
   base y DTO en `mto-configuration`; aquí son una `LovCrudView` con el recurso en la ruta. Un
   catálogo nuevo allí es una constante más en `LovResource`, nada más.
@@ -444,7 +484,12 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   Tras guardar, la vista relee el catálogo, y la siguiente modificación lleva la versión nueva. Si
   otra persona guardó antes, el servicio responde 409 `CON-001` sin escribir nada (en un lote, una
   sola entrada vieja rechaza el lote entero); el diálogo sigue abierto con lo escrito y la
-  notificación pide recargar. La pantalla no compara versiones: eso lo decide el servicio.
+  notificación pide recargar. La pantalla no compara versiones: eso lo decide el servicio. El
+  `PUT` sustituye la entrada, así que viaja entera: lo que `LovDto` no modela (`drawingNumber`, el
+  tipo de los tres catálogos que lo tienen) cae en `extras` y vuelve tal cual. En esos tres
+  (`LovResource.Parent`: cimentaciones, cimentaciones de anclaje y pórticos) el tipo se elige en el
+  editor y en el alta múltiple y viaja por su id. El catálogo se ordena en orden natural y se
+  filtra sin mayúsculas ni tildes (`TextMatching`), como en mto-frontend.
 - **La validación de negocio vive en el servicio.** El formulario solo exige lo evidente (código y
   descripción obligatorios, longitud de columna) y vuelca `errors[{field, code, message}]` campo a
   campo con `ServerValidation`. Un `code` repetido llega como 409 `BUS-002` y un cuerpo sin `code`
@@ -461,7 +506,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (por Jackson, para que lleve los `extras`), para que cancelar o un rechazo del servicio no
   cambien lo que enseña el Grid. `profiles.disconnector` se enseña de solo lectura y vuelve como
   se leyó: `mto-configuration` lo ignora al escribir un perfil (#31), y el vínculo se cambia desde
-  Seccionadores, con el `profileId` del seccionador.
+  Seccionadores, con el `profileId` del seccionador. Vaciar una referencia opcional a catálogo de un
+  perfil viaja como `{}` (`ProfileEditor.CLEARED`), porque `null` es «no la toques»; la que nadie
+  tocó vuelve como se leyó.
 - **Las listas de maestros se paginan en el servidor.** `MasterView` pide cada página a
   `POST /{recurso}/filter` con `page`, `size`, `sort=campo,asc` y `searchText`; sin orden elegido
   `sort` no viaja y ordena el servicio (por eso es opcional en `MasterClient.filter`); el recuento es
@@ -481,7 +528,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `JobsView` lo apunta como rechazado en vez de tratarlo como un fallo). El progreso lo trae
   `@Push`: `SharedPolling` consulta desde un hilo propio, con el principal fijado por
   `CurrentPrincipal.callAs`, y `JobsView` lo lleva a la pantalla con `UI.access()`; sin pantalla
-  abierta, o sin nada en curso, no se consulta nada. La lista es la del servicio (`GET /jobs`):
+  abierta, sin nada en curso o con la pestaña oculta (`PageVisibility`), no se consulta nada. Un
+  fallo al leer la lista no se notifica en cada pasada: se enseña fijo encima de ella, con su
+  referencia, mientras el último intento falle. La lista es la del servicio (`GET /jobs`):
   `JobLog` solo guarda la etiqueta con la que esta sesión lanzó cada trabajo y su último estado,
   para pintarla encima y avisar cuando uno termina; un trabajo de la sesión que no esté en la
   página se consulta por su familia. Las filas no traen los errores por elemento: `JobErrorsDialog`
@@ -491,7 +540,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   fichero al servicio con el token de la persona y lo sirve en la misma respuesta; un `Anchor` al
   gateway no serviría porque el navegador no tiene token (primera regla). Una exportación solo se
   descarga `COMPLETED`; una importación también `COMPLETED_WITH_ERRORS`, porque su fichero es el
-  informe de esos errores (`JobDto.isDownloadable`).
+  informe de esos errores (`JobDto.isDownloadable`), y solo entonces se dice que el informe los trae
+  todos (`JobDto.hasErrorReport`). El navegador solo vería una descarga fallida, así que
+  `Downloads.link` notifica el fallo en la pantalla; un 410 pide relanzar el trabajo.
 - **Una colección de hijos que el editor gestiona va entera o no va.** `ChildrenEditor` trabaja
   sobre una lista propia y `edited()` solo la devuelve si alguien la tocó; `prepare(dto)` del
   editor la pone entonces en el DTO, ya después de `forgetChildren()`, y si no, se queda el
@@ -639,5 +690,9 @@ fundida, el detalle con su `payload`; los accesos desde el enlace de una regla c
 la URL, filtrados en el servicio, un resultado nuevo como «Desconocido» y su detalle) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway, con los clientes de
 cada servicio y los cinco clientes cuyos roles son permisos; redirección al login; sonda de
-salud; ausencia de artefactos comerciales; las dos hojas de Lumo en el shell). Todo corre en la JVM
-sin Docker.
+salud; ausencia de artefactos comerciales; las dos hojas de Lumo en el shell). Lo que trajo la
+convivencia con mto-frontend son casos de esas mismas clases: el enlace a la SPA con su query, el
+tipo padre y los `extras` de un catálogo, la referencia vaciada, el aviso fijo de la lista de
+trabajos, la pestaña oculta, las descargas fallidas, los cambios de usuarios, los desempates, lo
+retirado en los filtros del almacén, las fichas de mantenimiento ante un fallo y los enlaces de
+las notificaciones. Todo corre en la JVM sin Docker.

@@ -34,6 +34,14 @@ public enum StockSyncStatus {
         return this == FAILED || this == REJECTED;
     }
 
+    /**
+     * Si la linea se puede modificar o quitar (con la orden sin terminar): todo menos consumida. Un
+     * estado que el servicio estrene no ofrece nada, como en mto-frontend.
+     */
+    public boolean isChangeable() {
+        return this != CONSUMED && this != UNKNOWN;
+    }
+
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static StockSyncStatus of(String value) {
         return ClientEnums.parse(StockSyncStatus.class, value, UNKNOWN);

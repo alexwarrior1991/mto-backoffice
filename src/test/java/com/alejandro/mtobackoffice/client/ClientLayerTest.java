@@ -301,7 +301,7 @@ class ClientLayerTest {
     }
 
     @Test
-    void lovListIsReadThroughTheGatewayPrefixAndUnknownFieldsAreIgnored() {
+    void lovListIsReadThroughTheGatewayPrefixAndKeepsWhatItDoesNotModel() {
         server.expect(requestTo(GATEWAY + "/api/configuration/profile-statuses"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("""
@@ -313,8 +313,47 @@ class ClientLayerTest {
         List<LovDto> statuses = asUser(() -> lovClient.findAll(LovResource.PROFILE_STATUSES));
 
         assertEquals(1, statuses.size());
-        assertEquals(new LovDto(1L, "DRAFT", "Borrador", true, 0, LocalDateTime.parse("2026-08-02T11:00:00"), "config.responsable"),
-                statuses.getFirst());
+        LovDto status = statuses.getFirst();
+        assertEquals(new LovDto(1L, "DRAFT", "Borrador", true, 0, LocalDateTime.parse("2026-08-02T11:00:00"), "config.responsable",
+                status.extras()), status);
+        // Lo que no tiene campo se guarda para devolverlo en un PUT, que sustituye la entrada entera.
+        assertEquals(Set.of("type", "createDate", "unknownTomorrow"), status.extras().keySet());
+        server.verify();
+    }
+
+    @Test
+    void anUpdateSendsBackWhatTheEntryDoesNotModelAndTheParentTypeById() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/foundations"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        [{"id":5,"code":"C-1","description":"Cimentacion 1","enabled":true,"versionNumber":2,
+                          "drawingNumber":"D-12","foundationType":{"id":3,"code":"FT-A","description":"Tipo A"}}]
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/foundations/5"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.description").value("Cimentacion uno"))
+                .andExpect(jsonPath("$.versionNumber").value(2))
+                .andExpect(jsonPath("$.drawingNumber").value("D-12"))
+                .andExpect(jsonPath("$.foundationType.id").value(7))
+                .andExpect(jsonPath("$.foundationType.code").doesNotExist())
+                .andExpect(jsonPath("$.extras").doesNotExist())
+                .andRespond(withSuccess("""
+                        {"id":5,"code":"C-1","description":"Cimentacion uno","enabled":true,"versionNumber":3,
+                          "drawingNumber":"D-12","foundationType":{"id":7,"code":"FT-B","description":"Tipo B"}}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/foundations/bulk"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$[0].enabled").value(false))
+                .andExpect(jsonPath("$[0].drawingNumber").value("D-12"))
+                .andExpect(jsonPath("$[0].foundationType.id").value(7))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+        LovDto read = asUser(() -> lovClient.findAll(LovResource.FOUNDATIONS)).getFirst();
+        assertEquals("FT-A", read.parent("foundationType").orElseThrow().code());
+        LovDto saved = asUser(() -> lovClient.update("foundations", 5L,
+                read.withValues("C-1", "Cimentacion uno", true).withParent("foundationType", 7L)));
+        assertEquals("FT-B", saved.parent("foundationType").orElseThrow().code());
+        asUser(() -> lovClient.bulkUpdate("foundations", List.of(saved.withEnabled(false))));
         server.verify();
     }
 
@@ -926,6 +965,26 @@ class ClientLayerTest {
         assertEquals(6, JobType.selectable().size());
         assertFalse(JobStatus.selectable().contains(JobStatus.UNKNOWN));
         assertEquals(6, JobStatus.selectable().size());
+        server.verify();
+    }
+
+    /** README_API.md §4: en una referencia a catalogo, null es «no la toques» y {} la vacia. */
+    @Test
+    void aClearedLovReferenceTravelsAsAnEmptyObjectAndAnUntouchedOneAsNull() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/profiles/7"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.poleType").isMap())
+                .andExpect(jsonPath("$.poleType").isEmpty())
+                .andExpect(jsonPath("$.supportType.id").value(5))
+                .andExpect(jsonPath("$.foundation").value(nullValue()))
+                .andRespond(withSuccess("{\"id\":7,\"versionNumber\":3}", MediaType.APPLICATION_JSON));
+
+        ProfileDto profile = new ProfileDto();
+        profile.setId(7L);
+        profile.setPoleType(new LovRef(null, null, null));
+        profile.setSupportType(new LovRef(5L, "ST1", "Soporte 1"));
+
+        asUser(() -> profileClient.update(7L, profile));
         server.verify();
     }
 
@@ -1640,7 +1699,7 @@ class ClientLayerTest {
     void ordersArePagedWithTheirFiltersAndAnUnknownValueIsReadAsUnknown() {
         server.expect(requestTo(MAINTENANCE + "/orders?status=IN_PROGRESS&type=PREVENTIVE&assetType=TRACK_SECTION&trackId=12"
                         + "&plannedFrom=2026-09-01&plannedTo=2026-09-30&teamId=" + TEAM_ID + "&code=MO-0000&page=1&size=50"
-                        + "&sort=plannedDate%2Casc&sort=code%2Cdesc"))
+                        + "&sort=plannedDate%2Casc&sort=code%2Cdesc&sort=id%2Casc"))
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer token-for-" + PRINCIPAL))
                 .andRespond(withSuccess(stockPage(orderJson(ORDER_ID, "MO-000001", "IN_PROGRESS", "HIGH") + ","
@@ -1679,7 +1738,7 @@ class ClientLayerTest {
     /** mto-maintenance manda el mismo JSON de error que mto-stock, con path y method de mas: se lee por los mismos alias. */
     @Test
     void theMaintenanceErrorJsonIsReadThroughItsAliases() {
-        server.expect(requestTo(MAINTENANCE + "/orders?page=0&size=50&sort=nope%2Casc")).andExpect(method(HttpMethod.GET))
+        server.expect(requestTo(MAINTENANCE + "/orders?page=0&size=50&sort=nope%2Casc&sort=id%2Casc")).andExpect(method(HttpMethod.GET))
                 .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON)
                         .header("X-Correlation-Id", "corr-m1")
                         .body("{\"timestamp\":\"2026-09-26T10:00:00Z\",\"status\":400,\"error\":\"BAD_REQUEST\",\"message\":\"Invalid request parameter.\","
@@ -1722,7 +1781,7 @@ class ClientLayerTest {
     @Test
     void assetsAreSearchedCreatedPartiallyUpdatedAndDisabled() {
         server.expect(requestTo(MAINTENANCE + "/assets?type=SECTION_INSULATOR&trackId=12&enabled=true&name=AS&preventiveDueBefore=2026-10-01T22%3A00%3A00Z"
-                        + "&page=0&size=50&sort=trackId%2Casc&sort=startKp%2Casc"))
+                        + "&page=0&size=50&sort=trackId%2Casc&sort=startKp%2Casc&sort=id%2Casc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage(INSULATOR_JSON + "," + INSULATOR_JSON.replace("SECTION_INSULATOR", "CANTILEVER")
                         .replace(ASSET_ID, "2b3c4d5e-0000-4000-8000-00000000000b")
@@ -1974,7 +2033,7 @@ class ClientLayerTest {
         org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
         String shifts = MAINTENANCE + "/shifts";
         server.expect(requestTo(shifts + "?dateFrom=2026-10-01&dateTo=2026-10-31&trackId=12&status=IN_PROGRESS&possessionType=FULL"
-                        + "&page=0&size=50&sort=shiftDate%2Cdesc"))
+                        + "&page=0&size=50&sort=shiftDate%2Cdesc&sort=id%2Casc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage(shiftJson("IN_PROGRESS"), 0, 50, 1), MediaType.APPLICATION_JSON));
         server.expect(requestTo(shifts)).andExpect(method(HttpMethod.POST))
@@ -1982,7 +2041,7 @@ class ClientLayerTest {
                         + "\"plannedStart\":\"2026-10-05T21:30:00Z\"}", strict))
                 .andRespond(withSuccess(shiftJson("PLANNED"), MediaType.APPLICATION_JSON));
         server.expect(requestTo(shifts + "/" + SHIFT_ID)).andExpect(method(HttpMethod.PATCH)).andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
-                .andExpect(content().json("{\"trackIds\":[12,13],\"blockingDisconnectorIds\":[],\"version\":5}", strict))
+                .andExpect(content().json("{\"trackIds\":[12,13],\"blockingDisconnectorIds\":null,\"version\":5}", strict))
                 .andRespond(withSuccess(shiftJson("PLANNED"), MediaType.APPLICATION_JSON));
         server.expect(requestTo(shifts + "/" + SHIFT_ID + "/start")).andExpect(method(HttpMethod.POST))
                 .andExpect(content().json(STRICT_EMPTY, strict))
@@ -2007,8 +2066,8 @@ class ClientLayerTest {
                 12L, null, ShiftStatus.IN_PROGRESS, PossessionType.FULL), 0, 50, List.of("shiftDate,desc")));
         asUser(() -> shiftClient.create(new ShiftRequest(LocalDate.of(2026, 10, 5), null, null, null, PossessionType.PARTIAL,
                 Instant.parse("2026-10-05T21:30:00Z"), null, null, null, null, null, Set.of(12L), null, null, null, null, null)));
-        asUser(() -> shiftClient.update(id, MergePatch.of(new ShiftUpdateRequest(null, null, null, null, null, null, null, Set.of(), null, null, null,
-                new java.util.TreeSet<>(Set.of(12L, 13L)), null, null, null, null, null), 5L)));
+        asUser(() -> shiftClient.update(id, new MergePatch<>(new ShiftUpdateRequest(null, null, null, null, null, null, null, null, null, null, null,
+                new java.util.TreeSet<>(Set.of(12L, 13L)), null, null, null, null, null), Set.of("blockingDisconnectorIds"), 5L)));
         ShiftDto started = asUser(() -> shiftClient.start(id, new StartShiftRequest(null, null)));
         ShiftDto closed = asUser(() -> shiftClient.close(id, new CloseShiftRequest(null, null, 240, "Sin incidencias")));
         ShiftDto cancelled = asUser(() -> shiftClient.cancel(id, new ReasonRequest("Lluvia")));
@@ -2093,7 +2152,7 @@ class ClientLayerTest {
         org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
         String inspections = MAINTENANCE + "/inspections";
         server.expect(requestTo(inspections + "?result=MAJOR_DEFECT&inspectionFrom=2026-09-01&inspectionTo=2026-09-30&originOrderId=" + ORDER_ID
-                        + "&page=0&size=50&sort=inspectionDate%2Cdesc"))
+                        + "&page=0&size=50&sort=inspectionDate%2Cdesc&sort=id%2Casc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage(inspectionJson("MAJOR_DEFECT", null), 0, 50, 1), MediaType.APPLICATION_JSON));
         server.expect(requestTo(inspections)).andExpect(method(HttpMethod.POST))
@@ -2143,7 +2202,7 @@ class ClientLayerTest {
         org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
         String defects = MAINTENANCE + "/defects";
         server.expect(requestTo(defects + "?severity=HIGH&status=OPEN&trackId=12&detectedFrom=2026-09-01T00%3A00%3A00Z&page=0&size=50"
-                        + "&sort=detectedAt%2Cdesc"))
+                        + "&sort=detectedAt%2Cdesc&sort=id%2Casc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage(defectJson("OPEN"), 0, 50, 1), MediaType.APPLICATION_JSON));
         server.expect(requestTo(defects)).andExpect(method(HttpMethod.POST))
@@ -2485,7 +2544,7 @@ class ClientLayerTest {
                 .andRespond(withSuccess(stockPage(inboxItemJson(NOTIFICATION_ID, false, "CRITICAL") + "," + inboxItemJson(NOTIFICATION_ID_2, true, "FATAL"),
                         0, 20, 2), MediaType.APPLICATION_JSON));
         // Sin filtros no viaja ninguno: para el servicio un filtro ausente no filtra.
-        server.expect(requestTo(NOTIFICATIONS + "/inbox?page=1&size=20&sort=severity%2Casc"))
+        server.expect(requestTo(NOTIFICATIONS + "/inbox?page=1&size=20&sort=severity%2Casc&sort=createdAt%2Cdesc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage("", 1, 20, 0), MediaType.APPLICATION_JSON));
 
@@ -2549,7 +2608,7 @@ class ClientLayerTest {
     void theActivityLogIsSearchedWithEveryFilterAndTheDetailBringsThePayload() {
         server.expect(requestTo(NOTIFICATIONS + "/activity?category=USERS&type=users.user.created&actorUsername=usuarios.responsable"
                         + "&subjectType=user&subjectId=u-1&severity=INFO&sourceService=mto-users&from=2026-09-01T00%3A00%3A00Z"
-                        + "&to=2026-09-30T23%3A59%3A59.999Z&includeSuperseded=true&page=0&size=50&sort=occurredAt%2Cdesc"))
+                        + "&to=2026-09-30T23%3A59%3A59.999Z&includeSuperseded=true&page=0&size=50&sort=occurredAt%2Cdesc&sort=seq%2Cdesc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage(activityEventJson(EVENT_ID, "USERS", "PERSON", null) + ","
                         + activityEventJson(NOTIFICATION_ID_2, "FIELD", "ROBOT", EVENT_ID), 0, 50, 2), MediaType.APPLICATION_JSON));
@@ -2591,7 +2650,7 @@ class ClientLayerTest {
     @Test
     void theAccessesAreSearchedByUserIpTypeAndOutcome() {
         server.expect(requestTo(NOTIFICATIONS + "/access?username=config.lector&ipAddress=10.0.0.7&type=access.login.failed&outcome=FAILURE"
-                        + "&page=0&size=50&sort=occurredAt%2Cdesc"))
+                        + "&page=0&size=50&sort=occurredAt%2Cdesc&sort=seq%2Cdesc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage(
                         "{\"id\":\"" + EVENT_ID + "\",\"seq\":7,\"type\":\"access.login.failed\",\"severity\":\"WARNING\",\"outcome\":\"FAILURE\","
@@ -2622,7 +2681,7 @@ class ClientLayerTest {
     /** Un {@code sort} que el servicio no admite es 400 {@code REQ-400} sin errores por campo: una regla, no un formulario. */
     @Test
     void anUnknownSortIsA400OfTheNotificationServiceReadByAlias() {
-        server.expect(requestTo(NOTIFICATIONS + "/activity?page=0&size=50&sort=payload%2Casc")).andExpect(method(HttpMethod.GET))
+        server.expect(requestTo(NOTIFICATIONS + "/activity?page=0&size=50&sort=payload%2Casc&sort=seq%2Cdesc")).andExpect(method(HttpMethod.GET))
                 .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON).header("X-Correlation-Id", "corr-n2")
                         .body("{\"timestamp\":\"2026-09-28T06:07:00Z\",\"status\":400,\"error\":\"BAD_REQUEST\","
                                 + "\"message\":\"Unknown sort property 'payload'\",\"path\":\"/api/v1/notifications/activity\",\"method\":\"GET\","

@@ -21,6 +21,33 @@ Séptimo repositorio del dominio, hermano e independiente de
 [`mto-maintenance`](../mto-maintenance), [`mto-users`](../mto-users) y
 [`mto-gateway`](../mto-gateway); la infraestructura local es de [`mto-platform`](../mto-platform).
 
+## Convivencia con mto-frontend
+
+El dominio tiene **dos aplicaciones web que se usan indistintamente**: este backoffice (Vaadin, en el
+8085) y [`mto-frontend`](../mto-frontend), la SPA en React (en el 4200). Tienen las mismas
+pantallas, las mismas rutas y las mismas reglas, y las dos entran por el mismo SSO de Keycloak:
+quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profile all` de
+`mto-platform` levanta las dos.
+
+- **«Abrir en mto-frontend»**, en la barra, abre la pantalla en la que se está (la ruta con su
+  query) en la SPA, en otra pestaña. Lo configura `app.frontend.url` (`MTO_FRONTEND_URL`); vacío, o
+  sin `http(s)://`, la barra no lo ofrece. La SPA tiene el enlace de vuelta, «Abrir en el
+  backoffice».
+- **Se mantienen a la par.** Un cambio de comportamiento en una (una regla, un fallo arreglado, una
+  llamada distinta, lo que se ofrece o cómo se dice un error) se lleva a la otra en el mismo
+  cambio; los textos no tienen que coincidir (aquí siguen sin tildes). Con la fase 8 de la SPA el
+  backoffice recogió lo que ella había mejorado al portar cada módulo, entre otras cosas:
+  - los catálogos devuelven lo que no conocen y el tipo de los tres que lo tienen;
+  - las listas desempatan su orden;
+  - una referencia vaciada viaja como `{}`;
+  - los trabajos no se consultan con la pestaña oculta;
+  - una modificación de usuario sin cambios no llama;
+  - una ficha de mantenimiento que no se puede leer ofrece reintentar;
+  - el enlace de una notificación sigue la misma regla en las dos.
+- Los enlaces de los correos de `mto-notification` siguen apuntando al backoffice
+  (`APP_NOTIFICATION_LINK_BASE_URL`): las rutas son las mismas en las dos, así que cambiarlo es solo
+  esa variable.
+
 ## Estado: fase 9
 
 - **Fase 0**: circuito completo con lo mínimo. Cliente `mto-backoffice` en el realm, login OIDC,
@@ -371,6 +398,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 | `KEYCLOAK_CLIENT_SECRET` | Su secreto | vacío (`dev`: el local; `prod`: obligatorio) |
 | `KEYCLOAK_ROLES_CLIENT_IDS` | Clientes cuyos roles del access token son los permisos (lista por comas) | `mto-configuration-api,mto-users-api,mto-stock-api,mto-maintenance-api,mto-notification-api` |
 | `MTO_GATEWAY_URL` | El gateway | `http://localhost:8090` |
+| `MTO_FRONTEND_URL` | La SPA `mto-frontend`, para «Abrir en mto-frontend» (vacío: la barra no lo ofrece) | vacío (`dev`: `http://localhost:4200`) |
 | `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP | `2s` / `15s` |
 
 `.env.example` las recoge todas. Perfiles: `dev` (8085, abre el navegador, secreto local), `test`
@@ -380,7 +408,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 
 - Cliente **confidencial** `mto-backoffice` (Authorization Code con secreto) declarado en
   `keycloak/mto-backoffice-partial-import.json`, con los mismos seis audience mapper que
-  `mto-frontend`, que queda intacto y reservado a una futura SPA. Detalle en `keycloak/README.md`.
+  `mto-frontend`, el cliente público de la SPA con la que convive. Detalle en `keycloak/README.md`.
 - Los permisos son roles de **cliente** de cinco clientes: `mto-configuration-api` (`config-read`,
   `config-write`, `config-delete`, `config-import`, `lov-manage`, `config-audit`) para las
   pantallas de configuración, `mto-users-api` (`users-read`, `users-write`, `users-delete`,

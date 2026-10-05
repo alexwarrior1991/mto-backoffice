@@ -79,8 +79,8 @@ public class ShiftForm {
     }
 
     /**
-     * Lo que cambio, lo vaciado y la version leida; vias y seccionadores, si cambiaron, van enteros
-     * (un conjunto vacio de seccionadores es «ninguno»).
+     * Lo que cambio, lo vaciado y la version leida; vias y seccionadores, si cambiaron, van enteros.
+     * Quitar todos los seccionadores los vacia ({@code null} en el merge-patch), como en mto-frontend.
      */
     public MergePatch<ShiftUpdateRequest> toPatch(ShiftDto original) {
         Changes changes = new Changes();
@@ -95,7 +95,8 @@ public class ShiftForm {
                 possessionType == original.possessionType() ? null : possessionType,
                 changes.value("plannedStart", Formats.toInstant(plannedStart), original.plannedStart()),
                 changes.value("plannedEnd", Formats.toInstant(plannedEnd), original.plannedEnd()),
-                disconnectors.equals(originalDisconnectors) ? null : disconnectors,
+                disconnectors.equals(originalDisconnectors) ? null
+                        : disconnectors.isEmpty() ? changes.value("blockingDisconnectorIds", null, originalDisconnectors) : disconnectors,
                 changes.text("earthingPoints", earthingPoints, original.earthingPoints()),
                 changes.text("parkingPlace", parkingPlace, original.parkingPlace()),
                 changes.value("executionPackageId", executionPackageId == null ? null : executionPackageId.id(), original.executionPackageId()),

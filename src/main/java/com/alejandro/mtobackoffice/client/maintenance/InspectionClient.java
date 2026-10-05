@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.maintenance;
 
+import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
@@ -67,9 +68,10 @@ public interface InspectionClient {
                                        @RequestParam("page") int page, @RequestParam("size") int size,
                                        @RequestParam("sort") List<String> sort);
 
+    /** Con el id para desempatar al final: un {@code sort} solo no deja el orden entero (dos del mismo dia). */
     default PageResponse<InspectionDto> search(InspectionFilter filter, int page, int size, List<String> sort) {
         return search(filter.result(), filter.assetType(), filter.trackId(), filter.executionPackageId(), filter.inspectionFrom(),
-                filter.inspectionTo(), filter.inspector(), filter.originOrderId(), page, size, sort);
+                filter.inspectionTo(), filter.inspector(), filter.originOrderId(), page, size, MasterFilters.withTieBreak(sort, MasterFilters.BY_ID));
     }
 
     @PostExchange("/{id}/create-defect")

@@ -26,6 +26,8 @@ services:
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET must be set}
       # El gateway publicado por mto-platform en el host.
       MTO_GATEWAY_URL: ${MTO_GATEWAY_URL:-http://host.docker.internal:8090}
+      # La SPA con la que convive: 'Abrir en mto-frontend', en la barra. Vacio, no se ofrece.
+      MTO_FRONTEND_URL: ${MTO_FRONTEND_URL:-http://localhost:4200}
       JAVA_OPTS: ${JAVA_OPTS:-}
     # El 'iss' de los tokens es http://auth.mto.local:8082 y el navegador tambien va a ese nombre:
     # la aplicacion tiene que resolverlo igual que el host.

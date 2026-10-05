@@ -5,6 +5,7 @@ import com.alejandro.mtobackoffice.client.dto.stock.CatalogueUpdateRequest;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.client.stock.StockCatalogueClient;
+import com.alejandro.mtobackoffice.ui.support.Required;
 import com.alejandro.mtobackoffice.ui.support.ServerValidation;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
@@ -60,8 +61,8 @@ public class CatalogueEditorDialog extends Dialog {
         Checkbox active = new Checkbox("Activo");
         active.setHelperText("Desmarcarlo lo retira: deja de poder usarse en movimientos y reservas nuevos");
 
-        binder.forField(code).asRequired("El codigo es obligatorio").bind("code");
-        binder.forField(name).asRequired("El nombre es obligatorio").bind("name");
+        binder.forField(code).asRequired(Required.text("El codigo es obligatorio")).bind("code");
+        binder.forField(name).asRequired(Required.text("El nombre es obligatorio")).bind("name");
         if (!creating) {
             binder.forField(active).bind("active");
         }

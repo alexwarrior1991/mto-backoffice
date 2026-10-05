@@ -12,7 +12,9 @@ import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.validator.RegexpValidator;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -37,9 +39,16 @@ public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
 
     private final ChildrenEditor<CantileverDto> cantilevers;
 
+    /** Una referencia vaciada: sin id ni codigo, viaja como {@code {}} (LovRef no manda lo nulo). */
+    static final LovRef CLEARED = new LovRef(null, null, null);
+
+    private final List<LovRef> optionalRefsRead;
+
     public ProfileEditor(ProfileDto dto, ReferenceCatalog catalog, LovCatalog lovs,
                          Function<ProfileDto, ProfileDto> saver, Consumer<ProfileDto> onSaved) {
         super(MasterResource.PROFILES, ProfileDto.class, dto, saver, onSaved);
+        // Las referencias opcionales tal como llegaron: vaciar una que tenia valor viaja como {}.
+        optionalRefsRead = optionalRefs(dto);
 
         TextField profileId = text("Identificador", PROFILE_ID_MAX_LENGTH, true);
         TextField kp = text("KP", 13, true);
@@ -123,9 +132,30 @@ public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
         return (type + length).trim();
     }
 
+    /**
+     * Las ménsulas van enteras si se tocaron. Y una referencia opcional que tenia valor y se ha
+     * vaciado viaja como {@code {}}: para el servicio {@code null} es «no la toques» (README_API.md §4
+     * de mto-configuration) y la referencia se quedaba como estaba, aunque la pantalla la ensenara
+     * vacia. Igual que en mto-frontend ({@code CLEARED_LOV_REF}).
+     */
     @Override
     protected void prepare(ProfileDto dto) {
         cantilevers.edited().ifPresent(dto::setCantilevers);
+        List<LovRef> now = optionalRefs(dto);
+        List<BiConsumer<ProfileDto, LovRef>> setters = List.of(ProfileDto::setPoleType, ProfileDto::setFoundation,
+                ProfileDto::setAnchorageFoundation, ProfileDto::setPortal, ProfileDto::setReturnSupport,
+                ProfileDto::setSupportType, ProfileDto::setAssemblyConfiguration);
+        for (int i = 0; i < setters.size(); i++) {
+            if (optionalRefsRead.get(i) != null && now.get(i) == null) {
+                setters.get(i).accept(dto, CLEARED);
+            }
+        }
+    }
+
+    /** Las siete referencias opcionales a un catalogo, en el orden de los setters de {@link #prepare}. */
+    private static List<LovRef> optionalRefs(ProfileDto dto) {
+        return Arrays.asList(dto.getPoleType(), dto.getFoundation(), dto.getAnchorageFoundation(), dto.getPortal(),
+                dto.getReturnSupport(), dto.getSupportType(), dto.getAssemblyConfiguration());
     }
 
     /** Para los tests: las mensulas tal como quedan en el editor. */

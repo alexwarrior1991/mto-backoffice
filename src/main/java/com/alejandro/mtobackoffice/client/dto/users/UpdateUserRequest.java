@@ -17,4 +17,12 @@ public record UpdateUserRequest(
         Boolean emailVerified,
         Map<String, List<String>> attributes
 ) {
+
+    /**
+     * Si no cambia nada: entonces no se llama. No es {@code isEmpty()}: Jackson serializaria un
+     * {@code isX()} como una propiedad mas del cuerpo.
+     */
+    public boolean changesNothing() {
+        return firstName == null && lastName == null && email == null && emailVerified == null && attributes == null;
+    }
 }

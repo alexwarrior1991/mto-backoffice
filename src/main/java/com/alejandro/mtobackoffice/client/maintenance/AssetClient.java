@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.client.maintenance;
 
+import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
@@ -58,9 +59,10 @@ public interface AssetClient {
                                   @RequestParam("page") int page, @RequestParam("size") int size,
                                   @RequestParam("sort") List<String> sort);
 
+    /** Con el id para desempatar al final: un {@code sort} solo no deja el orden entero (dos del mismo dia). */
     default PageResponse<AssetDto> search(AssetFilter filter, int page, int size, List<String> sort) {
         return search(filter.type(), filter.trackId(), filter.stationId(), filter.executionPackageId(), filter.enabled(), filter.name(),
-                filter.preventiveDueBefore(), page, size, sort);
+                filter.preventiveDueBefore(), page, size, MasterFilters.withTieBreak(sort, MasterFilters.BY_ID));
     }
 
     /** Desactiva: 204, y si ya lo estaba, tambien. */

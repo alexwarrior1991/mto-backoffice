@@ -4,6 +4,7 @@ import com.alejandro.mtobackoffice.client.dto.stock.MaterialDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.client.stock.MaterialClient;
+import com.alejandro.mtobackoffice.ui.support.Required;
 import com.alejandro.mtobackoffice.ui.support.ServerValidation;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
@@ -55,9 +56,9 @@ public class MaterialEditorDialog extends Dialog {
         Checkbox active = new Checkbox("Activo");
         active.setHelperText("Desmarcarlo lo retira: sin movimientos ni reservas nuevos");
 
-        binder.forField(code).asRequired("El codigo es obligatorio").bind("code");
-        binder.forField(name).asRequired("El nombre es obligatorio").bind("name");
-        binder.forField(unit).asRequired("La unidad es obligatoria").bind("unitOfMeasure");
+        binder.forField(code).asRequired(Required.text("El codigo es obligatorio")).bind("code");
+        binder.forField(name).asRequired(Required.text("El nombre es obligatorio")).bind("name");
+        binder.forField(unit).asRequired(Required.text("La unidad es obligatoria")).bind("unitOfMeasure");
         binder.forField(minimum).asRequired("El stock minimo es obligatorio")
                 .withValidator(value -> value.signum() >= 0, "No puede ser negativo")
                 .bind("minimumStockLevel");

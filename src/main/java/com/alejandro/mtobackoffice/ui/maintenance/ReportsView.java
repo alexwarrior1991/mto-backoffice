@@ -157,6 +157,10 @@ public class ReportsView extends VerticalLayout {
     private void queryProgress() {
         ProgressQuery query = new ProgressQuery(idOf(progressPackage.getValue()), idOf(progressTrack.getValue()), progressType.getValue(),
                 Formats.startOfDay(progressFrom.getValue()), Formats.endOfDay(progressTo.getValue()));
+        // Lo de la consulta anterior no se queda a la vista, ni sus descargas, si esta falla.
+        progressSummary.setText("");
+        progressGrid.setItems(List.of());
+        progressDownloads.removeAll();
         try {
             ProgressReportDto report = clients.reports().progress(query.executionPackageId(), query.trackId(), query.assetType(), query.from(),
                     query.to());
@@ -183,6 +187,9 @@ public class ReportsView extends VerticalLayout {
         }
         month.setInvalid(false);
         MonthlyQuery query = new MonthlyQuery(month.getValue(), idOf(monthlyPackage.getValue()));
+        monthlySummary.removeAll();
+        monthlyMaterials.setItems(List.of());
+        monthlyDownloads.removeAll();
         try {
             MonthlyReportDto report = clients.reports().monthly(query.month(), query.executionPackageId());
             monthlySummary.removeAll();

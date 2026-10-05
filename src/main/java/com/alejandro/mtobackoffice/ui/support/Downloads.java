@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.ui.support;
 
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.server.streams.DownloadHandler;
 import com.vaadin.flow.server.streams.DownloadResponse;
@@ -11,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 
 import java.io.ByteArrayInputStream;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -20,7 +22,8 @@ import java.util.function.Supplier;
  *
  * <p>Lo usan los trabajos (el fichero de una importacion o exportacion) y los informes de
  * mantenimiento (xlsx y pdf). El nombre sale de {@code Content-Disposition}; si el servicio no lo
- * manda, el de reserva.</p>
+ * manda, el de reserva. Un fallo se notifica en la pantalla, como cualquier otro: el navegador solo
+ * sabria que la descarga fallo.</p>
  */
 public final class Downloads {
 
@@ -36,7 +39,10 @@ public final class Downloads {
      * @param file         la llamada que trae el fichero; se hace al pulsar, no al pintar
      */
     public static Anchor link(String id, String text, String fallbackName, Supplier<ResponseEntity<byte[]>> file) {
-        DownloadHandler handler = DownloadHandler.fromInputStream(event -> response(file, fallbackName), fallbackName);
+        DownloadHandler handler = DownloadHandler.fromInputStream(event -> {
+            UI ui = event.getUI();
+            return response(file, fallbackName, failure -> ui.access(() -> UiErrors.show(failure)));
+        }, fallbackName);
         Anchor anchor = new Anchor(handler, text);
         anchor.setId(id);
         return anchor;
@@ -44,6 +50,17 @@ public final class Downloads {
 
     /** Lo que se sirve: el cuerpo tal cual, con su nombre y su tipo. Un fallo del servicio se devuelve con su estado. */
     public static DownloadResponse response(Supplier<ResponseEntity<byte[]>> file, String fallbackName) {
+        return response(file, fallbackName, failure -> {
+        });
+    }
+
+    /**
+     * Como {@link #response(Supplier, String)}, y ademas un fallo se cuenta a {@code onFailure}: el
+     * navegador solo ve una descarga fallida, sin decir por que, asi que el enlace lo notifica en la
+     * pantalla (con {@code UI.access()}, porque la descarga no corre con el bloqueo de la sesion).
+     */
+    static DownloadResponse response(Supplier<ResponseEntity<byte[]>> file, String fallbackName,
+                                     Consumer<BackofficeApiException> onFailure) {
         try {
             ResponseEntity<byte[]> response = file.get();
             byte[] body = response.getBody() == null ? new byte[0] : response.getBody();
@@ -53,6 +70,7 @@ public final class Downloads {
             return new DownloadResponse(new ByteArrayInputStream(body), fileName, contentType, body.length);
         } catch (BackofficeApiException failure) {
             LOGGER.warn("No se ha podido descargar {}: {}", fallbackName, failure.getMessage());
+            onFailure.accept(failure);
             return DownloadResponse.error(failure.getStatus().value());
         }
     }

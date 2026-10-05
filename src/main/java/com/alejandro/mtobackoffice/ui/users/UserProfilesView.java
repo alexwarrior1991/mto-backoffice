@@ -7,6 +7,7 @@ import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.configuration.security.UserRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
+import com.alejandro.mtobackoffice.ui.support.TextMatching;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.grid.Grid;
@@ -27,7 +28,6 @@ import jakarta.annotation.security.RolesAllowed;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * El catalogo de perfiles del realm (roles compuestos con prefijo {@code mto-}): la lista, con
@@ -118,17 +118,18 @@ public class UserProfilesView extends VerticalLayout {
     }
 
     private void applyFilter() {
-        String text = filter.getValue() == null ? "" : filter.getValue().trim().toLowerCase(Locale.ROOT);
+        String text = filter.getValue() == null ? "" : filter.getValue();
         List<RealmProfileSummaryDto> shown = profiles.stream()
-                .filter(dto -> text.isEmpty() || contains(dto.name(), text) || contains(dto.description(), text))
+                .filter(dto -> text.isBlank() || contains(dto.name(), text) || contains(dto.description(), text))
                 .toList();
         catalogue.deselectAll();
         catalogue.setItems(shown);
         count.setText(shown.size() == profiles.size() ? profiles.size() + " perfiles" : shown.size() + " de " + profiles.size() + " perfiles");
     }
 
+    /** Sin mirar mayusculas ni tildes, como en mto-frontend. */
     private static boolean contains(String value, String text) {
-        return value != null && value.toLowerCase(Locale.ROOT).contains(text);
+        return value != null && TextMatching.contains(value, text);
     }
 
     private void show(RealmProfileSummaryDto summary) {

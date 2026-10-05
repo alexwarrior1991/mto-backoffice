@@ -34,6 +34,38 @@ public final class MasterFilters {
         return filter;
     }
 
+    /** El desempate de las listas de mto-stock y mto-maintenance: el id, que no se repite nunca. */
+    public static final String BY_ID = "id,asc";
+
+    /**
+     * El orden de una lista que lo necesita entero: el elegido en el Grid o, sin el, el de la
+     * pantalla, y al final su desempate ({@link #withTieBreak}).
+     */
+    public static List<String> sort(List<QuerySortOrder> orders, List<String> fallback, String tieBreak) {
+        List<String> chosen = sort(orders);
+        return withTieBreak(chosen.isEmpty() ? fallback : chosen, tieBreak);
+    }
+
+    /**
+     * El orden con su desempate al final, como {@code sortWithTieBreak} de mto-frontend: sin el, dos
+     * filas iguales en la columna elegida (los dos apuntes de una transferencia, dos turnos del mismo
+     * dia) podrian salir en dos paginas o en ninguna. Si el orden ya va por ese campo, no se repite.
+     */
+    public static List<String> withTieBreak(List<String> sort, String tieBreak) {
+        String field = fieldOf(tieBreak);
+        if (sort.stream().anyMatch(order -> fieldOf(order).equals(field))) {
+            return List.copyOf(sort);
+        }
+        List<String> sorted = new ArrayList<>(sort);
+        sorted.add(tieBreak);
+        return List.copyOf(sorted);
+    }
+
+    private static String fieldOf(String order) {
+        int comma = order.indexOf(',');
+        return comma < 0 ? order : order.substring(0, comma);
+    }
+
     /** {@code sort=campo,asc} por cada orden del Grid; sin orden, lista vacia y manda el del servicio. */
     public static List<String> sort(List<QuerySortOrder> orders) {
         List<String> sort = new ArrayList<>();

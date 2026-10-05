@@ -6,6 +6,7 @@ import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.configuration.security.UserRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
+import com.alejandro.mtobackoffice.ui.support.TextMatching;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -26,7 +27,6 @@ import com.vaadin.flow.router.Route;
 import jakarta.annotation.security.RolesAllowed;
 
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Los roles de cada cliente del realm (menos los protegidos, que mto-users no lista) y quien
@@ -128,9 +128,9 @@ public class ClientRolesView extends VerticalLayout {
     }
 
     private void applyFilter() {
-        String text = filter.getValue() == null ? "" : filter.getValue().trim().toLowerCase(Locale.ROOT);
+        String text = filter.getValue() == null ? "" : filter.getValue();
         List<ClientRoleDto> shown = roles.stream()
-                .filter(dto -> text.isEmpty() || contains(dto.name(), text) || contains(dto.description(), text))
+                .filter(dto -> text.isBlank() || contains(dto.name(), text) || contains(dto.description(), text))
                 .toList();
         catalogue.deselectAll();
         catalogue.setItems(shown);
@@ -138,8 +138,9 @@ public class ClientRolesView extends VerticalLayout {
                 ? roles.size() + " roles" : shown.size() + " de " + roles.size() + " roles");
     }
 
+    /** Sin mirar mayusculas ni tildes, como en mto-frontend. */
     private static boolean contains(String value, String text) {
-        return value != null && value.toLowerCase(Locale.ROOT).contains(text);
+        return value != null && TextMatching.contains(value, text);
     }
 
     private void showMembers(ClientRoleDto role) {

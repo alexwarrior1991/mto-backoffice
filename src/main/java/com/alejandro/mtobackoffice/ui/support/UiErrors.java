@@ -17,6 +17,7 @@ import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -26,32 +27,42 @@ import java.util.stream.Collectors;
 public final class UiErrors {
 
     private static final int DURATION_MS = 8000;
+    /** Los 409 de un codigo repetido: mantenimiento (activos, equipos) y los cinco catalogos de almacen. */
+    private static final Set<String> DUPLICATED_CODES = Set.of("AST-409", "TEA-409", "MAT-409", "WH-409", "SUP-409", "PRJ-409", "ASM-409");
 
     private UiErrors() {
     }
 
     public static Notification show(BackofficeApiException exception) {
+        return show(exception, message(exception));
+    }
+
+    /**
+     * Como {@link #show(BackofficeApiException)}, con un texto propio en vez del mensaje del fallo
+     * (que lo diga la pantalla, con su contexto), y la misma referencia y el mismo «Volver a entrar».
+     */
+    public static Notification show(BackofficeApiException exception, String text) {
         Notification notification = new Notification();
         notification.addThemeVariants(NotificationVariant.LUMO_ERROR);
         notification.setPosition(Notification.Position.BOTTOM_START);
         notification.setDuration(exception instanceof SessionExpiredApiException ? 0 : DURATION_MS);
 
-        Div text = new Div(new Span(message(exception)));
+        Div content = new Div(new Span(text));
         String reference = exception.getReference();
         if (reference != null && !reference.isBlank()) {
             Span ref = new Span("Referencia: " + reference);
             ref.getStyle().set("font-size", "var(--lumo-font-size-xs)");
-            text.add(new Div(ref));
+            content.add(new Div(ref));
         }
-        HorizontalLayout content = new HorizontalLayout(text);
-        content.setAlignItems(HorizontalLayout.Alignment.CENTER);
+        HorizontalLayout layout = new HorizontalLayout(content);
+        layout.setAlignItems(HorizontalLayout.Alignment.CENTER);
         if (exception instanceof SessionExpiredApiException) {
-            content.add(new Button("Volver a entrar", click -> {
+            layout.add(new Button("Volver a entrar", click -> {
                 notification.close();
                 UI.getCurrent().getPage().setLocation(SecurityConfiguration.LOGIN_URL);
             }));
         }
-        notification.add(content);
+        notification.add(layout);
         notification.open();
         return notification;
     }
@@ -99,8 +110,13 @@ public final class UiErrors {
                     "La linea de material no admite esta operacion." + detail(exception);
             case ConflictApiException asset when "AST-001".equals(asset.getProblem().code()) ->
                     "El activo esta desactivado, o ese dato lo manda mto-configuration." + detail(exception);
-            case ConflictApiException duplicated when "AST-409".equals(duplicated.getProblem().code())
-                    || "TEA-409".equals(duplicated.getProblem().code()) -> "Ya existe otro con ese codigo.";
+            // Un codigo repetido en mto-maintenance (activos y equipos) y en los catalogos de mto-stock:
+            // recargar no lo arregla, asi que no se pide.
+            case ConflictApiException duplicated when DUPLICATED_CODES.contains(duplicated.getProblem().code()) ->
+                    "Ya existe otro con ese codigo.";
+            // mto-users: un nombre de usuario o un email repetido. Recargar tampoco lo arregla.
+            case ConflictApiException duplicated when "USR-409".equals(duplicated.getProblem().code()) ->
+                    "Ya existe un usuario con ese nombre de usuario o ese email." + detail(exception);
             case ConflictApiException ignored -> "Conflicto con otro cambio: recarga y vuelve a intentarlo."
                     + detail(exception);
             // mto-maintenance no ha podido hablar con mto-stock al sincronizar o al quitar una linea: el
@@ -112,6 +128,10 @@ public final class UiErrors {
                     "El servicio no ha podido completar la operacion." + detail(exception);
             case ServiceUnavailableApiException unavailable -> "El servicio no esta disponible ahora mismo."
                     + unavailable.getRetryAfter().map(d -> " Intentalo en " + d.toSeconds() + " s.").orElse(" Intentalo mas tarde.");
+            // El unico 410 del dominio es el fichero de un trabajo de mto-configuration que ya no esta
+            // (purgado, o generado en otra replica): reintentar no lo trae, hay que relanzar el trabajo.
+            case BackofficeApiException gone when gone.getStatus().value() == 410 ->
+                    "El fichero ya no esta en el servicio: vuelve a lanzar el trabajo.";
             default -> "Error inesperado (" + exception.getStatus().value() + ")." + detail(exception);
         };
     }

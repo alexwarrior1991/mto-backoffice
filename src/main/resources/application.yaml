@@ -42,7 +42,7 @@ app:
     # y desde compose (entrada auth.mto.local en /etc/hosts, ver mto-platform).
     issuer-uri: ${KEYCLOAK_ISSUER_URI:http://auth.mto.local:8082/realms/mto}
     # Cliente confidencial de esta aplicacion en el realm (mto-backoffice/keycloak/). No es
-    # mto-frontend, que esta reservado a una futura SPA.
+    # mto-frontend, el cliente publico de la SPA.
     client-id: ${KEYCLOAK_CLIENT_ID:mto-backoffice}
     # Sin valor por defecto: cada perfil lo fija (dev trae el secreto local, prod lo exige).
     client-secret: ${KEYCLOAK_CLIENT_SECRET:}
@@ -58,6 +58,10 @@ app:
     # Toda llamada sale hacia el gateway, nunca directamente a un servicio: /api/configuration/**
     # es la ruta publica que el gateway reescribe a /api/v1/configuration/**.
     base-url: ${MTO_GATEWAY_URL:http://localhost:8090}
+  frontend:
+    # La SPA (mto-frontend), tal como la ve el navegador: 'Abrir en mto-frontend', en la barra, lleva
+    # a la misma pantalla alli. Vacia, la barra no lo ofrece.
+    url: ${MTO_FRONTEND_URL:}
   correlation:
     # Cabecera con la que cada llamada saliente se identifica. El gateway la acepta si es valida y
     # la propaga al servicio, de modo que el mismo id aparece en su log y en el del servicio.

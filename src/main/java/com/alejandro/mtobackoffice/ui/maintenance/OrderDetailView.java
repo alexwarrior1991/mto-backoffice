@@ -14,6 +14,7 @@ import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Span;
@@ -36,6 +37,7 @@ import jakarta.annotation.security.RolesAllowed;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * La ficha de una orden: su cabecera (activo, via, KP, equipo, avance y estimacion, que calcula el
@@ -104,14 +106,23 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
         String id = event.getRouteParameters().get(ORDER_ID_PARAMETER).orElse("");
+        load(id, target -> event.forwardTo(target));
+    }
+
+    /**
+     * Lee la ficha y la pinta. Si no existe, se dice y de vuelta a la lista; cualquier otro fallo
+     * deja la ficha con el motivo, «Volver a la lista» y «Reintentar», como en mto-frontend.
+     */
+    private void load(String id, Consumer<Class<? extends Component>> toList) {
         try {
             show(clients.orders().findById(UUID.fromString(id)));
         } catch (IllegalArgumentException | NotFoundApiException missing) {
             Notification.show("No existe la orden " + id, 5000, Notification.Position.BOTTOM_START).addThemeVariants(NotificationVariant.LUMO_ERROR);
-            event.forwardTo(OrdersView.class);
+            toList.accept(OrdersView.class);
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
-            event.forwardTo(OrdersView.class);
+            MaintenanceUi.showLoadFailure(this, "la orden", failure, () -> UI.getCurrent().navigate(OrdersView.class),
+                    () -> load(id, target -> UI.getCurrent().navigate(target)));
         }
     }
 
@@ -125,6 +136,7 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
     }
 
     private void show(OrderDto loaded) {
+        MaintenanceUi.clearLoadFailure(this);
         paint(loaded);
         TabSheet tabs = new TabSheet();
         tabs.setWidthFull();

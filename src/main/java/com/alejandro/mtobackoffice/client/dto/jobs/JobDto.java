@@ -61,6 +61,15 @@ public record JobDto(
         };
     }
 
+    /**
+     * Si el fichero del trabajo es el informe de sus errores: el de una importacion, que trae todos
+     * los elementos fallidos aunque el servicio solo detalle los primeros. Una exportacion o un
+     * republicado no tienen informe.
+     */
+    public boolean hasErrorReport() {
+        return (type == JobType.PROFILE_IMPORT || type == JobType.LOV_IMPORT) && isDownloadable();
+    }
+
     /** El nombre con el que se ofrece el fichero; el servicio manda el suyo en {@code Content-Disposition}. */
     public String suggestedFileName() {
         return switch (type) {
