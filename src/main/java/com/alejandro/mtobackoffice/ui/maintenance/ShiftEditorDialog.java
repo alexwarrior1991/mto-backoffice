@@ -11,6 +11,7 @@ import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -102,8 +103,9 @@ public class ShiftEditorDialog extends Dialog {
         binder.forField(team).bind("teamId");
         binder.forField(tracks).withValidator(selected -> !selected.isEmpty(), "Al menos una via").bind("trackIds");
         binder.forField(executionPackage).bind("executionPackageId");
-        binder.forField(startKp).bind("startKp");
+        binder.forField(startKp).withValidator(Numbers.kp()).bind("startKp");
         Binder.Binding<ShiftForm, BigDecimal> end = binder.forField(endKp)
+                .withValidator(Numbers.kp())
                 .withValidator(kp -> kp == null || startKp.getValue() == null || kp.compareTo(startKp.getValue()) > 0,
                         "El KP final tiene que ser mayor que el inicial")
                 .bind("endKp");

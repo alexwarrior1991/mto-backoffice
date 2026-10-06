@@ -12,6 +12,7 @@ import com.alejandro.mtobackoffice.client.dto.stock.WarehouseSummaryDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.stock.StockPickers;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.HasValidation;
@@ -98,6 +99,9 @@ public class MaterialUsageDialog extends Dialog {
                             planned.getValue(), material.getValue().unitOfMeasure(), task.getValue() == null ? null : task.getValue().id(),
                             overConsumption.getValue() ? Boolean.TRUE : null));
                 } else {
+                    if (!validUpdate(planned, consumed)) {
+                        return;
+                    }
                     MaterialUsageUpdateRequest request = new MaterialUsageUpdateRequest(
                             existing.isReserved() || same(planned.getValue(), existing.plannedQuantity()) ? null : planned.getValue(),
                             same(consumed.getValue(), existing.consumedQuantity()) ? null : consumed.getValue(),
@@ -136,12 +140,15 @@ public class MaterialUsageDialog extends Dialog {
             warehouse.setInvalid(true);
             valid = false;
         }
-        if (planned.getValue() == null || planned.getValue().signum() < 0) {
-            planned.setErrorMessage("Lo previsto es obligatorio y no puede ser negativo");
-            planned.setInvalid(true);
+        if (!Numbers.check(planned, Numbers.all(Numbers.required("Lo previsto es obligatorio"), Numbers.quantity()))) {
             valid = false;
         }
         return valid;
+    }
+
+    /** Lo previsto y lo consumido al modificar: cero o mas, con los decimales del servicio; vacio, no se toca. */
+    private static boolean validUpdate(BigDecimalField planned, BigDecimalField consumed) {
+        return Numbers.check(planned, Numbers.quantity()) & Numbers.check(consumed, Numbers.quantity());
     }
 
     private static boolean same(BigDecimal value, BigDecimal original) {

@@ -1,18 +1,17 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
-import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectSeverity;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectStatus;
-import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.support.Formats;
-import com.alejandro.mtobackoffice.ui.support.UiErrors;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.vaadin.flow.component.HasValue;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -27,7 +26,7 @@ import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.FlexLayout;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.router.Menu;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
@@ -35,7 +34,6 @@ import com.vaadin.flow.spring.security.AuthenticationContext;
 import jakarta.annotation.security.RolesAllowed;
 
 import java.util.List;
-import java.util.stream.Stream;
 
 /** Los defectos de catenaria, paginados y filtrados en el servidor, el mas reciente primero; una fila abre su ficha. */
 @Route(value = MaintenanceRoutes.DEFECTS, layout = MainLayout.class)
@@ -57,6 +55,7 @@ public class DefectsView extends VerticalLayout {
     private final DatePicker to = new DatePicker("Detectado hasta");
     private final Span count = new Span();
     private final Grid<DefectDto> grid = new Grid<>();
+    private LazyPages<DefectDto> pages;
 
     public DefectsView(MaintenanceClients clients, AuthenticationContext authentication) {
         this.clients = clients;
@@ -112,15 +111,16 @@ public class DefectsView extends VerticalLayout {
         grid.setPageSize(PAGE_SIZE);
         grid.setMultiSort(false);
         grid.setSizeFull();
-        grid.setItems(this::fetch, this::count);
-        grid.addItemClickListener(click -> UI.getCurrent().navigate(DefectDetailView.class, DefectDetailView.parametersOf(click.getItem().id())));
+        pages = LazyPages.of(grid, this::load, total -> count.setText(total + " defectos"));
+        RowActions.openWithDoubleClickOrButton(grid, DefectDto::id, defect -> "Abrir " + defect.code(),
+                defect -> UI.getCurrent().navigate(DefectDetailView.class, DefectDetailView.parametersOf(defect.id())));
 
         add(new H2("Defectos"), filters, toolbar, grid);
         expand(grid);
     }
 
     void refresh() {
-        grid.getDataProvider().refreshAll();
+        pages.refresh();
     }
 
     private DefectFilter filter() {
@@ -129,27 +129,10 @@ public class DefectsView extends VerticalLayout {
                 Formats.endOfDay(to.getValue()));
     }
 
-    private Stream<DefectDto> fetch(Query<DefectDto, Void> query) {
-        try {
-            int size = Math.max(1, query.getLimit());
-            List<String> sort = MasterFilters.sort(query.getSortOrders());
-            PageResponse<DefectDto> page = clients.defects().search(filter(), query.getOffset() / size, size, sort.isEmpty() ? DEFAULT_SORT : sort);
-            count.setText(page.page().totalElements() + " defectos");
-            return page.content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
-    }
-
-    private int count(Query<DefectDto, Void> query) {
-        try {
-            long total = clients.defects().search(filter(), 0, 1, DEFAULT_SORT).page().totalElements();
-            count.setText(total + " defectos");
-            return (int) Math.min(Integer.MAX_VALUE, total);
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return 0;
-        }
+    /** Una pagina con su total: una peticion ({@link LazyPages}). */
+    private LazyPages.Page<DefectDto> load(int offset, int limit, List<QuerySortOrder> sort) {
+        int size = Math.max(1, limit);
+        List<String> order = MasterFilters.sort(sort);
+        return LazyPages.Page.of(clients.defects().search(filter(), offset / size, size, order.isEmpty() ? DEFAULT_SORT : order));
     }
 }

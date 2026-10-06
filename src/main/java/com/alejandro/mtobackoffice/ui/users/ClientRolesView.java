@@ -26,7 +26,9 @@ import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import jakarta.annotation.security.RolesAllowed;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Los roles de cada cliente del realm (menos los protegidos, que mto-users no lista) y quien
@@ -55,6 +57,8 @@ public class ClientRolesView extends VerticalLayout {
             "Solo asignaciones directas del rol. Quien lo tiene por un perfil aparece en el perfil, no aqui.");
 
     private List<ClientRoleDto> roles = List.of();
+    /** Los roles de cada cliente ya elegido, pedidos una vez mientras dura la pantalla, como en mto-frontend. */
+    private final Map<String, List<ClientRoleDto>> rolesByClient = new HashMap<>();
 
     public ClientRolesView(UsersClient client) {
         this.client = client;
@@ -118,7 +122,7 @@ public class ClientRolesView extends VerticalLayout {
             roles = List.of();
         } else {
             try {
-                roles = client.clientRoles(chosen.clientId());
+                roles = rolesByClient.computeIfAbsent(chosen.clientId(), client::clientRoles);
             } catch (BackofficeApiException failure) {
                 roles = List.of();
                 UiErrors.show(failure);

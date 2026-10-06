@@ -7,7 +7,6 @@ import com.alejandro.mtobackoffice.client.dto.stock.MovementDto;
 import com.alejandro.mtobackoffice.client.dto.stock.MovementType;
 import com.alejandro.mtobackoffice.client.dto.stock.ProjectSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.stock.WarehouseSummaryDto;
-import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
 import com.alejandro.mtobackoffice.client.stock.MaterialClient;
 import com.alejandro.mtobackoffice.client.stock.MovementClient;
@@ -17,7 +16,7 @@ import com.alejandro.mtobackoffice.client.stock.SupplierClient;
 import com.alejandro.mtobackoffice.client.stock.WarehouseClient;
 import com.alejandro.mtobackoffice.configuration.security.StockRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
-import com.alejandro.mtobackoffice.ui.support.UiErrors;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.datepicker.DatePicker;
@@ -27,7 +26,7 @@ import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextField;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.router.Menu;
 import com.vaadin.flow.router.PageTitle;
@@ -37,7 +36,6 @@ import jakarta.annotation.security.RolesAllowed;
 
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Stream;
 
 /**
  * El libro de movimientos entero, paginado en el servidor con sus filtros (tipo, almacen,
@@ -63,6 +61,7 @@ public class MovementsView extends VerticalLayout {
     private final TextField user = new TextField("Registrado por");
     private final Span count = new Span();
     private final MovementGrid grid = new MovementGrid(true);
+    private LazyPages<MovementDto> pages;
 
     public MovementsView(MaterialClient materials, WarehouseClient warehouses, SupplierClient suppliers, ProjectClient projects,
                          MovementClient movements, ReservationClient reservations, AssemblyClient assemblies, AuthenticationContext authentication) {
@@ -96,7 +95,7 @@ public class MovementsView extends VerticalLayout {
         grid.setId("movements-grid");
         grid.setPageSize(PAGE_SIZE);
         grid.setSizeFull();
-        grid.setItems(this::fetch, this::count);
+        pages = LazyPages.of(grid, this::load, total -> count.setText(total + " movimientos"));
         add(new H2("Movimientos"), filters, actions, grid);
         expand(grid);
     }
@@ -110,7 +109,7 @@ public class MovementsView extends VerticalLayout {
     }
 
     void refresh() {
-        grid.getDataProvider().refreshAll();
+        pages.refresh();
     }
 
     private PageResponse<MovementDto> search(int page, int size, List<String> sort) {
@@ -124,27 +123,9 @@ public class MovementsView extends VerticalLayout {
         return warehouse == null ? null : warehouse.id();
     }
 
-    private Stream<MovementDto> fetch(Query<MovementDto, Void> query) {
-        try {
-            int size = Math.max(1, query.getLimit());
-            PageResponse<MovementDto> page = search(query.getOffset() / size, size,
-                    MasterFilters.sort(query.getSortOrders(), DEFAULT_SORT, MasterFilters.BY_ID));
-            count.setText(page.page().totalElements() + " movimientos");
-            return page.content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
-    }
-
-    private int count(Query<MovementDto, Void> query) {
-        try {
-            long total = search(0, 1, MasterFilters.withTieBreak(DEFAULT_SORT, MasterFilters.BY_ID)).page().totalElements();
-            count.setText(total + " movimientos");
-            return (int) Math.min(Integer.MAX_VALUE, total);
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return 0;
-        }
+    /** Una pagina del libro con su total: una peticion ({@link LazyPages}). */
+    private LazyPages.Page<MovementDto> load(int offset, int limit, List<QuerySortOrder> sort) {
+        int size = Math.max(1, limit);
+        return LazyPages.Page.of(search(offset / size, size, MasterFilters.sort(sort, DEFAULT_SORT, MasterFilters.BY_ID)));
     }
 }

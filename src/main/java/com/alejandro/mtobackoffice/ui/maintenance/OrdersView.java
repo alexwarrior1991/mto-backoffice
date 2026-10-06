@@ -1,19 +1,18 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
-import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamDto;
-import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
-import com.alejandro.mtobackoffice.ui.support.UiErrors;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.vaadin.flow.component.HasValue;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -29,7 +28,7 @@ import com.vaadin.flow.component.orderedlayout.FlexLayout;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextField;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.router.Menu;
 import com.vaadin.flow.router.PageTitle;
@@ -38,7 +37,6 @@ import com.vaadin.flow.spring.security.AuthenticationContext;
 import jakarta.annotation.security.RolesAllowed;
 
 import java.util.List;
-import java.util.stream.Stream;
 
 /**
  * Las ordenes de mantenimiento, paginadas, filtradas y ordenadas en el servidor; es la entrada
@@ -72,6 +70,7 @@ public class OrdersView extends VerticalLayout {
     private final DatePicker plannedTo = new DatePicker("Prevista hasta");
     private final Span count = new Span();
     private final Grid<OrderDto> grid = new Grid<>();
+    private LazyPages<OrderDto> pages;
 
     public OrdersView(MaintenanceClients clients, AuthenticationContext authentication) {
         this.clients = clients;
@@ -156,13 +155,14 @@ public class OrdersView extends VerticalLayout {
         grid.setPageSize(PAGE_SIZE);
         grid.setMultiSort(false);
         grid.setSizeFull();
-        grid.setItems(this::fetch, this::count);
-        grid.addItemClickListener(click -> UI.getCurrent().navigate(OrderDetailView.class, OrderDetailView.parametersOf(click.getItem().id())));
+        pages = LazyPages.of(grid, this::load, total -> count.setText(total + " ordenes"));
+        RowActions.openWithDoubleClickOrButton(grid, OrderDto::id, order -> "Abrir " + order.code(),
+                order -> UI.getCurrent().navigate(OrderDetailView.class, OrderDetailView.parametersOf(order.id())));
         return grid;
     }
 
     void refresh() {
-        grid.getDataProvider().refreshAll();
+        pages.refresh();
     }
 
     private OrderFilter filter() {
@@ -175,27 +175,10 @@ public class OrdersView extends VerticalLayout {
         return item == null ? null : item.id();
     }
 
-    private Stream<OrderDto> fetch(Query<OrderDto, Void> query) {
-        try {
-            int size = Math.max(1, query.getLimit());
-            List<String> sort = MasterFilters.sort(query.getSortOrders());
-            PageResponse<OrderDto> page = clients.orders().search(filter(), query.getOffset() / size, size, sort.isEmpty() ? DEFAULT_SORT : sort);
-            count.setText(page.page().totalElements() + " ordenes");
-            return page.content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
-    }
-
-    private int count(Query<OrderDto, Void> query) {
-        try {
-            long total = clients.orders().search(filter(), 0, 1, DEFAULT_SORT).page().totalElements();
-            count.setText(total + " ordenes");
-            return (int) Math.min(Integer.MAX_VALUE, total);
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return 0;
-        }
+    /** Una pagina con su total: una peticion ({@link LazyPages}). */
+    private LazyPages.Page<OrderDto> load(int offset, int limit, List<QuerySortOrder> sort) {
+        int size = Math.max(1, limit);
+        List<String> order = MasterFilters.sort(sort);
+        return LazyPages.Page.of(clients.orders().search(filter(), offset / size, size, order.isEmpty() ? DEFAULT_SORT : order));
     }
 }

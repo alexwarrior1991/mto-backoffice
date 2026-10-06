@@ -35,7 +35,12 @@ import com.alejandro.mtobackoffice.client.dto.users.RoleNamesRequest;
 import com.alejandro.mtobackoffice.client.dto.users.UserCredentialDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
+import com.alejandro.mtobackoffice.ui.maintenance.CheckItemsDialog;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.alejandro.mtobackoffice.ui.users.TakeOut;
+import com.github.mvysny.kaributesting.v10.RouterLinkKt;
+import com.vaadin.flow.router.RouterLink;
 import org.mockito.InOrder;
 import com.alejandro.mtobackoffice.client.dto.users.RealmProfileDto;
 import com.alejandro.mtobackoffice.ui.users.ClientRolesView;
@@ -327,6 +332,8 @@ import com.alejandro.mtobackoffice.ui.master.SwitchDialog;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.textfield.BigDecimalField;
 import com.vaadin.flow.component.textfield.IntegerField;
+import com.vaadin.flow.internal.nodefeature.PropertyChangeDeniedException;
+import com.vaadin.flow.internal.nodefeature.ElementPropertyMap;
 import com.vaadin.flow.server.SystemMessages;
 import com.vaadin.flow.server.VaadinService;
 import java.math.BigDecimal;
@@ -557,6 +564,19 @@ class ViewLayerTest {
 
         // Sigue a la pantalla en la que se esta, con sus parametros: las rutas son las mismas.
         UI.getCurrent().navigate(CATALOGUE_ROUTE, QueryParameters.simple(Map.of("q", "borrador")));
+
+        assertEquals("http://frontend.test/" + CATALOGUE_ROUTE + "?q=borrador",
+                LocatorJ._get(Anchor.class, spec -> spec.withText("Abrir en mto-frontend")).getHref());
+    }
+
+    @Test
+    void theSpaLinkLeavesOutTheContinueThatSpringSecurityAddsAfterTheLogin() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
+
+        // Tras entrar por el SSO, Spring Security vuelve a la URL pedida con su marca "continue": es
+        // suya, no de la pantalla, y la SPA no tiene por que recibirla.
+        UI.getCurrent().navigate(CATALOGUE_ROUTE, QueryParameters.fromString("q=borrador&continue"));
 
         assertEquals("http://frontend.test/" + CATALOGUE_ROUTE + "?q=borrador",
                 LocatorJ._get(Anchor.class, spec -> spec.withText("Abrir en mto-frontend")).getHref());
@@ -1128,6 +1148,50 @@ class ViewLayerTest {
         verify(trackClient, atLeastOnce()).filter(anyInt(), anyInt(), eq(List.of("name,desc")), anyMap());
     }
 
+    /**
+     * Una pagina es una peticion, con su total, como en mto-frontend: el recuento de Vaadin ya no se
+     * pide aparte (ni con el orden elegido), y un fallo se notifica una vez aunque Vaadin vuelva a
+     * contar en la misma ida y vuelta.
+     */
+    @Test
+    void aMasterListAsksOncePerPageAndNotifiesAFailureOnce() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubTracks(threeTracks());
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        Grid<TrackDto> grid = trackGrid();
+        GridKt._size(grid);
+        MockVaadin.clientRoundtrip();
+
+        clearInvocations(trackClient);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Recargar")));
+        assertEquals(3, GridKt._size(grid));
+        assertEquals("VIA 1", GridKt._get(grid, 0).getName());
+        assertEquals("VIA MUERTA", GridKt._get(grid, 2).getName());
+        MockVaadin.clientRoundtrip();
+        verify(trackClient, times(1)).filter(anyInt(), anyInt(), anyList(), anyMap());
+        verify(trackClient).filter(eq(0), eq(50), eq(List.of()), anyMap());
+
+        clearInvocations(trackClient);
+        grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("name"), SortDirection.DESCENDING)));
+        assertEquals(3, GridKt._size(grid));
+        GridKt._get(grid, 0);
+        MockVaadin.clientRoundtrip();
+        verify(trackClient, times(1)).filter(anyInt(), anyInt(), anyList(), anyMap());
+        verify(trackClient).filter(eq(0), eq(50), eq(List.of("name,desc")), anyMap());
+
+        doThrow(BackofficeApiException.of(HttpStatus.SERVICE_UNAVAILABLE, ApiProblem.empty(), "corr-lp", null,
+                "POST /api/configuration/tracks/filter")).when(trackClient).filter(anyInt(), anyInt(), anyList(), anyMap());
+        clearInvocations(trackClient);
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Recargar")));
+        assertEquals(0, GridKt._size(grid));
+        MockVaadin.clientRoundtrip();
+        assertEquals(0, GridKt._size(grid), "la siguiente vez se vuelve a pedir");
+        assertEquals(2, NotificationsKt.getNotifications().size(), "un aviso por vez que se pidio, no por recuento");
+        verify(trackClient, times(2)).filter(anyInt(), anyInt(), anyList(), anyMap());
+        LocatorJ._get(Span.class, spec -> spec.withText("0 vias"));
+    }
+
     @Test
     void aReadOnlyPersonSeesTheMastersWithoutAnyWriteControl() {
         loginAs("config.lector", "ROLE_CONFIG_READ");
@@ -1384,6 +1448,114 @@ class ViewLayerTest {
 
         assertTrue(kp.isInvalid());
         verify(profileClient, never()).create(any());
+    }
+
+    /**
+     * Las medidas de infraestructura, con la forma que mto-frontend les exige antes de llamar: el vano,
+     * las alturas, el viento y los KP de agujas y aisladores no son negativos; lo que va en mm en el
+     * perfil y el descentramiento son enteros (solo la distancia carril-poste y el descentramiento
+     * llevan signo), y la longitud de un paquete son solo cifras. El KP del perfil viaja recortado.
+     */
+    @Test
+    void theInfrastructureMeasuresAreCheckedLikeInTheSpaBeforeCalling() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null, null)));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        when(profileClient.create(any())).thenAnswer(call -> {
+            ProfileDto created = call.getArgument(0);
+            created.setId(99L);
+            return created;
+        });
+
+        UI.getCurrent().navigate(PROFILES_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Identificador")), "P-9");
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("KP")), " 10.500 ");
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> track = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via"));
+        LocatorJ._setValue(track, new RefItem(3L, "TRACK 1 (EP4)"));
+        @SuppressWarnings("unchecked")
+        ComboBox<LovRef> status = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Estado"));
+        LocatorJ._setValue(status, new LovRef(5L, "PT1", "Poste tipo 1"));
+        BigDecimalField span = LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withLabel("Vano hasta el siguiente (m)"));
+        BigDecimalField support = LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withLabel("Altura del soporte de mensula (mm)"));
+        BigDecimalField railPole = LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withLabel("Distancia carril-poste (mm, con signo)"));
+        LocatorJ._setValue(span, new BigDecimal("-47.970"));
+        LocatorJ._setValue(support, new BigDecimal("5300.5"));
+        LocatorJ._setValue(railPole, new BigDecimal("-2400"));
+        Button save = LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar"));
+        LocatorJ._click(save);
+        assertEquals("No puede ser negativo", span.getErrorMessage());
+        assertEquals("Un numero entero, sin decimales", support.getErrorMessage());
+        assertTrue(span.isInvalid() && support.isInvalid());
+        assertFalse(railPole.isInvalid(), "la distancia carril-poste lleva signo");
+        verify(profileClient, never()).create(any());
+
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("cantilevers-add")));
+        CantileverDialog cantilever = LocatorJ._get(CantileverDialog.class);
+        @SuppressWarnings("unchecked")
+        ComboBox<LovRef> type = LocatorJ._get(cantilever, ComboBox.class, spec -> spec.withLabel("Tipo de mensula"));
+        LocatorJ._setValue(type, new LovRef(5L, "PT1", "Poste tipo 1"));
+        BigDecimalField cwHeight = LocatorJ._get(cantilever, BigDecimalField.class, spec -> spec.withLabel("Altura del hilo de contacto (mm)"));
+        BigDecimalField stagger = LocatorJ._get(cantilever, BigDecimalField.class, spec -> spec.withLabel("Descentramiento (mm)"));
+        BigDecimalField elevation = LocatorJ._get(cantilever, BigDecimalField.class, spec -> spec.withLabel("Elevacion del hilo (mm)"));
+        LocatorJ._setValue(cwHeight, new BigDecimal("-5300"));
+        LocatorJ._setValue(stagger, new BigDecimal("200.5"));
+        LocatorJ._setValue(elevation, new BigDecimal("-0.050"));
+        Button accept = LocatorJ._get(cantilever, Button.class, spec -> spec.withId("cantilever-accept"));
+        LocatorJ._click(accept);
+        assertTrue(cwHeight.isInvalid() && stagger.isInvalid(), "la altura no es negativa y el descentramiento es entero");
+        assertFalse(elevation.isInvalid(), "la elevacion lleva signo y decimales");
+        assertFalse(LocatorJ._find(CantileverDialog.class).isEmpty(), "la mensula sigue abierta con lo escrito");
+        LocatorJ._setValue(cwHeight, new BigDecimal("5300"));
+        LocatorJ._setValue(stagger, new BigDecimal("-200"));
+        LocatorJ._click(accept);
+        assertTrue(LocatorJ._find(CantileverDialog.class).isEmpty());
+
+        LocatorJ._setValue(span, new BigDecimal("47.970"));
+        LocatorJ._setValue(support, new BigDecimal("5300"));
+        LocatorJ._click(save);
+        verify(profileClient).create(argThat(dto -> "10.500".equals(dto.getKp())
+                && new BigDecimal("47.970").equals(dto.getSpan())
+                && new BigDecimal("5300").equals(dto.getHeightCantileverSupport())
+                && new BigDecimal("-2400").equals(dto.getRailPoleDistance())
+                && dto.getCantilevers().size() == 1
+                && new BigDecimal("-200").equals(dto.getCantilevers().getFirst().getStagger())));
+
+        UI.getCurrent().navigate(SECTION_INSULATORS_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        Dialog insulator = LocatorJ._get(Dialog.class);
+        BigDecimalField insulatorKp = LocatorJ._get(insulator, BigDecimalField.class, spec -> spec.withLabel("KP (m)"));
+        LocatorJ._setValue(insulatorKp, new BigDecimal("-110176"));
+        LocatorJ._click(LocatorJ._get(insulator, Button.class, spec -> spec.withId("switches-add")));
+        SwitchDialog aguja = LocatorJ._get(SwitchDialog.class);
+        LocatorJ._setValue(LocatorJ._get(aguja, TextField.class, spec -> spec.withLabel("Codigo")), "W41");
+        BigDecimalField switchKp = LocatorJ._get(aguja, BigDecimalField.class, spec -> spec.withLabel("KP (m)"));
+        IntegerField turnout = LocatorJ._get(aguja, IntegerField.class, spec -> spec.withLabel("Denominador de la tangente (1:n)"));
+        LocatorJ._setValue(switchKp, new BigDecimal("-110249"));
+        LocatorJ._setValue(turnout, 0);
+        LocatorJ._click(LocatorJ._get(aguja, Button.class, spec -> spec.withId("switch-accept")));
+        assertTrue(switchKp.isInvalid(), "el KP de una aguja no es negativo");
+        assertEquals("Tiene que ser 1 o mas", turnout.getErrorMessage());
+        assertFalse(LocatorJ._find(SwitchDialog.class).isEmpty());
+        aguja.close();
+        LocatorJ._click(LocatorJ._get(insulator, Button.class, spec -> spec.withText("Guardar")));
+        assertTrue(insulatorKp.isInvalid(), "el KP de un aislador no es negativo");
+        verify(sectionInsulatorClient, never()).create(any());
+        insulator.close();
+
+        UI.getCurrent().navigate("infraestructura/paquetes");
+        LocatorJ._click(button("Nuevo"));
+        Dialog executionPackage = LocatorJ._get(Dialog.class);
+        TextField length = LocatorJ._get(executionPackage, TextField.class, spec -> spec.withLabel("Longitud"));
+        for (String typed : List.of("1.000", "-5", "+5", "12 m")) {
+            LocatorJ._setValue(length, typed);
+            LocatorJ._click(LocatorJ._get(executionPackage, Button.class, spec -> spec.withText("Guardar")));
+            assertTrue(length.isInvalid(), "\"" + typed + "\" no es una longitud: solo cifras");
+        }
+        verify(executionPackageClient, never()).create(any());
     }
 
     private static final String DISCONNECTORS_ROUTE = "infraestructura/seccionadores";
@@ -2178,6 +2350,15 @@ class ViewLayerTest {
         assertEquals(3, GridKt._size(grid), "user012, user015 y user018 estan desactivados");
         verify(usersClient, atLeastOnce()).search(eq("user01"), isNull(), isNull(), eq(false), isNull(), isNull(), eq(0), anyInt());
         LocatorJ._get(Span.class, spec -> spec.withText("3 usuarios"));
+
+        // Un tramo es una peticion, con su total: el recuento no se pide aparte (LazyPages).
+        clearInvocations(usersClient);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Recargar")));
+        assertEquals(3, GridKt._size(grid));
+        assertEquals("user018", GridKt._get(grid, 2).username());
+        MockVaadin.clientRoundtrip();
+        verify(usersClient, times(1)).search(any(), any(), any(), any(), any(), any(), anyInt(), anyInt());
+        verify(usersClient).search(eq("user01"), isNull(), isNull(), eq(false), isNull(), isNull(), eq(0), eq(UsersView.PAGE_SIZE));
     }
 
     @Test
@@ -2632,6 +2813,33 @@ class ViewLayerTest {
         assertEquals(1, GridKt._size(roles));
         assertTrue(GridKt._getFormattedRow(roles, 0).contains("users-write"));
         verify(usersClient, times(1)).userRoles(ANA_ID);
+        assertEquals(List.of("users-read", "users-delete"), rolePicker.getListDataView().getItems().toList(),
+                "las opciones se rehacen aqui con lo que devolvio el servicio");
+        verify(usersClient, times(1)).clientRoles("mto-users-api");
+    }
+
+    /** Cambiar un perfil relee los roles de la persona, no el catalogo, como en mto-frontend. */
+    @Test
+    void aProfileChangeRereadsThePersonsRolesButNotTheCatalogue() {
+        loginAs("usuarios.responsable", "ROLE_USERS_READ", "ROLE_USERS_PROFILES_WRITE", "ROLE_USERS_ROLES_WRITE");
+        stubUserDetail(ana());
+        when(usersClient.assignProfile(ANA_ID, "mto-users-manager")).thenReturn(List.of(VIEWER, MANAGER));
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        selectTab(1);
+        @SuppressWarnings("unchecked")
+        ComboBox<ClientDto> clientPicker = LocatorJ._get(ComboBox.class, spec -> spec.withId("role-client"));
+        LocatorJ._setValue(clientPicker, USERS_API);
+        selectTab(0);
+        @SuppressWarnings("unchecked")
+        ComboBox<RealmProfileSummaryDto> picker = LocatorJ._get(ComboBox.class, spec -> spec.withId("profile-assign"));
+        LocatorJ._setValue(picker, MANAGER);
+        LocatorJ._click(detailButton("profile-assign-button"));
+
+        verify(usersClient, times(2)).userRoles(ANA_ID);
+        verify(usersClient, times(1)).clients();
+        verify(usersClient, times(1)).clientRoles("mto-users-api");
+        assertEquals(USERS_API, clientPicker.getValue(), "el cliente elegido sigue elegido");
     }
 
     @Test
@@ -3139,15 +3347,21 @@ class ViewLayerTest {
         verify(usersClient).clientRoleMembers("mto-users-api", "users-read", 0, 50);
         Grid<Object> members = gridWithId("role-members-grid");
         assertEquals(2, GridKt._size(members));
-        assertTrue(GridKt._getFormattedRow(members, 0).contains("ana"));
+        assertEquals("ana", ((RouterLink) GridKt._getCellComponent(members, 0, "username")).getText());
         LocatorJ._get(H4.class, spec -> spec.withText("Miembros de mto-users-api / users-read"));
         assertFalse(detailButton("role-members-next").isEnabled());
         assertFalse(detailButton("role-members-previous").isEnabled());
         verify(usersClient, times(1)).clients();
+
+        // Volver a un cliente ya elegido no vuelve a pedir sus roles mientras dura la pantalla.
+        LocatorJ._setValue(picker, CONFIGURATION_API);
+        LocatorJ._setValue(picker, USERS_API);
+        assertEquals(3, GridKt._size(catalogue));
+        verify(usersClient, times(1)).clientRoles("mto-users-api");
     }
 
     @Test
-    void aMemberRowOpensTheUserDetail() {
+    void aMembersUsernameLinksToTheUserDetail() {
         loginAs("usuarios.lector", "ROLE_USERS_READ");
         when(usersClient.clients()).thenReturn(List.of(USERS_API));
         when(usersClient.clientRoles("mto-users-api")).thenReturn(List.of(new ClientRoleDto("users-read", null, false)));
@@ -3160,7 +3374,10 @@ class ViewLayerTest {
         LocatorJ._setValue(picker, USERS_API);
         Grid<Object> catalogue = gridWithId("roles-catalogue");
         catalogue.select(GridKt._get(catalogue, 0));
-        GridKt._clickItem(gridWithId("role-members-grid"), 0, 1, false, false, false, false);
+        Grid<Object> members = gridWithId("role-members-grid");
+        GridKt._clickItem(members, 0, 1, false, false, false, false);
+        assertTrue(LocatorJ._find(UserDetailView.class).isEmpty(), "un clic en la fila no abre nada, como en mto-frontend");
+        RouterLinkKt._click((RouterLink) GridKt._getCellComponent(members, 0, "username"));
 
         LocatorJ._get(UserDetailView.class);
         LocatorJ._get(H2.class, spec -> spec.withText("ana"));
@@ -3542,6 +3759,78 @@ class ViewLayerTest {
         assertTrue(LocatorJ._find(Dialog.class).isEmpty());
         NotificationsKt.expectNotifications("Entrada registrada: 10 m de MAT-001");
         verify(materialClient, times(2)).stock(MAT1, null);
+    }
+
+    /**
+     * Una cantidad de almacen es numeric(19,6): lo que no cabe (siete decimales, catorce cifras
+     * enteras) no llega al servicio desde ningun dialogo, como en mto-frontend.
+     */
+    @Test
+    void aStockQuantityThatDoesNotFitTheServiceColumnNeverReachesIt() {
+        loginAs("almacen.operario", "ROLE_STOCK_READ", "ROLE_STOCK_WRITE");
+        when(materialClient.stock(any(), any())).thenReturn(stockOf(new BigDecimal("10"), false));
+        when(movementClient.entry(any())).thenReturn(movement(MovementType.ENTRY, "1.123456"));
+        when(materialClient.create(any())).thenAnswer(call -> new MaterialDto(UUID.randomUUID(), ((MaterialRequest) call.getArgument(0)).code(), "Hilo", "m",
+                BigDecimal.ZERO, true, null));
+        stubReservations();
+
+        UI.getCurrent().navigate(StockRoutes.PREFIX);
+        LocatorJ._setValue(ViewLayerTest.<MaterialSummaryDto>combo("stock-material"), HILO);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("operation-entry")));
+        Dialog entry = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(entry, ComboBox.class, spec -> spec.withId("movement-warehouse")), CENTRAL);
+        BigDecimalField quantity = LocatorJ._get(entry, BigDecimalField.class, spec -> spec.withId("movement-quantity"));
+        Button saveEntry = LocatorJ._get(entry, Button.class, spec -> spec.withId("movement-save"));
+        LocatorJ._setValue(quantity, new BigDecimal("1.1234567"));
+        LocatorJ._click(saveEntry);
+        assertEquals("Como mucho 6 decimales", quantity.getErrorMessage());
+        LocatorJ._setValue(quantity, new BigDecimal("12345678901234"));
+        LocatorJ._click(saveEntry);
+        assertEquals("Como mucho 13 cifras enteras", quantity.getErrorMessage());
+        verify(movementClient, never()).entry(any());
+        LocatorJ._setValue(quantity, new BigDecimal("1.123456"));
+        LocatorJ._click(saveEntry);
+        verify(movementClient).entry(argThat(request -> new BigDecimal("1.123456").equals(request.quantity())));
+
+        UI.getCurrent().navigate(StockRoutes.RESERVATIONS);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("reservation-create")));
+        Dialog reservation = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(reservation, ComboBox.class, spec -> spec.withId("reservation-material")), HILO);
+        LocatorJ._setValue(LocatorJ._get(reservation, ComboBox.class, spec -> spec.withId("reservation-warehouse")), CENTRAL);
+        LocatorJ._setValue(LocatorJ._get(reservation, ComboBox.class, spec -> spec.withId("reservation-project")), TRAMO);
+        BigDecimalField reserved = LocatorJ._get(reservation, BigDecimalField.class, spec -> spec.withId("reservation-quantity"));
+        LocatorJ._setValue(reserved, new BigDecimal("0.0000001"));
+        LocatorJ._click(LocatorJ._get(reservation, Button.class, spec -> spec.withId("reservation-save")));
+        assertEquals("Como mucho 6 decimales", reserved.getErrorMessage());
+        verify(reservationClient, never()).create(any());
+        reservation.close();
+
+        UI.getCurrent().navigate(StockRoutes.MATERIALS);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("stock-create")));
+        Dialog material = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(material, TextField.class, spec -> spec.withLabel("Codigo")), "MAT-010");
+        LocatorJ._setValue(LocatorJ._get(material, TextField.class, spec -> spec.withLabel("Nombre")), "Hilo");
+        LocatorJ._setValue(LocatorJ._get(material, TextField.class, spec -> spec.withLabel("Unidad de medida")), "m");
+        BigDecimalField minimum = LocatorJ._get(material, BigDecimalField.class, spec -> spec.withLabel("Stock minimo"));
+        LocatorJ._setValue(minimum, new BigDecimal("0.1234567"));
+        LocatorJ._click(LocatorJ._get(material, Button.class, spec -> spec.withId("material-save")));
+        assertEquals("Como mucho 6 decimales", minimum.getErrorMessage());
+        verify(materialClient, never()).create(any());
+        LocatorJ._setValue(minimum, BigDecimal.ZERO);
+        LocatorJ._click(LocatorJ._get(material, Button.class, spec -> spec.withId("material-save")));
+        verify(materialClient).create(new MaterialRequest("MAT-010", "Hilo", "m", BigDecimal.ZERO));
+
+        UI.getCurrent().navigate(StockRoutes.ASSEMBLIES);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("stock-create")));
+        Dialog assembly = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        ComboBox<MaterialSummaryDto> component = LocatorJ._get(assembly, ComboBox.class, spec -> spec.withId("bom-material"));
+        BigDecimalField perAssembly = LocatorJ._get(assembly, BigDecimalField.class, spec -> spec.withId("bom-quantity"));
+        LocatorJ._setValue(component, HILO);
+        LocatorJ._setValue(perAssembly, new BigDecimal("2.1234567"));
+        LocatorJ._click(LocatorJ._get(assembly, Button.class, spec -> spec.withId("bom-add")));
+        assertEquals("Como mucho 6 decimales", perAssembly.getErrorMessage());
+        assertEquals(0, GridKt._size(gridWithId("bom-grid")), "la linea no entra en la lista");
     }
 
     @Test
@@ -4171,7 +4460,8 @@ class ViewLayerTest {
         Grid<Object> grid = gridWithId("orders-grid");
         assertEquals(1, GridKt._size(grid));
         assertEquals(List.of("MO-000001", "Revision tramo 12", "Preventiva", "En curso", "Alta", "TS-0001 - Tramo 12", "VIA 1 (PAQ NORTE)",
-                "12.1 - 13.45", "PAQ NORTE", "14/09/2026", "EQ-01 - Brigada norte", "3/10", "mantenimiento.tecnico"), GridKt._getFormattedRow(grid, 0));
+                "12.1 - 13.45", "PAQ NORTE", "14/09/2026", "EQ-01 - Brigada norte", "3/10", "mantenimiento.tecnico"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 13));
         LocatorJ._get(Span.class, spec -> spec.withText("1 ordenes"));
         verify(orderClient, atLeastOnce()).search(eq(OrderFilter.NONE), eq(0), anyInt(), eq(List.of("createdAt,desc")));
 
@@ -4537,6 +4827,8 @@ class ViewLayerTest {
         assertFalse(hasButton("order-create"), "sin write no hay alta");
 
         GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        assertTrue(LocatorJ._find(OrderDetailView.class).isEmpty(), "un clic simple no abre nada, como en mto-frontend");
+        GridKt._doubleClickItem(grid, 0, 1, false, false, false, false);
         LocatorJ._get(OrderDetailView.class);
         LocatorJ._get(H2.class, spec -> spec.withText("MO-000001 · Revision tramo 12"));
         assertFalse(hasButton("order-edit"), "quien solo lee no ve ningun boton de escritura");
@@ -4816,7 +5108,7 @@ class ViewLayerTest {
         assertEquals("MO-000001", GridKt._getFormattedRow(orders, 0).getFirst());
         verify(assetClient, atLeastOnce()).orders(eq(ASSET_OWN), eq(0), anyInt(), eq(List.of("createdAt,desc", "id,asc")));
         verify(assetClient, never()).orders(any(), anyInt(), anyInt(), argThat(sort -> !sort.contains("id,asc")));
-        GridKt._clickItem(orders, 0, 1, false, false, false, false);
+        GridKt._doubleClickItem(orders, 0, 1, false, false, false, false);
         LocatorJ._get(OrderDetailView.class);
     }
 
@@ -4877,7 +5169,10 @@ class ViewLayerTest {
                 ShiftStatus.IN_PROGRESS, PossessionType.FULL)), eq(0), anyInt(), anyList());
         assertFalse(hasButton("shift-create"));
 
-        GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        Button open = LocatorJ._get(GridKt._getCellComponent(grid, 0, RowActions.OPEN_COLUMN), Button.class,
+                spec -> spec.withId("open-" + SHIFT1));
+        assertEquals("Abrir SH-000001", open.getTooltip().getText());
+        LocatorJ._click(open);
         LocatorJ._get(H2.class, spec -> spec.withText("SH-000001 · 05/10/2026"));
         assertFalse(hasButton("shift-edit") || hasButton("shift-close"), "quien solo lee no ve botones de escritura");
     }
@@ -5125,6 +5420,165 @@ class ViewLayerTest {
         assertTrue(LocatorJ._find(CompleteTaskDialog.class).isEmpty());
     }
 
+    /**
+     * Un KP de mantenimiento es numeric(12,3): lo que no cabe no llega al servicio desde ningun
+     * dialogo, como en mto-frontend. El KP final de un defecto puede ser el inicial (un defecto en un
+     * punto), nunca menor.
+     */
+    @Test
+    void aMaintenanceKpThatDoesNotFitTheServiceColumnNeverReachesIt() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+
+        UI.getCurrent().navigate(MaintenanceRoutes.ASSETS);
+        click("asset-create");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("asset-code")), "TS-0003");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("asset-name")), "Tramo 14");
+        LocatorJ._setValue(comboWithId("asset-track"), new RefItem(12L, "VIA 1 (PAQ NORTE)"));
+        BigDecimalField assetStart = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("asset-start-kp"));
+        BigDecimalField assetEnd = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("asset-end-kp"));
+        LocatorJ._setValue(assetStart, new BigDecimal("13.4505"));
+        LocatorJ._setValue(assetEnd, new BigDecimal("1234567890"));
+        IntegerField interval = LocatorJ._get(IntegerField.class, spec -> spec.withId("asset-interval"));
+        LocatorJ._setValue(interval, 0);
+        click(AssetEditorDialog.SAVE_ID);
+        assertEquals("Tiene que ser mayor que cero", interval.getErrorMessage(), "un intervalo de cero dias no es un plan");
+        assertEquals("Como mucho 3 decimales", assetStart.getErrorMessage());
+        assertEquals("Como mucho 9 cifras enteras", assetEnd.getErrorMessage());
+        verify(assetClient, never()).create(any());
+        LocatorJ._get(AssetEditorDialog.class).close();
+
+        UI.getCurrent().navigate(MaintenanceRoutes.SHIFTS);
+        click("shift-create");
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("shift-date")), LocalDate.of(2026, 10, 5));
+        LocatorJ._setValue(comboWithId("shift-possession"), PossessionType.FULL);
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RefItem> tracks = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-tracks"));
+        LocatorJ._setValue(tracks, Set.of(new RefItem(12L, "VIA 1 (PAQ NORTE)")));
+        BigDecimalField shiftStart = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("shift-start-kp"));
+        LocatorJ._setValue(shiftStart, new BigDecimal("12.0001"));
+        click(ShiftEditorDialog.SAVE_ID);
+        assertEquals("Como mucho 3 decimales", shiftStart.getErrorMessage());
+        verify(shiftClient, never()).create(any());
+        LocatorJ._get(ShiftEditorDialog.class).close();
+
+        UI.getCurrent().navigate(MaintenanceRoutes.INSPECTIONS);
+        click("inspection-create");
+        LocatorJ._setValue(comboWithId("inspection-asset"), profileSummary());
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("inspection-date")), LocalDate.of(2026, 9, 20));
+        BigDecimalField inspectionKp = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("inspection-kp"));
+        LocatorJ._setValue(inspectionKp, new BigDecimal("-12.2705"));
+        click(InspectionEditorDialog.SAVE_ID);
+        assertEquals("Como mucho 3 decimales", inspectionKp.getErrorMessage());
+        verify(inspectionClient, never()).create(any());
+        LocatorJ._get(InspectionEditorDialog.class).close();
+
+        when(defectClient.create(any())).thenReturn(defectOf(DefectStatus.OPEN));
+        when(defectClient.findById(DEFECT1)).thenReturn(defectOf(DefectStatus.OPEN));
+        when(defectClient.history(DEFECT1)).thenReturn(List.of());
+        UI.getCurrent().navigate(MaintenanceRoutes.DEFECTS);
+        click("defect-create");
+        LocatorJ._setValue(comboWithId("defect-asset"), profileSummary());
+        LocatorJ._setValue(comboWithId("defect-severity"), DefectSeverity.HIGH);
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("defect-description")), "Pendola rota");
+        BigDecimalField defectStart = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("defect-start-kp"));
+        BigDecimalField defectEnd = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("defect-end-kp"));
+        LocatorJ._setValue(defectStart, new BigDecimal("12.270"));
+        LocatorJ._setValue(defectEnd, new BigDecimal("12.100"));
+        click(DefectEditorDialog.SAVE_ID);
+        assertEquals("El KP final no puede ser menor que el inicial", defectEnd.getErrorMessage());
+        verify(defectClient, never()).create(any());
+        LocatorJ._setValue(defectEnd, new BigDecimal("12.270"));
+        click(DefectEditorDialog.SAVE_ID);
+        verify(defectClient).create(argThat(request -> new BigDecimal("12.270").equals(request.startKp())
+                && new BigDecimal("12.270").equals(request.endKp())));
+        LocatorJ._get(DefectDetailView.class);
+    }
+
+    /**
+     * Las cantidades de mantenimiento son numeric(19,6) y los minutos netos no son negativos, tambien
+     * en los dialogos sin Binder. Una medida que el campo no pudo leer no viaja como vaciada: borraria
+     * la que habia.
+     */
+    @Test
+    void maintenanceQuantitiesMinutesAndMeasuresAreCheckedBeforeCalling() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        TaskDto base = taskWithChecklist(MaintenanceTaskStatus.IN_PROGRESS);
+        CheckItemDto measuredBefore = new CheckItemDto(ITEM1, "P-01", "Altura del hilo", "mm", new BigDecimal("5300"), new BigDecimal("5700"),
+                true, new BigDecimal("5400"), false, null, CheckItemResult.OK, null, 1, false, 1L);
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of(new TaskDto(base.id(), base.orderId(), base.sequence(), base.description(),
+                base.status(), null, base.asset(), SHIFT1, null, null, null, null, List.of(), base.taskTypeCodes(), List.of(measuredBefore),
+                null, null)));
+        when(orderClient.findById(ORDER1)).thenReturn(orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE));
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        openShift(shiftOf(ShiftStatus.IN_PROGRESS));
+
+        click("shift-close");
+        IntegerField netMinutes = LocatorJ._get(IntegerField.class, spec -> spec.withId("shift-transition-net-minutes"));
+        LocatorJ._setValue(netMinutes, -30);
+        click(ShiftTransitionDialog.CONFIRM_ID);
+        assertEquals("No puede ser negativo", netMinutes.getErrorMessage());
+        verify(shiftClient, never()).close(any(), any());
+        LocatorJ._get(ShiftTransitionDialog.class).close();
+
+        Grid<Object> tasks = gridWithId("shift-tasks-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("shift-task-checklist-" + TASK1)));
+        BigDecimalField measured = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("check-measured-" + ITEM1));
+        LocatorJ._setValue(measured, new BigDecimal("5250.0001"));
+        click("check-save-" + ITEM1);
+        assertEquals("Como mucho 3 decimales", measured.getErrorMessage());
+        LocatorJ._setValue(measured, null);
+        typeFromTheBrowser(measured, "5,250,5");
+        click("check-save-" + ITEM1);
+        assertEquals(Numbers.UNREADABLE, measured.getErrorMessage());
+        verify(orderClient, never()).updateCheckItem(any(), any(), any(), any());
+        LocatorJ._get(CheckItemsDialog.class).close();
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("shift-task-complete-" + TASK1)));
+        click("complete-task-material-add");
+        LocatorJ._setValue(comboWithId("material-line-material"), new MaterialSummaryDto(MAT1, "MAT-001", "Pendola", "ud", true));
+        LocatorJ._setValue(comboWithId("material-line-warehouse"), new WarehouseSummaryDto(WH1, "WH-000", "Central", true));
+        BigDecimalField used = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-line-quantity"));
+        LocatorJ._setValue(used, new BigDecimal("2.1234567"));
+        click("material-line-add");
+        assertEquals("Como mucho 6 decimales", used.getErrorMessage());
+        assertFalse(LocatorJ._find(BigDecimalField.class, spec -> spec.withId("material-line-quantity")).isEmpty(), "la linea sigue abierta");
+        LocatorJ._get(CompleteTaskDialog.class).close();
+        verify(orderClient, never()).completeTask(any(), any(), any());
+
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(line(LINE_FAILED, StockSyncStatus.FAILED, null)));
+        click("material-add");
+        LocatorJ._setValue(comboWithId("material-material"), new MaterialSummaryDto(MAT1, "MAT-001", "Pendola", "ud", true));
+        LocatorJ._setValue(comboWithId("material-warehouse"), new WarehouseSummaryDto(WH1, "WH-000", "Central", true));
+        BigDecimalField planned = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-planned"));
+        LocatorJ._setValue(planned, new BigDecimal("4.1234567"));
+        click(MaterialUsageDialog.SAVE_ID);
+        assertEquals("Como mucho 6 decimales", planned.getErrorMessage());
+        verify(orderClient, never()).registerMaterial(any(), any());
+        LocatorJ._get(MaterialUsageDialog.class).close();
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("order-materials-grid"), 0, "actions"), Button.class,
+                spec -> spec.withId("material-edit-" + LINE_FAILED)));
+        BigDecimalField consumed = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-consumed"));
+        LocatorJ._setValue(consumed, new BigDecimal("-1"));
+        click(MaterialUsageDialog.SAVE_ID);
+        assertEquals("No puede ser negativo", consumed.getErrorMessage());
+        verify(orderClient, never()).updateMaterial(any(), any(), any());
+    }
+
+    /**
+     * Lo que la persona escribe y el campo no sabe leer, como llega del navegador: el campo se queda
+     * sin valor, pero con el texto. Puesto desde el servidor, el campo lo volveria a leer y lo borraria.
+     */
+    private static void typeFromTheBrowser(BigDecimalField field, String text) {
+        try {
+            field.getElement().getNode().getFeature(ElementPropertyMap.class).deferredUpdateFromClient("value", text).run();
+        } catch (PropertyChangeDeniedException denied) {
+            throw new AssertionError(denied);
+        }
+    }
+
     @Test
     void completingFromTheOrderPicksAnInProgressShiftOfItsTrackAndMaterialsNeedStockRead() {
         loginAs("mantenimiento.sin-almacen", "ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_CONFIG_READ");
@@ -5225,7 +5679,7 @@ class ViewLayerTest {
         GridKt._size(grid);
         verify(inspectionClient, atLeastOnce()).search(eq(new InspectionFilter(InspectionResult.MAJOR_DEFECT, null, null, null,
                 LocalDate.of(2026, 9, 1), null, "ana", null)), eq(0), anyInt(), anyList());
-        GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        GridKt._doubleClickItem(grid, 0, 1, false, false, false, false);
 
         LocatorJ._get(InspectionDetailView.class);
         assertTrue(hasButton("inspection-create-defect") && hasButton("inspection-create-order"));
@@ -5329,7 +5783,7 @@ class ViewLayerTest {
         GridKt._size(grid);
         verify(defectClient, atLeastOnce()).search(eq(new DefectFilter(DefectSeverity.HIGH, DefectStatus.OPEN, null, null, null, null,
                 Formats.startOfDay(LocalDate.of(2026, 9, 1)), null)), eq(0), anyInt(), anyList());
-        GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, RowActions.OPEN_COLUMN), Button.class));
 
         LocatorJ._get(DefectDetailView.class);
         assertEquals("Abierto", GridKt._getFormattedRow(gridWithId("defect-history-grid"), 0).get(2));
@@ -5389,6 +5843,39 @@ class ViewLayerTest {
         click("reason-confirm");
         verify(defectClient).discard(DEFECT1, new ReasonRequest("Duplicado"));
         assertEquals("Descartado", spanText("defect-status"));
+    }
+
+    /** En las pestanas Defectos e Inspecciones de una orden, una fila se abre con su boton, como en mto-frontend. */
+    @Test
+    void anOrdersDefectAndInspectionRowsOpenWithTheirButton() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        DefectDto defect = defectOf(DefectStatus.IN_PROGRESS);
+        InspectionDto inspection = inspectionOf(InspectionResult.OK, null, null);
+        when(defectClient.search(eq(DefectFilter.ofOrder(ORDER1)), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(defect), 0, 100));
+        when(inspectionClient.search(eq(InspectionFilter.ofOrder(ORDER1)), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.of(inspection), 0, 100));
+        when(defectClient.findById(defect.id())).thenReturn(defect);
+        when(defectClient.history(defect.id())).thenReturn(List.of());
+        when(inspectionClient.findById(inspection.id())).thenReturn(inspection);
+        OrderDto order = orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.CORRECTIVE);
+        openOrder(order);
+
+        selectTab(2);
+        Grid<Object> defects = gridWithId("order-defects-grid");
+        GridKt._clickItem(defects, 0, 1, false, false, false, false);
+        GridKt._doubleClickItem(defects, 0, 1, false, false, false, false);
+        assertTrue(LocatorJ._find(DefectDetailView.class).isEmpty(), "ni el clic ni el doble clic: su boton, como en mto-frontend");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(defects, 0, RowActions.OPEN_COLUMN), Button.class,
+                spec -> spec.withId("open-" + defect.id())));
+        LocatorJ._get(DefectDetailView.class);
+
+        openOrder(order);
+        selectTab(3);
+        Grid<Object> inspections = gridWithId("order-inspections-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(inspections, 0, RowActions.OPEN_COLUMN), Button.class,
+                spec -> spec.withId("open-" + inspection.id())));
+        LocatorJ._get(InspectionDetailView.class);
     }
 
     @Test
@@ -6104,7 +6591,7 @@ class ViewLayerTest {
         verify(notificationClient, atLeastOnce()).inbox(eq(new InboxFilter(null, ActivityCategory.STOCK, ActivitySeverity.WARNING, null, null)),
                 anyInt(), anyInt(), anyList());
 
-        // El recuento va siempre con el orden del servicio; la pagina lleva el de la columna.
+        // La pagina lleva el orden de la columna, y con ella llega el recuento (LazyPages).
         grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("severity"), SortDirection.DESCENDING)));
         GridKt._get(grid, 0);
         verify(notificationClient, atLeastOnce()).inbox(any(InboxFilter.class), anyInt(), anyInt(), eq(List.of("severity,desc")));
@@ -6236,12 +6723,12 @@ class ViewLayerTest {
                 "POST /api/notifications/inbox/" + NOTIFICATION1 + "/read"));
 
         UI.getCurrent().navigate(NotificationRoutes.INBOX);
-        GridKt._clickItem(inboxGrid(), 0, 1, false, false, false, false);
+        GridKt._doubleClickItem(inboxGrid(), 0, 1, false, false, false, false);
 
         List<Notification> notifications = NotificationsKt.getNotifications();
         assertEquals(1, notifications.size());
         LocatorJ._get(notifications.getFirst(), Span.class,
-                spec -> spec.withText("No se ha encontrado lo que se pedia. Notification " + NOTIFICATION1 + " is not addressed to config.lector"));
+                spec -> spec.withText("Esa notificacion ya no existe o no va dirigida a ti."));
         LocatorJ._get(NotificationsView.class);
         assertTrue(LocatorJ._find(HomeView.class).isEmpty(), "sin marcar no se sigue el enlace");
     }
@@ -6266,6 +6753,19 @@ class ViewLayerTest {
         assertEquals(2, GridKt._size(payload));
         assertEquals(new EventDetailDialog.PayloadEntry("code", "MO-000012"), GridKt._get(payload, 0));
         assertEquals(new EventDetailDialog.PayloadEntry("type", "URGENT"), GridKt._get(payload, 1));
+        dialog.close();
+
+        // Si la linea ya no existe (ACT-404), su dialogo lo dice dentro, tambien desde la notificacion.
+        doThrow(BackofficeApiException.of(HttpStatus.NOT_FOUND,
+                new ApiProblem(null, "Not Found", 404, "ActivityEvent was not found", null, "ACT-404", null, null, null, false, null, null),
+                "corr-n8", null, "GET /api/notifications/activity/" + EVENT1)).when(notificationClient).activityEvent(EVENT1);
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(inboxGrid(), 0, NotificationsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("event-" + NOTIFICATION1)));
+        Dialog missing = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
+        LocatorJ._get(missing, Span.class, spec -> spec.withId(EventDetailDialog.ERROR_ID).withText("Esa linea del registro ya no existe."));
+        LocatorJ._get(missing, Span.class, spec -> spec.withText("Referencia: corr-n8"));
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
     }
 
     @Test
@@ -6314,6 +6814,9 @@ class ViewLayerTest {
         when(notificationClient.activityEvent(EVENT1)).thenReturn(event(EVENT1, ActivityCategory.MAINTENANCE, "maintenance.order.created",
                 ActivitySeverity.CRITICAL, Map.of("code", "MO-000012")));
         GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        verify(notificationClient, never()).activityEvent(any());
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, RowActions.OPEN_COLUMN), Button.class,
+                spec -> spec.withId("open-" + EVENT1)));
         verify(notificationClient).activityEvent(EVENT1);
         Dialog dialog = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
         LocatorJ._get(dialog, Span.class, spec -> spec.withText("corr-1"));
@@ -6321,13 +6824,18 @@ class ViewLayerTest {
         assertEquals(1, GridKt._size(payload));
         dialog.close();
 
-        // Una linea que ya no existe (ACT-404) se notifica y no abre nada.
+        // Una linea que ya no existe (ACT-404) abre su dialogo, que lo dice dentro con su referencia, sin
+        // aviso aparte, como en mto-frontend.
         ApiProblem gone = new ApiProblem(null, "Not Found", 404, "ActivityEvent was not found", null, "ACT-404", null, null, null, false, null, null);
         when(notificationClient.activityEvent(EVENT2)).thenThrow(BackofficeApiException.of(HttpStatus.NOT_FOUND, gone, "corr-n7", null,
                 "GET /api/notifications/activity/" + EVENT2));
-        GridKt._clickItem(grid, 1, 1, false, false, false, false);
-        assertTrue(LocatorJ._find(Dialog.class, spec -> spec.withId(EventDetailDialog.ID)).isEmpty());
-        assertEquals(1, NotificationsKt.getNotifications().size());
+        NotificationsKt.clearNotifications();
+        GridKt._doubleClickItem(grid, 1, 1, false, false, false, false);
+        Dialog missing = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
+        assertEquals("Linea del registro", missing.getHeaderTitle());
+        LocatorJ._get(missing, Span.class, spec -> spec.withId(EventDetailDialog.ERROR_ID).withText("Esa linea del registro ya no existe."));
+        LocatorJ._get(missing, Span.class, spec -> spec.withText("Referencia: corr-n7"));
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "el error esta en el dialogo, no en un aviso");
     }
 
     /** Los enlaces de las reglas llegan con el usuario o la IP en la URL; el resto de filtros se manda al servicio. */
@@ -6373,7 +6881,7 @@ class ViewLayerTest {
         LocatorJ._setValue(ip, "10.0.0.7");
         assertFalse(ip.isInvalid());
 
-        GridKt._clickItem(grid, 0, 1, false, false, false, false);
+        GridKt._doubleClickItem(grid, 0, 1, false, false, false, false);
         Dialog dialog = LocatorJ._get(Dialog.class, spec -> spec.withId(EventDetailDialog.ID));
         LocatorJ._get(dialog, Span.class, spec -> spec.withText("10.0.0.7"));
         LocatorJ._get(dialog, Span.class, spec -> spec.withText("Fallido"));

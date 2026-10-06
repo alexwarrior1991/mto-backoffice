@@ -1,17 +1,16 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
-import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionResult;
-import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
-import com.alejandro.mtobackoffice.ui.support.UiErrors;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.vaadin.flow.component.HasValue;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -27,7 +26,7 @@ import com.vaadin.flow.component.orderedlayout.FlexLayout;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextField;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.router.Menu;
 import com.vaadin.flow.router.PageTitle;
@@ -36,7 +35,6 @@ import com.vaadin.flow.spring.security.AuthenticationContext;
 import jakarta.annotation.security.RolesAllowed;
 
 import java.util.List;
-import java.util.stream.Stream;
 
 /** Las inspecciones, paginadas y filtradas en el servidor, la mas reciente primero; una fila abre su ficha. */
 @Route(value = MaintenanceRoutes.INSPECTIONS, layout = MainLayout.class)
@@ -59,6 +57,7 @@ public class InspectionsView extends VerticalLayout {
     private final TextField inspector = new TextField("Inspector");
     private final Span count = new Span();
     private final Grid<InspectionDto> grid = new Grid<>();
+    private LazyPages<InspectionDto> pages;
 
     public InspectionsView(MaintenanceClients clients, AuthenticationContext authentication) {
         this.clients = clients;
@@ -119,16 +118,16 @@ public class InspectionsView extends VerticalLayout {
         grid.setPageSize(PAGE_SIZE);
         grid.setMultiSort(false);
         grid.setSizeFull();
-        grid.setItems(this::fetch, this::count);
-        grid.addItemClickListener(click -> UI.getCurrent().navigate(InspectionDetailView.class,
-                InspectionDetailView.parametersOf(click.getItem().id())));
+        pages = LazyPages.of(grid, this::load, total -> count.setText(total + " inspecciones"));
+        RowActions.openWithDoubleClickOrButton(grid, InspectionDto::id, inspection -> "Abrir " + inspection.code(),
+                inspection -> UI.getCurrent().navigate(InspectionDetailView.class, InspectionDetailView.parametersOf(inspection.id())));
 
         add(new H2("Inspecciones"), filters, toolbar, grid);
         expand(grid);
     }
 
     void refresh() {
-        grid.getDataProvider().refreshAll();
+        pages.refresh();
     }
 
     private InspectionFilter filter() {
@@ -137,28 +136,10 @@ public class InspectionsView extends VerticalLayout {
                 inspector.getValue(), null);
     }
 
-    private Stream<InspectionDto> fetch(Query<InspectionDto, Void> query) {
-        try {
-            int size = Math.max(1, query.getLimit());
-            List<String> sort = MasterFilters.sort(query.getSortOrders());
-            PageResponse<InspectionDto> page = clients.inspections().search(filter(), query.getOffset() / size, size,
-                    sort.isEmpty() ? DEFAULT_SORT : sort);
-            count.setText(page.page().totalElements() + " inspecciones");
-            return page.content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
-    }
-
-    private int count(Query<InspectionDto, Void> query) {
-        try {
-            long total = clients.inspections().search(filter(), 0, 1, DEFAULT_SORT).page().totalElements();
-            count.setText(total + " inspecciones");
-            return (int) Math.min(Integer.MAX_VALUE, total);
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return 0;
-        }
+    /** Una pagina con su total: una peticion ({@link LazyPages}). */
+    private LazyPages.Page<InspectionDto> load(int offset, int limit, List<QuerySortOrder> sort) {
+        int size = Math.max(1, limit);
+        List<String> order = MasterFilters.sort(sort);
+        return LazyPages.Page.of(clients.inspections().search(filter(), offset / size, size, order.isEmpty() ? DEFAULT_SORT : order));
     }
 }

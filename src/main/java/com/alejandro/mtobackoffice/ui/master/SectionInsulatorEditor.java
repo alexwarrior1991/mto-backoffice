@@ -4,6 +4,7 @@ import com.alejandro.mtobackoffice.client.configuration.MasterResource;
 import com.alejandro.mtobackoffice.client.dto.master.SectionInsulatorDto;
 import com.alejandro.mtobackoffice.client.dto.master.SectionInsulatorInstallationType;
 import com.alejandro.mtobackoffice.client.dto.master.SectionInsulatorSwitchDto;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.textfield.BigDecimalField;
@@ -53,7 +54,7 @@ public class SectionInsulatorEditor extends MasterEditorDialog<SectionInsulatorD
 
         binder.forField(name).asRequired("El nombre es obligatorio").bind("name");
         binder.forField(station).asRequired("La estacion es obligatoria").withConverter(Pickers.refToId(catalog::stationRef)).bind("stationId");
-        binder.forField(kp).bind("kp");
+        binder.forField(kp).withValidator(Numbers.nonNegative()).bind("kp");
         binder.forField(installationType).asRequired("Hay que decir como esta instalado").bind("installationType");
         binder.forField(track).asRequired("La via es obligatoria").withConverter(Pickers.refToId(catalog::trackRef)).bind("trackId");
         // Una conexion entre vias necesita la otra via: sin ella, el servicio rechaza el aislador.

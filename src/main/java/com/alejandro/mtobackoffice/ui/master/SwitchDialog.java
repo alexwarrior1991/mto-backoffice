@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.ui.master;
 
 import com.alejandro.mtobackoffice.client.dto.master.SectionInsulatorSwitchDto;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
@@ -36,15 +37,14 @@ public class SwitchDialog extends Dialog {
         code.setRequiredIndicatorVisible(true);
         code.setHelperText("Como en el plano: W31");
         BigDecimalField kp = new BigDecimalField("KP (m)");
-        IntegerField turnout = new IntegerField("Denominador de la tangente (1:n)");
-        turnout.setMin(1);
+        IntegerField turnout = Numbers.atLeast(new IntegerField("Denominador de la tangente (1:n)"), 1, "Tiene que ser 1 o mas");
         turnout.setHelperText("9 para un desvio 1:9");
         ComboBox<RefItem> track = Pickers.reference("Via", catalog.tracks());
         Checkbox enabled = new Checkbox("Activa");
 
         binder.forField(code).asRequired("El codigo es obligatorio")
                 .withValidator(new RegexpValidator("W y hasta cuatro cifras, como W31", CODE_PATTERN)).bind("code");
-        binder.forField(kp).bind("kp");
+        binder.forField(kp).withValidator(Numbers.nonNegative()).bind("kp");
         binder.forField(turnout).bind("turnoutDenominator");
         binder.forField(track).withConverter(Pickers.refToId(catalog::trackRef)).bind("trackId");
         binder.forField(enabled).bind("enabled");

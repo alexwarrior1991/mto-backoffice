@@ -1,17 +1,16 @@
 package com.alejandro.mtobackoffice.ui.notification;
 
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
-import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.notification.ActivityCategory;
 import com.alejandro.mtobackoffice.client.dto.notification.ActivityEventDto;
 import com.alejandro.mtobackoffice.client.dto.notification.ActivityFilter;
 import com.alejandro.mtobackoffice.client.dto.notification.ActivitySeverity;
-import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.notification.NotificationClient;
 import com.alejandro.mtobackoffice.configuration.security.NotificationRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
-import com.alejandro.mtobackoffice.ui.support.UiErrors;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.vaadin.flow.component.HasValue;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.checkbox.Checkbox;
@@ -26,7 +25,7 @@ import com.vaadin.flow.component.orderedlayout.FlexLayout;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextField;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.BeforeEnterObserver;
@@ -37,7 +36,6 @@ import com.vaadin.flow.router.Route;
 import jakarta.annotation.security.RolesAllowed;
 
 import java.util.List;
-import java.util.stream.Stream;
 
 /**
  * El registro de actividad: todo lo que pasa en el dominio salvo los accesos, que tienen su
@@ -73,6 +71,7 @@ public class ActivityView extends VerticalLayout implements BeforeEnterObserver 
     private final Checkbox includeSuperseded = new Checkbox("Incluir los fundidos");
     private final Span count = new Span();
     private final Grid<ActivityEventDto> grid = new Grid<>();
+    private LazyPages<ActivityEventDto> pages;
 
     public ActivityView(NotificationClient client) {
         this.client = client;
@@ -130,8 +129,8 @@ public class ActivityView extends VerticalLayout implements BeforeEnterObserver 
         grid.setPageSize(PAGE_SIZE);
         grid.setMultiSort(false);
         grid.setSizeFull();
-        grid.setItems(this::fetch, this::count);
-        grid.addItemClickListener(click -> showEvent(click.getItem()));
+        pages = LazyPages.of(grid, this::load, total -> count.setText(total + " eventos"));
+        RowActions.openWithDoubleClickOrButton(grid, ActivityEventDto::id, row -> "Ver el detalle de " + row.type(), this::showEvent);
 
         add(new H2("Actividad"), filters, toolbar, grid);
         expand(grid);
@@ -161,16 +160,12 @@ public class ActivityView extends VerticalLayout implements BeforeEnterObserver 
     }
 
     void refresh() {
-        grid.getDataProvider().refreshAll();
+        pages.refresh();
     }
 
     /** La fila no trae el payload: la linea entera se pide a su id, como en mto-frontend. */
     private void showEvent(ActivityEventDto row) {
-        try {
-            EventDetailDialog.of(client.activityEvent(row.id())).open();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-        }
+        EventDetailDialog.openActivityEvent(client, row.id());
     }
 
     private ActivityFilter filter() {
@@ -183,27 +178,10 @@ public class ActivityView extends VerticalLayout implements BeforeEnterObserver 
         return value == null || value.isBlank() ? null : value.trim();
     }
 
-    private Stream<ActivityEventDto> fetch(Query<ActivityEventDto, Void> query) {
-        try {
-            int size = Math.max(1, query.getLimit());
-            List<String> sort = MasterFilters.sort(query.getSortOrders());
-            PageResponse<ActivityEventDto> page = client.activity(filter(), query.getOffset() / size, size, sort.isEmpty() ? DEFAULT_SORT : sort);
-            count.setText(page.page().totalElements() + " eventos");
-            return page.content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
-    }
-
-    private int count(Query<ActivityEventDto, Void> query) {
-        try {
-            long total = client.activity(filter(), 0, 1, DEFAULT_SORT).page().totalElements();
-            count.setText(total + " eventos");
-            return (int) Math.min(Integer.MAX_VALUE, total);
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return 0;
-        }
+    /** Una pagina con su total: una peticion ({@link LazyPages}). */
+    private LazyPages.Page<ActivityEventDto> load(int offset, int limit, List<QuerySortOrder> sort) {
+        int size = Math.max(1, limit);
+        List<String> order = MasterFilters.sort(sort);
+        return LazyPages.Page.of(client.activity(filter(), offset / size, size, order.isEmpty() ? DEFAULT_SORT : order));
     }
 }

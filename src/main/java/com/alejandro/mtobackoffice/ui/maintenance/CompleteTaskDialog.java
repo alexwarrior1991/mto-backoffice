@@ -14,6 +14,7 @@ import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.stock.StockPickers;
 import com.alejandro.mtobackoffice.ui.support.Formats;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.HasValidation;
@@ -283,9 +284,7 @@ public class CompleteTaskDialog extends Dialog {
                     warehouse.setInvalid(true);
                     valid = false;
                 }
-                if (quantity.getValue() == null || quantity.getValue().signum() <= 0) {
-                    quantity.setErrorMessage("La cantidad tiene que ser mayor que cero");
-                    quantity.setInvalid(true);
+                if (!Numbers.check(quantity, Numbers.all(Numbers.required("La cantidad es obligatoria"), Numbers.positiveQuantity()))) {
                     valid = false;
                 }
                 if (valid) {

@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.dto.stock.SupplierSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.stock.WarehouseSummaryDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.alejandro.mtobackoffice.ui.support.ServerValidation;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
@@ -113,7 +114,7 @@ public class MovementDialog extends Dialog {
         binder.forField(material).asRequired("Elige el material").bind("materialId");
         binder.forField(warehouse).asRequired("Elige el almacen").bind("warehouseId");
         binder.forField(quantity).asRequired("La cantidad es obligatoria")
-                .withValidator(value -> value.signum() > 0, "Tiene que ser mayor que cero")
+                .withValidator(Numbers.positiveQuantity())
                 .bind("quantity");
         binder.forField(occurredAt).bind("occurredAt");
         binder.forField(reference).bind("externalReference");

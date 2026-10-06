@@ -5,6 +5,7 @@ import com.alejandro.mtobackoffice.client.dto.stock.AssemblyComponentRequest;
 import com.alejandro.mtobackoffice.client.dto.stock.MaterialDto;
 import com.alejandro.mtobackoffice.client.dto.stock.MaterialSummaryDto;
 import com.alejandro.mtobackoffice.client.stock.StockCatalogueClient;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -102,9 +103,7 @@ public class BomEditor extends VerticalLayout {
             material.setInvalid(true);
             valid = false;
         }
-        if (quantity.getValue() == null || quantity.getValue().signum() <= 0) {
-            quantity.setErrorMessage("Tiene que ser mayor que cero");
-            quantity.setInvalid(true);
+        if (!Numbers.check(quantity, Numbers.all(Numbers.required("La cantidad es obligatoria"), Numbers.positiveQuantity()))) {
             valid = false;
         }
         if (!valid) {

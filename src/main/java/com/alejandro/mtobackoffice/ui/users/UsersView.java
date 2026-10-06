@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.configuration.security.UserRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.master.EnabledFilter;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
@@ -25,7 +26,7 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.component.textfield.TextField;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.router.Menu;
@@ -39,7 +40,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Stream;
 
 /**
  * Los usuarios del realm: la lista paginada <b>en el servidor</b> y el editor.
@@ -81,6 +81,7 @@ public class UsersView extends VerticalLayout {
     private final Select<EnabledFilter> state = EnabledFilter.select("Estado", "Todos", "Activos", "Desactivados");
     private final Span count = new Span();
     private final Grid<UserDto> grid = new Grid<>();
+    private LazyPages<UserDto> pages;
 
     /** Lo que pide la lista: el ultimo filtro bien formado de la pantalla. */
     private record ListFilter(String search, Boolean enabled, List<String> attributes) {
@@ -146,7 +147,7 @@ public class UsersView extends VerticalLayout {
         grid.addItemDoubleClickListener(event -> open(event.getItem()));
         grid.setPageSize(PAGE_SIZE);
         grid.setSizeFull();
-        grid.setItems(this::fetch, this::count);
+        pages = LazyPages.of(grid, this::load, this::showCount);
         return grid;
     }
 
@@ -180,39 +181,24 @@ public class UsersView extends VerticalLayout {
     }
 
     /**
-     * Un tramo del Grid: {@code first} es el desplazamiento que pide y {@code max} lo que quepa
-     * hasta su limite, en trozos de como mucho {@link #MAX_PAGE}.
+     * Un tramo del Grid con su total, en una peticion ({@link LazyPages}): {@code first} es el
+     * desplazamiento que pide y {@code max} lo que quepa hasta su limite, en trozos de como mucho
+     * {@link #MAX_PAGE}. La API no ordena.
      */
-    private Stream<UserDto> fetch(Query<UserDto, Void> query) {
-        try {
-            List<UserDto> rows = new ArrayList<>();
-            int wanted = query.getLimit();
-            while (rows.size() < wanted) {
-                int max = Math.min(MAX_PAGE, wanted - rows.size());
-                UsersPage<UserDto> page = search(query.getOffset() + rows.size(), max);
-                rows.addAll(page.content());
-                showCount(page.total());
-                if (page.content().size() < max) {
-                    break;
-                }
+    private LazyPages.Page<UserDto> load(int offset, int limit, List<QuerySortOrder> sort) {
+        List<UserDto> rows = new ArrayList<>();
+        int wanted = Math.max(1, limit);
+        long total = 0;
+        while (rows.size() < wanted) {
+            int max = Math.min(MAX_PAGE, wanted - rows.size());
+            UsersPage<UserDto> page = search(offset + rows.size(), max);
+            rows.addAll(page.content());
+            total = page.total();
+            if (page.content().size() < max) {
+                break;
             }
-            return rows.stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
         }
-    }
-
-    private int count(Query<UserDto, Void> query) {
-        try {
-            long total = search(0, 1).total();
-            showCount(total);
-            return (int) Math.min(Integer.MAX_VALUE, total);
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            showCount(0);
-            return 0;
-        }
+        return new LazyPages.Page<>(rows, total);
     }
 
     private UsersPage<UserDto> search(int first, int max) {
@@ -250,7 +236,7 @@ public class UsersView extends VerticalLayout {
     /** Vuelve a pedir la lista con el filtro que ya pidio (tras guardar, borrar o «Recargar»). */
     public void refresh() {
         grid.deselectAll();
-        grid.getDataProvider().refreshAll();
+        pages.refresh();
     }
 
     private void open(UserDto user) {

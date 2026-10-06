@@ -72,6 +72,12 @@ public final class UiErrors {
         return switch (exception) {
             case SessionExpiredApiException ignored -> "La sesion ha caducado. Hay que volver a entrar.";
             case ForbiddenApiException ignored -> "No tienes permiso para esta operacion.";
+            // mto-notification: lo que ya no es de la persona o ya no existe. Se dice asi, como en
+            // mto-frontend, sin el detalle del servicio (que nombra ids y usuarios en ingles).
+            case NotFoundApiException inbox when "NTF-404".equals(inbox.getProblem().code()) ->
+                    "Esa notificacion ya no existe o no va dirigida a ti.";
+            case NotFoundApiException line when "ACT-404".equals(line.getProblem().code()) ->
+                    "Esa linea del registro ya no existe.";
             case NotFoundApiException ignored -> "No se ha encontrado lo que se pedia."
                     + detail(exception);
             // mto-maintenance: la inspeccion no casa con su checklist (un OK con items defectuosos, un

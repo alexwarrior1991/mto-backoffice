@@ -1,7 +1,6 @@
 package com.alejandro.mtobackoffice.ui.stock;
 
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
-import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.stock.MaterialDto;
 import com.alejandro.mtobackoffice.client.dto.stock.MaterialStockDto;
 import com.alejandro.mtobackoffice.client.dto.stock.MaterialSummaryDto;
@@ -17,6 +16,7 @@ import com.alejandro.mtobackoffice.client.stock.SupplierClient;
 import com.alejandro.mtobackoffice.client.stock.WarehouseClient;
 import com.alejandro.mtobackoffice.configuration.security.StockRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -28,7 +28,7 @@ import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.router.Menu;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
@@ -37,7 +37,6 @@ import jakarta.annotation.security.RolesAllowed;
 
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Stream;
 
 /**
  * Las existencias: la entrada «Almacen» del menu, que es a la vez el nodo del grupo. Se elige un material (buscado en el servidor) y,
@@ -68,8 +67,10 @@ public class StockView extends VerticalLayout {
     private final Span lowStockBadge = new Span("Bajo minimo");
     private final H4 ledgerTitle = new H4("Movimientos");
     private final MovementGrid ledger = new MovementGrid(false);
+    private LazyPages<MovementDto> ledgerPages;
     private final Span lowStockCount = new Span();
     private final Grid<MaterialDto> lowStock = new Grid<>();
+    private LazyPages<MaterialDto> lowStockPages;
 
     public StockView(MaterialClient materials, WarehouseClient warehouses, SupplierClient suppliers, ProjectClient projects,
                      MovementClient movements, ReservationClient reservations, AssemblyClient assemblies, AuthenticationContext authentication) {
@@ -119,7 +120,7 @@ public class StockView extends VerticalLayout {
         ledger.setId("stock-ledger");
         ledger.setPageSize(PAGE_SIZE);
         ledger.setSizeFull();
-        ledger.setItems(this::fetchLedger, this::countLedger);
+        ledgerPages = LazyPages.of(ledger, this::loadLedger);
         return ledger;
     }
 
@@ -132,7 +133,7 @@ public class StockView extends VerticalLayout {
         lowStock.setPageSize(PAGE_SIZE);
         lowStock.setAllRowsVisible(false);
         lowStock.setHeight("16rem");
-        lowStock.setItems(this::fetchLowStock, this::countLowStock);
+        lowStockPages = LazyPages.of(lowStock, this::loadLowStock, total -> lowStockCount.setText(total + " materiales"));
         lowStock.addItemClickListener(event -> material.setValue(event.getItem().summary()));
         HorizontalLayout heading = new HorizontalLayout(new H4("Bajo minimo"), lowStockCount);
         heading.setAlignItems(FlexComponent.Alignment.BASELINE);
@@ -165,9 +166,9 @@ public class StockView extends VerticalLayout {
                 card.setVisible(false);
                 UiErrors.show(failure);
             }
-            ledger.getDataProvider().refreshAll();
+            ledgerPages.refresh();
         }
-        lowStock.getDataProvider().refreshAll();
+        lowStockPages.refresh();
     }
 
     private void paint(MaterialStockDto stock) {
@@ -178,56 +179,20 @@ public class StockView extends VerticalLayout {
         lowStockBadge.setVisible(stock.isLowStock());
     }
 
-    private Stream<MovementDto> fetchLedger(Query<MovementDto, Void> query) {
+    /** Una pagina del libro del material elegido, con su total: una peticion ({@link LazyPages}). */
+    private LazyPages.Page<MovementDto> loadLedger(int offset, int limit, List<QuerySortOrder> sort) {
         MaterialSummaryDto chosen = material.getValue();
         if (chosen == null) {
-            return Stream.empty();
+            return LazyPages.Page.empty();
         }
-        try {
-            int size = Math.max(1, query.getLimit());
-            return clients.materials().movements(chosen.id(), warehouseId(), null, null, null, query.getOffset() / size, size,
-                    MasterFilters.sort(query.getSortOrders(), LEDGER_SORT, MasterFilters.BY_ID)).content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
+        int size = Math.max(1, limit);
+        return LazyPages.Page.of(clients.materials().movements(chosen.id(), warehouseId(), null, null, null, offset / size, size,
+                MasterFilters.sort(sort, LEDGER_SORT, MasterFilters.BY_ID)));
     }
 
-    private int countLedger(Query<MovementDto, Void> query) {
-        MaterialSummaryDto chosen = material.getValue();
-        if (chosen == null) {
-            return 0;
-        }
-        try {
-            return (int) Math.min(Integer.MAX_VALUE, clients.materials().movements(chosen.id(), warehouseId(), null, null, null, 0, 1,
-                            MasterFilters.withTieBreak(LEDGER_SORT, MasterFilters.BY_ID))
-                    .page().totalElements());
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return 0;
-        }
-    }
-
-    private Stream<MaterialDto> fetchLowStock(Query<MaterialDto, Void> query) {
-        try {
-            int size = Math.max(1, query.getLimit());
-            PageResponse<MaterialDto> page = clients.materials().lowStock(warehouseId(), query.getOffset() / size, size, BY_CODE);
-            lowStockCount.setText(page.page().totalElements() + " materiales");
-            return page.content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
-    }
-
-    private int countLowStock(Query<MaterialDto, Void> query) {
-        try {
-            long total = clients.materials().lowStock(warehouseId(), 0, 1, BY_CODE).page().totalElements();
-            lowStockCount.setText(total + " materiales");
-            return (int) Math.min(Integer.MAX_VALUE, total);
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return 0;
-        }
+    /** Una pagina de los bajo minimo, con su total: una peticion ({@link LazyPages}). */
+    private LazyPages.Page<MaterialDto> loadLowStock(int offset, int limit, List<QuerySortOrder> sort) {
+        int size = Math.max(1, limit);
+        return LazyPages.Page.of(clients.materials().lowStock(warehouseId(), offset / size, size, BY_CODE));
     }
 }

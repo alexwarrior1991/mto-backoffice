@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
+import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -52,9 +53,8 @@ public class AssetEditorDialog extends Dialog {
 
         TextArea description = new TextArea("Descripcion");
         description.setId("asset-description");
-        IntegerField interval = new IntegerField("Intervalo preventivo (dias)");
+        IntegerField interval = Numbers.atLeast(new IntegerField("Intervalo preventivo (dias)"), 1, "Tiene que ser mayor que cero");
         interval.setId("asset-interval");
-        interval.setMin(1);
         interval.setHelperText("Cada cuanto toca un preventivo; vacio, sin plan");
 
         FormLayout layout = new FormLayout();
@@ -64,9 +64,7 @@ public class AssetEditorDialog extends Dialog {
             add(new Paragraph("Llega de mto-configuration (" + type + " " + existing.label()
                     + "): aqui solo se cambian la descripcion y el intervalo preventivo. El resto se cambia alli."));
             binder.forField(description).bind("description");
-            binder.forField(interval)
-                    .withValidator(days -> days == null || days > 0, "Tiene que ser mayor que cero")
-                    .bind("preventiveIntervalDays");
+            binder.forField(interval).bind("preventiveIntervalDays");
             layout.add(description, interval);
             layout.setColspan(description, 2);
         } else {
@@ -118,8 +116,9 @@ public class AssetEditorDialog extends Dialog {
         binder.forField(executionPackage).bind("executionPackageId");
         binder.forField(track).asRequired("La via es obligatoria").bind("trackId");
         binder.forField(station).bind("stationId");
-        binder.forField(startKp).asRequired("El KP inicial es obligatorio").bind("startKp");
+        binder.forField(startKp).asRequired("El KP inicial es obligatorio").withValidator(Numbers.kp()).bind("startKp");
         Binder.Binding<AssetForm, BigDecimal> end = binder.forField(endKp).asRequired("El KP final es obligatorio")
+                .withValidator(Numbers.kp())
                 .withValidator(kp -> startKp.getValue() == null || kp.compareTo(startKp.getValue()) > 0,
                         "El KP final tiene que ser mayor que el inicial")
                 .bind("endKp");
@@ -129,9 +128,7 @@ public class AssetEditorDialog extends Dialog {
             }
         });
         binder.forField(trackKind).asRequired("El tipo de via es obligatorio").bind("trackKind");
-        binder.forField(interval)
-                .withValidator(days -> days == null || days > 0, "Tiene que ser mayor que cero")
-                .bind("preventiveIntervalDays");
+        binder.forField(interval).bind("preventiveIntervalDays");
         layout.add(name, track, trackKind, startKp, endKp, executionPackage, station, interval, description);
         layout.setColspan(description, 2);
     }

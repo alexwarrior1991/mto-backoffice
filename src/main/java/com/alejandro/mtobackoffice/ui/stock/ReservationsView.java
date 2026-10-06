@@ -17,6 +17,7 @@ import com.alejandro.mtobackoffice.client.stock.SupplierClient;
 import com.alejandro.mtobackoffice.client.stock.WarehouseClient;
 import com.alejandro.mtobackoffice.configuration.security.StockRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
+import com.alejandro.mtobackoffice.ui.support.LazyPages;
 import com.alejandro.mtobackoffice.ui.support.RevisionsDialog;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
@@ -33,7 +34,7 @@ import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.router.Menu;
 import com.vaadin.flow.router.PageTitle;
@@ -44,7 +45,6 @@ import jakarta.annotation.security.RolesAllowed;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
-import java.util.stream.Stream;
 
 /**
  * Las reservas de material para un proyecto, paginadas en el servidor con sus filtros. Solo una
@@ -73,6 +73,7 @@ public class ReservationsView extends VerticalLayout {
     private final ComboBox<ProjectSummaryDto> project;
     private final Span count = new Span();
     private final Grid<ReservationDto> grid = new Grid<>();
+    private LazyPages<ReservationDto> pages;
 
     public ReservationsView(MaterialClient materials, WarehouseClient warehouses, SupplierClient suppliers, ProjectClient projects,
                             MovementClient movements, ReservationClient reservations, AssemblyClient assemblies, AuthenticationContext authentication) {
@@ -120,7 +121,7 @@ public class ReservationsView extends VerticalLayout {
         grid.setPageSize(PAGE_SIZE);
         grid.setMultiSort(false);
         grid.setSizeFull();
-        grid.setItems(this::fetch, this::count);
+        pages = LazyPages.of(grid, this::load, total -> count.setText(total + " reservas"));
         return grid;
     }
 
@@ -210,7 +211,7 @@ public class ReservationsView extends VerticalLayout {
     }
 
     void refresh() {
-        grid.getDataProvider().refreshAll();
+        pages.refresh();
     }
 
     private PageResponse<ReservationDto> search(int page, int size, List<String> sort) {
@@ -219,27 +220,9 @@ public class ReservationsView extends VerticalLayout {
                 page, size, sort);
     }
 
-    private Stream<ReservationDto> fetch(Query<ReservationDto, Void> query) {
-        try {
-            int size = Math.max(1, query.getLimit());
-            PageResponse<ReservationDto> page = search(query.getOffset() / size, size,
-                    MasterFilters.sort(query.getSortOrders(), DEFAULT_SORT, MasterFilters.BY_ID));
-            count.setText(page.page().totalElements() + " reservas");
-            return page.content().stream();
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return Stream.empty();
-        }
-    }
-
-    private int count(Query<ReservationDto, Void> query) {
-        try {
-            long total = search(0, 1, MasterFilters.withTieBreak(DEFAULT_SORT, MasterFilters.BY_ID)).page().totalElements();
-            count.setText(total + " reservas");
-            return (int) Math.min(Integer.MAX_VALUE, total);
-        } catch (BackofficeApiException failure) {
-            UiErrors.show(failure);
-            return 0;
-        }
+    /** Una pagina de reservas con su total: una peticion ({@link LazyPages}). */
+    private LazyPages.Page<ReservationDto> load(int offset, int limit, List<QuerySortOrder> sort) {
+        int size = Math.max(1, limit);
+        return LazyPages.Page.of(search(offset / size, size, MasterFilters.sort(sort, DEFAULT_SORT, MasterFilters.BY_ID)));
     }
 }
