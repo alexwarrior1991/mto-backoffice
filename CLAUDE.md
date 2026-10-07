@@ -599,7 +599,8 @@ catálogos: el `versionNumber` leído en el `PUT` y en el lote, y los dos 409 de
 (`CON-001` y `BUS-002`) distinguidos por su código; los maestros: resolución del genérico,
 parámetros de página y orden del `/filter` (sin orden no viaja `sort`, como en el recuento), `extras` e hijos a
 `null` en un `PUT`, referencias a catálogo como `{id, code}`, las ménsulas tipadas con su brazo y
-el seccionador 1:1 en un `PUT`, el esquema de una vía con sus records anidados; los trabajos: la importación como parte multipart con `dryRun` en
+el seccionador 1:1 en un `PUT`, el seccionador con su estado normal, su accionamiento y sin poste,
+el esquema de una vía con sus records anidados; los trabajos: la importación como parte multipart con `dryRun` en
 la query, el 429 con el trabajo rechazado y el `Retry-After`, la lista paginada con sus filtros,
 el estado por familia y el fichero con sus cabeceras, qué es descargable, un tipo o un estado
 desconocidos leídos como `UNKNOWN`; los usuarios: la
@@ -645,7 +646,8 @@ edición sobre una copia que vuelve con `extras` e hijos a `null`, errores del s
 desplegable, borrado confirmado, alta de un perfil con sus referencias, KP no válido, las
 ménsulas a `null` sin tocar y enteras al tocarlas, el seccionador del perfil de solo lectura y de
 vuelta como se leyó, las agujas en su diálogo y enteras al guardar,
-el perfil legible en la lista de seccionadores, los mensajes de sistema, el esquema de una vía desde
+el perfil legible en la lista de seccionadores, el seccionador guardado sin poste y con su estado
+normal y su accionamiento, los mensajes de sistema, el esquema de una vía desde
 su fila en una llamada con los postes en el orden recibido, el texto escapado, el fallo notificado
 sin ventana, la vía sin perfiles y el reparto del dibujo (aisladores entre sus vecinos por KP, brazos
 al lado del poste); los trabajos: subir y

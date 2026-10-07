@@ -2,15 +2,20 @@ package com.alejandro.mtobackoffice.client.dto.master;
 
 
 /**
- * Seccionador: cuelga de una estacion y de un perfil, con su funcion de catalogo. Sin hijos.
- * {@code profileCode} y {@code profileKp} llegan del servicio para ensenar el perfil sin ir a
- * buscarlo; al escribir se ignoran, el perfil se elige por {@code profileId}.
+ * Seccionador: cuelga de una estacion y, si esta en uno, de un perfil, con su funcion de catalogo.
+ * Sin hijos. {@code profileCode} y {@code profileKp} llegan del servicio para ensenar el perfil sin
+ * ir a buscarlo; al escribir se ignoran, el perfil se elige por {@code profileId}.
  */
 public class DisconnectorDto extends MasterDto {
 
     private String name;
     private Boolean onLoad = Boolean.FALSE;
+    /** Estado normal: {@code true} normalmente abierto, {@code false} normalmente cerrado, {@code null} sin dato. */
+    private Boolean normallyOpen;
+    /** Accionamiento, {@code null} sin dato. */
+    private DisconnectorDriveType driveType;
     private Long stationId;
+    /** Opcional: un seccionador que no esta en un poste no lleva perfil. */
     private Long profileId;
     /** Identificador y KP del perfil, solo de salida: el servicio los rellena para que la lista se lea. */
     private String profileCode;
@@ -31,6 +36,22 @@ public class DisconnectorDto extends MasterDto {
 
     public void setOnLoad(Boolean onLoad) {
         this.onLoad = onLoad;
+    }
+
+    public Boolean getNormallyOpen() {
+        return normallyOpen;
+    }
+
+    public void setNormallyOpen(Boolean normallyOpen) {
+        this.normallyOpen = normallyOpen;
+    }
+
+    public DisconnectorDriveType getDriveType() {
+        return driveType;
+    }
+
+    public void setDriveType(DisconnectorDriveType driveType) {
+        this.driveType = driveType;
     }
 
     public Long getStationId() {
