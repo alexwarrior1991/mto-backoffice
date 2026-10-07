@@ -87,7 +87,8 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   desplegables; el perfil de un seccionador se busca en el servidor mientras se escribe, y es
   opcional, porque los de los pórticos de subestación y los de puesta a tierra no están en un poste)
   y las entradas de catálogo como desplegables. Un seccionador lleva además su estado normal
-  (normalmente abierto o cerrado) y su accionamiento (motor o manual), los dos opcionales. La edición sigue la regla de `README_API.md` §4 del
+  (normalmente abierto o cerrado) y su accionamiento (motor o manual), los dos opcionales, y, si no
+  está en un poste, su propio KP y su vía (con poste son los del perfil: elegirlo los vacía). La edición sigue la regla de `README_API.md` §4 del
   servicio: **se edita sobre la fila leída y se devuelve entera**. Lo que la pantalla no conoce
   vuelve tal cual (`extras`), y las colecciones de hijos que no se editan aquí (vías y estaciones
   de un paquete, perfiles de una vía) van a `null`, que para el servicio es «de esta colección no

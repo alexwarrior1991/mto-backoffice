@@ -1834,6 +1834,8 @@ class ViewLayerTest {
         loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
         when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(9L, "Disc", "Seccionador", true, 1, null, null)));
         when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(station(12L, "ATOCHA", 100L)), 0, 50));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of(12L))), 0, 50));
         when(profileClient.findById(7L)).thenReturn(profileWithOneCantilever());
         DisconnectorDto read = new DisconnectorDto();
         read.setId(5L);
@@ -1863,17 +1865,80 @@ class ViewLayerTest {
         assertEquals("Normalmente abierto", normallyOpen.getItemLabelGenerator().apply(Boolean.TRUE));
         @SuppressWarnings("unchecked")
         ComboBox<DisconnectorDriveType> drive = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Accionamiento"));
+        TextField kp = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("KP propio (m)"));
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> track = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via propia"));
+        assertFalse(kp.isEnabled(), "con poste, el KP es el del perfil");
+        assertFalse(track.isEnabled(), "con poste, la via es la del perfil");
 
         LocatorJ._setValue(profile, null);
+        assertTrue(kp.isEnabled(), "sin poste, el seccionador lleva su propio KP");
+        assertTrue(track.isEnabled());
         LocatorJ._setValue(normallyOpen, Boolean.TRUE);
         LocatorJ._setValue(drive, DisconnectorDriveType.MOTOR);
+        LocatorJ._setValue(kp, "98+375");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        assertTrue(kp.isInvalid(), "el KP va en metros con punto decimal, como el del perfil");
+        verify(disconnectorClient, never()).update(any(), any());
+
+        LocatorJ._setValue(kp, " 98375.5 ");
+        LocatorJ._setValue(track, new RefItem(3L, "TRACK 1"));
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
 
         verify(disconnectorClient).update(eq(5L), argThat(dto -> dto.getProfileId() == null
+                && "98375.5".equals(dto.getKp())
+                && Long.valueOf(3L).equals(dto.getTrackId())
                 && Boolean.TRUE.equals(dto.getNormallyOpen())
                 && dto.getDriveType() == DisconnectorDriveType.MOTOR
                 && Long.valueOf(12L).equals(dto.getStationId())
                 && Integer.valueOf(3).equals(dto.getVersionNumber())));
+    }
+
+    /** Con poste, el KP y la via son los del perfil (V26 de mto-configuration): elegirlo vacia los propios. */
+    @Test
+    void choosingAPoleClearsTheOwnKpAndTrackOfADisconnector() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(9L, "Disc", "Seccionador", true, 1, null, null)));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(station(12L, "ATOCHA", 100L)), 0, 50));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of(12L))), 0, 50));
+        when(profileClient.findById(7L)).thenReturn(profileWithOneCantilever());
+        DisconnectorDto read = new DisconnectorDto();
+        read.setId(5L);
+        read.setName("HSA-FP1.1");
+        read.setOnLoad(false);
+        read.setStationId(12L);
+        read.setKp("98375.5");
+        read.setTrackId(3L);
+        read.setDisconnectorFunction(new LovRef(9L, "Disc", "Seccionador"));
+        read.setVersionNumber(2);
+        when(disconnectorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(read), 0, 50));
+        when(disconnectorClient.update(eq(5L), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(DISCONNECTORS_ROUTE);
+        @SuppressWarnings("unchecked")
+        Grid<DisconnectorDto> grid = LocatorJ._get(Grid.class);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("edit-5")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        TextField kp = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("KP propio (m)"));
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> track = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via propia"));
+        assertEquals("98375.5", kp.getValue());
+        assertEquals(3L, track.getValue().id());
+        assertTrue(kp.isEnabled());
+
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> profile = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Perfil"));
+        LocatorJ._setValue(profile, new RefItem(7L, "P-007 (kp 12.345)"));
+        assertEquals("", kp.getValue());
+        assertNull(track.getValue());
+        assertFalse(kp.isEnabled());
+        assertFalse(track.isEnabled());
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        verify(disconnectorClient).update(eq(5L), argThat(dto -> Long.valueOf(7L).equals(dto.getProfileId())
+                && dto.getKp() == null
+                && dto.getTrackId() == null));
     }
 
     /** Tras un reinicio no queda un dialogo muerto: la pantalla recarga y la cadena de seguridad reentra por el SSO. */

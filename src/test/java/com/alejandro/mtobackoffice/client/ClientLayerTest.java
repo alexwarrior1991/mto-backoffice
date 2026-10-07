@@ -1002,13 +1002,16 @@ class ClientLayerTest {
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("""
                         {"id":5,"name":"HSA-FP1.1","onLoad":false,"normallyOpen":true,"driveType":"MOTOR",
-                         "stationId":12,"profileId":null,"disconnectorFunction":{"id":9,"code":"Disc"},"versionNumber":2}
+                         "stationId":12,"profileId":null,"kp":"98375.5","trackId":3,
+                         "disconnectorFunction":{"id":9,"code":"Disc"},"versionNumber":2}
                         """, MediaType.APPLICATION_JSON));
         server.expect(requestTo(GATEWAY + "/api/configuration/disconnectors/5"))
                 .andExpect(method(HttpMethod.PUT))
                 .andExpect(jsonPath("$.normallyOpen").value(false))
                 .andExpect(jsonPath("$.driveType").value("MANUAL"))
                 .andExpect(jsonPath("$.profileId").value(nullValue()))
+                .andExpect(jsonPath("$.kp").value("98375.5"))
+                .andExpect(jsonPath("$.trackId").value(3))
                 .andExpect(jsonPath("$.versionNumber").value(2))
                 .andRespond(withSuccess("{\"id\":5,\"versionNumber\":3}", MediaType.APPLICATION_JSON));
 
@@ -1017,6 +1020,8 @@ class ClientLayerTest {
         assertEquals(DisconnectorDriveType.MOTOR, read.getDriveType());
         assertNull(read.getProfileId());
         assertEquals("", read.profileLabel(), "sin poste no hay perfil que ensenar");
+        assertEquals("98375.5", read.getKp(), "sin poste, su propio KP (V26)");
+        assertEquals(3L, read.getTrackId());
 
         read.setNormallyOpen(false);
         read.setDriveType(DisconnectorDriveType.MANUAL);

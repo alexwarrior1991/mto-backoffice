@@ -17,6 +17,13 @@ public class DisconnectorDto extends MasterDto {
     private Long stationId;
     /** Opcional: un seccionador que no esta en un poste no lleva perfil. */
     private Long profileId;
+    /**
+     * KP en metros y via, solo de un seccionador sin poste (V26 de mto-configuration): los de uno en
+     * un poste son los de su perfil, y el servicio rechaza los dos con 400. El KP es texto, como el del
+     * perfil.
+     */
+    private String kp;
+    private Long trackId;
     /** Identificador y KP del perfil, solo de salida: el servicio los rellena para que la lista se lea. */
     private String profileCode;
     private String profileKp;
@@ -68,6 +75,22 @@ public class DisconnectorDto extends MasterDto {
 
     public void setProfileId(Long profileId) {
         this.profileId = profileId;
+    }
+
+    public String getKp() {
+        return kp;
+    }
+
+    public void setKp(String kp) {
+        this.kp = kp;
+    }
+
+    public Long getTrackId() {
+        return trackId;
+    }
+
+    public void setTrackId(Long trackId) {
+        this.trackId = trackId;
     }
 
     public String getProfileCode() {

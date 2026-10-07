@@ -111,7 +111,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   **clases mutables** que heredan de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo y los hijos
   tipados que los editores gestionan (`CantileverDto` con su `SteadyArmDto` 1:1,
   `SectionInsulatorSwitchDto`; `DisconnectorDto` trae además `profileCode`/`profileKp`, solo de
-  salida); `PageResponse<T>` con la forma `{content, page}`; los trabajos (`client/dto/jobs`:
+  salida, y `kp`/`trackId`, los suyos, solo sin poste); `PageResponse<T>` con la forma `{content, page}`; los trabajos (`client/dto/jobs`:
   `JobDto`, la unión de las tres respuestas del servicio, `JobStatus`, `JobType`, `UploadedFile`);
   `ClientEnums`, lo que comparten los enumerados tolerantes (`parse` y `selectable`). Los
   errores en `client/error` (`ApiProblem`, `ApiErrorDecoder` y la jerarquía
@@ -490,7 +490,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   de mantenimiento y una medida de checklist llevan signo y son `numeric(12,3)`; el KP final de un
   defecto puede ser el inicial, nunca menor. En infraestructura, el vano, las alturas, el viento y
   los KP de agujas y aisladores no son negativos; lo que va en mm del perfil y el descentramiento son
-  enteros, la longitud de un paquete son solo cifras y el KP del perfil viaja recortado. Lo demás (un
+  enteros, la longitud de un paquete son solo cifras y el KP del perfil, y el propio de un seccionador
+  sin poste, viajan recortados. Lo demás (un
   rango, una regla de negocio) lo decide el servicio. El `Binder` aplica antes que nada la
   comprobación propia del campo (su mínimo y lo que no sabe leer), así que un `IntegerField` con
   mínimo lleva su mensaje (`Numbers.atLeast`); en un diálogo sin `Binder`, `Numbers.check` hace lo
@@ -600,6 +601,7 @@ catálogos: el `versionNumber` leído en el `PUT` y en el lote, y los dos 409 de
 parámetros de página y orden del `/filter` (sin orden no viaja `sort`, como en el recuento), `extras` e hijos a
 `null` en un `PUT`, referencias a catálogo como `{id, code}`, las ménsulas tipadas con su brazo y
 el seccionador 1:1 en un `PUT`, el seccionador con su estado normal, su accionamiento y sin poste,
+con su KP y su vía,
 el esquema de una vía con sus records anidados; los trabajos: la importación como parte multipart con `dryRun` en
 la query, el 429 con el trabajo rechazado y el `Retry-After`, la lista paginada con sus filtros,
 el estado por familia y el fichero con sus cabeceras, qué es descargable, un tipo o un estado
@@ -647,7 +649,8 @@ desplegable, borrado confirmado, alta de un perfil con sus referencias, KP no v�
 ménsulas a `null` sin tocar y enteras al tocarlas, el seccionador del perfil de solo lectura y de
 vuelta como se leyó, las agujas en su diálogo y enteras al guardar,
 el perfil legible en la lista de seccionadores, el seccionador guardado sin poste y con su estado
-normal y su accionamiento, los mensajes de sistema, el esquema de una vía desde
+normal y su accionamiento, con su KP (comprobado antes de llamar) y su vía, que elegir un poste
+vacía, los mensajes de sistema, el esquema de una vía desde
 su fila en una llamada con los postes en el orden recibido, el texto escapado, el fallo notificado
 sin ventana, la vía sin perfiles y el reparto del dibujo (aisladores entre sus vecinos por KP, brazos
 al lado del poste); los trabajos: subir y
