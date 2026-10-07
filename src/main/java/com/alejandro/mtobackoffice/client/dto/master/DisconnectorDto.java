@@ -24,6 +24,11 @@ public class DisconnectorDto extends MasterDto {
      */
     private String kp;
     private Long trackId;
+    /**
+     * La otra via de uno que pone dos en paralelo (V27 de mto-configuration), con poste o sin el.
+     * Opcional, y nunca la suya: lo decide el servicio.
+     */
+    private Long connectedTrackId;
     /** Identificador y KP del perfil, solo de salida: el servicio los rellena para que la lista se lea. */
     private String profileCode;
     private String profileKp;
@@ -91,6 +96,14 @@ public class DisconnectorDto extends MasterDto {
 
     public void setTrackId(Long trackId) {
         this.trackId = trackId;
+    }
+
+    public Long getConnectedTrackId() {
+        return connectedTrackId;
+    }
+
+    public void setConnectedTrackId(Long connectedTrackId) {
+        this.connectedTrackId = connectedTrackId;
     }
 
     public String getProfileCode() {

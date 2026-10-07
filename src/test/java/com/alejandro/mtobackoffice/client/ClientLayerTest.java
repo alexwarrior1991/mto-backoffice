@@ -728,7 +728,8 @@ class ClientLayerTest {
                             "railPoleDistance":"-2.500","sectionings":["S1"],
                             "cantilevers":[{"id":21,"type":"PT1","stagger":"-200","cwHeight":"5300","catenaryHeight":"1400",
                                             "steadyArmType":"SA1","steadyArmLength":1200}],
-                            "disconnector":{"id":40,"name":"SEC-40","onLoad":true,"function":"FEED","station":"ATOCHA"},
+                            "disconnector":{"id":40,"name":"SEC-40","onLoad":true,"function":"FEED","station":"ATOCHA",
+                                            "connectedTrack":"VIA 2"},
                             "fieldOfTomorrow":{"deep":[1]}},
                            {"id":8,"code":"P-008","kp":"70.000","orderInTrack":2,"sectionings":[],"cantilevers":[]}],
                          "sectionInsulators":[
@@ -752,6 +753,7 @@ class ClientLayerTest {
         assertEquals(1200L, first.cantilevers().getFirst().steadyArmLength());
         assertEquals("SEC-40", first.disconnector().name());
         assertEquals("ATOCHA", first.disconnector().station());
+        assertEquals("VIA 2", first.disconnector().connectedTrack(), "la otra via de uno que pone dos en paralelo (V27)");
         TrackSchematicDto.ProfileNode second = schematic.profiles().get(1);
         assertNull(second.disconnector(), "lo que el servicio no manda es null");
         assertTrue(second.cantilevers().isEmpty());
@@ -1025,6 +1027,43 @@ class ClientLayerTest {
 
         read.setNormallyOpen(false);
         read.setDriveType(DisconnectorDriveType.MANUAL);
+        asUser(() -> disconnectors.update(5L, read));
+        server.verify();
+    }
+
+    /**
+     * mto-configuration V27: uno que pone dos vias en paralelo lleva la otra, tambien con poste. Va y
+     * vuelve por id, y quitarla es mandarla a {@code null}: el {@code PUT} sustituye la fila entera.
+     */
+    @Test
+    void aParallelingDisconnectorTravelsWithItsConnectedTrack() {
+        DisconnectorClient disconnectors = GatewayClientConfiguration.proxyFactory(restClient).createClient(DisconnectorClient.class);
+        server.expect(requestTo(GATEWAY + "/api/configuration/disconnectors/5"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"id":5,"name":"SEC-B01","onLoad":false,"stationId":12,"profileId":7,"profileCode":"P-007",
+                         "profileKp":"12.345","kp":null,"trackId":null,"connectedTrackId":4,
+                         "disconnectorFunction":{"id":9,"code":"Disc/PP"},"versionNumber":2}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/disconnectors/5"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.profileId").value(7))
+                .andExpect(jsonPath("$.connectedTrackId").value(4))
+                .andRespond(withSuccess("{\"id\":5,\"connectedTrackId\":4,\"versionNumber\":3}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/disconnectors/5"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.connectedTrackId").value(nullValue()))
+                .andExpect(jsonPath("$.versionNumber").value(3))
+                .andRespond(withSuccess("{\"id\":5,\"versionNumber\":4}", MediaType.APPLICATION_JSON));
+
+        DisconnectorDto read = asUser(() -> disconnectors.findById(5L));
+        assertEquals(7L, read.getProfileId());
+        assertEquals(4L, read.getConnectedTrackId(), "con poste tambien: es del seccionador, no del perfil");
+
+        DisconnectorDto saved = asUser(() -> disconnectors.update(5L, read));
+        assertEquals(4L, saved.getConnectedTrackId());
+        read.setConnectedTrackId(null);
+        read.setVersionNumber(saved.getVersionNumber());
         asUser(() -> disconnectors.update(5L, read));
         server.verify();
     }
