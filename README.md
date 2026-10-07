@@ -90,7 +90,11 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   (normalmente abierto o cerrado) y su accionamiento (motor o manual), los dos opcionales, y, si no
   está en un poste, su propio KP y su vía (con poste son los del perfil: elegirlo los vacía). Uno
   que pone dos vías en paralelo (los de puente) lleva su **vía conectada**, la otra, con poste o sin
-  él, que la lista enseña en su columna; que no sea la suya lo dice el servicio, en ese campo. La edición sigue la regla de `README_API.md` §4 del
+  él, que la lista enseña en su columna; que no sea la suya lo dice el servicio, en ese campo. Su
+  **estación es opcional**: uno en plena vía, en una zona neutra o en una subestación no es de
+  ninguna. Tiene que estar en algún sitio (con su estación, en un poste o con su vía propia), y si
+  no, el servicio responde con un 400 sobre la estación, que el editor enseña en ese campo con el
+  diálogo abierto. La edición sigue la regla de `README_API.md` §4 del
   servicio: **se edita sobre la fila leída y se devuelve entera**. Lo que la pantalla no conoce
   vuelve tal cual (`extras`), y las colecciones de hijos que no se editan aquí (vías y estaciones
   de un paquete, perfiles de una vía) van a `null`, que para el servicio es «de esta colección no

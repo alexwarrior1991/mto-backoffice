@@ -111,8 +111,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   **clases mutables** que heredan de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo y los hijos
   tipados que los editores gestionan (`CantileverDto` con su `SteadyArmDto` 1:1,
   `SectionInsulatorSwitchDto`; `DisconnectorDto` trae además `profileCode`/`profileKp`, solo de
-  salida, `kp`/`trackId`, los suyos, solo sin poste, y `connectedTrackId`, la otra vía de uno que
-  pone dos en paralelo, con poste o sin él); `PageResponse<T>` con la forma `{content, page}`; los trabajos (`client/dto/jobs`:
+  salida, `kp`/`trackId`, los suyos, solo sin poste, `connectedTrackId`, la otra vía de uno que
+  pone dos en paralelo, con poste o sin él, y `stationId`, opcional: uno en plena vía no es de
+  ninguna); `PageResponse<T>` con la forma `{content, page}`; los trabajos (`client/dto/jobs`:
   `JobDto`, la unión de las tres respuestas del servicio, `JobStatus`, `JobType`, `UploadedFile`);
   `ClientEnums`, lo que comparten los enumerados tolerantes (`parse` y `selectable`). Los
   errores en `client/error` (`ApiProblem`, `ApiErrorDecoder` y la jerarquía
@@ -653,7 +654,8 @@ vuelta como se leyó, las agujas en su diálogo y enteras al guardar,
 el perfil legible en la lista de seccionadores, el seccionador guardado sin poste y con su estado
 normal y su accionamiento, con su KP (comprobado antes de llamar) y su vía, que elegir un poste
 vacía, la vía conectada en la lista y en el editor, también con poste, con el 400 del servicio en
-su campo, los mensajes de sistema, el esquema de una vía desde
+su campo, el seccionador sin estación (de ida y vuelta, y con el 400 del servicio sobre la estación
+cuando no queda en ningún sitio), los mensajes de sistema, el esquema de una vía desde
 su fila en una llamada con los postes en el orden recibido, el texto escapado, el fallo notificado
 sin ventana, la vía sin perfiles y el reparto del dibujo (aisladores entre sus vecinos por KP, brazos
 al lado del poste); los trabajos: subir y

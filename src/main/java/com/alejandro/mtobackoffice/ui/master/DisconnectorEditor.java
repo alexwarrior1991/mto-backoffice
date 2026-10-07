@@ -16,7 +16,10 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
- * Alta o modificacion de un seccionador. El perfil se busca en el servidor (son miles) y es
+ * Alta o modificacion de un seccionador. La estacion es opcional: uno en plena via, en una zona
+ * neutra o en una subestacion no es de ninguna. Tiene que estar en algun sitio (con su estacion,
+ * en un poste o con su via propia), pero eso lo dice el servicio, con un 400 sobre la estacion.
+ * El perfil se busca en el servidor (son miles) y es
  * opcional: hay seccionadores que no estan en un poste. Uno sin poste lleva su propio KP y su via
  * (V26 de mto-configuration), que con poste son los del perfil: se vacian y no se ofrecen. Uno que
  * pone dos vias en paralelo lleva ademas la otra (V27), con poste o sin el; que no sea la suya lo
@@ -35,7 +38,7 @@ public class DisconnectorEditor extends MasterEditorDialog<DisconnectorDto> {
 
         TextField name = text("Nombre", NAME_MAX_LENGTH, true);
         ComboBox<RefItem> station = Pickers.reference("Estacion", catalog.stations());
-        station.setRequiredIndicatorVisible(true);
+        station.setHelperText("Vacia si no es de ninguna estacion: entonces en un poste o con su via propia");
         ComboBox<RefItem> profile = Pickers.lazyProfile("Perfil", profiles);
         profile.setHelperText("Vacio si el seccionador no esta en un poste");
         TextField kp = text("KP propio (m)", KP_MAX_LENGTH, false);
@@ -57,7 +60,7 @@ public class DisconnectorEditor extends MasterEditorDialog<DisconnectorDto> {
         driveType.setClearButtonVisible(true);
 
         binder.forField(name).asRequired("El nombre es obligatorio").bind("name");
-        binder.forField(station).asRequired("La estacion es obligatoria").withConverter(Pickers.refToId(catalog::stationRef)).bind("stationId");
+        binder.forField(station).withConverter(Pickers.refToId(catalog::stationRef)).bind("stationId");
         binder.forField(profile).withConverter(Pickers.refToId(Pickers.profileResolver(profiles), true)).bind("profileId");
         // Recortado antes de comprobarlo y de enviarlo, como el del perfil; vacio viaja como null.
         binder.forField(kp)

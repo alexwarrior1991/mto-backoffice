@@ -339,6 +339,7 @@ import com.vaadin.flow.server.SystemMessages;
 import com.vaadin.flow.server.VaadinService;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
@@ -1959,6 +1960,70 @@ class ViewLayerTest {
         assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "guardado, el dialogo se cierra");
         verify(disconnectorClient, times(2)).update(eq(5L), argThat(dto -> Long.valueOf(7L).equals(dto.getProfileId())
                 && Integer.valueOf(3).equals(dto.getVersionNumber())));
+    }
+
+    /**
+     * La estacion de un seccionador es opcional: uno en plena via, en una zona neutra o en una
+     * subestacion no es de ninguna. Tiene que estar en algun sitio (con su estacion, en un poste o con
+     * su via propia), pero eso lo dice el servicio, con un 400 sobre la estacion y el dialogo abierto.
+     */
+    @Test
+    void aDisconnectorMayBelongToNoStationAndTheServiceSaysWhereItMustBe() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(9L, "Disc", "Seccionador", true, 1, null, null)));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(station(12L, "ATOCHA", 100L)), 0, 50));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of(12L))), 0, 50));
+        DisconnectorDto read = new DisconnectorDto();
+        read.setId(5L);
+        read.setName("KAF-NS1");
+        read.setOnLoad(false);
+        read.setStationId(12L);
+        read.setKp("98375.5");
+        read.setTrackId(3L);
+        read.setDisconnectorFunction(new LovRef(9L, "Disc", "Seccionador"));
+        read.setVersionNumber(3);
+        when(disconnectorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(read), 0, 50));
+        ApiProblem problem = new ApiProblem("https://api.mto-configuration/errors/val-000", "Peticion invalida", 400,
+                "La peticion tiene 1 errores de validacion", null, "VAL-000", "t-5", null, null, false,
+                List.of(new ApiFieldError("stationId", "BUS-001", "Regla de negocio violada: stationId")), null);
+        // El editor guarda siempre sobre el mismo objeto: se apunta lo que llevaba cada envio.
+        List<List<Long>> sent = new ArrayList<>();
+        when(disconnectorClient.update(eq(5L), any())).thenAnswer(call -> {
+            DisconnectorDto dto = call.getArgument(1);
+            sent.add(Arrays.asList(dto.getStationId(), dto.getTrackId()));
+            if (dto.getStationId() == null && dto.getProfileId() == null && dto.getTrackId() == null) {
+                throw BackofficeApiException.of(HttpStatus.BAD_REQUEST, problem, "corr-5", null,
+                        "PUT /api/configuration/disconnectors/5");
+            }
+            return dto;
+        });
+
+        UI.getCurrent().navigate(DISCONNECTORS_ROUTE);
+        @SuppressWarnings("unchecked")
+        Grid<DisconnectorDto> grid = LocatorJ._get(Grid.class);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("edit-5")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> station = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Estacion"));
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> track = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via propia"));
+        assertFalse(station.isRequiredIndicatorVisible(), "hay seccionadores que no son de ninguna estacion");
+        assertTrue(station.getHelperText().contains("Vacia si no es de ninguna estacion"), station.getHelperText());
+        assertEquals(12L, station.getValue().id());
+
+        LocatorJ._setValue(station, null);
+        LocatorJ._setValue(track, null);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        assertTrue(station.isInvalid(), "sin estacion, sin poste y sin via no queda en ningun sitio");
+        assertEquals("Regla de negocio violada: stationId", station.getErrorMessage());
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto para corregir");
+
+        LocatorJ._setValue(track, new RefItem(3L, "TRACK 1"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        assertEquals(List.of(Arrays.asList(null, null), Arrays.asList(null, 3L)), sent,
+                "el rechazado y el que guarda sin estacion con su via, en ese orden");
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "guardado, el dialogo se cierra");
     }
 
     /** Con poste, el KP y la via son los del perfil (V26 de mto-configuration): elegirlo vacia los propios. */

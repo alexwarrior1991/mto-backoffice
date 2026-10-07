@@ -1032,6 +1032,48 @@ class ClientLayerTest {
     }
 
     /**
+     * Un seccionador en plena via, en una zona neutra o en una subestacion no es de ninguna estacion:
+     * llega con {@code stationId} a null y vuelve asi, y quitarsela a uno que la tenia es mandarla a
+     * {@code null}, porque el {@code PUT} sustituye la fila entera.
+     */
+    @Test
+    void aDisconnectorTravelsWithoutAStation() {
+        DisconnectorClient disconnectors = GatewayClientConfiguration.proxyFactory(restClient).createClient(DisconnectorClient.class);
+        server.expect(requestTo(GATEWAY + "/api/configuration/disconnectors/5"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"id":5,"name":"KAF-NS1","onLoad":false,"stationId":null,"profileId":null,"kp":"98375.5",
+                         "trackId":3,"disconnectorFunction":{"id":9,"code":"Disc"},"versionNumber":2}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/disconnectors/5"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.stationId").value(nullValue()))
+                .andExpect(jsonPath("$.trackId").value(3))
+                .andRespond(withSuccess("{\"id\":5,\"versionNumber\":3}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/disconnectors/6"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"id":6,"name":"SEC-6","onLoad":true,"stationId":12,"profileId":7,"profileCode":"P-007",
+                         "disconnectorFunction":{"id":9,"code":"Disc"},"versionNumber":4}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/disconnectors/6"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.stationId").value(nullValue()))
+                .andExpect(jsonPath("$.profileId").value(7))
+                .andRespond(withSuccess("{\"id\":6,\"versionNumber\":5}", MediaType.APPLICATION_JSON));
+
+        DisconnectorDto withoutStation = asUser(() -> disconnectors.findById(5L));
+        assertNull(withoutStation.getStationId());
+        assertEquals(3L, withoutStation.getTrackId(), "su via propia es lo que lo situa");
+        asUser(() -> disconnectors.update(5L, withoutStation));
+
+        DisconnectorDto onAPole = asUser(() -> disconnectors.findById(6L));
+        onAPole.setStationId(null);
+        asUser(() -> disconnectors.update(6L, onAPole));
+        server.verify();
+    }
+
+    /**
      * mto-configuration V27: uno que pone dos vias en paralelo lleva la otra, tambien con poste. Va y
      * vuelve por id, y quitarla es mandarla a {@code null}: el {@code PUT} sustituye la fila entera.
      */
