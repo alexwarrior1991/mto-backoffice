@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.client;
 
 import com.alejandro.mtobackoffice.client.configuration.BusinessEntityClient;
+import com.alejandro.mtobackoffice.client.configuration.DisconnectorClient;
 import com.alejandro.mtobackoffice.client.configuration.JobsClient;
 import com.alejandro.mtobackoffice.client.configuration.LovClient;
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
@@ -61,6 +62,8 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 import com.alejandro.mtobackoffice.client.dto.master.CantileverDto;
+import com.alejandro.mtobackoffice.client.dto.master.DisconnectorDriveType;
+import com.alejandro.mtobackoffice.client.dto.master.DisconnectorDto;
 import java.util.ArrayList;
 import com.alejandro.mtobackoffice.client.dto.stock.AdjustmentDirection;
 import com.alejandro.mtobackoffice.client.dto.stock.AdjustmentRequest;
@@ -985,6 +988,44 @@ class ClientLayerTest {
         profile.setSupportType(new LovRef(5L, "ST1", "Soporte 1"));
 
         asUser(() -> profileClient.update(7L, profile));
+        server.verify();
+    }
+
+    /**
+     * mto-configuration V25: el estado normal y el accionamiento van y vuelven, y un seccionador sin
+     * poste (los de los porticos de subestacion, los de puesta a tierra) lleva el perfil a null.
+     */
+    @Test
+    void aDisconnectorTravelsWithItsNormalStateItsDriveAndWithoutAPole() {
+        DisconnectorClient disconnectors = GatewayClientConfiguration.proxyFactory(restClient).createClient(DisconnectorClient.class);
+        server.expect(requestTo(GATEWAY + "/api/configuration/disconnectors/5"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"id":5,"name":"HSA-FP1.1","onLoad":false,"normallyOpen":true,"driveType":"MOTOR",
+                         "stationId":12,"profileId":null,"kp":"98375.5","trackId":3,
+                         "disconnectorFunction":{"id":9,"code":"Disc"},"versionNumber":2}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/disconnectors/5"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.normallyOpen").value(false))
+                .andExpect(jsonPath("$.driveType").value("MANUAL"))
+                .andExpect(jsonPath("$.profileId").value(nullValue()))
+                .andExpect(jsonPath("$.kp").value("98375.5"))
+                .andExpect(jsonPath("$.trackId").value(3))
+                .andExpect(jsonPath("$.versionNumber").value(2))
+                .andRespond(withSuccess("{\"id\":5,\"versionNumber\":3}", MediaType.APPLICATION_JSON));
+
+        DisconnectorDto read = asUser(() -> disconnectors.findById(5L));
+        assertEquals(Boolean.TRUE, read.getNormallyOpen());
+        assertEquals(DisconnectorDriveType.MOTOR, read.getDriveType());
+        assertNull(read.getProfileId());
+        assertEquals("", read.profileLabel(), "sin poste no hay perfil que ensenar");
+        assertEquals("98375.5", read.getKp(), "sin poste, su propio KP (V26)");
+        assertEquals(3L, read.getTrackId());
+
+        read.setNormallyOpen(false);
+        read.setDriveType(DisconnectorDriveType.MANUAL);
+        asUser(() -> disconnectors.update(5L, read));
         server.verify();
     }
 
