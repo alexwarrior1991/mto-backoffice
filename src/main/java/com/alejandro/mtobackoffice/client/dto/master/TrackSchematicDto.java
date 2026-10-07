@@ -60,13 +60,17 @@ public record TrackSchematicDto(
     ) {
     }
 
-    /** El seccionador que cuelga de un poste. */
+    /**
+     * El seccionador que cuelga de un poste. {@code connectedTrack} es la otra via de uno que pone dos
+     * en paralelo; la suya es la del esquema.
+     */
     public record DisconnectorMark(
             Long id,
             String name,
             Boolean onLoad,
             String function,
-            String station
+            String station,
+            String connectedTrack
     ) {
     }
 

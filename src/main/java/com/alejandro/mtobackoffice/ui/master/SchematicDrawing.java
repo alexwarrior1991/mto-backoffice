@@ -243,6 +243,7 @@ public final class SchematicDrawing {
         }
         addIf(parts, "funcion ", disconnector.function());
         addIf(parts, "estacion ", disconnector.station());
+        addIf(parts, "en paralelo con ", disconnector.connectedTrack());
         return String.join(" · ", parts);
     }
 

@@ -1212,7 +1212,7 @@ class ViewLayerTest {
 
     private static TrackSchematicDto schematicOfVia1() {
         var arm = new TrackSchematicDto.CantileverArm(21L, "PT1", "-200", "5300", "1400", "SA1", 1200L);
-        var disconnector = new TrackSchematicDto.DisconnectorMark(40L, "SEC-40", true, "FEED", "ATOCHA");
+        var disconnector = new TrackSchematicDto.DisconnectorMark(40L, "SEC-40", true, "FEED", "ATOCHA", "VIA 2");
         var p1 = new TrackSchematicDto.ProfileNode(1L, "P-001", "10.000", 1, "55.000", "HEB", null, "OK", "-2.500",
                 List.of("S1"), List.of(arm), null);
         var p2 = new TrackSchematicDto.ProfileNode(2L, "P-002", "20.000", 2, null, null, null, null, "2.500",
@@ -1255,6 +1255,8 @@ class ViewLayerTest {
         assertTrue(svg.contains("Mensula PT1 · descentramiento -200 · altura hilo 5300 · altura catenaria 1400 · brazo SA1 1200 mm"));
         assertTrue(svg.contains(">S1<"), "los seccionamientos del poste");
         assertTrue(svg.contains("id=\"disconnector-40\"") && svg.contains(">SEC-40<") && svg.contains(">ATOCHA<"), "el seccionador sobre su poste, con su estacion");
+        assertTrue(svg.contains("Seccionador SEC-40 · en carga · funcion FEED · estacion ATOCHA · en paralelo con VIA 2"),
+                "la otra via de uno que pone dos en paralelo, en su titulo");
         assertTrue(svg.contains("id=\"insulator-50\"") && svg.contains(">AIS-50<"), "el aislador sobre la via");
         assertTrue(svg.contains(">conexion de vias · ↔ VIA 2 · ATOCHA<") && svg.contains(">W31 1:9<"), "la otra via, la estacion y las agujas del aislador");
         assertTrue(LocatorJ._find(dialog, Span.class, spec -> spec.withId(TrackSchematicDialog.EMPTY_ID)).isEmpty());
@@ -1265,7 +1267,7 @@ class ViewLayerTest {
         loginAs("config.lector", "ROLE_CONFIG_READ");
         stubTracks(threeTracks());
         var evil = new TrackSchematicDto.ProfileNode(9L, "<script>P</script>", "1.000", 1, null, null, null, null, null,
-                List.of("<b>"), List.of(), new TrackSchematicDto.DisconnectorMark(1L, "\"SEC\" & co", null, null, null));
+                List.of("<b>"), List.of(), new TrackSchematicDto.DisconnectorMark(1L, "\"SEC\" & co", null, null, null, null));
         when(trackClient.schematic(3L)).thenReturn(new TrackSchematicDto(3L, "VIA \"1\" & <b>", true, null, List.of(), List.of(evil), List.of()));
 
         UI.getCurrent().navigate(TRACKS_ROUTE);
@@ -1891,6 +1893,71 @@ class ViewLayerTest {
                 && Boolean.TRUE.equals(dto.getNormallyOpen())
                 && dto.getDriveType() == DisconnectorDriveType.MOTOR
                 && Long.valueOf(12L).equals(dto.getStationId())
+                && Integer.valueOf(3).equals(dto.getVersionNumber())));
+    }
+
+    /**
+     * Uno que pone dos vias en paralelo lleva la otra (V27 de mto-configuration), con poste o sin el:
+     * la lista y el editor la ensenan, y que no sea la suya lo dice el servicio, sobre su campo.
+     */
+    @Test
+    void aParallelingDisconnectorKeepsItsConnectedTrackAndTheServiceJudgesIt() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(9L, "Disc/PP", "Puesta en paralelo", true, 1, null, null)));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(station(12L, "ATOCHA", 100L)), 0, 50));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(
+                track(3L, "TRACK 1", true, 100L, List.of(12L)), track(4L, "TRACK 2", true, 100L, List.of(12L))), 0, 50));
+        when(profileClient.findById(7L)).thenReturn(profileWithOneCantilever());
+        DisconnectorDto read = new DisconnectorDto();
+        read.setId(5L);
+        read.setName("SEC-B01");
+        read.setOnLoad(false);
+        read.setStationId(12L);
+        read.setProfileId(7L);
+        read.setProfileCode("P-007");
+        read.setProfileKp("12.345");
+        read.setConnectedTrackId(4L);
+        read.setDisconnectorFunction(new LovRef(9L, "Disc/PP", "Puesta en paralelo"));
+        read.setVersionNumber(3);
+        when(disconnectorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(read), 0, 50));
+        ApiProblem problem = new ApiProblem("https://api.mto-configuration/errors/val-000", "Peticion invalida", 400,
+                "La peticion tiene 1 errores de validacion", null, "VAL-000", "t-4", null, null, false,
+                List.of(new ApiFieldError("connectedTrackId", "BUS-001", "Es la via de su poste")), null);
+        // El editor guarda siempre sobre el mismo objeto: se apunta lo que llevaba cada envio.
+        List<Long> sentConnectedTracks = new ArrayList<>();
+        when(disconnectorClient.update(eq(5L), any())).thenAnswer(call -> {
+            DisconnectorDto sent = call.getArgument(1);
+            sentConnectedTracks.add(sent.getConnectedTrackId());
+            if (Long.valueOf(3L).equals(sent.getConnectedTrackId())) {
+                throw BackofficeApiException.of(HttpStatus.BAD_REQUEST, problem, "corr-4", null,
+                        "PUT /api/configuration/disconnectors/5");
+            }
+            return sent;
+        });
+
+        UI.getCurrent().navigate(DISCONNECTORS_ROUTE);
+        @SuppressWarnings("unchecked")
+        Grid<DisconnectorDto> grid = LocatorJ._get(Grid.class);
+        // La via se nombra con su paquete, que aqui no se carga: #100.
+        assertTrue(GridKt._getFormattedRow(grid, 0).contains("TRACK 2 (#100)"), GridKt._getFormattedRow(grid, 0).toString());
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("edit-5")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> connected = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via conectada"));
+        assertEquals(4L, connected.getValue().id());
+        assertTrue(connected.isEnabled(), "con poste tambien: es del seccionador, no del perfil");
+
+        LocatorJ._setValue(connected, new RefItem(3L, "TRACK 1"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        assertTrue(connected.isInvalid());
+        assertEquals("Es la via de su poste", connected.getErrorMessage());
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto para corregir");
+
+        LocatorJ._setValue(connected, new RefItem(4L, "TRACK 2"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        assertEquals(List.of(3L, 4L), sentConnectedTracks, "la rechazada y la corregida, en ese orden");
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "guardado, el dialogo se cierra");
+        verify(disconnectorClient, times(2)).update(eq(5L), argThat(dto -> Long.valueOf(7L).equals(dto.getProfileId())
                 && Integer.valueOf(3).equals(dto.getVersionNumber())));
     }
 

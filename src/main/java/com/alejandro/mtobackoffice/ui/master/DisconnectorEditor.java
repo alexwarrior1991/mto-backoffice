@@ -18,8 +18,10 @@ import java.util.function.Function;
 /**
  * Alta o modificacion de un seccionador. El perfil se busca en el servidor (son miles) y es
  * opcional: hay seccionadores que no estan en un poste. Uno sin poste lleva su propio KP y su via
- * (V26 de mto-configuration), que con poste son los del perfil: se vacian y no se ofrecen. El estado
- * normal y el accionamiento tambien son opcionales, y vaciarlos es «sin dato».
+ * (V26 de mto-configuration), que con poste son los del perfil: se vacian y no se ofrecen. Uno que
+ * pone dos vias en paralelo lleva ademas la otra (V27), con poste o sin el; que no sea la suya lo
+ * dice el servicio, en su campo. El estado normal y el accionamiento tambien son opcionales, y
+ * vaciarlos es «sin dato».
  */
 public class DisconnectorEditor extends MasterEditorDialog<DisconnectorDto> {
 
@@ -40,6 +42,8 @@ public class DisconnectorEditor extends MasterEditorDialog<DisconnectorDto> {
         kp.setHelperText("Solo sin poste: con poste, el del perfil");
         ComboBox<RefItem> track = Pickers.reference("Via propia", catalog.tracks());
         track.setHelperText("Solo sin poste: con poste, la del perfil");
+        ComboBox<RefItem> connectedTrack = Pickers.reference("Via conectada", catalog.tracks());
+        connectedTrack.setHelperText("La otra via, si pone dos en paralelo");
         ComboBox<LovRef> function = Pickers.lov("Funcion", lovs.of(LovResource.DISCONNECTOR_FUNCTIONS));
         function.setRequiredIndicatorVisible(true);
         Checkbox onLoad = new Checkbox("En carga");
@@ -64,13 +68,14 @@ public class DisconnectorEditor extends MasterEditorDialog<DisconnectorDto> {
                         "Numero con punto decimal, como 98375.500")
                 .bind("kp");
         binder.forField(track).withConverter(Pickers.refToId(catalog::trackRef)).bind("trackId");
+        binder.forField(connectedTrack).withConverter(Pickers.refToId(catalog::trackRef)).bind("connectedTrackId");
         profile.addValueChangeListener(change -> ownLocation(change.getValue() == null, kp, track));
         binder.forField(function).asRequired("La funcion es obligatoria").bind("disconnectorFunction");
         binder.forField(onLoad).bind("onLoad");
         binder.forField(normallyOpen).bind("normallyOpen");
         binder.forField(driveType).bind("driveType");
 
-        form.add(name, station, profile, kp, track, function, onLoad, normallyOpen, driveType);
+        form.add(name, station, profile, kp, track, connectedTrack, function, onLoad, normallyOpen, driveType);
         if (dto.getOnLoad() == null) {
             dto.setOnLoad(Boolean.FALSE);
         }

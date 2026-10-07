@@ -111,7 +111,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   **clases mutables** que heredan de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo y los hijos
   tipados que los editores gestionan (`CantileverDto` con su `SteadyArmDto` 1:1,
   `SectionInsulatorSwitchDto`; `DisconnectorDto` trae además `profileCode`/`profileKp`, solo de
-  salida, y `kp`/`trackId`, los suyos, solo sin poste); `PageResponse<T>` con la forma `{content, page}`; los trabajos (`client/dto/jobs`:
+  salida, `kp`/`trackId`, los suyos, solo sin poste, y `connectedTrackId`, la otra vía de uno que
+  pone dos en paralelo, con poste o sin él); `PageResponse<T>` con la forma `{content, page}`; los trabajos (`client/dto/jobs`:
   `JobDto`, la unión de las tres respuestas del servicio, `JobStatus`, `JobType`, `UploadedFile`);
   `ClientEnums`, lo que comparten los enumerados tolerantes (`parse` y `selectable`). Los
   errores en `client/error` (`ApiProblem`, `ApiErrorDecoder` y la jerarquía
@@ -550,7 +551,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   si vienen; las dos cosas se arreglaron en `mto-configuration` para esta fase, no aquí.
 - **El esquema de una vía es una proyección del servicio, cacheada allí.** `GET /tracks/{id}/schematic`
   de `mto-configuration` devuelve en una llamada lo justo para dibujar (los perfiles en el orden
-  físico con sus ménsulas y su seccionador, los aisladores, las estaciones), y `SchematicDrawing`
+  físico con sus ménsulas y su seccionador, con la otra vía si pone dos en paralelo, los
+  aisladores, las estaciones), y `SchematicDrawing`
   solo reparte los postes a distancia uniforme, coloca cada aislador entre sus dos vecinos por KP y
   **escapa todo texto** antes de meterlo en el SVG (`Svg` vuelca la cadena en `innerHTML` tal cual).
   Nada se ordena, suma ni interpreta aquí; si el dibujo necesita otro dato, se añade a la proyección
@@ -601,7 +603,7 @@ catálogos: el `versionNumber` leído en el `PUT` y en el lote, y los dos 409 de
 parámetros de página y orden del `/filter` (sin orden no viaja `sort`, como en el recuento), `extras` e hijos a
 `null` en un `PUT`, referencias a catálogo como `{id, code}`, las ménsulas tipadas con su brazo y
 el seccionador 1:1 en un `PUT`, el seccionador con su estado normal, su accionamiento y sin poste,
-con su KP y su vía,
+con su KP y su vía, y el que pone dos vías en paralelo con su vía conectada, que se quita a `null`,
 el esquema de una vía con sus records anidados; los trabajos: la importación como parte multipart con `dryRun` en
 la query, el 429 con el trabajo rechazado y el `Retry-After`, la lista paginada con sus filtros,
 el estado por familia y el fichero con sus cabeceras, qué es descargable, un tipo o un estado
@@ -650,7 +652,8 @@ ménsulas a `null` sin tocar y enteras al tocarlas, el seccionador del perfil de
 vuelta como se leyó, las agujas en su diálogo y enteras al guardar,
 el perfil legible en la lista de seccionadores, el seccionador guardado sin poste y con su estado
 normal y su accionamiento, con su KP (comprobado antes de llamar) y su vía, que elegir un poste
-vacía, los mensajes de sistema, el esquema de una vía desde
+vacía, la vía conectada en la lista y en el editor, también con poste, con el 400 del servicio en
+su campo, los mensajes de sistema, el esquema de una vía desde
 su fila en una llamada con los postes en el orden recibido, el texto escapado, el fallo notificado
 sin ventana, la vía sin perfiles y el reparto del dibujo (aisladores entre sus vecinos por KP, brazos
 al lado del poste); los trabajos: subir y

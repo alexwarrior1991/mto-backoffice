@@ -88,7 +88,9 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   opcional, porque los de los pórticos de subestación y los de puesta a tierra no están en un poste)
   y las entradas de catálogo como desplegables. Un seccionador lleva además su estado normal
   (normalmente abierto o cerrado) y su accionamiento (motor o manual), los dos opcionales, y, si no
-  está en un poste, su propio KP y su vía (con poste son los del perfil: elegirlo los vacía). La edición sigue la regla de `README_API.md` §4 del
+  está en un poste, su propio KP y su vía (con poste son los del perfil: elegirlo los vacía). Uno
+  que pone dos vías en paralelo (los de puente) lleva su **vía conectada**, la otra, con poste o sin
+  él, que la lista enseña en su columna; que no sea la suya lo dice el servicio, en ese campo. La edición sigue la regla de `README_API.md` §4 del
   servicio: **se edita sobre la fila leída y se devuelve entera**. Lo que la pantalla no conoce
   vuelve tal cual (`extras`), y las colecciones de hijos que no se editan aquí (vías y estaciones
   de un paquete, perfiles de una vía) van a `null`, que para el servicio es «de esta colección no
@@ -213,7 +215,8 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   Vías* (también para quien solo lee): una ventana con la vía como una línea recta y, sobre ella, un
   poste por perfil a distancia uniforme, en el orden físico de la vía, con su código encima y su KP
   debajo, el tipo de poste y el estado, los seccionamientos, sus ménsulas como brazos (con el tipo,
-  hacia el lado que dice `railPoleDistance`) y su seccionador; los aisladores de sección van sobre
+  hacia el lado que dice `railPoleDistance`) y su seccionador (con la otra vía, si pone dos en
+  paralelo); los aisladores de sección van sobre
   la línea, colocados entre los dos perfiles vecinos por KP, con sus agujas; las estaciones de la
   vía, en la cabecera; el detalle de cada elemento, al pasar por encima. Es esquemático a propósito:
   no es el layout CAD. Lo que se dibuja es la proyección que `mto-configuration` devuelve en **una
