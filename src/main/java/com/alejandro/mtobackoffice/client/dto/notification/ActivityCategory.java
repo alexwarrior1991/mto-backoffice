@@ -16,6 +16,7 @@ public enum ActivityCategory {
     CONFIGURATION("Configuracion"),
     MAINTENANCE("Mantenimiento"),
     STOCK("Almacen"),
+    FIELD("Campo"),
     SYSTEM("Sistema"),
     UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 

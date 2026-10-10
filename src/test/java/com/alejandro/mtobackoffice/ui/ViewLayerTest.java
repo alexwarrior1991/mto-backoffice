@@ -7022,7 +7022,7 @@ class ViewLayerTest {
     void theActivityLogIsFilteredAndSortedInTheServerAndNeverOffersTheAccesses() {
         loginAs("auditor", "ROLE_NOTIFICATION_ACTIVITY_READ");
         ActivityEventDto created = event(EVENT1, ActivityCategory.MAINTENANCE, "maintenance.order.created", ActivitySeverity.CRITICAL, Map.of());
-        ActivityEventDto burst = new ActivityEventDto(EVENT2, 119L, "mto-configuration", "burst:7", ActivityCategory.of("FIELD"),
+        ActivityEventDto burst = new ActivityEventDto(EVENT2, 119L, "mto-configuration", "burst:7", ActivityCategory.of("TELEMETRY"),
                 "configuration.profile.updated", ActivitySeverity.INFO, NOTIFIED_AT, NOTIFIED_AT, new ActorDto(ActorKind.SYSTEM, null, null),
                 new SubjectDto("profile", null, null), "job-1", 12645, Map.of("sampleIds", List.of(1, 2)), EVENT1);
         when(notificationClient.activity(any(ActivityFilter.class), anyInt(), anyInt(), anyList()))
@@ -7045,7 +7045,7 @@ class ViewLayerTest {
         List<ActivityCategory> offered = category.getListDataView().getItems().toList();
         assertFalse(offered.contains(ActivityCategory.ACCESS), "los accesos van por su pantalla; aqui el servicio los rechaza: " + offered);
         assertFalse(offered.contains(ActivityCategory.UNKNOWN), offered.toString());
-        assertTrue(offered.containsAll(List.of(ActivityCategory.USERS, ActivityCategory.SYSTEM)), offered.toString());
+        assertTrue(offered.containsAll(List.of(ActivityCategory.USERS, ActivityCategory.FIELD, ActivityCategory.SYSTEM)), offered.toString());
 
         clearInvocations(notificationClient);
         LocatorJ._setValue(LocatorJ._get(ComboBox.class, spec -> spec.withId("activity-severity")), ActivitySeverity.CRITICAL);
