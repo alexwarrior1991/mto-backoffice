@@ -2733,7 +2733,7 @@ class ClientLayerTest {
                         + "&to=2026-09-30T23%3A59%3A59.999Z&includeSuperseded=true&page=0&size=50&sort=occurredAt%2Cdesc&sort=seq%2Cdesc"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(stockPage(activityEventJson(EVENT_ID, "USERS", "PERSON", null) + ","
-                        + activityEventJson(NOTIFICATION_ID_2, "FIELD", "ROBOT", EVENT_ID), 0, 50, 2), MediaType.APPLICATION_JSON));
+                        + activityEventJson(NOTIFICATION_ID_2, "TELEMETRY", "ROBOT", EVENT_ID), 0, 50, 2), MediaType.APPLICATION_JSON));
         // includeSuperseded solo viaja cuando es verdadero: el servicio ya esconde lo fundido por defecto.
         server.expect(requestTo(NOTIFICATIONS + "/activity?page=0&size=50&sort=occurredAt%2Cdesc&sort=seq%2Cdesc"))
                 .andExpect(method(HttpMethod.GET))
