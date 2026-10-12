@@ -88,7 +88,10 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   opcional, porque los de los pórticos de subestación y los de puesta a tierra no están en un poste)
   y las entradas de catálogo como desplegables. Un seccionador lleva además su estado normal
   (normalmente abierto o cerrado) y su accionamiento (motor o manual), los dos opcionales, y, si no
-  está en un poste, su propio KP y su vía (con poste son los del perfil: elegirlo los vacía). Uno
+  está en un poste, su propio KP y su vía (con poste, el KP es el del perfil: elegirlo lo vacía). Con
+  poste, la vía propia es la que maniobra cuando no es la del poste: en un haz de vías (talleres,
+  cocheras) un seccionador cuelga a veces del poste de una vía y aísla otra, o une dos que no son la
+  del poste; vacía es la del poste, y la lista la enseña en su columna. Uno
   que pone dos vías en paralelo (los de puente) lleva su **vía conectada**, la otra, con poste o sin
   él, que la lista enseña en su columna; que no sea la suya lo dice el servicio, en ese campo. Su
   **estación es opcional**: uno en plena vía, en una zona neutra o en una subestación no es de

@@ -180,8 +180,10 @@ public final class SchematicDrawing {
                     .append(" L").append(fmt(cx)).append(' ').append(fmt(cy + 8))
                     .append(" L").append(fmt(cx - 8)).append(' ').append(fmt(cy)).append(" Z\"/>");
             text(out, "disc-label", cx - direction * 12, cy + 4, direction < 0 ? "start" : "end", disconnector.name());
-            if (disconnector.station() != null) {
-                text(out, "small", cx - direction * 12, cy + 16, direction < 0 ? "start" : "end", disconnector.station());
+            String detail = join(" · ", disconnector.station(),
+                    disconnector.track() == null ? null : "maniobra " + disconnector.track());
+            if (!detail.isEmpty()) {
+                text(out, "small", cx - direction * 12, cy + 16, direction < 0 ? "start" : "end", detail);
             }
             out.append("</g>");
         }
@@ -243,6 +245,8 @@ public final class SchematicDrawing {
         }
         addIf(parts, "funcion ", disconnector.function());
         addIf(parts, "estacion ", disconnector.station());
+        // La via que maniobra, solo cuando no es la del poste: un haz de vias.
+        addIf(parts, "maniobra la via ", disconnector.track());
         addIf(parts, "en paralelo con ", disconnector.connectedTrack());
         return String.join(" · ", parts);
     }

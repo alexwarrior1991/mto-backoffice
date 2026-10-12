@@ -729,7 +729,7 @@ class ClientLayerTest {
                             "cantilevers":[{"id":21,"type":"PT1","stagger":"-200","cwHeight":"5300","catenaryHeight":"1400",
                                             "steadyArmType":"SA1","steadyArmLength":1200}],
                             "disconnector":{"id":40,"name":"SEC-40","onLoad":true,"function":"FEED","station":"ATOCHA",
-                                            "connectedTrack":"VIA 2"},
+                                            "track":"VIA 3","connectedTrack":"VIA 2"},
                             "fieldOfTomorrow":{"deep":[1]}},
                            {"id":8,"code":"P-008","kp":"70.000","orderInTrack":2,"sectionings":[],"cantilevers":[]}],
                          "sectionInsulators":[
@@ -754,6 +754,7 @@ class ClientLayerTest {
         assertEquals("SEC-40", first.disconnector().name());
         assertEquals("ATOCHA", first.disconnector().station());
         assertEquals("VIA 2", first.disconnector().connectedTrack(), "la otra via de uno que pone dos en paralelo (V27)");
+        assertEquals("VIA 3", first.disconnector().track(), "la via que maniobra cuando no es la del poste");
         TrackSchematicDto.ProfileNode second = schematic.profiles().get(1);
         assertNull(second.disconnector(), "lo que el servicio no manda es null");
         assertTrue(second.cantilevers().isEmpty());
