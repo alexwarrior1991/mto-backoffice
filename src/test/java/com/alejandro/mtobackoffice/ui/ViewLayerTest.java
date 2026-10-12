@@ -1213,7 +1213,8 @@ class ViewLayerTest {
 
     private static TrackSchematicDto schematicOfVia1() {
         var arm = new TrackSchematicDto.CantileverArm(21L, "PT1", "-200", "5300", "1400", "SA1", 1200L);
-        var disconnector = new TrackSchematicDto.DisconnectorMark(40L, "SEC-40", true, "FEED", "ATOCHA", "VIA 2");
+        // Cuelga de un poste de VIA 1 y une otras dos: un haz de vias.
+        var disconnector = new TrackSchematicDto.DisconnectorMark(40L, "SEC-40", true, "FEED", "ATOCHA", "VIA 3", "VIA 2");
         var p1 = new TrackSchematicDto.ProfileNode(1L, "P-001", "10.000", 1, "55.000", "HEB", null, "OK", "-2.500",
                 List.of("S1"), List.of(arm), null);
         var p2 = new TrackSchematicDto.ProfileNode(2L, "P-002", "20.000", 2, null, null, null, null, "2.500",
@@ -1255,9 +1256,10 @@ class ViewLayerTest {
         assertTrue(svg.contains("id=\"arm-21\"") && svg.contains(">PT1<"), "la mensula con su tipo");
         assertTrue(svg.contains("Mensula PT1 · descentramiento -200 · altura hilo 5300 · altura catenaria 1400 · brazo SA1 1200 mm"));
         assertTrue(svg.contains(">S1<"), "los seccionamientos del poste");
-        assertTrue(svg.contains("id=\"disconnector-40\"") && svg.contains(">SEC-40<") && svg.contains(">ATOCHA<"), "el seccionador sobre su poste, con su estacion");
-        assertTrue(svg.contains("Seccionador SEC-40 · en carga · funcion FEED · estacion ATOCHA · en paralelo con VIA 2"),
-                "la otra via de uno que pone dos en paralelo, en su titulo");
+        assertTrue(svg.contains("id=\"disconnector-40\"") && svg.contains(">SEC-40<") && svg.contains(">ATOCHA · maniobra VIA 3<"),
+                "el seccionador sobre su poste, con su estacion y la via que maniobra, que no es la del poste");
+        assertTrue(svg.contains("Seccionador SEC-40 · en carga · funcion FEED · estacion ATOCHA · maniobra la via VIA 3 · en paralelo con VIA 2"),
+                "la via que maniobra y la otra de uno que pone dos en paralelo, en su titulo");
         assertTrue(svg.contains("id=\"insulator-50\"") && svg.contains(">AIS-50<"), "el aislador sobre la via");
         assertTrue(svg.contains(">conexion de vias · ↔ VIA 2 · ATOCHA<") && svg.contains(">W31 1:9<"), "la otra via, la estacion y las agujas del aislador");
         assertTrue(LocatorJ._find(dialog, Span.class, spec -> spec.withId(TrackSchematicDialog.EMPTY_ID)).isEmpty());
@@ -1268,7 +1270,7 @@ class ViewLayerTest {
         loginAs("config.lector", "ROLE_CONFIG_READ");
         stubTracks(threeTracks());
         var evil = new TrackSchematicDto.ProfileNode(9L, "<script>P</script>", "1.000", 1, null, null, null, null, null,
-                List.of("<b>"), List.of(), new TrackSchematicDto.DisconnectorMark(1L, "\"SEC\" & co", null, null, null, null));
+                List.of("<b>"), List.of(), new TrackSchematicDto.DisconnectorMark(1L, "\"SEC\" & co", null, null, null, "<i>", null));
         when(trackClient.schematic(3L)).thenReturn(new TrackSchematicDto(3L, "VIA \"1\" & <b>", true, null, List.of(), List.of(evil), List.of()));
 
         UI.getCurrent().navigate(TRACKS_ROUTE);
@@ -1277,10 +1279,11 @@ class ViewLayerTest {
         Dialog dialog = LocatorJ._get(Dialog.class);
         assertEquals("Esquema · VIA \"1\" & <b>", dialog.getHeaderTitle(), "la cabecera es texto: Vaadin la escapa sola");
         String svg = drawing(dialog);
-        assertFalse(svg.contains("<script>") || svg.contains("<b>"), svg);
+        assertFalse(svg.contains("<script>") || svg.contains("<b>") || svg.contains("<i>"), svg);
         assertTrue(svg.contains("&lt;script&gt;P&lt;/script&gt;"));
         assertTrue(svg.contains("VIA &quot;1&quot; &amp; &lt;b&gt;"));
         assertTrue(svg.contains("&quot;SEC&quot; &amp; co"));
+        assertTrue(svg.contains("maniobra &lt;i&gt;"), "la via que maniobra tambien");
     }
 
     @Test
@@ -1872,7 +1875,7 @@ class ViewLayerTest {
         @SuppressWarnings("unchecked")
         ComboBox<RefItem> track = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via propia"));
         assertFalse(kp.isEnabled(), "con poste, el KP es el del perfil");
-        assertFalse(track.isEnabled(), "con poste, la via es la del perfil");
+        assertTrue(track.isEnabled(), "con poste tambien: la via que maniobra, si no es la del poste");
 
         LocatorJ._setValue(profile, null);
         assertTrue(kp.isEnabled(), "sin poste, el seccionador lleva su propio KP");
@@ -2027,8 +2030,13 @@ class ViewLayerTest {
     }
 
     /** Con poste, el KP y la via son los del perfil (V26 de mto-configuration): elegirlo vacia los propios. */
+    /**
+     * Elegir un poste vacia el KP propio, que es el suyo, pero no la via: con poste es la que
+     * maniobra si no es la del poste, y quien la tenia la ve y decide. Si es la del poste, el servicio
+     * la guarda vacia.
+     */
     @Test
-    void choosingAPoleClearsTheOwnKpAndTrackOfADisconnector() {
+    void choosingAPoleClearsTheOwnKpButKeepsTheTrack() {
         loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
         when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(9L, "Disc", "Seccionador", true, 1, null, null)));
         when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(station(12L, "ATOCHA", 100L)), 0, 50));
@@ -2063,14 +2071,71 @@ class ViewLayerTest {
         ComboBox<RefItem> profile = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Perfil"));
         LocatorJ._setValue(profile, new RefItem(7L, "P-007 (kp 12.345)"));
         assertEquals("", kp.getValue());
-        assertNull(track.getValue());
         assertFalse(kp.isEnabled());
-        assertFalse(track.isEnabled());
+        assertEquals(3L, track.getValue().id());
+        assertTrue(track.isEnabled());
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
 
         verify(disconnectorClient).update(eq(5L), argThat(dto -> Long.valueOf(7L).equals(dto.getProfileId())
                 && dto.getKp() == null
-                && dto.getTrackId() == null));
+                && Long.valueOf(3L).equals(dto.getTrackId())));
+    }
+
+    /**
+     * En un haz de vias (talleres, cocheras) un seccionador cuelga a veces del poste de una via y
+     * maniobra otra, o une dos que no son la del poste: con poste, su via propia es la que maniobra.
+     * La lista la ensena junto a la conectada, el editor la ofrece con poste, y vaciarla es volver a
+     * la del poste.
+     */
+    @Test
+    void aDisconnectorOnAPoleShowsAndKeepsTheTrackItSwitches() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(9L, "Disc/PP", "Puesta en paralelo", true, 1, null, null)));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(station(12L, "ATOCHA", 100L)), 0, 50));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(
+                track(3L, "TRACK 1", true, 100L, List.of(12L)), track(4L, "TRACK 2", true, 100L, List.of(12L)),
+                track(5L, "TRACK 3", true, 100L, List.of(12L))), 0, 50));
+        when(profileClient.findById(7L)).thenReturn(profileWithOneCantilever());
+        DisconnectorDto read = new DisconnectorDto();
+        read.setId(5L);
+        read.setName("DEP-12");
+        read.setOnLoad(false);
+        read.setStationId(12L);
+        read.setProfileId(7L);
+        read.setProfileCode("P-007");
+        read.setProfileKp("12.345");
+        read.setTrackId(4L);
+        read.setConnectedTrackId(5L);
+        read.setDisconnectorFunction(new LovRef(9L, "Disc/PP", "Puesta en paralelo"));
+        read.setVersionNumber(3);
+        when(disconnectorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(read), 0, 50));
+        when(disconnectorClient.update(eq(5L), any())).thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(DISCONNECTORS_ROUTE);
+        @SuppressWarnings("unchecked")
+        Grid<DisconnectorDto> grid = LocatorJ._get(Grid.class);
+        // Las vias se nombran con su paquete, que aqui no se carga: #100.
+        assertEquals("TRACK 2 (#100)", GridKt._getFormatted(grid, 0, "track"));
+        assertEquals("TRACK 3 (#100)", GridKt._getFormatted(grid, 0, "connectedTrack"));
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("edit-5")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        TextField kp = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("KP propio (m)"));
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> track = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via propia"));
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> connected = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via conectada"));
+        assertFalse(kp.isEnabled(), "con poste, el KP es el del perfil");
+        assertTrue(track.isEnabled());
+        assertEquals(4L, track.getValue().id());
+        assertEquals(5L, connected.getValue().id());
+
+        LocatorJ._setValue(track, null);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        verify(disconnectorClient).update(eq(5L), argThat(dto -> Long.valueOf(7L).equals(dto.getProfileId())
+                && dto.getTrackId() == null
+                && Long.valueOf(5L).equals(dto.getConnectedTrackId())
+                && Integer.valueOf(3).equals(dto.getVersionNumber())));
     }
 
     /** Tras un reinicio no queda un dialogo muerto: la pantalla recarga y la cadena de seguridad reentra por el SSO. */

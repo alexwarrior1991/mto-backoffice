@@ -111,9 +111,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   **clases mutables** que heredan de `MasterDto` (ver la regla de abajo), con `LovRef` para las referencias a catálogo y los hijos
   tipados que los editores gestionan (`CantileverDto` con su `SteadyArmDto` 1:1,
   `SectionInsulatorSwitchDto`; `DisconnectorDto` trae además `profileCode`/`profileKp`, solo de
-  salida, `kp`/`trackId`, los suyos, solo sin poste, `connectedTrackId`, la otra vía de uno que
-  pone dos en paralelo, con poste o sin él, y `stationId`, opcional: uno en plena vía no es de
-  ninguna); `PageResponse<T>` con la forma `{content, page}`; los trabajos (`client/dto/jobs`:
+  salida, `kp`, el suyo, solo sin poste, `trackId`, el suyo sin poste y, con poste, la vía que
+  maniobra cuando no es la del poste (un haz de vías, en talleres y cocheras), `connectedTrackId`,
+  la otra vía de uno que pone dos en paralelo, con poste o sin él, y `stationId`, opcional: uno en
+  plena vía no es de ninguna); `PageResponse<T>` con la forma `{content, page}`; los trabajos (`client/dto/jobs`:
   `JobDto`, la unión de las tres respuestas del servicio, `JobStatus`, `JobType`, `UploadedFile`);
   `ClientEnums`, lo que comparten los enumerados tolerantes (`parse` y `selectable`). Los
   errores en `client/error` (`ApiProblem`, `ApiErrorDecoder` y la jerarquía
@@ -552,8 +553,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   si vienen; las dos cosas se arreglaron en `mto-configuration` para esta fase, no aquí.
 - **El esquema de una vía es una proyección del servicio, cacheada allí.** `GET /tracks/{id}/schematic`
   de `mto-configuration` devuelve en una llamada lo justo para dibujar (los perfiles en el orden
-  físico con sus ménsulas y su seccionador, con la otra vía si pone dos en paralelo, los
-  aisladores, las estaciones), y `SchematicDrawing`
+  físico con sus ménsulas y su seccionador, con la vía que maniobra si no es la del poste y la otra
+  vía si pone dos en paralelo, los aisladores, las estaciones), y `SchematicDrawing`
   solo reparte los postes a distancia uniforme, coloca cada aislador entre sus dos vecinos por KP y
   **escapa todo texto** antes de meterlo en el SVG (`Svg` vuelca la cadena en `innerHTML` tal cual).
   Nada se ordena, suma ni interpreta aquí; si el dibujo necesita otro dato, se añade a la proyección
@@ -652,9 +653,10 @@ desplegable, borrado confirmado, alta de un perfil con sus referencias, KP no v�
 ménsulas a `null` sin tocar y enteras al tocarlas, el seccionador del perfil de solo lectura y de
 vuelta como se leyó, las agujas en su diálogo y enteras al guardar,
 el perfil legible en la lista de seccionadores, el seccionador guardado sin poste y con su estado
-normal y su accionamiento, con su KP (comprobado antes de llamar) y su vía, que elegir un poste
-vacía, la vía conectada en la lista y en el editor, también con poste, con el 400 del servicio en
-su campo, el seccionador sin estación (de ida y vuelta, y con el 400 del servicio sobre la estación
+normal y su accionamiento, con su KP (comprobado antes de llamar) y su vía, el KP que elegir un
+poste vacía y la vía que se queda, la vía que maniobra uno en un poste en la lista y en el editor,
+y vaciada de vuelta a la del poste, la vía conectada en la lista y en el editor, también con poste,
+con el 400 del servicio en su campo, el seccionador sin estación (de ida y vuelta, y con el 400 del servicio sobre la estación
 cuando no queda en ningún sitio), los mensajes de sistema, el esquema de una vía desde
 su fila en una llamada con los postes en el orden recibido, el texto escapado, el fallo notificado
 sin ventana, la vía sin perfiles y el reparto del dibujo (aisladores entre sus vecinos por KP, brazos

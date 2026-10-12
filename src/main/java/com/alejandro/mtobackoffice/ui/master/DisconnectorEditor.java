@@ -21,9 +21,12 @@ import java.util.function.Function;
  * en un poste o con su via propia), pero eso lo dice el servicio, con un 400 sobre la estacion.
  * El perfil se busca en el servidor (son miles) y es
  * opcional: hay seccionadores que no estan en un poste. Uno sin poste lleva su propio KP y su via
- * (V26 de mto-configuration), que con poste son los del perfil: se vacian y no se ofrecen. Uno que
- * pone dos vias en paralelo lleva ademas la otra (V27), con poste o sin el; que no sea la suya lo
- * dice el servicio, en su campo. El estado normal y el accionamiento tambien son opcionales, y
+ * (V26 de mto-configuration). Con poste, el KP es el del perfil: se vacia y no se ofrece. La via no:
+ * en un haz de vias (talleres, cocheras) un seccionador cuelga a veces del poste de una via y
+ * maniobra otra, o une dos que no son la del poste, y entonces su via es la que maniobra; vacia es la
+ * del poste, y si se elige esa el servicio la guarda vacia. Elegir un poste no la vacia: quien la
+ * tenia la ve y decide. Uno que pone dos vias en paralelo lleva ademas la otra (V27), con poste o
+ * sin el; que no sea la suya lo dice el servicio, en su campo. El estado normal y el accionamiento tambien son opcionales, y
  * vaciarlos es «sin dato».
  */
 public class DisconnectorEditor extends MasterEditorDialog<DisconnectorDto> {
@@ -44,7 +47,7 @@ public class DisconnectorEditor extends MasterEditorDialog<DisconnectorDto> {
         TextField kp = text("KP propio (m)", KP_MAX_LENGTH, false);
         kp.setHelperText("Solo sin poste: con poste, el del perfil");
         ComboBox<RefItem> track = Pickers.reference("Via propia", catalog.tracks());
-        track.setHelperText("Solo sin poste: con poste, la del perfil");
+        track.setHelperText("Sin poste, la suya. Con poste, solo si maniobra otra via que la del poste");
         ComboBox<RefItem> connectedTrack = Pickers.reference("Via conectada", catalog.tracks());
         connectedTrack.setHelperText("La otra via, si pone dos en paralelo");
         ComboBox<LovRef> function = Pickers.lov("Funcion", lovs.of(LovResource.DISCONNECTOR_FUNCTIONS));
@@ -72,7 +75,7 @@ public class DisconnectorEditor extends MasterEditorDialog<DisconnectorDto> {
                 .bind("kp");
         binder.forField(track).withConverter(Pickers.refToId(catalog::trackRef)).bind("trackId");
         binder.forField(connectedTrack).withConverter(Pickers.refToId(catalog::trackRef)).bind("connectedTrackId");
-        profile.addValueChangeListener(change -> ownLocation(change.getValue() == null, kp, track));
+        profile.addValueChangeListener(change -> ownKp(change.getValue() == null, kp));
         binder.forField(function).asRequired("La funcion es obligatoria").bind("disconnectorFunction");
         binder.forField(onLoad).bind("onLoad");
         binder.forField(normallyOpen).bind("normallyOpen");
@@ -83,16 +86,17 @@ public class DisconnectorEditor extends MasterEditorDialog<DisconnectorDto> {
             dto.setOnLoad(Boolean.FALSE);
         }
         ready();
-        ownLocation(profile.getValue() == null, kp, track);
+        ownKp(profile.getValue() == null, kp);
     }
 
-    /** El KP y la via propios, solo sin poste: al elegir un poste se vacian, porque son los suyos. */
-    private static void ownLocation(boolean withoutPole, TextField kp, ComboBox<RefItem> track) {
+    /**
+     * El KP propio, solo sin poste: al elegir un poste se vacia, porque es el suyo. La via propia se
+     * queda: con poste es la que maniobra si no es la del poste.
+     */
+    private static void ownKp(boolean withoutPole, TextField kp) {
         kp.setEnabled(withoutPole);
-        track.setEnabled(withoutPole);
         if (!withoutPole) {
             kp.clear();
-            track.clear();
         }
     }
 

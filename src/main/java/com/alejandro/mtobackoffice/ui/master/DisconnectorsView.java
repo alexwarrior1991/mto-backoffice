@@ -67,6 +67,8 @@ public class DisconnectorsView extends MasterView<DisconnectorDto> {
                 .setSortProperty("disconnectorFunction.code").setSortable(true).setAutoWidth(true);
         grid.addColumn(DisconnectorDto::profileLabel).setHeader("Perfil").setKey("profile").setSortProperty("profile.profileId").setSortable(true).setAutoWidth(true);
         grid.addColumn(dto -> yesNo(dto.getOnLoad())).setHeader("En carga").setKey("onLoad").setSortProperty("onLoad").setSortable(true).setAutoWidth(true);
+        // La suya sin poste; con poste, la que maniobra si no es la del poste, y vacia si es esa.
+        grid.addColumn(dto -> catalog.trackName(dto.getTrackId())).setHeader("Via propia").setKey("track").setAutoWidth(true);
         grid.addColumn(dto -> catalog.trackName(dto.getConnectedTrackId())).setHeader("Via conectada").setKey("connectedTrack").setAutoWidth(true);
     }
 
