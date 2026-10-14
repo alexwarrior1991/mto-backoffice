@@ -441,7 +441,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `maintenance-write` como asignar). Se ofrece con el turno planificado o en curso
   (`ShiftStatus.isOpen`), sin confirmación porque se deshace asignándola otra vez; una terminada o
   cancelada se queda, porque es lo que se hizo en el turno. Es lo que pide el 409 `SHF-001` de quitarle
-  una vía o pasarlo a parcial con una tarea que dejaría de caber.
+  una vía o pasarlo a parcial con una tarea que dejaría de caber. La pestaña «Perfiles» del turno
+  filtra siempre por un estado (un `Select` que no se vacía, empezando en «Completada»): sin él, el
+  servicio da los completados, y un «todas» vacío habría enseñado solo esos.
 - **Un activo que une dos vías se trabaja desde un turno de cualquiera**, como en mto-frontend.
   `AssetSummaryDto` trae `connectedTrackId`, y `tracks(respaldo)` da sus vías: completar desde la
   orden busca los turnos en curso de las dos en una sola llamada (`ShiftFilter.trackIds`, que viaja
@@ -746,7 +748,8 @@ filas en varias vías del EP con su previsualización, una orden sobre un aislad
 lo que falta dicho antes de llamar y el 400 con el diálogo abierto, y una orden sin EP que solo genera su
 tramo, el historial de estados; turnos
 filtrados, el alta con su vía y sus seccionadores, iniciar y cerrar, asignar tareas con las
-rechazadas resumidas, quitar una abierta del turno (y no lo terminado ni con el turno cerrado), ejecutar una tarea con su checklist, sus defectos y su material, completar
+rechazadas resumidas, quitar una abierta del turno (y no lo terminado ni con el turno cerrado), los
+perfiles filtrados siempre por un estado, ejecutar una tarea con su checklist, sus defectos y su material, completar
 desde la orden eligiendo un turno en curso de su vía (o de las dos de un aislador que las une); inspecciones con su turno, su defecto (`force` si es
 leve) y su orden correctiva, o los enlaces a ellos, y sus puntos contestados; defectos vinculados,
 resueltos y descartados con sus motivos, los de una orden; las líneas de material con su almacén y

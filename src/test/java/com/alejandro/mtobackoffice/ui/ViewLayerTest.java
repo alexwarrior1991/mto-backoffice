@@ -5719,6 +5719,30 @@ class ViewLayerTest {
         verify(shiftClient, never()).unassignTask(any(), any());
     }
 
+    /** El filtro de los perfiles siempre lleva un estado: sin el, el servicio daria los completados y no «todas». */
+    @Test
+    void theShiftProfilesAlwaysFilterByAStatus() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        stubReferencesForMaintenance();
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        AssetSummaryDto profile = new AssetSummaryDto(ASSET_SYNCED, "PRF-0001", "12-2.27", CatenaryAssetType.PROFILE, 12L,
+                new BigDecimal("12.270"), new BigDecimal("12.270"), "S-3", true, null, null, null, null);
+        when(shiftClient.profiles(SHIFT1, MaintenanceTaskStatus.COMPLETED)).thenReturn(List.of(profile));
+        when(shiftClient.profiles(SHIFT1, MaintenanceTaskStatus.PENDING)).thenReturn(List.of());
+        openShift(shiftOf(ShiftStatus.IN_PROGRESS));
+        selectTab(1);
+
+        @SuppressWarnings("unchecked")
+        Select<MaintenanceTaskStatus> status = LocatorJ._get(Select.class, spec -> spec.withId("shift-profiles-status"));
+        assertEquals(MaintenanceTaskStatus.COMPLETED, status.getValue());
+        assertFalse(status.isEmptySelectionAllowed(), "no se vacia");
+        assertEquals(1, GridKt._size(gridWithId("shift-profiles-grid")));
+        LocatorJ._setValue(status, MaintenanceTaskStatus.PENDING);
+        assertEquals(0, GridKt._size(gridWithId("shift-profiles-grid")));
+        verify(shiftClient).profiles(SHIFT1, MaintenanceTaskStatus.PENDING);
+        verify(shiftClient, never()).profiles(SHIFT1, null);
+    }
+
     @Test
     void aTaskIsStartedCheckedAndCompletedInTheShiftWithItsDefectsAndMaterials() {
         loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
