@@ -5686,6 +5686,39 @@ class ViewLayerTest {
                 + "possession; the task includes work that needs full track possession)");
     }
 
+    /** Una tarea abierta se quita del turno y vuelve a su orden, sin confirmacion; lo completado se queda. */
+    @Test
+    void anOpenTaskIsTakenOutOfTheShiftAndWhatWasDoneStays() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of(task(TASK1, 1, MaintenanceTaskStatus.IN_PROGRESS),
+                task(TASK2, 2, MaintenanceTaskStatus.COMPLETED)));
+        when(orderClient.findById(ORDER1)).thenReturn(orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE));
+        when(shiftClient.unassignTask(SHIFT1, TASK1)).thenReturn(task(TASK1, 1, MaintenanceTaskStatus.PENDING));
+        openShift(shiftOf(ShiftStatus.IN_PROGRESS));
+
+        Grid<Object> tasks = gridWithId("shift-tasks-grid");
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(tasks, 1, "actions"), Button.class,
+                spec -> spec.withId("shift-task-unassign-" + TASK2)).isEmpty(), "lo completado se queda en el turno");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tasks, 0, "actions"), Button.class, spec -> spec.withId("shift-task-unassign-" + TASK1)));
+
+        verify(shiftClient).unassignTask(SHIFT1, TASK1);
+        NotificationsKt.expectNotifications("Tarea 1 quitada del turno: vuelve a su orden");
+    }
+
+    @Test
+    void aClosedShiftNoLongerLetsATaskOut() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of(task(TASK1, 1, MaintenanceTaskStatus.PENDING)));
+        when(orderClient.findById(ORDER1)).thenReturn(orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE));
+        openShift(shiftOf(ShiftStatus.CLOSED));
+
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(gridWithId("shift-tasks-grid"), 0, "actions"), Button.class,
+                spec -> spec.withId("shift-task-unassign-" + TASK1)).isEmpty());
+        verify(shiftClient, never()).unassignTask(any(), any());
+    }
+
     @Test
     void aTaskIsStartedCheckedAndCompletedInTheShiftWithItsDefectsAndMaterials() {
         loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);

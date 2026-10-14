@@ -2289,6 +2289,10 @@ class ClientLayerTest {
         server.expect(requestTo(shifts + "/" + SHIFT_ID + "/tasks/" + TASK_ID)).andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(""))
                 .andRespond(withSuccess(taskJson("PENDING"), MediaType.APPLICATION_JSON));
+        // Sacarla del turno es un POST sin cuerpo, como asignarla (un DELETE pediria maintenance-delete).
+        server.expect(requestTo(shifts + "/" + SHIFT_ID + "/tasks/" + TASK_ID + "/unassign")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(""))
+                .andRespond(withSuccess(taskJson("PENDING"), MediaType.APPLICATION_JSON));
 
         UUID id = UUID.fromString(SHIFT_ID);
         PageResponse<ShiftDto> page = asUser(() -> shiftClient.search(new ShiftFilter(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), null,
@@ -2303,6 +2307,7 @@ class ClientLayerTest {
         List<TaskDto> tasks = asUser(() -> shiftClient.tasks(id, MaintenanceTaskStatus.PENDING));
         List<com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto> profiles = asUser(() -> shiftClient.profiles(id, null));
         TaskDto assigned = asUser(() -> shiftClient.assignTask(id, UUID.fromString(TASK_ID)));
+        TaskDto unassigned = asUser(() -> shiftClient.unassignTask(id, UUID.fromString(TASK_ID)));
 
         ShiftDto shift = page.content().getFirst();
         assertEquals(List.of(12L, 13L), shift.trackIds());
@@ -2315,6 +2320,7 @@ class ClientLayerTest {
         assertEquals(1, tasks.size());
         assertEquals("12-2.27", profiles.getFirst().name());
         assertEquals(UUID.fromString(TASK_ID), assigned.id());
+        assertEquals(MaintenanceTaskStatus.PENDING, unassigned.status());
         server.verify();
     }
 

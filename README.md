@@ -254,7 +254,8 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   aisladores (RG-03) y seccionadores (RP-06 los de motor) de otro tramo, de una vía, de una estación,
   de todo el EP o elegidos, siempre del EP de la orden, con «Previsualizar» para ver qué pasará con
   cada activo antes de crear nada). M3 trae los **turnos** (lista,
-  ficha, iniciar, cerrar, cancelar, asignarles tareas de una orden de su vía) y la **ejecución**:
+  ficha, iniciar, cerrar, cancelar, asignarles tareas de una orden de su vía y quitar una abierta,
+  que vuelve a su orden) y la **ejecución**:
   iniciar una tarea en un turno, contestar su checklist y completarla con los defectos encontrados y
   el material gastado (la de un aislador que une dos vías, desde un turno de cualquiera de las dos).
   M4 trae las **inspecciones** (con sus puntos, el turno en que se hicieron si se elige, y lo que

@@ -95,7 +95,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `mto-maintenance` bajo `/api/maintenance`: `OrderClient` —órdenes, sus transiciones, su historial
   de estados, sus tareas, que solo existen dentro de una orden o de un turno, y sus líneas de
   material—, `AssetClient`, `MaintenanceCatalogClient` —equipos, tipos de tarea, plantillas de
-  inspección—, `ShiftClient` —turnos, sus tareas y perfiles, asignar una tarea—, `InspectionClient`,
+  inspección—, `ShiftClient` —turnos, sus tareas y perfiles, asignar una tarea y sacarla—, `InspectionClient`,
   `DefectClient` y `ReportClient` —cada informe en JSON y como fichero `ResponseEntity<byte[]>`—,
   todos con `revisions` salvo los catálogos y los informes; DTO como records en
   `client/dto/maintenance`: filtros (`OrderFilter`, `AssetFilter`...), peticiones `*Request`, las
@@ -436,6 +436,12 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   trae debajo de las tareas las inspecciones registradas en él (`ShiftReportPanel`, con su botón para
   abrir cada una) y su recuento del servicio; `inspectionsRecorded` es un `Integer` para que un
   servicio anterior se lea igual.
+- **Una tarea abierta se quita del turno y vuelve a su orden**, como en mto-frontend
+  (`ShiftTasksPanel`, «Quitar del turno»: `POST /shifts/{id}/tasks/{taskId}/unassign`, con
+  `maintenance-write` como asignar). Se ofrece con el turno planificado o en curso
+  (`ShiftStatus.isOpen`), sin confirmación porque se deshace asignándola otra vez; una terminada o
+  cancelada se queda, porque es lo que se hizo en el turno. Es lo que pide el 409 `SHF-001` de quitarle
+  una vía o pasarlo a parcial con una tarea que dejaría de caber.
 - **Un activo que une dos vías se trabaja desde un turno de cualquiera**, como en mto-frontend.
   `AssetSummaryDto` trae `connectedTrackId`, y `tracks(respaldo)` da sus vías: completar desde la
   orden busca los turnos en curso de las dos en una sola llamada (`ShiftFilter.trackIds`, que viaja
@@ -655,7 +661,7 @@ que une dos vías (su vía conectada, sus turnos con `trackId` repetido, generar
 parte con las inspecciones del turno y el alta de una inspección con su turno), generar en varias vías
 del EP (una selección por sitio con sus tipos y `dryRun`, la previsualización con lo desconocido),
 turnos con
-sus conjuntos enteros, sus tareas y perfiles, ejecutar una tarea con su checklist, defectos y
+sus conjuntos enteros, sus tareas y perfiles, asignar y sacar una tarea, ejecutar una tarea con su checklist, defectos y
 materiales, inspecciones y lo que generan, defectos y sus transiciones, líneas de material
 (quitar con 204 y el 503 `STK-503`; la rechazada con su motivo, y el 422 `STK-422` o el 409
 `STK-001` al sincronizarla), los informes en JSON y como fichero con su nombre, y el
@@ -740,7 +746,7 @@ filas en varias vías del EP con su previsualización, una orden sobre un aislad
 lo que falta dicho antes de llamar y el 400 con el diálogo abierto, y una orden sin EP que solo genera su
 tramo, el historial de estados; turnos
 filtrados, el alta con su vía y sus seccionadores, iniciar y cerrar, asignar tareas con las
-rechazadas resumidas, ejecutar una tarea con su checklist, sus defectos y su material, completar
+rechazadas resumidas, quitar una abierta del turno (y no lo terminado ni con el turno cerrado), ejecutar una tarea con su checklist, sus defectos y su material, completar
 desde la orden eligiendo un turno en curso de su vía (o de las dos de un aislador que las une); inspecciones con su turno, su defecto (`force` si es
 leve) y su orden correctiva, o los enlaces a ellos, y sus puntos contestados; defectos vinculados,
 resueltos y descartados con sus motivos, los de una orden; las líneas de material con su almacén y
