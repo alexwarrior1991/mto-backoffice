@@ -40,6 +40,11 @@ public enum ShiftStatus {
         return this == IN_PROGRESS;
     }
 
+    /** Un turno que se ha trabajado: en el se registra una inspeccion, que sale en su parte. */
+    public boolean recordsInspections() {
+        return this == IN_PROGRESS || this == CLOSED;
+    }
+
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static ShiftStatus of(String value) {
         return ClientEnums.parse(ShiftStatus.class, value, UNKNOWN);

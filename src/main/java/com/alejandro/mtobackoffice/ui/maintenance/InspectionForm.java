@@ -7,6 +7,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionResult;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -17,6 +18,8 @@ import java.util.UUID;
 public class InspectionForm {
 
     private AssetSummaryDto assetId;
+    /** El turno en que se hizo, solo en el alta: sale en su parte. Una inspeccion no cambia de turno. */
+    private ShiftDto shiftId;
     private LocalDate inspectionDate = LocalDate.now();
     private String inspector = "";
     private InspectionKind inspectionKind = InspectionKind.VISUAL;
@@ -45,7 +48,8 @@ public class InspectionForm {
     /** @param originOrderId la orden de inspeccion desde la que se da de alta, o {@code null} */
     public InspectionRequest toRequest(UUID originOrderId) {
         return new InspectionRequest(assetId == null ? null : assetId.id(), inspectionDate, nullIfBlank(inspector), inspectionKind, result,
-                nullIfBlank(description), nullIfBlank(detectedDefects), nullIfBlank(recommendedActions), kp, originOrderId, null);
+                nullIfBlank(description), nullIfBlank(detectedDefects), nullIfBlank(recommendedActions), kp, originOrderId,
+                shiftId == null ? null : shiftId.id());
     }
 
     /** Lo que cambio, lo vaciado y la version leida. */
@@ -77,6 +81,14 @@ public class InspectionForm {
 
     public void setAssetId(AssetSummaryDto assetId) {
         this.assetId = assetId;
+    }
+
+    public ShiftDto getShiftId() {
+        return shiftId;
+    }
+
+    public void setShiftId(ShiftDto shiftId) {
+        this.shiftId = shiftId;
     }
 
     public LocalDate getInspectionDate() {

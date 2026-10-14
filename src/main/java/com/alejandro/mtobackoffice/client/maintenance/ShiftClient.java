@@ -32,7 +32,8 @@ import java.util.UUID;
 /**
  * Los turnos nocturnos: {@code PLANNED → IN_PROGRESS → CLOSED}, o {@code CANCELLED}. Una tarea solo
  * se trabaja en un turno en curso que recorra su via, con una posesion compatible (409
- * {@code SHF-001} si no).
+ * {@code SHF-001} si no); la de un aislador o un seccionador que une dos vias, desde un turno de
+ * cualquiera, y la busqueda admite varias vias ({@code trackId} repetido) para pedirlos de una vez.
  */
 @HttpExchange("/api/maintenance/shifts")
 public interface ShiftClient {
@@ -57,7 +58,7 @@ public interface ShiftClient {
     PageResponse<ShiftDto> search(@RequestParam(value = "dateFrom", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
                                   @RequestParam(value = "dateTo", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo,
                                   @RequestParam(value = "teamId", required = false) UUID teamId,
-                                  @RequestParam(value = "trackId", required = false) Long trackId,
+                                  @RequestParam(value = "trackId", required = false) List<Long> trackId,
                                   @RequestParam(value = "executionPackageId", required = false) Long executionPackageId,
                                   @RequestParam(value = "status", required = false) ShiftStatus status,
                                   @RequestParam(value = "possessionType", required = false) PossessionType possessionType,
@@ -66,7 +67,8 @@ public interface ShiftClient {
 
     /** Con el id para desempatar al final: un {@code sort} solo no deja el orden entero (dos del mismo dia). */
     default PageResponse<ShiftDto> search(ShiftFilter filter, int page, int size, List<String> sort) {
-        return search(filter.dateFrom(), filter.dateTo(), filter.teamId(), filter.trackId(), filter.executionPackageId(), filter.status(),
+        return search(filter.dateFrom(), filter.dateTo(), filter.teamId(), filter.trackIds().isEmpty() ? null : filter.trackIds(),
+                filter.executionPackageId(), filter.status(),
                 filter.possessionType(), page, size, MasterFilters.withTieBreak(sort, MasterFilters.BY_ID));
     }
 

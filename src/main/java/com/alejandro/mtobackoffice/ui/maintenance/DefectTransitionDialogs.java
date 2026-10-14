@@ -74,7 +74,7 @@ final class DefectTransitionDialogs {
         ComboBox<ShiftDto> shift = new ComboBox<>("Turno en el que se corrigio");
         shift.setId("defect-resolve-shift");
         shift.setItemLabelGenerator(candidate -> candidate.code() + " · " + MaintenanceFormats.date(candidate.shiftDate()));
-        shift.setItems(recentShiftsOn(clients, defect.trackId()));
+        shift.setItems(recentShiftsOn(clients, defect.trackId() == null ? List.of() : List.of(defect.trackId())));
         shift.setClearButtonVisible(true);
         shift.setHelperText("Obligatorio si su orden no esta completada");
         TextField correctionType = new TextField("Tipo de correccion");
@@ -124,14 +124,16 @@ final class DefectTransitionDialogs {
         }
     }
 
-    /** Los turnos recientes de la via, el mas reciente primero. */
-    private static List<ShiftDto> recentShiftsOn(MaintenanceClients clients, Long trackId) {
-        if (trackId == null) {
+    /**
+     * Los turnos recientes de unas vias, el mas reciente primero: en cual se corrigio un defecto, o en
+     * cual se hizo una inspeccion (las vias de su activo). Sin via no se pide nada.
+     */
+    static List<ShiftDto> recentShiftsOn(MaintenanceClients clients, List<Long> trackIds) {
+        if (trackIds.isEmpty()) {
             return List.of();
         }
         try {
-            return clients.shifts().search(new ShiftFilter(null, null, null, trackId, null, null, null), 0, 50, List.of("shiftDate,desc"))
-                    .content();
+            return clients.shifts().search(ShiftFilter.on(trackIds), 0, 50, List.of("shiftDate,desc")).content();
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
             return List.of();

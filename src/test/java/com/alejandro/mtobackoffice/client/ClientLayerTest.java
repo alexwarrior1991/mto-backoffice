@@ -2111,7 +2111,7 @@ class ClientLayerTest {
         UUID taskId = UUID.fromString(TASK_ID);
         List<TaskDto> listed = asUser(() -> orderClient.tasks(orderId));
         asUser(() -> orderClient.createTask(orderId, new TaskRequest("Revisar la mensula", UUID.fromString(ASSET_ID), null, List.of("RG-04"), true)));
-        GenerateTasksResultDto generated = asUser(() -> orderClient.generateTasks(orderId, new GenerateTasksRequest(null, null)));
+        GenerateTasksResultDto generated = asUser(() -> orderClient.generateTasks(orderId, new GenerateTasksRequest(null, null, null)));
         asUser(() -> orderClient.updateTask(orderId, taskId, new MergePatch<>(new TaskUpdateRequest(null, null, List.of("RG-01"), "Falta la llave",
                 null, null), Set.of("assignedUser"), 2L)));
         TaskDto cancelled = asUser(() -> orderClient.cancelTask(orderId, taskId, new ReasonRequest("Perfil desmontado")));
@@ -2128,6 +2128,62 @@ class ClientLayerTest {
         assertEquals(3, generated.estimatedShifts());
         assertEquals(MaintenanceTaskStatus.CANCELLED, cancelled.status());
         assertEquals(CheckItemResult.UNKNOWN, CheckItemResult.of("MAYBE"));
+        server.verify();
+    }
+
+    /**
+     * Un aislador que une dos vias: su resumen trae la conectada, sus turnos se piden con las dos
+     * ({@code trackId} repetido), generar con los aisladores manda los dos tipos, y el parte trae las
+     * inspecciones del turno. Lo que un servicio anterior no manda se lee igual.
+     */
+    @Test
+    void insulatorsJoiningTwoTracksAreWorkedFromEitherAndTheShiftReportBringsItsInspections() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID + "/tasks/generate")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"taskTypeCodes\":[\"RG-03\"],\"assetTypes\":[\"PROFILE\",\"SECTION_INSULATOR\"]}", strict))
+                .andRespond(withSuccess("{\"createdTasks\":3,\"skippedProfiles\":14,\"totalTasks\":19,\"estimatedMinutes\":810.0,"
+                        + "\"estimatedShifts\":3,\"skippedAssets\":16}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID + "/tasks/generate")).andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"createdTasks\":0,\"skippedProfiles\":14,\"totalTasks\":14,\"estimatedMinutes\":720.0,"
+                        + "\"estimatedShifts\":3}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/shifts?trackId=13&trackId=12&status=IN_PROGRESS&page=0&size=50&sort=shiftDate%2Cdesc&sort=id%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"content\":[" + shiftJson("IN_PROGRESS") + "],\"page\":{\"size\":50,\"number\":0,"
+                        + "\"totalElements\":1,\"totalPages\":1}}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/shifts/" + SHIFT_ID + "/report")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"shift\":" + shiftJson("CLOSED") + ",\"tasksCompleted\":0,\"tasksPending\":0,\"profilesReviewed\":0,"
+                        + "\"defectsFound\":0,\"defectsResolved\":0,\"rows\":[],\"inspectionsRecorded\":1,\"inspections\":[{\"inspectionId\":\""
+                        + INSPECTION_ID + "\",\"code\":\"INS-000040\",\"inspectionDate\":\"2026-10-06\",\"assetCode\":\"SIN-0041\","
+                        + "\"assetName\":\"SI-W41\",\"assetType\":\"SECTION_INSULATOR\",\"trackId\":13,\"kp\":12.921,\"inspectionKind\":\"VISUAL\","
+                        + "\"result\":\"UNSAFE\",\"inspector\":\"dana\",\"detectedDefects\":\"Patin quemado\",\"generatedDefectCode\":\"DEF-000007\","
+                        + "\"generatedOrderCode\":\"MO-000031\",\"futureField\":1}]}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/inspections")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"assetId\":\"" + ASSET_ID + "\",\"inspectionDate\":\"2026-10-06\",\"inspectionKind\":\"VISUAL\","
+                        + "\"result\":\"OK\",\"shiftId\":\"" + SHIFT_ID + "\"}", strict))
+                .andRespond(withSuccess("{\"id\":\"" + INSPECTION_ID + "\",\"code\":\"INS-000041\",\"shiftId\":\"" + SHIFT_ID + "\"}",
+                        MediaType.APPLICATION_JSON));
+
+        UUID orderId = UUID.fromString(ORDER_ID);
+        GenerateTasksResultDto generated = asUser(() -> orderClient.generateTasks(orderId, new GenerateTasksRequest(List.of("RG-03"), null,
+                GenerateTasksRequest.WITH_INSULATORS)));
+        GenerateTasksResultDto fromAnOlderService = asUser(() -> orderClient.generateTasks(orderId, new GenerateTasksRequest(null, null, null)));
+        com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto insulator = new com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto(
+                UUID.fromString(ASSET_ID), "SIN-0041", "SI-W41", com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType.SECTION_INSULATOR,
+                13L, null, null, null, true, 12L);
+        PageResponse<ShiftDto> shifts = asUser(() -> shiftClient.search(ShiftFilter.inProgressOn(insulator.tracks(99L)), 0, 50,
+                List.of("shiftDate,desc")));
+        com.alejandro.mtobackoffice.client.dto.maintenance.ShiftReportDto report = asUser(() -> reportClient.shiftReport(UUID.fromString(SHIFT_ID)));
+        asUser(() -> inspectionClient.create(new InspectionRequest(UUID.fromString(ASSET_ID), LocalDate.of(2026, 10, 6), null, InspectionKind.VISUAL,
+                InspectionResult.OK, null, null, null, null, null, UUID.fromString(SHIFT_ID))));
+
+        assertEquals(16, generated.skipped());
+        assertEquals(14, fromAnOlderService.skipped(), "sin skippedAssets cuenta los perfiles, como antes");
+        assertEquals(1, shifts.content().size());
+        assertEquals(List.of(12L), com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto.tracksOf(null, 12L));
+        assertEquals(1, report.inspectionsRecorded());
+        assertEquals("SIN-0041 - SI-W41", report.inspections().getFirst().assetLabel());
+        assertEquals(InspectionResult.UNSAFE, report.inspections().getFirst().result());
+        assertEquals("MO-000031", report.inspections().getFirst().generatedOrderCode());
         server.verify();
     }
 
@@ -2186,7 +2242,7 @@ class ClientLayerTest {
 
         UUID id = UUID.fromString(SHIFT_ID);
         PageResponse<ShiftDto> page = asUser(() -> shiftClient.search(new ShiftFilter(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), null,
-                12L, null, ShiftStatus.IN_PROGRESS, PossessionType.FULL), 0, 50, List.of("shiftDate,desc")));
+                List.of(12L), null, ShiftStatus.IN_PROGRESS, PossessionType.FULL), 0, 50, List.of("shiftDate,desc")));
         asUser(() -> shiftClient.create(new ShiftRequest(LocalDate.of(2026, 10, 5), null, null, null, PossessionType.PARTIAL,
                 Instant.parse("2026-10-05T21:30:00Z"), null, null, null, null, null, Set.of(12L), null, null, null, null, null)));
         asUser(() -> shiftClient.update(id, new MergePatch<>(new ShiftUpdateRequest(null, null, null, null, null, null, null, null, null, null, null,

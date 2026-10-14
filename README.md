@@ -250,11 +250,13 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   estado dice quién lo desactivó) y los catálogos de **equipos**, **tipos de tarea** y **plantillas de inspección**. M2
   trae las **órdenes** (la lista filtrada y la ficha `mantenimiento/ordenes/{id}` con su cabecera,
   los botones que su estado admite —planificar, asignar, iniciar, completar y cancelar— y sus
-  **tareas**, añadidas a mano o generadas, una por perfil del tramo). M3 trae los **turnos** (lista,
+  **tareas**, añadidas a mano o generadas, una por perfil del tramo y, si se marca, una por aislador
+  de sección con RG-03). M3 trae los **turnos** (lista,
   ficha, iniciar, cerrar, cancelar, asignarles tareas de una orden de su vía) y la **ejecución**:
   iniciar una tarea en un turno, contestar su checklist y completarla con los defectos encontrados y
-  el material gastado. M4 trae las **inspecciones** (con sus puntos y lo que generan: un defecto y
-  una orden correctiva, idempotentes) y los **defectos** (vincular a una orden, resolver, cerrar y
+  el material gastado (la de un aislador que une dos vías, desde un turno de cualquiera de las dos).
+  M4 trae las **inspecciones** (con sus puntos, el turno en que se hicieron si se elige, y lo que
+  generan: un defecto y una orden correctiva, idempotentes) y los **defectos** (vincular a una orden, resolver, cerrar y
   descartar). M5 trae las **líneas de material** de una orden: se reservan en `mto-stock` al
   planificarla, se sincronizan si el almacén no respondió y se quitan liberando su reserva (desde
   que `mto-maintenance` distingue un almacén caído de uno que dice que no, una línea rechazada
@@ -263,7 +265,7 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   5 minutos y, mientras tanto, no ofrece cambiar sus cantidades, quitarla si es una salida ni el
   proyecto de almacén de la orden). M6 trae
   los **informes** (`mantenimiento/informes`: el avance del preventivo y el resumen de un mes, y el
-  parte diario en la ficha del turno), cada uno en pantalla y como Excel o PDF descargados a través
+  parte diario en la ficha del turno, con las inspecciones registradas en él), cada uno en pantalla y como Excel o PDF descargados a través
   de esta aplicación. M7 cierra con el **historial**: el botón «Historial» de cada ficha y de cada
   fila de activos abre las revisiones que guarda el servicio, como en almacén; un activo que solo ha
   llegado por datos maestros no tiene ninguna (allí es SQL nativo) y se dice «sin historial».

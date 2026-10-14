@@ -89,7 +89,7 @@ class ShiftTasksPanel extends LazyPanel {
         }
         if (working) {
             actions.add(MaintenanceUi.rowButton("shift-task-complete-" + task.id(), VaadinIcon.CHECK, "Completar",
-                    click -> new CompleteTaskDialog(task.orderId(), null, task, current, clients, catalogs, canPickMaterials, this::changed).open()));
+                    click -> new CompleteTaskDialog(task.orderId(), List.of(), task, current, clients, catalogs, canPickMaterials, this::changed).open()));
         }
         Button cancel = MaintenanceUi.rowButton("shift-task-cancel-" + task.id(), VaadinIcon.CLOSE_CIRCLE, "Cancelar",
                 click -> new ReasonDialog("Cancelar la tarea " + task.sequence(), "La tarea queda cancelada con su motivo; no se puede reabrir.",

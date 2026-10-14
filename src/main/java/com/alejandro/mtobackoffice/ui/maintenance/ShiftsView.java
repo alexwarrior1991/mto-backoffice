@@ -143,7 +143,7 @@ public class ShiftsView extends VerticalLayout {
 
     private ShiftFilter filter() {
         return new ShiftFilter(dateFrom.getValue(), dateTo.getValue(), team.getValue() == null ? null : team.getValue().id(),
-                track.getValue() == null ? null : track.getValue().id(), executionPackage.getValue() == null ? null : executionPackage.getValue().id(),
+                track.getValue() == null ? null : List.of(track.getValue().id()), executionPackage.getValue() == null ? null : executionPackage.getValue().id(),
                 status.getValue(), possession.getValue());
     }
 

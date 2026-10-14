@@ -432,7 +432,18 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `format=xlsx|pdf` como fichero, que `Downloads` sirve con `DownloadHandler` (primera regla). Los
   enlaces aparecen tras consultar y descargan esa consulta, fijada en un record, aunque luego
   cambien los filtros: exportan lo que se ve. Las cifras son del servicio: el avance llega como
-  fracción (`0.4500`) y solo se pinta como porcentaje; aquí no se suma nada.
+  fracción (`0.4500`) y solo se pinta como porcentaje; aquí no se suma nada. El parte de un turno
+  trae debajo de las tareas las inspecciones registradas en él (`ShiftReportPanel`, con su botón para
+  abrir cada una) y su recuento del servicio; `inspectionsRecorded` es un `Integer` para que un
+  servicio anterior se lea igual.
+- **Un activo que une dos vías se trabaja desde un turno de cualquiera**, como en mto-frontend.
+  `AssetSummaryDto` trae `connectedTrackId`, y `tracks(respaldo)` da sus vías: completar desde la
+  orden busca los turnos en curso de las dos en una sola llamada (`ShiftFilter.trackIds`, que viaja
+  como `trackId` repetido), y el alta de una inspección ofrece los trabajados (en curso o cerrados,
+  `ShiftStatus.recordsInspections`) de las dos; otro activo vacía el turno elegido. Que el turno le
+  vale lo dice el servicio (409 `SHF-001`). Generar tareas en un tramo admite sus aisladores
+  (`GenerateTasksRequest.assetTypes`), con RG-03 si no se eligen tipos; los elegidos van a todo lo
+  generado, y el aviso cuenta lo saltado en activos (`skippedAssets`, también `Integer`).
 - **«Sacar a la persona» son tres llamadas en ese orden, y no se funden en una.** Desactivar
   solo bloquea el siguiente login, cerrar las sesiones no toca las offline y un token offline
   sobrevive a las dos cosas hasta que se revoca: es lo que el README de `mto-users` deja
@@ -626,7 +637,9 @@ salida o desconocida, y cuál se puede quitar), su JSON de error por alias, el m
 (lo cambiado, lo vaciado a `null` y la versión; un campo a vaciar que no existe, rechazado antes de
 llamar; el 409 `CON-001`), activos (búsqueda, alta, `PATCH` con lo cambiado y lo vaciado,
 desactivar), catálogos y equipos enteros,
-órdenes y sus transiciones con sus cuerpos, tareas (alta, generar, modificar, cancelar), turnos con
+órdenes y sus transiciones con sus cuerpos, tareas (alta, generar, modificar, cancelar), un aislador
+que une dos vías (su vía conectada, sus turnos con `trackId` repetido, generar con los aisladores, el
+parte con las inspecciones del turno y el alta de una inspección con su turno), turnos con
 sus conjuntos enteros, sus tareas y perfiles, ejecutar una tarea con su checklist, defectos y
 materiales, inspecciones y lo que generan, defectos y sus transiciones, líneas de material
 (quitar con 204 y el 503 `STK-503`; la rechazada con su motivo, y el 422 `STK-422` o el 409
@@ -707,10 +720,10 @@ equipos enteros y catálogos de lectura; órdenes filtradas, el alta con su acti
 fecha y el equipo con el `CON-001` de una versión vieja y el diálogo abierto, el proyecto de almacén
 que no se vacía sin `stock-read`, la ficha
 con lo que su estado admite, planificar y el `TRN-001` con el diálogo abierto, `force` solo con
-supervise, las tareas (añadir, generar, modificar, cancelar), el historial de estados; turnos
+supervise, las tareas (añadir, generar, también con los aisladores, modificar, cancelar), el historial de estados; turnos
 filtrados, el alta con su vía y sus seccionadores, iniciar y cerrar, asignar tareas con las
 rechazadas resumidas, ejecutar una tarea con su checklist, sus defectos y su material, completar
-desde la orden eligiendo un turno en curso de su vía; inspecciones con su defecto (`force` si es
+desde la orden eligiendo un turno en curso de su vía (o de las dos de un aislador que las une); inspecciones con su turno, su defecto (`force` si es
 leve) y su orden correctiva, o los enlaces a ellos, y sus puntos contestados; defectos vinculados,
 resueltos y descartados con sus motivos, los de una orden; las líneas de material con su almacén y
 lo que admite cada una (la reservada se comprueba; la rechazada, con su motivo, se reintenta y dice
@@ -720,7 +733,7 @@ una petición al almacén sin respuesta (su estado y su tooltip, las cantidades 
 «Quitar» con una salida y, con una reserva, avisando de que pasa por el almacén, y el proyecto de la
 orden de solo lectura mientras dure); los informes (el
 avance con sus nombres y porcentaje, el mensual con sus 24 meses, las descargas de punta a punta
-con el `_download` de Karibu, y el parte del turno en su pestaña); el historial de cada ficha y el
+con el `_download` de Karibu, y el parte del turno en su pestaña, con sus inspecciones); el historial de cada ficha y el
 de un activo sin revisiones; las notificaciones: la campana con su número, solo con
 `notification-inbox` (un rol de realm no la da), sin número con nada sin leer, refrescada con
 `pollOnce()` + `UI.access()` hasta «100+» y con un fallo que deja el número como estaba, el menú
