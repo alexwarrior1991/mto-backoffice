@@ -9,10 +9,12 @@ import java.util.stream.Stream;
 /**
  * El activo tal y como viene dentro de una orden, un defecto o una inspeccion. {@code trackId} es de
  * mto-configuration; {@code connectedTrackId}, la otra via de un aislador o un seccionador que une dos,
- * que se trabaja desde un turno de cualquiera de las dos.
+ * que se trabaja desde un turno de cualquiera de las dos. Su EP y su estacion, porque una orden es de un
+ * solo EP; {@code driveType}, el accionamiento de un seccionador, que decide su tipo de tarea por defecto.
  */
 public record AssetSummaryDto(UUID id, String code, String name, CatenaryAssetType type, Long trackId,
-                              BigDecimal startKp, BigDecimal endKp, String sectioning, Boolean enabled, Long connectedTrackId) {
+                              BigDecimal startKp, BigDecimal endKp, String sectioning, Boolean enabled, Long connectedTrackId,
+                              Long executionPackageId, Long stationId, DisconnectorDrive driveType) {
 
     /** El codigo y, si lo hay, el nombre. */
     public String label() {

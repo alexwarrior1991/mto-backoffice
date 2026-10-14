@@ -10,6 +10,7 @@ import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,6 +39,8 @@ public final class ReferenceCatalog {
     private List<RefItem> stationItems;
     private List<RefItem> trackItems;
     private List<RefItem> companyItems;
+    private Map<Long, Long> stationPackages = Map.of();
+    private Map<Long, Long> trackPackages = Map.of();
 
     public ReferenceCatalog(ExecutionPackageClient packages, StationClient stations, TrackClient tracks, BusinessEntityClient companies) {
         this.packages = packages;
@@ -55,7 +58,12 @@ public final class ReferenceCatalog {
 
     public List<RefItem> stations() {
         if (stationItems == null) {
-            stationItems = load(stations, dto -> new RefItem(dto.getId(), withPackage(dto.getName(), dto.getExecutionPackageId())));
+            Map<Long, Long> packagesOf = new HashMap<>();
+            stationItems = load(stations, dto -> {
+                packagesOf.put(dto.getId(), dto.getExecutionPackageId());
+                return new RefItem(dto.getId(), withPackage(dto.getName(), dto.getExecutionPackageId()));
+            });
+            stationPackages = packagesOf;
         }
         return stationItems;
     }
@@ -63,9 +71,26 @@ public final class ReferenceCatalog {
     /** Las vias llevan el paquete en la etiqueta: {@code TRACK 1} existe en varios paquetes. */
     public List<RefItem> tracks() {
         if (trackItems == null) {
-            trackItems = load(tracks, dto -> new RefItem(dto.getId(), withPackage(dto.getName(), dto.getExecutionPackageId())));
+            Map<Long, Long> packagesOf = new HashMap<>();
+            trackItems = load(tracks, dto -> {
+                packagesOf.put(dto.getId(), dto.getExecutionPackageId());
+                return new RefItem(dto.getId(), withPackage(dto.getName(), dto.getExecutionPackageId()));
+            });
+            trackPackages = packagesOf;
         }
         return trackItems;
+    }
+
+    /** Las estaciones de un paquete: una orden de mantenimiento es de un solo EP, y solo se le ofrece lo suyo. */
+    public List<RefItem> stationsIn(Long packageId) {
+        List<RefItem> all = stations();
+        return all.stream().filter(item -> packageId != null && packageId.equals(stationPackages.get(item.id()))).toList();
+    }
+
+    /** Las vias de un paquete, como {@link #stationsIn}. */
+    public List<RefItem> tracksIn(Long packageId) {
+        List<RefItem> all = tracks();
+        return all.stream().filter(item -> packageId != null && packageId.equals(trackPackages.get(item.id()))).toList();
     }
 
     public List<RefItem> companies() {
@@ -118,6 +143,8 @@ public final class ReferenceCatalog {
         stationItems = null;
         trackItems = null;
         companyItems = null;
+        stationPackages = Map.of();
+        trackPackages = Map.of();
     }
 
     private String withPackage(String name, Long packageId) {

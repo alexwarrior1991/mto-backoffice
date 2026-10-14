@@ -20,7 +20,7 @@ import java.util.UUID;
 public record AssetDto(UUID id, String code, String name, CatenaryAssetType type, String description, Long executionPackageId,
                        Long trackId, Long stationId, BigDecimal startKp, BigDecimal endKp, String profileSourceId, String sectioning,
                        TrackKind trackKind, Long connectedTrackId, SectionInsulatorInstallation installationType,
-                       List<AssetSwitchDto> switches, String sourceService, String sourceEntityId, Boolean enabled,
+                       DisconnectorDrive driveType, List<AssetSwitchDto> switches, String sourceService, String sourceEntityId, Boolean enabled,
                        Boolean enabledAtSource, Boolean disabledLocally,
                        Integer preventiveIntervalDays, Instant lastPreventiveCompletedAt, Instant nextPreventiveDueAt, AuditDto audit, Long version) {
 
@@ -49,7 +49,8 @@ public record AssetDto(UUID id, String code, String name, CatenaryAssetType type
 
     /** Lo que llevan una orden o un desplegable. */
     public AssetSummaryDto summary() {
-        return new AssetSummaryDto(id, code, name, type, trackId, startKp, endKp, sectioning, enabled, connectedTrackId);
+        return new AssetSummaryDto(id, code, name, type, trackId, startKp, endKp, sectioning, enabled, connectedTrackId,
+                executionPackageId, stationId, driveType);
     }
 
     /** El codigo y, si lo hay, el nombre. */
