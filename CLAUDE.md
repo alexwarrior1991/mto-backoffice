@@ -441,9 +441,22 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   orden busca los turnos en curso de las dos en una sola llamada (`ShiftFilter.trackIds`, que viaja
   como `trackId` repetido), y el alta de una inspección ofrece los trabajados (en curso o cerrados,
   `ShiftStatus.recordsInspections`) de las dos; otro activo vacía el turno elegido. Que el turno le
-  vale lo dice el servicio (409 `SHF-001`). Generar tareas en un tramo admite sus aisladores
-  (`GenerateTasksRequest.assetTypes`), con RG-03 si no se eligen tipos; los elegidos van a todo lo
-  generado, y el aviso cuenta lo saltado en activos (`skippedAssets`, también `Integer`).
+  vale lo dice el servicio (409 `SHF-001`).
+- **Una orden preventiva es de un solo EP y genera en varias de sus vías**, como en mto-frontend
+  (`GenerateTasksDialog`). Cada fila es un tipo de activo (perfiles, aisladores, seccionadores) en un
+  sitio: el tramo de la orden, otro tramo, una vía con KP opcionales, una estación, todo el EP o
+  activos elegidos, con sus propios tipos si se quiere. Los desplegables solo ofrecen lo del EP de la
+  orden (`MaintenanceNames.tracksIn`/`stationsIn`, que salen de `ReferenceCatalog`, y los activos con
+  `MaintenancePickers.asset/assets` filtrados por EP), porque lo de otro EP va en otra orden; sin EP
+  solo cabe el tramo de la orden. Si todo es el tramo de la orden sin tipos propios viaja la petición
+  de siempre (`GenerateTasksRequest.ofSection`, `{}` o `assetTypes`); si no, una `GenerationSelection`
+  por fila. «Previsualizar» manda `dryRun` y pinta lo que diría el servicio de cada activo
+  (`GenerationOutcome`, tolerante); cualquier cambio la borra. Qué se salta (ya en la orden, en otra
+  orden abierta, de otro EP, sin tipo de tarea) y los tipos por defecto (RG-03 en un aislador, RP-06 en
+  un seccionador con motor, `DisconnectorDrive`) los decide el servicio. Los recuentos nuevos de
+  `GenerateTasksResultDto` son `Integer` y listas, para que un servicio anterior se lea igual. Se ofrece
+  en una orden en borrador o planificada sobre un tramo o con EP: una sobre un aislador o un
+  seccionador también genera.
 - **«Sacar a la persona» son tres llamadas en ese orden, y no se funden en una.** Desactivar
   solo bloquea el siguiente login, cerrar las sesiones no toca las offline y un token offline
   sobrevive a las dos cosas hasta que se revoca: es lo que el README de `mto-users` deja
@@ -639,7 +652,9 @@ llamar; el 409 `CON-001`), activos (búsqueda, alta, `PATCH` con lo cambiado y l
 desactivar), catálogos y equipos enteros,
 órdenes y sus transiciones con sus cuerpos, tareas (alta, generar, modificar, cancelar), un aislador
 que une dos vías (su vía conectada, sus turnos con `trackId` repetido, generar con los aisladores, el
-parte con las inspecciones del turno y el alta de una inspección con su turno), turnos con
+parte con las inspecciones del turno y el alta de una inspección con su turno), generar en varias vías
+del EP (una selección por sitio con sus tipos y `dryRun`, la previsualización con lo desconocido),
+turnos con
 sus conjuntos enteros, sus tareas y perfiles, ejecutar una tarea con su checklist, defectos y
 materiales, inspecciones y lo que generan, defectos y sus transiciones, líneas de material
 (quitar con 204 y el 503 `STK-503`; la rechazada con su motivo, y el 422 `STK-422` o el 409
@@ -720,7 +735,10 @@ equipos enteros y catálogos de lectura; órdenes filtradas, el alta con su acti
 fecha y el equipo con el `CON-001` de una versión vieja y el diálogo abierto, el proyecto de almacén
 que no se vacía sin `stock-read`, la ficha
 con lo que su estado admite, planificar y el `TRN-001` con el diálogo abierto, `force` solo con
-supervise, las tareas (añadir, generar, también con los aisladores, modificar, cancelar), el historial de estados; turnos
+supervise, las tareas (añadir, generar, también con los aisladores, modificar, cancelar), generar por
+filas en varias vías del EP con su previsualización, una orden sobre un aislador que genera desde su EP con
+lo que falta dicho antes de llamar y el 400 con el diálogo abierto, y una orden sin EP que solo genera su
+tramo, el historial de estados; turnos
 filtrados, el alta con su vía y sus seccionadores, iniciar y cerrar, asignar tareas con las
 rechazadas resumidas, ejecutar una tarea con su checklist, sus defectos y su material, completar
 desde la orden eligiendo un turno en curso de su vía (o de las dos de un aislador que las une); inspecciones con su turno, su defecto (`force` si es

@@ -141,7 +141,7 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
         TabSheet tabs = new TabSheet();
         tabs.setWidthFull();
         panels.clear();
-        addPanel(tabs, TASKS_TAB, new OrderTasksPanel(this::order, clients, catalogs, canWrite, canPickMaterials, this::reload));
+        addPanel(tabs, TASKS_TAB, new OrderTasksPanel(this::order, clients, catalogs, names, canWrite, canPickMaterials, this::reload));
         addPanel(tabs, MATERIALS_TAB, new OrderMaterialsPanel(this::order, clients, names, canWrite, canDelete));
         addPanel(tabs, DEFECTS_TAB, new OrderDefectsPanel(this::order, clients, canWrite));
         addPanel(tabs, INSPECTIONS_TAB, new OrderInspectionsPanel(this::order, clients, canWrite, this::reload));

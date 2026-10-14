@@ -31,6 +31,11 @@ final class MaintenancePickers {
 
     /** @param type solo los de ese tipo; {@code null}, cualquiera */
     static ComboBox<AssetSummaryDto> asset(String label, AssetClient assets, CatenaryAssetType type) {
+        return asset(label, assets, type, null);
+    }
+
+    /** @param executionPackageId solo los de ese EP (lo que se genera en una orden, que es de uno solo); {@code null}, cualquiera */
+    static ComboBox<AssetSummaryDto> asset(String label, AssetClient assets, CatenaryAssetType type, Long executionPackageId) {
         ComboBox<AssetSummaryDto> combo = new ComboBox<>(label);
         combo.setItemLabelGenerator(AssetSummaryDto::label);
         combo.setClearButtonVisible(true);
@@ -38,7 +43,7 @@ final class MaintenancePickers {
         combo.setItems(query -> {
             try {
                 String text = query.getFilter().orElse("");
-                return assets.search(new AssetFilter(type, null, null, null, true, text, null), query.getPage(), query.getPageSize(),
+                return assets.search(new AssetFilter(type, null, null, executionPackageId, true, text, null), query.getPage(), query.getPageSize(),
                         BY_TRACK_AND_KP).content().stream().map(AssetDto::summary);
             } catch (BackofficeApiException failure) {
                 UiErrors.show(failure);
@@ -50,6 +55,11 @@ final class MaintenancePickers {
 
     /** Varios activos de un tipo, buscados en el servidor igual que {@link #asset}: los seccionadores de un turno. */
     static MultiSelectComboBox<AssetSummaryDto> assets(String label, AssetClient assets, CatenaryAssetType type) {
+        return assets(label, assets, type, null);
+    }
+
+    /** Como {@link #assets(String, AssetClient, CatenaryAssetType)}, solo los de un EP: los que se eligen al generar. */
+    static MultiSelectComboBox<AssetSummaryDto> assets(String label, AssetClient assets, CatenaryAssetType type, Long executionPackageId) {
         MultiSelectComboBox<AssetSummaryDto> combo = new MultiSelectComboBox<>(label);
         combo.setItemLabelGenerator(AssetSummaryDto::label);
         combo.setClearButtonVisible(true);
@@ -57,7 +67,7 @@ final class MaintenancePickers {
         combo.setItems(query -> {
             try {
                 String text = query.getFilter().orElse("");
-                return assets.search(new AssetFilter(type, null, null, null, true, text, null), query.getPage(), query.getPageSize(),
+                return assets.search(new AssetFilter(type, null, null, executionPackageId, true, text, null), query.getPage(), query.getPageSize(),
                         BY_TRACK_AND_KP).content().stream().map(AssetDto::summary);
             } catch (BackofficeApiException failure) {
                 UiErrors.show(failure);

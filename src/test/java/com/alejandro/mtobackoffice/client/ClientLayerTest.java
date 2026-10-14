@@ -1,5 +1,8 @@
 package com.alejandro.mtobackoffice.client;
 
+import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationSelection;
+import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationOutcome;
+import com.alejandro.mtobackoffice.client.dto.maintenance.DisconnectorDrive;
 import com.alejandro.mtobackoffice.client.configuration.BusinessEntityClient;
 import com.alejandro.mtobackoffice.client.configuration.DisconnectorClient;
 import com.alejandro.mtobackoffice.client.configuration.JobsClient;
@@ -2111,7 +2114,7 @@ class ClientLayerTest {
         UUID taskId = UUID.fromString(TASK_ID);
         List<TaskDto> listed = asUser(() -> orderClient.tasks(orderId));
         asUser(() -> orderClient.createTask(orderId, new TaskRequest("Revisar la mensula", UUID.fromString(ASSET_ID), null, List.of("RG-04"), true)));
-        GenerateTasksResultDto generated = asUser(() -> orderClient.generateTasks(orderId, new GenerateTasksRequest(null, null, null)));
+        GenerateTasksResultDto generated = asUser(() -> orderClient.generateTasks(orderId, GenerateTasksRequest.ofSection(null, null, null, null)));
         asUser(() -> orderClient.updateTask(orderId, taskId, new MergePatch<>(new TaskUpdateRequest(null, null, List.of("RG-01"), "Falta la llave",
                 null, null), Set.of("assignedUser"), 2L)));
         TaskDto cancelled = asUser(() -> orderClient.cancelTask(orderId, taskId, new ReasonRequest("Perfil desmontado")));
@@ -2128,6 +2131,51 @@ class ClientLayerTest {
         assertEquals(3, generated.estimatedShifts());
         assertEquals(MaintenanceTaskStatus.CANCELLED, cancelled.status());
         assertEquals(CheckItemResult.UNKNOWN, CheckItemResult.of("MAYBE"));
+        server.verify();
+    }
+
+    /**
+     * Generar en varias vias del EP: una seleccion por sitio, con sus tipos y lo vacio fuera, y
+     * {@code dryRun}; la previsualizacion trae cada activo, con lo creado por tipo de activo, y lo que
+     * el cliente no conoce (un resultado nuevo, un tipo de activo nuevo como clave) se lee igual.
+     */
+    @Test
+    void generatingSendsASelectionPerPlaceAndThePreviewBringsEachAsset() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        server.expect(requestTo(MAINTENANCE + "/orders/" + ORDER_ID + "/tasks/generate")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"selections\":[{\"assetType\":\"PROFILE\",\"sectionId\":\"" + ASSET_ID + "\"},"
+                        + "{\"assetType\":\"SECTION_INSULATOR\",\"trackId\":13,\"fromKp\":100,\"toKp\":200.5},"
+                        + "{\"assetType\":\"DISCONNECTOR\",\"stationId\":4,\"taskTypeCodes\":[\"RP-06\"]},"
+                        + "{\"assetType\":\"DISCONNECTOR\",\"assetIds\":[\"" + ASSET_ID + "\"]}],\"dryRun\":true}", strict))
+                .andRespond(withSuccess("{\"createdTasks\":1,\"skippedProfiles\":0,\"totalTasks\":1,\"estimatedMinutes\":45,\"estimatedShifts\":1,"
+                        + "\"skippedAssets\":0,\"createdByAssetType\":{\"DISCONNECTOR\":1,\"PROFILE\":0},\"skippedInOtherOrders\":1,"
+                        + "\"otherOrderCodes\":[\"MO-000042\"],\"skippedOtherPackage\":2,\"skippedWithoutTaskTypes\":0,\"dryRun\":true,\"assets\":["
+                        + "{\"assetId\":\"" + ASSET_ID + "\",\"code\":\"DSC-1\",\"name\":\"HSA-NS5\",\"type\":\"DISCONNECTOR\",\"trackId\":13,"
+                        + "\"connectedTrackId\":null,\"kp\":12.9,\"taskTypeCodes\":[\"RP-06\"],\"withChecklist\":false,\"outcome\":\"CREATE\","
+                        + "\"otherOrderCode\":null},{\"assetId\":\"" + ASSET_ID + "\",\"code\":\"PRF-1\",\"type\":\"PROFILE\","
+                        + "\"outcome\":\"SOMETHING_NEW\",\"futureField\":1}]}", MediaType.APPLICATION_JSON));
+
+        UUID asset = UUID.fromString(ASSET_ID);
+        com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType disconnector =
+                com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType.DISCONNECTOR;
+        GenerateTasksResultDto preview = asUser(() -> orderClient.generateTasks(UUID.fromString(ORDER_ID), new GenerateTasksRequest(null, null, null, List.of(
+                new GenerationSelection(com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType.PROFILE, asset, null, null, null, null, null, null),
+                new GenerationSelection(com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType.SECTION_INSULATOR, null, 13L,
+                        new BigDecimal("100"), new BigDecimal("200.5"), null, null, null),
+                new GenerationSelection(disconnector, null, null, null, null, 4L, null, List.of("RP-06")),
+                new GenerationSelection(disconnector, null, null, null, null, null, List.of(asset), null)), true)));
+
+        assertEquals(Integer.valueOf(1), preview.createdByAssetType().get(disconnector));
+        assertEquals(1, preview.inOtherOrders());
+        assertEquals(List.of("MO-000042"), preview.otherOrderCodes());
+        assertEquals(2, preview.otherPackage());
+        assertEquals(Boolean.TRUE, preview.dryRun());
+        assertEquals(List.of("RP-06"), preview.assets().getFirst().taskTypeCodes());
+        assertEquals("DSC-1 - HSA-NS5", preview.assets().getFirst().label());
+        assertEquals(GenerationOutcome.UNKNOWN, preview.assets().get(1).outcome(), "un resultado nuevo se lee como desconocido");
+        assertEquals(List.of(), preview.assets().get(1).taskTypeCodes());
+        assertEquals(DisconnectorDrive.MOTOR, DisconnectorDrive.of("MOTOR"));
+        assertEquals(DisconnectorDrive.UNKNOWN, DisconnectorDrive.of("HYDRAULIC"));
         server.verify();
     }
 
@@ -2164,12 +2212,12 @@ class ClientLayerTest {
                         MediaType.APPLICATION_JSON));
 
         UUID orderId = UUID.fromString(ORDER_ID);
-        GenerateTasksResultDto generated = asUser(() -> orderClient.generateTasks(orderId, new GenerateTasksRequest(List.of("RG-03"), null,
-                GenerateTasksRequest.WITH_INSULATORS)));
-        GenerateTasksResultDto fromAnOlderService = asUser(() -> orderClient.generateTasks(orderId, new GenerateTasksRequest(null, null, null)));
+        GenerateTasksResultDto generated = asUser(() -> orderClient.generateTasks(orderId, GenerateTasksRequest.ofSection(List.of("RG-03"), null,
+                GenerateTasksRequest.WITH_INSULATORS, null)));
+        GenerateTasksResultDto fromAnOlderService = asUser(() -> orderClient.generateTasks(orderId, GenerateTasksRequest.ofSection(null, null, null, null)));
         com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto insulator = new com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto(
                 UUID.fromString(ASSET_ID), "SIN-0041", "SI-W41", com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType.SECTION_INSULATOR,
-                13L, null, null, null, true, 12L);
+                13L, null, null, null, true, 12L, null, null, null);
         PageResponse<ShiftDto> shifts = asUser(() -> shiftClient.search(ShiftFilter.inProgressOn(insulator.tracks(99L)), 0, 50,
                 List.of("shiftDate,desc")));
         com.alejandro.mtobackoffice.client.dto.maintenance.ShiftReportDto report = asUser(() -> reportClient.shiftReport(UUID.fromString(SHIFT_ID)));
@@ -2178,6 +2226,8 @@ class ClientLayerTest {
 
         assertEquals(16, generated.skipped());
         assertEquals(14, fromAnOlderService.skipped(), "sin skippedAssets cuenta los perfiles, como antes");
+        assertEquals(0, fromAnOlderService.inOtherOrders(), "ni lo saltado nuevo");
+        assertEquals(List.of(), fromAnOlderService.assets());
         assertEquals(1, shifts.content().size());
         assertEquals(List.of(12L), com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto.tracksOf(null, 12L));
         assertEquals(1, report.inspectionsRecorded());

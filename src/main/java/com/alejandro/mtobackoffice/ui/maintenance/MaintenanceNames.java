@@ -97,6 +97,15 @@ public final class MaintenanceNames {
         return configuration == null ? List.of() : configuration.stations();
     }
 
+    /** Las vias de un EP, para lo que se genera en una orden, que es de uno solo; vacio sin {@code config-read}. */
+    public List<RefItem> tracksIn(Long packageId) {
+        return configuration == null ? List.of() : configuration.tracksIn(packageId);
+    }
+
+    public List<RefItem> stationsIn(Long packageId) {
+        return configuration == null ? List.of() : configuration.stationsIn(packageId);
+    }
+
     public String warehouseName(UUID id) {
         if (id == null) {
             return "";

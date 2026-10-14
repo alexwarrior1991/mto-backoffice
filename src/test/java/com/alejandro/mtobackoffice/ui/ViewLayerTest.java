@@ -1,5 +1,8 @@
 package com.alejandro.mtobackoffice.ui;
 
+import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationOutcome;
+import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationPreviewLineDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationSelection;
 import com.alejandro.mtobackoffice.client.configuration.BusinessEntityClient;
 import com.alejandro.mtobackoffice.client.configuration.DisconnectorClient;
 import com.alejandro.mtobackoffice.client.configuration.ExecutionPackageClient;
@@ -4698,7 +4701,7 @@ class ViewLayerTest {
 
     private static OrderDto order(UUID id, String code, MaintenanceOrderStatus status, Long trackId, Long packageId) {
         AssetSummaryDto asset = new AssetSummaryDto(ASSET1, "TS-0001", "Tramo 12", CatenaryAssetType.TRACK_SECTION, trackId,
-                new BigDecimal("12.100"), new BigDecimal("13.450"), null, true, null);
+                new BigDecimal("12.100"), new BigDecimal("13.450"), null, true, null, null, null, null);
         TeamSummaryDto team = new TeamSummaryDto(TEAM1, "EQ-01", "Brigada norte", "Base Norte");
         return new OrderDto(id, code, "Revision tramo 12", null, MaintenanceOrderType.PREVENTIVE, status, MaintenancePriority.HIGH,
                 asset, packageId, trackId, null, new BigDecimal("12.100"), new BigDecimal("13.450"), LocalDate.of(2026, 9, 14), null, null,
@@ -4852,13 +4855,13 @@ class ViewLayerTest {
     /** Un perfil de mto-configuration: activo solo si el origen lo tiene activo y aqui nadie lo desactivo. */
     private static AssetDto syncedProfile(UUID id, String code, boolean enabledAtSource, boolean disabledLocally) {
         return new AssetDto(id, code, "12-2.27", CatenaryAssetType.PROFILE, null, 3L, 12L, 4L, new BigDecimal("12.270"),
-                new BigDecimal("12.270"), "501", "S-3", null, null, null, List.of(), "mto-configuration", "501",
+                new BigDecimal("12.270"), "501", "S-3", null, null, null, null, List.of(), "mto-configuration", "501",
                 enabledAtSource && !disabledLocally, enabledAtSource, disabledLocally, 180, null, Instant.parse("2026-10-01T00:00:00Z"), null, 7L);
     }
 
     private static AssetDto ownSection(UUID id, String code, boolean enabled) {
         return new AssetDto(id, code, "Tramo " + code, CatenaryAssetType.TRACK_SECTION, "Tramo propio", 3L, 12L, null,
-                new BigDecimal("12.100"), new BigDecimal("13.450"), null, null, TrackKind.MAIN, null, null, List.of(), null, null, enabled,
+                new BigDecimal("12.100"), new BigDecimal("13.450"), null, null, TrackKind.MAIN, null, null, null, List.of(), null, null, enabled,
                 null, !enabled, null, null, null, null, 1L);
     }
 
@@ -5080,7 +5083,7 @@ class ViewLayerTest {
 
     private static TaskDto task(UUID id, int sequence, MaintenanceTaskStatus status) {
         AssetSummaryDto profile = new AssetSummaryDto(ASSET_SYNCED, "PRF-0001", "12-2.27", CatenaryAssetType.PROFILE, 12L,
-                new BigDecimal("12.270"), new BigDecimal("12.270"), "S-3", true, null);
+                new BigDecimal("12.270"), new BigDecimal("12.270"), "S-3", true, null, null, null, null);
         return new TaskDto(id, ORDER1, sequence, "Perfil 12-2.27", status, null, profile, null, null, null, null, null, List.of(),
                 List.of("RG-01"), List.of(), null, 2L);
     }
@@ -5324,7 +5327,7 @@ class ViewLayerTest {
         loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
         when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
         when(orderClient.tasks(ORDER1)).thenReturn(List.of(task(TASK1, 1, MaintenanceTaskStatus.PENDING), task(TASK2, 2, MaintenanceTaskStatus.COMPLETED)));
-        when(orderClient.generateTasks(eq(ORDER1), any())).thenReturn(new GenerateTasksResultDto(14, 2, 16, new BigDecimal("720.0"), 3, 2));
+        when(orderClient.generateTasks(eq(ORDER1), any())).thenReturn(new GenerateTasksResultDto(14, 2, 16, new BigDecimal("720.0"), 3, 2, null, null, null, null, null, null, null));
         when(orderClient.createTask(eq(ORDER1), any())).thenReturn(task(TASK2, 3, MaintenanceTaskStatus.PENDING));
         when(orderClient.updateTask(eq(ORDER1), eq(TASK1), any())).thenReturn(task(TASK1, 1, MaintenanceTaskStatus.PENDING));
         when(orderClient.cancelTask(eq(ORDER1), eq(TASK1), any())).thenReturn(task(TASK1, 1, MaintenanceTaskStatus.CANCELLED));
@@ -5337,8 +5340,8 @@ class ViewLayerTest {
 
         click("task-generate");
         click(GenerateTasksDialog.CONFIRM_ID);
-        verify(orderClient).generateTasks(ORDER1, new GenerateTasksRequest(null, null, null));
-        NotificationsKt.expectNotifications("Tareas nuevas: 14; perfiles que ya tenian tarea: 2. Total: 16, unos 720 min en 3 turnos.");
+        verify(orderClient).generateTasks(ORDER1, GenerateTasksRequest.ofSection(null, null, null, null));
+        NotificationsKt.expectNotifications("Tareas nuevas: 14; ya en la orden: 2. Total: 16, unos 720 min en 3 turnos.");
 
         click("task-add");
         LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("task-description")), "Revisar la mensula");
@@ -5436,7 +5439,7 @@ class ViewLayerTest {
 
     private static ShiftDto shiftOf(ShiftStatus status) {
         AssetSummaryDto disconnector = new AssetSummaryDto(DISC1, "DIS-0005", "HSA-NS5", CatenaryAssetType.DISCONNECTOR, 12L,
-                new BigDecimal("12.000"), new BigDecimal("12.000"), null, true, null);
+                new BigDecimal("12.000"), new BigDecimal("12.000"), null, true, null, null, null, null);
         return new ShiftDto(SHIFT1, "SH-000001", LocalDate.of(2026, 10, 5), new TeamSummaryDto(TEAM1, "EQ-01", "Brigada norte", "Base Norte"),
                 "Base Norte", "DR-2", PossessionType.FULL, null, null, null, null, null, null, List.of(disconnector), null, null, 3L, List.of(12L),
                 new BigDecimal("12.000"), new BigDecimal("14.000"), null, null, status, null, null, null);
@@ -5925,7 +5928,7 @@ class ViewLayerTest {
     void completingAnInsulatorTaskFromTheOrderOffersTheShiftsOfBothItsTracks() {
         loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
         AssetSummaryDto insulator = new AssetSummaryDto(ASSET_SYNCED, "SIN-0041", "SI-W41", CatenaryAssetType.SECTION_INSULATOR, 13L,
-                new BigDecimal("12.920"), new BigDecimal("12.960"), null, true, 12L);
+                new BigDecimal("12.920"), new BigDecimal("12.960"), null, true, 12L, null, null, null);
         TaskDto task = new TaskDto(TASK1, ORDER1, 1, "Aislador SI-W41", MaintenanceTaskStatus.PENDING, null, insulator, null, null, null, null, null,
                 List.of(), List.of("RG-03"), List.of(), null, 2L);
         when(orderClient.tasks(ORDER1)).thenReturn(List.of(task));
@@ -5944,23 +5947,170 @@ class ViewLayerTest {
         verify(orderClient).completeTask(ORDER1, TASK1, new CompleteTaskRequest(SHIFT1, null, null, null, null, null, null, null, null));
     }
 
-    /** Generar con los aisladores del tramo manda los dos tipos de activo y cuenta lo saltado en activos. */
+    /** Generar los aisladores del tramo es una fila mas, y viaja la peticion de siempre con los dos tipos de activo. */
     @Test
-    void generatingWithTheInsulatorsOfTheSectionSendsBothAssetTypesAndCountsAssets() {
+    void generatingTheInsulatorsOfTheSectionAddsARowAndSendsBothAssetTypes() {
         loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
         when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
         when(orderClient.tasks(ORDER1)).thenReturn(List.of());
-        when(orderClient.generateTasks(eq(ORDER1), any())).thenReturn(new GenerateTasksResultDto(3, 14, 19, new BigDecimal("810.0"), 3, 16));
+        when(orderClient.generateTasks(eq(ORDER1), any())).thenReturn(new GenerateTasksResultDto(3, 14, 19, new BigDecimal("810.0"), 3, 16, null, null, null, null, null, null, null));
         openOrder(orderOf(MaintenanceOrderStatus.PLANNED, MaintenanceOrderType.PREVENTIVE));
 
         click("task-generate");
-        Checkbox insulators = LocatorJ._get(Checkbox.class, spec -> spec.withId(GenerateTasksDialog.INSULATORS_ID));
-        LocatorJ._setValue(insulators, true);
-        assertTrue(LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("generate-types")).getHelperText().contains("RG-03 en cada aislador"));
+        assertTrue(LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("generate-types")).getHelperText().contains("RP-06 en cada seccionador con motor"));
+        click(GenerateTasksDialog.ADD_ID);
+        assertEquals(CatenaryAssetType.SECTION_INSULATOR, ViewLayerTest.<CatenaryAssetType>combo("generate-row-2-type").getValue());
+        assertEquals("El tramo de la orden", labelOf(combo("generate-row-2-scope")));
         click(GenerateTasksDialog.CONFIRM_ID);
 
-        verify(orderClient).generateTasks(ORDER1, new GenerateTasksRequest(null, null, GenerateTasksRequest.WITH_INSULATORS));
-        NotificationsKt.expectNotifications("Tareas nuevas: 3; activos que ya tenian tarea: 16. Total: 19, unos 810 min en 3 turnos.");
+        verify(orderClient).generateTasks(ORDER1, GenerateTasksRequest.ofSection(null, null, GenerateTasksRequest.WITH_INSULATORS, null));
+        NotificationsKt.expectNotifications("Tareas nuevas: 3; ya en la orden: 16. Total: 19, unos 810 min en 3 turnos.");
+    }
+
+    /** Una orden mezcla su tramo con los aisladores de otra via y los seccionadores del EP, y antes lo previsualiza. */
+    @Test
+    void anOrderMixesItsSectionWithInsulatorsOfAnotherTrackAndDisconnectorsOfItsPackageAndPreviewsIt() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(executionPackage(3L, "PAQ NORTE"), executionPackage(5L, "PAQ SUR")), 0, 50));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(track(12L, "VIA 1", true, 3L, List.of()),
+                track(14L, "VIA 2", true, 3L, List.of()), track(20L, "VIA 9", true, 5L, List.of())), 0, 50));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(station(4L, "Sants", 3L)), 0, 50));
+        List<GenerationPreviewLineDto> lines = List.of(
+                new GenerationPreviewLineDto(ASSET_SYNCED, "PRF-0001", "12-2.27", CatenaryAssetType.PROFILE, 12L, null, new BigDecimal("12.270"),
+                        List.of("RG-01"), false, GenerationOutcome.CREATE, null),
+                new GenerationPreviewLineDto(ASSET1, "SIN-0002", "SI-W41", CatenaryAssetType.SECTION_INSULATOR, 14L, 12L, new BigDecimal("150"),
+                        List.of("RG-03"), false, GenerationOutcome.IN_OTHER_ORDER, "MO-000042"),
+                new GenerationPreviewLineDto(ASSET_OWN, "DSC-0004", "HSA-NS6", CatenaryAssetType.DISCONNECTOR, 12L, null, new BigDecimal("12.900"),
+                        List.of(), false, GenerationOutcome.NO_TASK_TYPES, null));
+        when(orderClient.generateTasks(eq(ORDER1), any())).thenAnswer(call -> {
+            GenerateTasksRequest request = call.getArgument(1);
+            return new GenerateTasksResultDto(1, 0, 1, new BigDecimal("60"), 1, 0,
+                    Map.of(CatenaryAssetType.PROFILE, 1, CatenaryAssetType.SECTION_INSULATOR, 0, CatenaryAssetType.DISCONNECTOR, 0), 1,
+                    List.of("MO-000042"), 0, 1, request.dryRun(), Boolean.TRUE.equals(request.dryRun()) ? lines : List.of());
+        });
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("task-generate");
+        click(GenerateTasksDialog.ADD_ID);
+        chooseByLabel(combo("generate-row-2-scope"), "Una via del EP");
+        ComboBox<RefItem> track = combo("generate-row-2-track");
+        assertEquals(List.of("VIA 1 (PAQ NORTE)", "VIA 2 (PAQ NORTE)"), track.getListDataView().getItems().map(RefItem::label).toList(),
+                "Solo las vias del EP de la orden");
+        chooseByLabel(track, "VIA 2 (PAQ NORTE)");
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("generate-row-2-from")), new BigDecimal("100"));
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("generate-row-2-to")), new BigDecimal("200.5"));
+        click(GenerateTasksDialog.ADD_ID);
+        LocatorJ._setValue(ViewLayerTest.<CatenaryAssetType>combo("generate-row-3-type"), CatenaryAssetType.DISCONNECTOR);
+        chooseByLabel(combo("generate-row-3-scope"), "Todo el EP");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<TaskTypeDto> ownTypes = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("generate-row-3-types"));
+        LocatorJ._setValue(ownTypes, Set.of(ownTypes.getListDataView().getItems().filter(type -> type.code().equals("RG-04")).findFirst().orElseThrow()));
+
+        click(GenerateTasksDialog.PREVIEW_ID);
+        List<GenerationSelection> selections = List.of(
+                new GenerationSelection(CatenaryAssetType.PROFILE, ASSET1, null, null, null, null, null, null),
+                new GenerationSelection(CatenaryAssetType.SECTION_INSULATOR, null, 14L, new BigDecimal("100"), new BigDecimal("200.5"), null, null, null),
+                new GenerationSelection(CatenaryAssetType.DISCONNECTOR, null, null, null, null, null, null, List.of("RG-04")));
+        verify(orderClient).generateTasks(ORDER1, new GenerateTasksRequest(null, null, null, selections, true));
+        Grid<Object> preview = gridWithId(GenerateTasksDialog.PREVIEW_GRID_ID);
+        assertTrue(preview.isVisible());
+        assertEquals(3, GridKt._size(preview));
+        assertEquals("En MO-000042", GridKt._getFormatted(preview, 1, "outcome"));
+        assertEquals("VIA 2 (PAQ NORTE)", GridKt._getFormatted(preview, 1, "track"));
+        assertEquals("Sin tipo de tarea: elige tipos", GridKt._getFormatted(preview, 2, "outcome"));
+        assertEquals("Se crearian: 1 (perfil: 1, aislador de seccion: 0, seccionador: 0); ya en la orden: 0; en otras ordenes: 1 (MO-000042); "
+                + "sin tipo de tarea: 1. Total: 1, unos 60 min en 1 turno.",
+                LocatorJ._get(Paragraph.class, spec -> spec.withId(GenerateTasksDialog.PREVIEW_SUMMARY_ID)).getText());
+
+        // Cambiar algo borra la previsualizacion: ya no dice lo que se pediria.
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("generate-with-checklist")), true);
+        assertTrue(LocatorJ._find(Grid.class, spec -> spec.withId(GenerateTasksDialog.PREVIEW_GRID_ID)).isEmpty());
+
+        click(GenerateTasksDialog.CONFIRM_ID);
+        verify(orderClient).generateTasks(ORDER1, new GenerateTasksRequest(null, true, null, selections, null));
+        NotificationsKt.expectNotifications("Tareas nuevas: 1 (perfil: 1, aislador de seccion: 0, seccionador: 0); ya en la orden: 0; "
+                + "en otras ordenes: 1 (MO-000042); sin tipo de tarea: 1. Total: 1, unos 60 min en 1 turno.");
+    }
+
+    /** Una orden sobre un aislador tambien genera, desde su EP; lo que falta en una fila se dice antes de llamar, y un 400 deja el dialogo abierto. */
+    @Test
+    void anOrderOnAnInsulatorGeneratesFromItsPackageAndAMissingSectionIsSaidBeforeCalling() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        BackofficeApiException rejected = maintenanceError(400, "REQ-VALIDATION",
+                "selections[0].sectionId: TS-0009 is not in the execution package of order MO-000001; it goes in another order");
+        when(orderClient.generateTasks(eq(ORDER1), any())).thenThrow(rejected);
+        OrderDto base = orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE);
+        AssetSummaryDto insulator = new AssetSummaryDto(ASSET_SYNCED, "SIN-0001", "SI-W31", CatenaryAssetType.SECTION_INSULATOR, 12L,
+                new BigDecimal("12.500"), new BigDecimal("12.600"), null, true, 14L, 3L, null, null);
+        openOrder(withAsset(base, insulator));
+
+        click("task-generate");
+        ComboBox<Object> scope = combo("generate-row-1-scope");
+        assertEquals("Todo el EP", labelOf(scope));
+        assertEquals(List.of("Otro tramo del EP", "Una via del EP", "Una estacion del EP", "Todo el EP", "Activos elegidos"),
+                scope.getListDataView().getItems().map(item -> scope.getItemLabelGenerator().apply(item)).toList());
+        chooseByLabel(scope, "Otro tramo del EP");
+
+        click(GenerateTasksDialog.PREVIEW_ID);
+        ComboBox<AssetSummaryDto> section = combo("generate-row-1-section");
+        assertTrue(section.isInvalid());
+        assertEquals("Elige un tramo", section.getErrorMessage());
+        verify(orderClient, never()).generateTasks(any(), any());
+
+        LocatorJ._setValue(section, new AssetSummaryDto(ASSET1, "TS-0009", "Tramo 9", CatenaryAssetType.TRACK_SECTION, 14L,
+                new BigDecimal("1.000"), new BigDecimal("2.000"), null, true, null, 3L, null, null));
+        click(GenerateTasksDialog.CONFIRM_ID);
+        verify(orderClient).generateTasks(ORDER1, new GenerateTasksRequest(null, null, null,
+                List.of(new GenerationSelection(CatenaryAssetType.PROFILE, ASSET1, null, null, null, null, null, null)), null));
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size());
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText(UiErrors.message(rejected)));
+        assertTrue(hasButton(GenerateTasksDialog.CONFIRM_ID), "El dialogo sigue abierto");
+    }
+
+    /** Una orden sin EP solo genera su tramo: la peticion de siempre, sin tipos por fila. */
+    @Test
+    void anOrderWithoutPackageOnlyGeneratesItsSection() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        when(orderClient.generateTasks(eq(ORDER1), any())).thenReturn(new GenerateTasksResultDto(2, 0, 2, new BigDecimal("60"), 1, 0, null, null, null, null, null, null, null));
+        OrderDto base = order(ORDER1, "MO-000001", MaintenanceOrderStatus.DRAFT, 12L, null);
+        openOrder(base);
+
+        click("task-generate");
+        click(GenerateTasksDialog.ADD_ID);
+        LocatorJ._setValue(ViewLayerTest.<CatenaryAssetType>combo("generate-row-2-type"), CatenaryAssetType.DISCONNECTOR);
+        ComboBox<Object> scope = combo("generate-row-2-scope");
+        assertEquals(List.of("El tramo de la orden"), scope.getListDataView().getItems().map(item -> scope.getItemLabelGenerator().apply(item)).toList());
+        assertTrue(LocatorJ._find(MultiSelectComboBox.class, spec -> spec.withId("generate-row-2-types")).isEmpty(),
+                "Sin EP no hay tipos por fila: viaja la peticion de siempre");
+        click(GenerateTasksDialog.CONFIRM_ID);
+
+        verify(orderClient).generateTasks(ORDER1, GenerateTasksRequest.ofSection(null, null,
+                List.of(CatenaryAssetType.PROFILE, CatenaryAssetType.DISCONNECTOR), null));
+    }
+
+    private static <T> void chooseByLabel(ComboBox<T> combo, String label) {
+        LocatorJ._setValue(combo, combo.getListDataView().getItems()
+                .filter(item -> label.equals(combo.getItemLabelGenerator().apply(item))).findFirst().orElseThrow());
+    }
+
+    private static <T> String labelOf(ComboBox<T> combo) {
+        return combo.getValue() == null ? "" : combo.getItemLabelGenerator().apply(combo.getValue());
+    }
+
+    private static OrderDto withAsset(OrderDto base, AssetSummaryDto asset) {
+        return new OrderDto(base.id(), base.code(), base.title(), base.description(), base.type(), base.status(), base.priority(), asset,
+                base.executionPackageId(), base.trackId(), base.stationId(), base.startKp(), base.endKp(), base.plannedDate(),
+                base.actualStartDate(), base.actualEndDate(), base.team(), base.assignedUser(), base.closingNotes(), base.cancellationReason(),
+                base.originInspectionId(), base.originDefectId(), base.stockProjectId(), base.taskCount(), base.completedTaskCount(),
+                base.estimatedMinutes(), base.estimatedShifts(), base.audit(), base.version());
     }
 
     /** Al completar, los tipos que el catalogo no trae tambien se conservan si se cambian los demas. */
@@ -5997,7 +6147,7 @@ class ViewLayerTest {
 
     private static AssetSummaryDto profileSummary() {
         return new AssetSummaryDto(ASSET_SYNCED, "PRF-0001", "12-2.27", CatenaryAssetType.PROFILE, 12L, new BigDecimal("12.270"),
-                new BigDecimal("12.270"), "S-3", true, null);
+                new BigDecimal("12.270"), "S-3", true, null, null, null, null);
     }
 
     private static InspectionDto inspectionOf(InspectionResult result, UUID generatedDefect, UUID generatedOrder) {

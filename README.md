@@ -250,8 +250,10 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   estado dice quién lo desactivó) y los catálogos de **equipos**, **tipos de tarea** y **plantillas de inspección**. M2
   trae las **órdenes** (la lista filtrada y la ficha `mantenimiento/ordenes/{id}` con su cabecera,
   los botones que su estado admite —planificar, asignar, iniciar, completar y cancelar— y sus
-  **tareas**, añadidas a mano o generadas, una por perfil del tramo y, si se marca, una por aislador
-  de sección con RG-03). M3 trae los **turnos** (lista,
+  **tareas**, añadidas a mano o generadas: una por perfil del tramo y, añadiendo filas, también
+  aisladores (RG-03) y seccionadores (RP-06 los de motor) de otro tramo, de una vía, de una estación,
+  de todo el EP o elegidos, siempre del EP de la orden, con «Previsualizar» para ver qué pasará con
+  cada activo antes de crear nada). M3 trae los **turnos** (lista,
   ficha, iniciar, cerrar, cancelar, asignarles tareas de una orden de su vía) y la **ejecución**:
   iniciar una tarea en un turno, contestar su checklist y completarla con los defectos encontrados y
   el material gastado (la de un aislador que une dos vías, desde un turno de cualquiera de las dos).

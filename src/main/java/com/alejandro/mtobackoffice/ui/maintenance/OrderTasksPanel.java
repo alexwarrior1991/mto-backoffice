@@ -25,7 +25,7 @@ import java.util.function.Supplier;
 
 /**
  * Las tareas de una orden, en su orden. Con {@code maintenance-write}: anadir una tarea (orden no
- * terminada), generar las de un preventivo sobre un tramo (borrador o planificada), y modificar,
+ * terminada), generar las de un preventivo sobre un tramo o con EP (borrador o planificada), y modificar,
  * rellenar el checklist o cancelar las abiertas. Con la orden en curso, completar una abierta en
  * uno de los turnos en curso de su via (iniciarlas es cosa del turno). Cada cambio avisa a la
  * ficha, que repinta el avance.
@@ -38,6 +38,7 @@ class OrderTasksPanel extends LazyPanel {
     private final Supplier<OrderDto> order;
     private final MaintenanceClients clients;
     private final MaintenanceCatalogs catalogs;
+    private final MaintenanceNames names;
     private final boolean canWrite;
     private final boolean canPickMaterials;
     private final Runnable changed;
@@ -45,18 +46,19 @@ class OrderTasksPanel extends LazyPanel {
     private final Button generate = new Button("Generar tareas", VaadinIcon.MAGIC.create());
     private final Grid<TaskDto> grid = new Grid<>();
 
-    OrderTasksPanel(Supplier<OrderDto> order, MaintenanceClients clients, MaintenanceCatalogs catalogs, boolean canWrite,
-                    boolean canPickMaterials, Runnable changed) {
+    OrderTasksPanel(Supplier<OrderDto> order, MaintenanceClients clients, MaintenanceCatalogs catalogs, MaintenanceNames names,
+                    boolean canWrite, boolean canPickMaterials, Runnable changed) {
         this.order = order;
         this.clients = clients;
         this.catalogs = catalogs;
+        this.names = names;
         this.canWrite = canWrite;
         this.canPickMaterials = canPickMaterials;
         this.changed = changed;
         add.setId("task-add");
         add.addClickListener(click -> new TaskEditorDialog(order.get(), null, clients, catalogs, this::changed).open());
         generate.setId("task-generate");
-        generate.addClickListener(click -> new GenerateTasksDialog(order.get(), clients, catalogs, this::changed).open());
+        generate.addClickListener(click -> new GenerateTasksDialog(order.get(), clients, catalogs, names, this::changed).open());
 
         grid.setId(GRID_ID);
         grid.addColumn(TaskDto::sequence).setHeader("#").setKey("sequence").setAutoWidth(true).setFlexGrow(0);
@@ -126,9 +128,10 @@ class OrderTasksPanel extends LazyPanel {
         OrderDto current = order.get();
         MaintenanceOrderStatus status = current.status();
         add.setVisible(canWrite && status.isOpen());
+        // Sobre un tramo, como siempre; sobre otro activo, con EP: lo que genera es de su EP.
         generate.setVisible(canWrite && current.type() == MaintenanceOrderType.PREVENTIVE
                 && (status == MaintenanceOrderStatus.DRAFT || status == MaintenanceOrderStatus.PLANNED)
-                && current.asset() != null && current.asset().type() == CatenaryAssetType.TRACK_SECTION);
+                && ((current.asset() != null && current.asset().type() == CatenaryAssetType.TRACK_SECTION) || current.executionPackageId() != null));
         try {
             grid.setItems(clients.orders().tasks(current.id()).stream()
                     .sorted(Comparator.comparing((TaskDto task) -> task.sequence() == null ? Integer.MAX_VALUE : task.sequence()))
