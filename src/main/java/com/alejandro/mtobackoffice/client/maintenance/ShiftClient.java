@@ -92,4 +92,11 @@ public interface ShiftClient {
     /** Asigna una tarea pendiente al turno; comprueba via y posesion (409 {@code SHF-001}). */
     @PostExchange("/{id}/tasks/{taskId}")
     TaskDto assignTask(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId);
+
+    /**
+     * Saca del turno una tarea abierta: vuelve a su orden, pendiente y sin turno, como lo no terminado
+     * al cerrar. Una terminada o cancelada se queda (409 {@code TRN-001}). Un POST, como asignar.
+     */
+    @PostExchange("/{id}/tasks/{taskId}/unassign")
+    TaskDto unassignTask(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId);
 }

@@ -30,7 +30,8 @@ import java.util.function.Supplier;
 /**
  * Las tareas asignadas a un turno, de todas sus ordenes. Con {@code maintenance-write} y el turno en
  * curso se inician y se completan aqui; el checklist y la cancelacion valen mientras la tarea este
- * abierta. Si la orden no esta en curso o el turno no admite el trabajo, lo dice el servicio. Cada
+ * abierta, y quitarla del turno mientras el turno no este cerrado ni cancelado: vuelve a su orden sin
+ * cancelarse. Si la orden no esta en curso o el turno no admite el trabajo, lo dice el servicio. Cada
  * fila abre su orden.
  */
 class ShiftTasksPanel extends LazyPanel {
@@ -91,6 +92,9 @@ class ShiftTasksPanel extends LazyPanel {
             actions.add(MaintenanceUi.rowButton("shift-task-complete-" + task.id(), VaadinIcon.CHECK, "Completar",
                     click -> new CompleteTaskDialog(task.orderId(), List.of(), task, current, clients, catalogs, canPickMaterials, this::changed).open()));
         }
+        if (current.status() != null && current.status().isOpen()) {
+            actions.add(MaintenanceUi.rowButton("shift-task-unassign-" + task.id(), VaadinIcon.ARROW_BACKWARD, "Quitar del turno", click -> unassign(task)));
+        }
         Button cancel = MaintenanceUi.rowButton("shift-task-cancel-" + task.id(), VaadinIcon.CLOSE_CIRCLE, "Cancelar",
                 click -> new ReasonDialog("Cancelar la tarea " + task.sequence(), "La tarea queda cancelada con su motivo; no se puede reabrir.",
                         "Cancelar la tarea", reason -> cancel(task, reason)).open());
@@ -103,6 +107,17 @@ class ShiftTasksPanel extends LazyPanel {
         try {
             clients.orders().startTask(task.orderId(), task.id(), new StartTaskRequest(shift.get().id(), null));
             MaintenanceUi.success("Tarea " + task.sequence() + " iniciada");
+            changed();
+        } catch (BackofficeApiException failure) {
+            UiErrors.show(failure);
+        }
+    }
+
+    /** Sin confirmacion: se deshace asignandola otra vez. */
+    private void unassign(TaskDto task) {
+        try {
+            clients.shifts().unassignTask(shift.get().id(), task.id());
+            MaintenanceUi.success("Tarea " + task.sequence() + " quitada del turno: vuelve a su orden");
             changed();
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
