@@ -49,7 +49,7 @@ public record AssetDto(UUID id, String code, String name, CatenaryAssetType type
 
     /** Lo que llevan una orden o un desplegable. */
     public AssetSummaryDto summary() {
-        return new AssetSummaryDto(id, code, name, type, trackId, startKp, endKp, sectioning, enabled);
+        return new AssetSummaryDto(id, code, name, type, trackId, startKp, endKp, sectioning, enabled, connectedTrackId);
     }
 
     /** El codigo y, si lo hay, el nombre. */

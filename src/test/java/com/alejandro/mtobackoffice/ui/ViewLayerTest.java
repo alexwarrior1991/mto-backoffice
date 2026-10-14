@@ -194,6 +194,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MonthlyReportDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ProgressReportDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ProgressRowDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftReportDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftReportInspectionDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftReportRowDto;
 import com.github.mvysny.kaributesting.v10.DownloadKt;
 import java.time.YearMonth;
@@ -4697,7 +4698,7 @@ class ViewLayerTest {
 
     private static OrderDto order(UUID id, String code, MaintenanceOrderStatus status, Long trackId, Long packageId) {
         AssetSummaryDto asset = new AssetSummaryDto(ASSET1, "TS-0001", "Tramo 12", CatenaryAssetType.TRACK_SECTION, trackId,
-                new BigDecimal("12.100"), new BigDecimal("13.450"), null, true);
+                new BigDecimal("12.100"), new BigDecimal("13.450"), null, true, null);
         TeamSummaryDto team = new TeamSummaryDto(TEAM1, "EQ-01", "Brigada norte", "Base Norte");
         return new OrderDto(id, code, "Revision tramo 12", null, MaintenanceOrderType.PREVENTIVE, status, MaintenancePriority.HIGH,
                 asset, packageId, trackId, null, new BigDecimal("12.100"), new BigDecimal("13.450"), LocalDate.of(2026, 9, 14), null, null,
@@ -5079,7 +5080,7 @@ class ViewLayerTest {
 
     private static TaskDto task(UUID id, int sequence, MaintenanceTaskStatus status) {
         AssetSummaryDto profile = new AssetSummaryDto(ASSET_SYNCED, "PRF-0001", "12-2.27", CatenaryAssetType.PROFILE, 12L,
-                new BigDecimal("12.270"), new BigDecimal("12.270"), "S-3", true);
+                new BigDecimal("12.270"), new BigDecimal("12.270"), "S-3", true, null);
         return new TaskDto(id, ORDER1, sequence, "Perfil 12-2.27", status, null, profile, null, null, null, null, null, List.of(),
                 List.of("RG-01"), List.of(), null, 2L);
     }
@@ -5323,7 +5324,7 @@ class ViewLayerTest {
         loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
         when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
         when(orderClient.tasks(ORDER1)).thenReturn(List.of(task(TASK1, 1, MaintenanceTaskStatus.PENDING), task(TASK2, 2, MaintenanceTaskStatus.COMPLETED)));
-        when(orderClient.generateTasks(eq(ORDER1), any())).thenReturn(new GenerateTasksResultDto(14, 2, 16, new BigDecimal("720.0"), 3));
+        when(orderClient.generateTasks(eq(ORDER1), any())).thenReturn(new GenerateTasksResultDto(14, 2, 16, new BigDecimal("720.0"), 3, 2));
         when(orderClient.createTask(eq(ORDER1), any())).thenReturn(task(TASK2, 3, MaintenanceTaskStatus.PENDING));
         when(orderClient.updateTask(eq(ORDER1), eq(TASK1), any())).thenReturn(task(TASK1, 1, MaintenanceTaskStatus.PENDING));
         when(orderClient.cancelTask(eq(ORDER1), eq(TASK1), any())).thenReturn(task(TASK1, 1, MaintenanceTaskStatus.CANCELLED));
@@ -5336,7 +5337,7 @@ class ViewLayerTest {
 
         click("task-generate");
         click(GenerateTasksDialog.CONFIRM_ID);
-        verify(orderClient).generateTasks(ORDER1, new GenerateTasksRequest(null, null));
+        verify(orderClient).generateTasks(ORDER1, new GenerateTasksRequest(null, null, null));
         NotificationsKt.expectNotifications("Tareas nuevas: 14; perfiles que ya tenian tarea: 2. Total: 16, unos 720 min en 3 turnos.");
 
         click("task-add");
@@ -5435,7 +5436,7 @@ class ViewLayerTest {
 
     private static ShiftDto shiftOf(ShiftStatus status) {
         AssetSummaryDto disconnector = new AssetSummaryDto(DISC1, "DIS-0005", "HSA-NS5", CatenaryAssetType.DISCONNECTOR, 12L,
-                new BigDecimal("12.000"), new BigDecimal("12.000"), null, true);
+                new BigDecimal("12.000"), new BigDecimal("12.000"), null, true, null);
         return new ShiftDto(SHIFT1, "SH-000001", LocalDate.of(2026, 10, 5), new TeamSummaryDto(TEAM1, "EQ-01", "Brigada norte", "Base Norte"),
                 "Base Norte", "DR-2", PossessionType.FULL, null, null, null, null, null, null, List.of(disconnector), null, null, 3L, List.of(12L),
                 new BigDecimal("12.000"), new BigDecimal("14.000"), null, null, status, null, null, null);
@@ -5480,7 +5481,7 @@ class ViewLayerTest {
         LocatorJ._setValue(comboWithId("shifts-status"), ShiftStatus.IN_PROGRESS);
         LocatorJ._setValue(comboWithId("shifts-possession"), PossessionType.FULL);
         GridKt._size(grid);
-        verify(shiftClient, atLeastOnce()).search(eq(new ShiftFilter(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), TEAM1, 12L, 3L,
+        verify(shiftClient, atLeastOnce()).search(eq(new ShiftFilter(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), TEAM1, List.of(12L), 3L,
                 ShiftStatus.IN_PROGRESS, PossessionType.FULL)), eq(0), anyInt(), anyList());
         assertFalse(hasButton("shift-create"));
 
@@ -5916,6 +5917,52 @@ class ViewLayerTest {
         verify(orderClient).completeTask(ORDER1, TASK1, new CompleteTaskRequest(SHIFT1, null, null, null, null, null, null, null, null));
     }
 
+    /**
+     * La tarea de un aislador que une dos vias se completa desde un turno de cualquiera: desde la orden
+     * se ofrecen los en curso de las dos, en una sola busqueda con las dos vias.
+     */
+    @Test
+    void completingAnInsulatorTaskFromTheOrderOffersTheShiftsOfBothItsTracks() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        AssetSummaryDto insulator = new AssetSummaryDto(ASSET_SYNCED, "SIN-0041", "SI-W41", CatenaryAssetType.SECTION_INSULATOR, 13L,
+                new BigDecimal("12.920"), new BigDecimal("12.960"), null, true, 12L);
+        TaskDto task = new TaskDto(TASK1, ORDER1, 1, "Aislador SI-W41", MaintenanceTaskStatus.PENDING, null, insulator, null, null, null, null, null,
+                List.of(), List.of("RG-03"), List.of(), null, 2L);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of(task));
+        when(shiftClient.search(eq(ShiftFilter.inProgressOn(13L, 12L)), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.of(shiftOf(ShiftStatus.IN_PROGRESS)), 0, 50));
+        when(orderClient.completeTask(eq(ORDER1), eq(TASK1), any())).thenReturn(task(TASK1, 1, MaintenanceTaskStatus.COMPLETED));
+        openOrder(orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.PREVENTIVE));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("order-tasks-grid"), 0, "actions"), Button.class,
+                spec -> spec.withId("task-complete-" + TASK1)));
+        assertEquals("Los turnos en curso de sus dos vias", comboWithId("complete-task-shift").getHelperText());
+        ComboBoxKt.selectByLabel(comboWithId("complete-task-shift"), "SH-000001 · 05/10/2026 · EQ-01 - Brigada norte");
+        click(CompleteTaskDialog.CONFIRM_ID);
+
+        verify(shiftClient, atLeastOnce()).search(eq(ShiftFilter.inProgressOn(13L, 12L)), eq(0), anyInt(), anyList());
+        verify(orderClient).completeTask(ORDER1, TASK1, new CompleteTaskRequest(SHIFT1, null, null, null, null, null, null, null, null));
+    }
+
+    /** Generar con los aisladores del tramo manda los dos tipos de activo y cuenta lo saltado en activos. */
+    @Test
+    void generatingWithTheInsulatorsOfTheSectionSendsBothAssetTypesAndCountsAssets() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        when(orderClient.generateTasks(eq(ORDER1), any())).thenReturn(new GenerateTasksResultDto(3, 14, 19, new BigDecimal("810.0"), 3, 16));
+        openOrder(orderOf(MaintenanceOrderStatus.PLANNED, MaintenanceOrderType.PREVENTIVE));
+
+        click("task-generate");
+        Checkbox insulators = LocatorJ._get(Checkbox.class, spec -> spec.withId(GenerateTasksDialog.INSULATORS_ID));
+        LocatorJ._setValue(insulators, true);
+        assertTrue(LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("generate-types")).getHelperText().contains("RG-03 en cada aislador"));
+        click(GenerateTasksDialog.CONFIRM_ID);
+
+        verify(orderClient).generateTasks(ORDER1, new GenerateTasksRequest(null, null, GenerateTasksRequest.WITH_INSULATORS));
+        NotificationsKt.expectNotifications("Tareas nuevas: 3; activos que ya tenian tarea: 16. Total: 19, unos 810 min en 3 turnos.");
+    }
+
     /** Al completar, los tipos que el catalogo no trae tambien se conservan si se cambian los demas. */
     @Test
     void completingATaskKeepsTheTypesTheCatalogueDoesNotName() {
@@ -5950,7 +5997,7 @@ class ViewLayerTest {
 
     private static AssetSummaryDto profileSummary() {
         return new AssetSummaryDto(ASSET_SYNCED, "PRF-0001", "12-2.27", CatenaryAssetType.PROFILE, 12L, new BigDecimal("12.270"),
-                new BigDecimal("12.270"), "S-3", true);
+                new BigDecimal("12.270"), "S-3", true, null);
     }
 
     private static InspectionDto inspectionOf(InspectionResult result, UUID generatedDefect, UUID generatedOrder) {
@@ -6080,6 +6127,33 @@ class ViewLayerTest {
         verify(inspectionClient).updateItem(INSPECTION1, INSPECTION_ITEM, MergePatch.of(new CheckItemUpdateRequest(null, null, null, CheckItemResult.OK, null), 1L));
     }
 
+    /**
+     * El alta puede llevar el turno en que se hizo: los recientes de la via de su activo que se han
+     * trabajado (en curso o cerrados); uno planificado no se ofrece.
+     */
+    @Test
+    void anInspectionIsRecordedInAShiftThatWorkedOnTheTrackOfItsAsset() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        InspectionDto created = inspectionOf(InspectionResult.OK, null, null);
+        when(inspectionClient.create(any())).thenReturn(created);
+        when(shiftClient.search(eq(ShiftFilter.on(List.of(12L))), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.of(shiftOf(ShiftStatus.CLOSED), shiftOf(ShiftStatus.PLANNED)), 0, 50));
+        openOrder(orderOf(MaintenanceOrderStatus.IN_PROGRESS, MaintenanceOrderType.INSPECTION));
+
+        selectTab(3);
+        click("order-inspection-create");
+        ComboBox<ShiftDto> shift = comboWithId(InspectionEditorDialog.SHIFT_ID);
+        assertEquals(List.of(ShiftStatus.CLOSED), ComboBoxKt.getSuggestionItems(shift).stream().map(ShiftDto::status).toList(),
+                "un turno planificado no se ha trabajado");
+        ComboBoxKt.selectByLabel(shift, "SH-000001 · 05/10/2026 · EQ-01 - Brigada norte · Cerrado");
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("inspection-date")), LocalDate.of(2026, 10, 6));
+        click(InspectionEditorDialog.SAVE_ID);
+
+        verify(inspectionClient).create(new InspectionRequest(ASSET1, LocalDate.of(2026, 10, 6), null, InspectionKind.VISUAL, InspectionResult.OK,
+                null, null, null, null, ORDER1, SHIFT1));
+    }
+
     @Test
     void theDefectsAreFilteredAndTheDetailOffersWhatItsStateAdmits() {
         loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
@@ -6122,7 +6196,7 @@ class ViewLayerTest {
         OrderDto open = orderOf(MaintenanceOrderStatus.PLANNED, MaintenanceOrderType.CORRECTIVE);
         when(orderClient.search(eq(OrderFilter.onTrack(12L)), anyInt(), anyInt(), anyList()))
                 .thenReturn(page(List.of(open, order(UUID.randomUUID(), "MO-000009", MaintenanceOrderStatus.CANCELLED, 12L, 3L)), 0, 100));
-        when(shiftClient.search(eq(new ShiftFilter(null, null, null, 12L, null, null, null)), anyInt(), anyInt(), anyList()))
+        when(shiftClient.search(eq(ShiftFilter.on(List.of(12L))), anyInt(), anyInt(), anyList()))
                 .thenReturn(page(List.of(shiftOf(ShiftStatus.CLOSED)), 0, 50));
         when(defectClient.linkOrder(DEFECT1, ORDER1)).thenReturn(defectOf(DefectStatus.IN_PROGRESS));
         when(defectClient.resolve(eq(DEFECT1), any()))
@@ -6623,7 +6697,8 @@ class ViewLayerTest {
         ShiftReportRowDto row = new ShiftReportRowDto(1, TASK1, "MO-000001", 3L, 12L, "PRF-0001", "12-2.27", new BigDecimal("12.270"), "S-3",
                 List.of(), List.of("RG-01", "RG-04"), "Revision general", "DEF-000001", List.of("MAT-001 2 m"), null, null,
                 MaintenanceTaskStatus.COMPLETED, true, null, List.of());
-        when(reportClient.shiftReport(SHIFT1)).thenReturn(new ShiftReportDto(shift, 2, 1, 2, 1, 0, List.of(row)));
+        // Un servicio que todavia no cuenta las inspecciones: el resumen sigue siendo el de antes.
+        when(reportClient.shiftReport(SHIFT1)).thenReturn(new ShiftReportDto(shift, 2, 1, 2, 1, 0, List.of(row), null, null));
         when(reportClient.shiftReportFile(SHIFT1, "xlsx")).thenReturn(file("shift-report-SH-000001-2026-10-05.xlsx", XLSX));
 
         openShift(shift);
@@ -6637,6 +6712,37 @@ class ViewLayerTest {
         assertArrayEquals(XLSX, DownloadKt._download(anchorWithId("shift-report-xlsx")));
         verify(reportClient).shiftReportFile(SHIFT1, "xlsx");
         assertEquals("PDF", anchorWithId("shift-report-pdf").getText());
+        assertEquals(0, GridKt._size(gridWithId("shift-report-inspections")));
+    }
+
+    /**
+     * Las inspecciones registradas en el turno salen en su parte, debajo de las tareas, con el recuento
+     * del servicio y un boton que abre cada una.
+     */
+    @Test
+    void theShiftReportListsTheInspectionsRecordedInTheShiftAndOpensThem() {
+        loginAs("mantenimiento.lector", MAINTENANCE_READER);
+        stubReferencesForMaintenance();
+        ShiftDto shift = shiftOf(ShiftStatus.CLOSED);
+        ShiftReportInspectionDto recorded = new ShiftReportInspectionDto(INSPECTION1, "INS-000040", LocalDate.of(2026, 10, 6), "SIN-0041", "SI-W41",
+                CatenaryAssetType.SECTION_INSULATOR, 13L, new BigDecimal("12.921"), InspectionKind.VISUAL, InspectionResult.UNSAFE, "dana",
+                "Patin quemado", "DEF-000007", "MO-000031");
+        when(reportClient.shiftReport(SHIFT1)).thenReturn(new ShiftReportDto(shift, 0, 0, 0, 0, 0, List.of(), 1, List.of(recorded)));
+        when(inspectionClient.findById(INSPECTION1)).thenReturn(inspectionOf(InspectionResult.UNSAFE, null, null));
+
+        openShift(shift);
+        selectTab(2);
+
+        assertTrue(textOf("shift-report-summary").endsWith(" · Inspecciones: 1"), textOf("shift-report-summary"));
+        Grid<Object> grid = gridWithId("shift-report-inspections");
+        assertEquals(List.of("INS-000040", "06/10/2026", "SIN-0041 - SI-W41", "12.921", "Visual", "Insegura", "dana", "Patin quemado",
+                        "DEF-000007, MO-000031"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 9));
+        Button open = LocatorJ._get(GridKt._getCellComponent(grid, 0, RowActions.OPEN_COLUMN), Button.class,
+                spec -> spec.withId("open-" + INSPECTION1));
+        assertEquals("Abrir INS-000040", open.getTooltip().getText());
+        LocatorJ._click(open);
+        LocatorJ._get(H2.class, spec -> spec.withText("INS-000001 · 20/09/2026"));
     }
 
     // --- Mantenimiento: historial ------------------------------------------------------------------

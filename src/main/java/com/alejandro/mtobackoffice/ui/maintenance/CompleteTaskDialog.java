@@ -45,7 +45,7 @@ import java.util.stream.Collectors;
 /**
  * Completar una tarea: la fila del parte del turno. Se trabaja en un turno en curso de la via de la
  * tarea (fijo si se abre desde el turno; a elegir entre los en curso de su via si se abre desde la
- * orden). Lleva los defectos encontrados (resueltos en el turno, o abiertos con fecha de reparacion
+ * orden, y de las dos si su activo une dos, como un aislador de seccion). Lleva los defectos encontrados (resueltos en el turno, o abiertos con fecha de reparacion
  * si el trabajo no se termino) y los materiales usados, que el servicio registra como lineas de la
  * orden ya consumidas y reserva en mto-stock. Elegir materiales pide {@code stock-read}. Si el turno
  * no admite el trabajo, el servicio responde 409 {@code SHF-001}, y el dialogo sigue abierto.
@@ -69,11 +69,12 @@ public class CompleteTaskDialog extends Dialog {
 
     /**
      * @param orderId      la orden de la tarea
-     * @param trackId      la via en la que buscar turnos en curso si no viene {@code shift}
+     * @param trackIds     las vias en las que buscar turnos en curso si no viene {@code shift}: la de la
+     *                     tarea y, si su activo une dos, la conectada ({@code AssetSummaryDto.tracksOf})
      * @param shift        el turno, o {@code null} para elegirlo
      * @param pickMaterials si la persona puede elegir materiales ({@code stock-read})
      */
-    public CompleteTaskDialog(UUID orderId, Long trackId, TaskDto task, ShiftDto shift, MaintenanceClients clients,
+    public CompleteTaskDialog(UUID orderId, List<Long> trackIds, TaskDto task, ShiftDto shift, MaintenanceClients clients,
                               MaintenanceCatalogs catalogs, boolean pickMaterials, Runnable done) {
         setHeaderTitle("Completar la tarea " + task.sequence() + (task.asset() == null ? "" : " · " + task.asset().label()));
         setCloseOnOutsideClick(false);
@@ -84,8 +85,8 @@ public class CompleteTaskDialog extends Dialog {
         shiftPicker.setItemLabelGenerator(candidate -> candidate.code() + " · " + MaintenanceFormats.date(candidate.shiftDate())
                 + (candidate.team() == null ? "" : " · " + candidate.team().label()));
         if (shift == null) {
-            shiftPicker.setItems(inProgressShifts(clients, trackId));
-            shiftPicker.setHelperText("Los turnos en curso de la via de la tarea");
+            shiftPicker.setItems(inProgressShifts(clients, trackIds));
+            shiftPicker.setHelperText(trackIds.size() > 1 ? "Los turnos en curso de sus dos vias" : "Los turnos en curso de la via de la tarea");
         } else {
             shiftPicker.setItems(List.of(shift));
             shiftPicker.setValue(shift);
@@ -154,12 +155,12 @@ public class CompleteTaskDialog extends Dialog {
         getFooter().add(new Button("Volver", click -> close()), confirm);
     }
 
-    private static List<ShiftDto> inProgressShifts(MaintenanceClients clients, Long trackId) {
-        if (trackId == null) {
+    private static List<ShiftDto> inProgressShifts(MaintenanceClients clients, List<Long> trackIds) {
+        if (trackIds.isEmpty()) {
             return List.of();
         }
         try {
-            return clients.shifts().search(ShiftFilter.inProgressOn(trackId), 0, 50, List.of("shiftDate,desc")).content();
+            return clients.shifts().search(ShiftFilter.inProgressOn(trackIds), 0, 50, List.of("shiftDate,desc")).content();
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
             return List.of();

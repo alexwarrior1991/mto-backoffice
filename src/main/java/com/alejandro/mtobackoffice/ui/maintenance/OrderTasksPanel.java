@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderType;
@@ -19,6 +20,7 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.function.Supplier;
 
 /**
@@ -85,10 +87,11 @@ class OrderTasksPanel extends LazyPanel {
                         click -> CheckItemsDialog.ofTask(current.id(), task, clients, this::changed).open()));
             }
             if (current.status() != null && current.status().canComplete()) {
-                // Desde la orden no hay turno: se elige entre los en curso de la via de la tarea.
-                Long trackId = task.asset() != null && task.asset().trackId() != null ? task.asset().trackId() : current.trackId();
+                // Desde la orden no hay turno: se elige entre los en curso de la via de la tarea, y de la
+                // conectada si su activo une dos.
+                List<Long> trackIds = AssetSummaryDto.tracksOf(task.asset(), current.trackId());
                 actions.add(MaintenanceUi.rowButton("task-complete-" + task.id(), VaadinIcon.CHECK, "Completar",
-                        click -> new CompleteTaskDialog(current.id(), trackId, task, null, clients, catalogs, canPickMaterials,
+                        click -> new CompleteTaskDialog(current.id(), trackIds, task, null, clients, catalogs, canPickMaterials,
                                 this::changed).open()));
             }
             Button cancel = MaintenanceUi.rowButton("task-cancel-" + task.id(), VaadinIcon.CLOSE_CIRCLE, "Cancelar",

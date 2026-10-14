@@ -7,7 +7,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Completar una tarea en un turno en curso de su via (la fila del parte). {@code workComplete=false}
+ * Completar una tarea en un turno en curso de su via, o de la conectada si su activo une dos (la fila
+ * del parte). {@code workComplete=false}
  * deja los defectos abiertos con {@code repairPlannedDate}; si no, nacen ya resueltos en este turno.
  * {@code taskTypeCodes}, si viaja, sustituye a los tipos de la tarea antes de comprobar la posesion.
  */

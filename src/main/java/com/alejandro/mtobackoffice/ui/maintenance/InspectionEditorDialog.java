@@ -7,6 +7,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionResult;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
@@ -23,17 +24,21 @@ import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.binder.Binder;
 
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
  * Alta y modificacion de una inspeccion. El alta elige el activo, o lo trae de la orden de
  * inspeccion desde la que se abre (y queda como su origen); la plantilla activa del tipo de activo
  * la copia el servicio. Que el resultado case con los puntos lo comprueba el servicio (422
- * {@code INS-001}). La modificacion manda solo lo cambiado.
+ * {@code INS-001}). El alta puede llevar el turno en que se hizo, entre los recientes de las vias del
+ * activo que se han trabajado: sale en su parte. La modificacion manda solo lo cambiado y no cambia el
+ * turno.
  */
 public class InspectionEditorDialog extends Dialog {
 
     public static final String SAVE_ID = "inspection-save";
+    public static final String SHIFT_ID = "inspection-shift";
 
     private final Binder<InspectionForm> binder = new Binder<>(InspectionForm.class);
     private final InspectionForm form;
@@ -74,14 +79,29 @@ public class InspectionEditorDialog extends Dialog {
 
         FormLayout layout = new FormLayout();
         layout.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1), new FormLayout.ResponsiveStep("480px", 2));
+        ComboBox<ShiftDto> shift = new ComboBox<>("Turno");
+        shift.setId(SHIFT_ID);
+        shift.setClearButtonVisible(true);
+        shift.setItemLabelGenerator(candidate -> candidate.code() + " · " + MaintenanceFormats.date(candidate.shiftDate())
+                + (candidate.team() == null ? "" : " · " + candidate.team().label())
+                + (candidate.status() == null ? "" : " · " + candidate.status().label()));
+        shift.setHelperText("Opcional: el turno en curso o cerrado de su via en que se hizo; sale en su parte");
         if (creating && originOrder == null) {
             ComboBox<AssetSummaryDto> asset = MaintenancePickers.asset("Activo", clients.assets(), null);
             asset.setId("inspection-asset");
             binder.forField(asset).asRequired("El activo es obligatorio").bind("assetId");
+            // Otro activo, otras vias: el turno elegido podria no recorrerlas.
+            asset.addValueChangeListener(change -> offerShifts(shift, change.getValue(), clients));
             layout.add(asset);
             layout.setColspan(asset, 2);
         } else if (creating) {
             add(new Paragraph("Inspeccion de la orden " + originOrder.code() + " sobre " + originOrder.asset().label() + "."));
+        }
+        if (creating) {
+            offerShifts(shift, form.getAssetId(), clients);
+            binder.forField(shift).bind("shiftId");
+            layout.add(shift);
+            layout.setColspan(shift, 2);
         }
         binder.forField(date).asRequired("La fecha es obligatoria").bind("inspectionDate");
         binder.forField(inspector).bind("inspector");
@@ -103,6 +123,20 @@ public class InspectionEditorDialog extends Dialog {
         save.setId(SAVE_ID);
         save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         getFooter().add(new Button("Cancelar", click -> close()), save);
+    }
+
+    /**
+     * Los turnos en que se pudo hacer: los recientes de las vias del activo (la suya y la conectada)
+     * que se han trabajado, en curso o cerrados. Que le vale lo decide el servicio (409 {@code SHF-001},
+     * con el dialogo abierto). Sin activo no hay turnos que ofrecer.
+     */
+    private static void offerShifts(ComboBox<ShiftDto> shift, AssetSummaryDto asset, MaintenanceClients clients) {
+        shift.clear();
+        List<ShiftDto> worked = DefectTransitionDialogs.recentShiftsOn(clients, AssetSummaryDto.tracksOf(asset, null)).stream()
+                .filter(candidate -> candidate.status() != null && candidate.status().recordsInspections())
+                .toList();
+        shift.setItems(worked);
+        shift.setEnabled(asset != null);
     }
 
     private void save(InspectionDto existing, OrderDto originOrder, MaintenanceClients clients, Consumer<InspectionDto> saved) {

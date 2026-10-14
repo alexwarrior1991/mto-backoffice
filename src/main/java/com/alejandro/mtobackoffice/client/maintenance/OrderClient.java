@@ -130,7 +130,10 @@ public interface OrderClient {
     @PostExchange("/{id}/tasks")
     TaskDto createTask(@PathVariable("id") UUID id, @RequestBody TaskRequest request);
 
-    /** Una tarea por perfil habilitado del tramo; los que ya tienen tarea se saltan. Solo preventivas en borrador o planificadas. */
+    /**
+     * Una tarea por perfil habilitado del tramo y, con {@code assetTypes}, por aislador de seccion que lo
+     * toca; lo que ya tiene tarea se salta. Solo preventivas en borrador o planificadas.
+     */
     @PostExchange("/{id}/tasks/generate")
     GenerateTasksResultDto generateTasks(@PathVariable("id") UUID id, @RequestBody GenerateTasksRequest request);
 
@@ -140,7 +143,7 @@ public interface OrderClient {
     @PostExchange("/{id}/tasks/{taskId}/cancel")
     TaskDto cancelTask(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @RequestBody ReasonRequest request);
 
-    /** Con la orden en curso y un turno en curso de su via, con posesion compatible. */
+    /** Con la orden en curso y un turno en curso de su via (o de la conectada, si su activo une dos), con posesion compatible. */
     @PostExchange("/{id}/tasks/{taskId}/start")
     TaskDto startTask(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @RequestBody StartTaskRequest request);
 
