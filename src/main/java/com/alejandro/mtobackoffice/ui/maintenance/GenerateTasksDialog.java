@@ -46,9 +46,9 @@ import java.util.stream.Stream;
  *
  * <p>Si todo es el tramo de la orden sin tipos propios viaja la peticion de siempre ({@code {}} o
  * {@code assetTypes}); si no, una seleccion por fila. Sin tipos, cada activo lleva los del plan: grupos
- * 1, 2 y 4 en un perfil, RG-03 en un aislador, RP-06 en un seccionador con motor (uno manual no tiene,
- * y hay que elegirlos). Lo que ya tiene tarea en la orden, lo que tiene una abierta en otra orden y lo de
- * otro EP se salta: repetirlo no duplica. «Previsualizar» pregunta al servicio que pasaria con cada
+ * 1, 2 y 4 en un perfil; RG-03 y RP-02 en un aislador, y RG-04 y RP-03 si tiene agujas; RP-07 en un
+ * seccionador, y RP-06 si tiene motor y RG-06 si es una autovalvula. Lo que ya tiene tarea en la orden,
+ * lo que tiene una abierta en otra orden y lo de otro EP se salta: repetirlo no duplica. «Previsualizar» pregunta al servicio que pasaria con cada
  * activo sin crear nada, y cualquier cambio en el dialogo la borra. Lo que resulta lo cuenta el servicio
  * y se ensena tal cual.</p>
  */
@@ -60,8 +60,8 @@ public class GenerateTasksDialog extends Dialog {
     public static final String PREVIEW_GRID_ID = "generate-preview-grid";
     public static final String PREVIEW_SUMMARY_ID = "generate-preview-summary";
 
-    static final String ALL_TYPES_HELP = "Para todo lo generado. Vacio: grupos 1, 2 y 4 en cada perfil, RG-03 en cada aislador y RP-06 en "
-            + "cada seccionador con motor";
+    static final String ALL_TYPES_HELP = "Para todo lo generado. Vacio: grupos 1, 2 y 4 en cada perfil; RG-03 y RP-02 en cada aislador "
+            + "(y RG-04 y RP-03 si tiene agujas); RP-07 en cada seccionador (y RP-06 si tiene motor, RG-06 si es una autovalvula)";
     private static final List<CatenaryAssetType> GENERATED =
             List.of(CatenaryAssetType.PROFILE, CatenaryAssetType.SECTION_INSULATOR, CatenaryAssetType.DISCONNECTOR);
 

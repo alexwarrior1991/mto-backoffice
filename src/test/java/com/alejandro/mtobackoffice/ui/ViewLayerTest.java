@@ -6014,7 +6014,9 @@ class ViewLayerTest {
         openOrder(orderOf(MaintenanceOrderStatus.PLANNED, MaintenanceOrderType.PREVENTIVE));
 
         click("task-generate");
-        assertTrue(LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("generate-types")).getHelperText().contains("RP-06 en cada seccionador con motor"));
+        assertTrue(LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("generate-types")).getHelperText()
+                .contains("RG-03 y RP-02 en cada aislador (y RG-04 y RP-03 si tiene agujas); RP-07 en cada seccionador (y RP-06 si "
+                        + "tiene motor, RG-06 si es una autovalvula)"), "La ayuda dice los tipos que pone el servicio sin elegir ninguno");
         click(GenerateTasksDialog.ADD_ID);
         assertEquals(CatenaryAssetType.SECTION_INSULATOR, ViewLayerTest.<CatenaryAssetType>combo("generate-row-2-type").getValue());
         assertEquals("El tramo de la orden", labelOf(combo("generate-row-2-scope")));

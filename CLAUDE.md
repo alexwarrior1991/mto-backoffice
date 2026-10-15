@@ -460,8 +460,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   de siempre (`GenerateTasksRequest.ofSection`, `{}` o `assetTypes`); si no, una `GenerationSelection`
   por fila. «Previsualizar» manda `dryRun` y pinta lo que diría el servicio de cada activo
   (`GenerationOutcome`, tolerante); cualquier cambio la borra. Qué se salta (ya en la orden, en otra
-  orden abierta, de otro EP, sin tipo de tarea) y los tipos por defecto (RG-03 en un aislador, RP-06 en
-  un seccionador con motor, `DisconnectorDrive`) los decide el servicio. Los recuentos nuevos de
+  orden abierta, de otro EP, sin tipo de tarea) y los tipos por defecto (RG-03 y RP-02 en un aislador,
+  y RG-04 y RP-03 si tiene agujas; RP-07 en un seccionador, y RP-06 con motor, `DisconnectorDrive`, y
+  RG-06 en una autoválvula) los decide el servicio. Los recuentos nuevos de
   `GenerateTasksResultDto` son `Integer` y listas, para que un servicio anterior se lea igual. Se ofrece
   en una orden en borrador o planificada sobre un tramo o con EP: una sobre un aislador o un
   seccionador también genera.
