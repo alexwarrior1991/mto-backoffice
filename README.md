@@ -251,8 +251,8 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   trae las **órdenes** (la lista filtrada y la ficha `mantenimiento/ordenes/{id}` con su cabecera,
   los botones que su estado admite —planificar, asignar, iniciar, completar y cancelar— y sus
   **tareas**, añadidas a mano o generadas: una por perfil del tramo y, añadiendo filas, también
-  aisladores (RG-03) y seccionadores (RP-06 los de motor) de otro tramo, de una vía, de una estación,
-  de todo el EP o elegidos, siempre del EP de la orden, con «Previsualizar» para ver qué pasará con
+  aisladores (RG-03 y RP-02, y RG-04 y RP-03 los que tienen agujas) y seccionadores (RP-07, y RP-06
+  los de motor y RG-06 las autoválvulas) de otro tramo, de una vía, de una estación, de todo el EP o elegidos, siempre del EP de la orden, con «Previsualizar» para ver qué pasará con
   cada activo antes de crear nada). M3 trae los **turnos** (lista,
   ficha, iniciar, cerrar, cancelar, asignarles tareas de una orden de su vía y quitar una abierta,
   que vuelve a su orden) y la **ejecución**:
