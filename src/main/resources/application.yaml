@@ -5,6 +5,14 @@ spring:
   application:
     name: mto-backoffice
 
+  # Hilos virtuales: las peticiones de Tomcat y las tareas de Vaadin, que usa el executor de tareas de
+  # Spring, esperan al gateway sin ocupar un hilo del sistema operativo cada una. El sondeo compartido (SharedPolling) hace ademas cada pasada en su propio hilo
+  # virtual, asi que una llamada lenta solo retrasa su pantalla. Una peticion suelta no va mas rapida:
+  # lo que cambia es cuantas pueden esperar a la vez. Con false, todo vuelve a hilos de plataforma.
+  threads:
+    virtual:
+      enabled: ${SPRING_THREADS_VIRTUAL_ENABLED:true}
+
   # Timeouts del RestClient que habla con el gateway. Claves en plural de Boot 4.1. El read-timeout
   # iguala al del gateway hacia los servicios (15 s): esperar mas aqui no aporta nada.
   http:
