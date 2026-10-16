@@ -19,6 +19,8 @@ import com.alejandro.mtobackoffice.client.dto.jobs.JobFamily;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobStatus;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobType;
 import com.alejandro.mtobackoffice.client.dto.jobs.UploadedFile;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OperationDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OperationStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftVehicleDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.VehicleParkingRequest;
 import com.alejandro.mtobackoffice.client.dto.master.BusinessEntityDto;
@@ -79,6 +81,7 @@ import com.alejandro.mtobackoffice.client.error.ServiceUnavailableApiException;
 import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
 import com.alejandro.mtobackoffice.client.error.TooManyRequestsApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
+import com.alejandro.mtobackoffice.client.maintenance.OperationClient;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
@@ -264,6 +267,7 @@ import static org.hamcrest.Matchers.matchesRegex;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -275,6 +279,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import com.alejandro.mtobackoffice.client.dto.master.TrackSchematicDto;
+import com.alejandro.mtobackoffice.ui.maintenance.TaskGeneration;
 
 /**
  * Las interfaces {@code @HttpExchange} y el RestClient reales contra un servidor simulado: sin
@@ -316,6 +321,7 @@ class ClientLayerTest {
     private VehicleTypeClient vehicleTypeClient;
     private ParkingSiteClient parkingSiteClient;
     private VehicleClient vehicleClient;
+    private OperationClient operationClient;
 
     @BeforeEach
     void setUp() {
@@ -356,6 +362,7 @@ class ClientLayerTest {
         vehicleTypeClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(VehicleTypeClient.class);
         parkingSiteClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ParkingSiteClient.class);
         vehicleClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(VehicleClient.class);
+        operationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(OperationClient.class);
     }
 
     @AfterEach
@@ -2454,6 +2461,52 @@ class ClientLayerTest {
         assertEquals(VehicleCategory.UNKNOWN, unknown.category());
         assertNull(unknown.parking());
         assertEquals("HV-01", unknown.label());
+        server.verify();
+    }
+
+    /**
+     * Generar de verdad va con Prefer: respond-async. Si no termina en su espera, el 202 trae la operacion
+     * (su Location es la ruta interna del servicio y no se sigue), que se pregunta por su id y al terminar
+     * trae el mismo cuerpo que la llamada sincrona; si termina, el 200 de siempre. Un estado nuevo se lee
+     * como UNKNOWN y se da por terminado.
+     */
+    @Test
+    void aLongGenerationAnswersItsOperationWhichIsAskedByItsId() {
+        String generate = MAINTENANCE + "/orders/" + ORDER_ID + "/tasks/generate";
+        String operation = "2b3c4d5e-0000-4000-8000-0000000000c1";
+        String result = "{\"createdTasks\":412,\"skippedProfiles\":0,\"totalTasks\":412,\"estimatedMinutes\":6000.0,\"estimatedShifts\":12,"
+                + "\"skippedAssets\":0,\"dryRun\":false}";
+        server.expect(requestTo(generate)).andExpect(method(HttpMethod.POST)).andExpect(header("Prefer", TaskGeneration.PREFER))
+                .andRespond(withStatus(HttpStatus.ACCEPTED).contentType(MediaType.APPLICATION_JSON)
+                        .header(HttpHeaders.LOCATION, "/api/v1/maintenance/operations/" + operation).header("Preference-Applied", "respond-async")
+                        .body("{\"id\":\"" + operation + "\",\"kind\":\"GENERATE_TASKS\",\"scope\":\"EP-3\",\"status\":\"QUEUED\","
+                                + "\"requestedBy\":\"mantenimiento.tecnico\",\"createdAt\":\"2026-10-16T21:00:00Z\"}"));
+        server.expect(requestTo(MAINTENANCE + "/operations/" + operation)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"id\":\"" + operation + "\",\"kind\":\"GENERATE_TASKS\",\"status\":\"SUCCEEDED\",\"resultStatus\":200,"
+                        + "\"result\":" + result + "}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(generate)).andExpect(method(HttpMethod.POST)).andExpect(header("Prefer", TaskGeneration.PREFER))
+                .andRespond(withSuccess(result.replace("412", "14"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/operations/" + operation)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"id\":\"" + operation + "\",\"status\":\"PAUSED\",\"error\":{\"status\":500,\"errorCode\":\"OPS-410\","
+                        + "\"message\":\"Abandoned\"}}", MediaType.APPLICATION_JSON));
+
+        TaskGeneration generation = new TaskGeneration(orderClient, operationClient, new JsonMapper(), null);
+        UUID orderId = UUID.fromString(ORDER_ID);
+        TaskGeneration.Started slow = asUser(() -> generation.start(orderId, GenerateTasksRequest.ofSection(null, null, null, null)));
+        OperationDto<GenerateTasksResultDto> queued = assertInstanceOf(TaskGeneration.Following.class, slow).operation();
+        assertEquals(UUID.fromString(operation), queued.id());
+        assertEquals(OperationStatus.QUEUED, queued.status());
+        assertFalse(queued.status().isFinished());
+        OperationDto<GenerateTasksResultDto> done = asUser(() -> generation.status(UUID.fromString(operation)));
+        assertEquals(OperationStatus.SUCCEEDED, done.status());
+        assertEquals(412, done.result().createdTasks());
+        TaskGeneration.Started quick = asUser(() -> generation.start(orderId, GenerateTasksRequest.ofSection(null, null, null, null)));
+        assertEquals(14, assertInstanceOf(TaskGeneration.Done.class, quick).result().createdTasks());
+        OperationDto<GenerateTasksResultDto> unknown = asUser(() -> generation.status(UUID.fromString(operation)));
+        assertEquals(OperationStatus.UNKNOWN, unknown.status());
+        assertTrue(unknown.status().isFinished(), "un estado desconocido no se pregunta sin fin");
+        assertEquals("OPS-410", TaskGeneration.failureOf(unknown).getProblem().code());
+        assertEquals(500, TaskGeneration.failureOf(unknown).getStatus().value());
         server.verify();
     }
 

@@ -21,6 +21,9 @@ import com.alejandro.mtobackoffice.client.dto.jobs.JobItemError;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobStatus;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobType;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OperationDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OperationErrorDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OperationStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftVehicleDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.VehicleParkingRequest;
 import com.alejandro.mtobackoffice.client.dto.master.ExecutionPackageDto;
@@ -84,11 +87,13 @@ import com.alejandro.mtobackoffice.client.dto.users.RoleNamesRequest;
 import com.alejandro.mtobackoffice.client.dto.users.UserCredentialDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
+import com.alejandro.mtobackoffice.client.maintenance.OperationClient;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
+import com.alejandro.mtobackoffice.ui.maintenance.TaskGeneration;
 import com.alejandro.mtobackoffice.ui.resources.FleetBoardView;
 import com.alejandro.mtobackoffice.ui.resources.OrganizationView;
 import com.alejandro.mtobackoffice.ui.resources.ParkingSiteEditorDialog;
@@ -421,6 +426,7 @@ import java.util.Arrays;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -450,6 +456,7 @@ import static org.mockito.Mockito.when;
 import com.alejandro.mtobackoffice.client.dto.master.TrackSchematicDto;
 import com.alejandro.mtobackoffice.ui.master.SchematicDrawing;
 import com.alejandro.mtobackoffice.ui.master.TrackSchematicDialog;
+import tools.jackson.databind.ObjectMapper;
 import com.vaadin.flow.data.provider.Query;
 import com.vaadin.flow.data.provider.DataProvider;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -472,6 +479,8 @@ class ViewLayerTest {
 
     @Autowired
     private ApplicationContext context;
+    @Autowired
+    private ObjectMapper jsonMapper;
 
     @MockitoBean
     private LovClient lovClient;
@@ -533,10 +542,16 @@ class ViewLayerTest {
     private ParkingSiteClient parkingSiteClient;
     @MockitoBean
     private VehicleClient vehicleClient;
+    @MockitoBean
+    private OperationClient operationClient;
 
     @BeforeEach
     void setUp() {
         stubEmptyMasters();
+        // Generar de verdad va con Prefer: respond-async; sin decir otra cosa, el servicio termina dentro de
+        // su espera y contesta 200 con lo mismo que la llamada sincrona (que es lo que stubbea cada caso).
+        when(orderClient.generateTasksAsync(any(), any(), any())).thenAnswer(call -> ResponseEntity.ok(
+                jsonMapper.valueToTree(orderClient.generateTasks(call.getArgument(0), call.getArgument(1)))));
         MockSpringSecurity.mock();
         Function0<UI> uiFactory = UI::new;
         MockVaadin.setup(uiFactory, new MockSpringServlet(ROUTES, context, uiFactory));
@@ -6573,6 +6588,104 @@ class ViewLayerTest {
 
         verify(orderClient).generateTasks(ORDER1, GenerateTasksRequest.ofSection(null, null,
                 List.of(CatenaryAssetType.PROFILE, CatenaryAssetType.DISCONNECTOR), null));
+    }
+
+    private static final UUID OPERATION1 = UUID.fromString("3c3c3c3c-0000-4000-8000-0000000000c1");
+
+    private static OperationDto<GenerateTasksResultDto> generation(OperationStatus status, GenerateTasksResultDto result, OperationErrorDto error) {
+        return new OperationDto<>(OPERATION1, "GENERATE_TASKS", "EP-3", status, "mantenimiento.tecnico", Instant.parse("2026-10-16T21:00:00Z"),
+                null, null, result == null ? null : 200, result, error);
+    }
+
+    private void stubGenerationAccepted() {
+        // doReturn y no when(...): when llamaria a la respuesta por defecto del setUp, que llama a otro metodo del doble.
+        doReturn(ResponseEntity.status(HttpStatus.ACCEPTED).body(jsonMapper.valueToTree(generation(OperationStatus.QUEUED, null, null))))
+                .when(orderClient).generateTasksAsync(eq(ORDER1), any(), any());
+    }
+
+    /**
+     * Una generacion que no termina en su espera se sigue en el propio dialogo: el 202 trae la operacion,
+     * cada pasada pregunta por ella, y al terminar dice lo mismo que la llamada sincrona y relee las tareas.
+     */
+    @Test
+    void aLongGenerationIsFollowedInTheDialogUntilItsResult() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        stubGenerationAccepted();
+        GenerateTasksResultDto result = new GenerateTasksResultDto(412, 0, 412, new BigDecimal("6000"), 12, 0, null, null, null, null, null, null, null);
+        AtomicReference<OperationDto<GenerateTasksResultDto>> state = new AtomicReference<>(generation(OperationStatus.RUNNING, null, null));
+        when(operationClient.generation(OPERATION1)).thenAnswer(call -> state.get());
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("task-generate");
+        click(GenerateTasksDialog.CONFIRM_ID);
+        verify(orderClient).generateTasksAsync(ORDER1, GenerateTasksRequest.ofSection(null, null, null, null), TaskGeneration.PREFER);
+        verify(orderClient, never()).generateTasks(any(), any());
+        GenerateTasksDialog dialog = LocatorJ._get(GenerateTasksDialog.class);
+        Paragraph progress = LocatorJ._get(Paragraph.class, spec -> spec.withId(GenerateTasksDialog.OPERATION_ID));
+        assertEquals("La generacion sigue en el servicio (en cola): se comprueba cada 2 s. Si cierras el dialogo, continua alli.", progress.getText());
+        assertFalse(LocatorJ._get(Button.class, spec -> spec.withId(GenerateTasksDialog.CONFIRM_ID)).isEnabled(), "no se lanza otra encima");
+
+        dialog.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertTrue(progress.getText().contains("(en marcha)"));
+        state.set(generation(OperationStatus.SUCCEEDED, result, null));
+        dialog.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertTrue(LocatorJ._find(GenerateTasksDialog.class).isEmpty(), "terminada, el dialogo se cierra");
+        NotificationsKt.expectNotifications("Tareas nuevas: 412; ya en la orden: 0. Total: 412, unos 6000 min en 12 turnos.");
+        verify(orderClient, atLeast(2)).tasks(ORDER1);
+    }
+
+    /**
+     * Una generacion que falla en el servicio dice su error como la llamada sincrona, con el dialogo abierto;
+     * cerrar uno que sigue una operacion deja de seguirla y avisa de que continua alli.
+     */
+    @Test
+    void aFailedGenerationSaysItsErrorAndClosingWhileFollowingWarnsItGoesOn() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        stubGenerationAccepted();
+        when(operationClient.generation(OPERATION1)).thenReturn(generation(OperationStatus.FAILED, null,
+                new OperationErrorDto(409, "TRN-001", "Order MO-000001 is COMPLETED: no tasks can be generated")));
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("task-generate");
+        click(GenerateTasksDialog.CONFIRM_ID);
+        LocatorJ._get(GenerateTasksDialog.class).pollOnce();
+        MockVaadin.clientRoundtrip();
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText(
+                "El estado actual no permite esta operacion. Order MO-000001 is COMPLETED: no tasks can be generated"));
+        assertTrue(LocatorJ._get(Button.class, spec -> spec.withId(GenerateTasksDialog.CONFIRM_ID)).isEnabled(), "se puede volver a lanzar");
+        assertTrue(LocatorJ._find(Paragraph.class, spec -> spec.withId(GenerateTasksDialog.OPERATION_ID)).isEmpty(), "ya no se sigue nada");
+
+        click(GenerateTasksDialog.CONFIRM_ID);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Volver")));
+        assertTrue(LocatorJ._find(GenerateTasksDialog.class).isEmpty());
+        assertEquals(GenerateTasksDialog.STILL_RUNNING, NotificationsKt.getNotifications().getLast().getElement().getProperty("text"));
+        assertEquals("La operacion se interrumpio en el servicio (se paro la instancia que la llevaba): vuelve a lanzarla.",
+                UiErrors.message(TaskGeneration.failureOf(generation(OperationStatus.FAILED, null, new OperationErrorDto(500, "OPS-410", "Abandoned")))));
+    }
+
+    /** El tope de operaciones del despliegue es un 429 OPS-429: dice cuando reintentar, con el dialogo abierto. */
+    @Test
+    void aGenerationBeyondTheOperationsCapSaysWhenToRetry() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        ApiProblem tooMany = new ApiProblem(null, "TOO_MANY_REQUESTS", 429, "There are already 8 background operations", null, "OPS-429",
+                null, null, null, false, null, null);
+        doThrow(BackofficeApiException.of(HttpStatusCode.valueOf(429), tooMany, "corr-o2", Duration.ofSeconds(5),
+                "POST /api/maintenance/orders/" + ORDER1 + "/tasks/generate")).when(orderClient).generateTasksAsync(eq(ORDER1), any(), any());
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("task-generate");
+        click(GenerateTasksDialog.CONFIRM_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Hay demasiadas operaciones en marcha. Intentalo en 5 s."));
+        LocatorJ._get(GenerateTasksDialog.class);
     }
 
     private static <T> void chooseByLabel(ComboBox<T> combo, String label) {

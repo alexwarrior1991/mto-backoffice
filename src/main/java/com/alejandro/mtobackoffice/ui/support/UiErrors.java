@@ -163,6 +163,10 @@ public final class UiErrors {
             case TooManyRequestsApiException operations when "OPS-429".equals(operations.getProblem().code()) ->
                     "Hay demasiadas operaciones en marcha."
                             + operations.getRetryAfter().map(d -> " Intentalo en " + d.toSeconds() + " s.").orElse(" Intentalo mas tarde.");
+            // Una operacion de fondo de mto-maintenance cuya instancia dejo de latir (se paro a medias): no
+            // va a terminar, hay que volver a lanzarla. Llega como el error de la operacion, con estado 500.
+            case BackofficeApiException abandoned when "OPS-410".equals(abandoned.getProblem().code()) ->
+                    "La operacion se interrumpio en el servicio (se paro la instancia que la llevaba): vuelve a lanzarla.";
             // El unico 410 del dominio es el fichero de un trabajo de mto-configuration que ya no esta
             // (purgado, o generado en otra replica): reintentar no lo trae, hay que relanzar el trabajo.
             case BackofficeApiException gone when gone.getStatus().value() == 410 ->

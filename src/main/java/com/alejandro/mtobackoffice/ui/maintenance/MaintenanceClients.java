@@ -23,7 +23,8 @@ import org.springframework.stereotype.Component;
  * Los clientes que usan las pantallas de mantenimiento, juntos: los de mto-maintenance y los de los
  * servicios a los que pertenece lo que mantenimiento guarda como id (vias, estaciones y paquetes de
  * mto-configuration; materiales, almacenes y proyectos de mto-stock; personas, vehiculos y sitios de
- * aparcamiento de mto-resources). Un solo bean para que las vistas y sus dialogos no carguen una lista de
+ * aparcamiento de mto-resources), y la generacion de tareas que sigue en el servicio
+ * ({@link TaskGeneration}). Un solo bean para que las vistas y sus dialogos no carguen una lista de
  * parametros que crece con cada pantalla; cada cliente sigue siendo su propio bean.
  */
 @Component
@@ -31,5 +32,6 @@ public record MaintenanceClients(OrderClient orders, AssetClient assets, Mainten
                                  InspectionClient inspections, DefectClient defects, ReportClient reports,
                                  ExecutionPackageClient packages, StationClient stations, TrackClient tracks,
                                  BusinessEntityClient companies, MaterialClient materials, WarehouseClient warehouses,
-                                 ProjectClient projects, PersonClient people, VehicleClient vehicles, ParkingSiteClient parkingSites) {
+                                 ProjectClient projects, PersonClient people, VehicleClient vehicles, ParkingSiteClient parkingSites,
+                                 TaskGeneration generation) {
 }

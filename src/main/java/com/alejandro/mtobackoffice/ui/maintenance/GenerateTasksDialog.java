@@ -6,15 +6,21 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.GenerateTasksRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.GenerateTasksResultDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationPreviewLineDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationSelection;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OperationDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OperationStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.configuration.security.CurrentPrincipal;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
+import com.alejandro.mtobackoffice.ui.support.PageVisibility;
 import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
+import com.vaadin.flow.component.DetachEvent;
 import com.vaadin.flow.component.HasValidation;
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
@@ -27,13 +33,20 @@ import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H4;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.icon.VaadinIcon;
+import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.BigDecimalField;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ScheduledFuture;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -52,6 +65,12 @@ import java.util.stream.Stream;
  * lo que tiene una abierta en otra orden y lo de otro EP se salta: repetirlo no duplica. «Previsualizar» pregunta al servicio que pasaria con cada
  * activo sin crear nada, y cualquier cambio en el dialogo la borra. Lo que resulta lo cuenta el servicio
  * y se ensena tal cual.</p>
+ *
+ * <p>Generar de verdad puede tardar con un EP grande: va con {@code Prefer: respond-async}
+ * ({@link TaskGeneration}). Si el servicio no termina en su espera contesta con la operacion, y el
+ * dialogo la sigue cada 2 s mientras este abierto y la pestana se vea: al terminar bien dice lo mismo que
+ * la llamada sincrona y relee las tareas; si falla, dice su error con el dialogo abierto. Cerrarlo deja de
+ * seguirla, avisando de que continua en el servicio. La previsualizacion sigue siendo sincrona.</p>
  */
 public class GenerateTasksDialog extends Dialog {
 
@@ -60,6 +79,9 @@ public class GenerateTasksDialog extends Dialog {
     public static final String ADD_ID = "generate-add";
     public static final String PREVIEW_GRID_ID = "generate-preview-grid";
     public static final String PREVIEW_SUMMARY_ID = "generate-preview-summary";
+    public static final String OPERATION_ID = "generate-operation";
+    public static final String STILL_RUNNING = "La generacion sigue en el servicio: sus tareas apareceran en la orden al terminar.";
+    private static final Logger LOGGER = LoggerFactory.getLogger(GenerateTasksDialog.class);
 
     static final String ALL_TYPES_HELP = "Para todo lo generado. Vacio: grupos 1, 2 y 4 en cada perfil; RG-03 y RP-02 en cada aislador "
             + "(y RG-04 y RP-03 si tiene agujas); RP-07 en cada seccionador (y RP-06 si tiene motor, RG-06 si es una autovalvula)";
@@ -98,7 +120,14 @@ public class GenerateTasksDialog extends Dialog {
     private final Checkbox withChecklist = new Checkbox("Con la checklist de la plantilla de cada activo");
     private final Paragraph previewSummary = new Paragraph();
     private final Grid<GenerationPreviewLineDto> preview = new Grid<>();
+    private final Paragraph operation = new Paragraph();
+    private final List<Button> actions = new ArrayList<>();
     private int created;
+    /** La operacion que se sigue, mientras sigue en el servicio; {@code null} si no hay ninguna. */
+    private UUID following;
+    private ScheduledFuture<?> ticker;
+    private String principal;
+    private PageVisibility visibility;
 
     public GenerateTasksDialog(OrderDto order, MaintenanceClients clients, MaintenanceCatalogs catalogs, MaintenanceNames names, Runnable done) {
         this.order = order;
@@ -143,14 +172,28 @@ public class GenerateTasksDialog extends Dialog {
         if (order.executionPackageId() == null) {
             add(new Paragraph("La orden no tiene EP: solo genera su tramo. Otros tramos y vias van en una orden con EP."));
         }
-        add(types, withChecklist, previewSummary, preview);
+        operation.setId(OPERATION_ID);
+        operation.setVisible(false);
+        add(types, withChecklist, previewSummary, preview, operation);
 
         Button previewButton = new Button("Previsualizar", click -> send(true));
         previewButton.setId(PREVIEW_ID);
         Button confirm = new Button("Generar", click -> send(false));
         confirm.setId(CONFIRM_ID);
         confirm.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        actions.addAll(List.of(add, previewButton, confirm));
         getFooter().add(new Button("Volver", click -> close()), previewButton, confirm);
+        addOpenedChangeListener(change -> {
+            if (!change.isOpened()) {
+                stopFollowing(true);
+            }
+        });
+    }
+
+    @Override
+    protected void onDetach(DetachEvent detachEvent) {
+        stopFollowing(false);
+        super.onDetach(detachEvent);
     }
 
     private void send(boolean dryRun) {
@@ -162,16 +205,106 @@ public class GenerateTasksDialog extends Dialog {
             return;
         }
         try {
-            GenerateTasksResultDto result = clients.orders().generateTasks(order.id(), request(dryRun));
             if (dryRun) {
-                showPreview(result);
+                showPreview(clients.orders().generateTasks(order.id(), request(true)));
                 return;
             }
-            close();
-            Screens.success(describe(result, false));
-            done.run();
+            switch (clients.generation().start(order.id(), request(false))) {
+                case TaskGeneration.Done answer -> finished(answer.result());
+                case TaskGeneration.Following answer -> follow(answer.operation());
+            }
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
+        }
+    }
+
+    private void finished(GenerateTasksResultDto result) {
+        close();
+        Screens.success(describe(result, false));
+        done.run();
+    }
+
+    // --- Una generacion que sigue en el servicio -------------------------------------------------
+
+    /** El servicio no termino en su espera: se sigue la operacion desde el hilo compartido, sin tocar el dialogo. */
+    private void follow(OperationDto<GenerateTasksResultDto> started) {
+        following = started.id();
+        principal = CurrentPrincipal.name().orElse(null);
+        UI ui = UI.getCurrent();
+        visibility = PageVisibility.of(ui);
+        actions.forEach(button -> button.setEnabled(false));
+        showOperation(started.status());
+        ticker = clients.generation().follow(() -> poll(ui));
+    }
+
+    /**
+     * Una pasada, en el hilo de {@code SharedPolling} (los tests la llaman con {@link #pollOnce()}): con la
+     * pestana a la vista, pregunta por la operacion y lleva lo que diga al dialogo con {@code UI.access()}.
+     * Un fallo al preguntar no se notifica en cada pasada: la siguiente lo vuelve a intentar.
+     */
+    void poll(UI ui) {
+        UUID id = following;
+        if (id == null || (visibility != null && !visibility.isShown())) {
+            return;
+        }
+        OperationDto<GenerateTasksResultDto> current;
+        try {
+            current = CurrentPrincipal.callAs(principal, () -> clients.generation().status(id));
+        } catch (BackofficeApiException failure) {
+            LOGGER.warn("No se ha podido consultar la generacion {}: {}", id, failure.getMessage());
+            return;
+        }
+        ui.access(() -> {
+            if (id.equals(following)) {
+                apply(current);
+            }
+        });
+    }
+
+    /** Para los tests: una pasada con la UI de este dialogo. */
+    public void pollOnce() {
+        getUI().ifPresent(this::poll);
+    }
+
+    private void apply(OperationDto<GenerateTasksResultDto> current) {
+        OperationStatus status = current.status() == null ? OperationStatus.UNKNOWN : current.status();
+        if (!status.isFinished()) {
+            showOperation(status);
+            return;
+        }
+        stopFollowing(false);
+        if (status == OperationStatus.SUCCEEDED && current.result() != null) {
+            finished(current.result());
+        } else if (status == OperationStatus.FAILED) {
+            operation.setVisible(false);
+            actions.forEach(button -> button.setEnabled(true));
+            UiErrors.show(TaskGeneration.failureOf(current));
+        } else {
+            // Un estado que esta version no conoce: no se pregunta mas, y las tareas se releen por si acaso.
+            close();
+            Notification.show("La generacion ha terminado en un estado desconocido: revisa las tareas de la orden.", 8000,
+                    Notification.Position.BOTTOM_START).addThemeVariants(NotificationVariant.LUMO_WARNING);
+            done.run();
+        }
+    }
+
+    private void showOperation(OperationStatus status) {
+        operation.setVisible(true);
+        operation.setText("La generacion sigue en el servicio (" + status.label().toLowerCase()
+                + "): se comprueba cada 2 s. Si cierras el dialogo, continua alli.");
+    }
+
+    /** Deja de preguntar; al cerrar el dialogo con la operacion en marcha, avisa de que continua en el servicio. */
+    private void stopFollowing(boolean warn) {
+        if (ticker != null) {
+            ticker.cancel(false);
+            ticker = null;
+        }
+        if (following != null) {
+            following = null;
+            if (warn) {
+                Notification.show(STILL_RUNNING, 8000, Notification.Position.BOTTOM_START).addThemeVariants(NotificationVariant.LUMO_WARNING);
+            }
         }
     }
 

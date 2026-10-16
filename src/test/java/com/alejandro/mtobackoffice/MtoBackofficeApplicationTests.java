@@ -5,6 +5,7 @@ import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
 import com.alejandro.mtobackoffice.client.maintenance.DefectClient;
 import com.alejandro.mtobackoffice.client.maintenance.InspectionClient;
 import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
+import com.alejandro.mtobackoffice.client.maintenance.OperationClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import com.alejandro.mtobackoffice.client.maintenance.ReportClient;
 import com.alejandro.mtobackoffice.client.maintenance.ShiftClient;
@@ -24,6 +25,7 @@ import com.alejandro.mtobackoffice.client.stock.WarehouseClient;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.configuration.security.KeycloakProperties;
 import com.alejandro.mtobackoffice.ui.maintenance.MaintenanceClients;
+import com.alejandro.mtobackoffice.ui.maintenance.TaskGeneration;
 import com.alejandro.mtobackoffice.ui.resources.ResourcesClients;
 import com.vaadin.flow.component.dependency.StyleSheet;
 import com.vaadin.flow.theme.lumo.Lumo;
@@ -85,7 +87,7 @@ class MtoBackofficeApplicationTests {
             assertNotNull(context.getBean(stockClient), stockClient.getSimpleName());
         }
         for (Class<?> maintenanceClient : List.of(OrderClient.class, AssetClient.class, MaintenanceCatalogClient.class, ShiftClient.class,
-                InspectionClient.class, DefectClient.class, ReportClient.class, MaintenanceClients.class)) {
+                InspectionClient.class, DefectClient.class, ReportClient.class, OperationClient.class, TaskGeneration.class, MaintenanceClients.class)) {
             assertNotNull(context.getBean(maintenanceClient), maintenanceClient.getSimpleName());
         }
         assertNotNull(context.getBean(NotificationClient.class));
