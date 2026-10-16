@@ -2030,8 +2030,16 @@ class ClientLayerTest {
     void maintenanceCataloguesAreReadAndTeamsAreWrittenWhole() {
         String team = "{\"id\":\"" + TEAM_ID + "\",\"code\":\"EQ-01\",\"name\":\"Brigada norte\",\"baseName\":\"Base Norte\","
                 + "\"vehicle\":\"DR-2\",\"active\":true,\"executionPackageIds\":[3,5],\"audit\":null}";
+        // Uno sincronizado desde mto-resources: su unidad alli, su dotacion y su vehiculo; sin base.
+        String synced = "{\"id\":\"2b3c4d5e-0000-4000-8000-000000000040\",\"code\":\"A\",\"name\":\"Equipo A\",\"baseName\":null,"
+                + "\"vehicle\":\"DR-01\",\"active\":true,\"executionPackageIds\":[4],\"synchronizedFromResources\":true,"
+                + "\"sourceEntityId\":\"5e6f7081-0000-4000-8000-000000000001\",\"leader\":{\"id\":\"3c4d5e6f-0000-4000-8000-000000000001\","
+                + "\"code\":\"PER-000003\",\"fullName\":\"Yossi Cohen\",\"username\":\"equipo.jefe\",\"category\":\"TEAM_LEADER\"},"
+                + "\"supervisor\":null,\"members\":[{\"id\":\"3c4d5e6f-0000-4000-8000-000000000011\",\"code\":\"PER-000011\","
+                + "\"fullName\":\"Lineman 1\",\"username\":null,\"category\":\"FOREMAN_TRAINEE\"}],"
+                + "\"defaultVehicleId\":\"9d0e1f20-0000-4000-8000-000000000001\",\"audit\":null}";
         server.expect(requestTo(MAINTENANCE + "/teams")).andExpect(method(HttpMethod.GET))
-                .andRespond(withSuccess("[" + team + "]", MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("[" + team + "," + synced + "]", MediaType.APPLICATION_JSON));
         server.expect(requestTo(MAINTENANCE + "/teams")).andExpect(method(HttpMethod.POST))
                 .andExpect(jsonPath("$.code").value("EQ-02"))
                 .andExpect(jsonPath("$.executionPackageIds[0]").value(3))
@@ -2061,6 +2069,13 @@ class ClientLayerTest {
 
         assertEquals(Set.of(3L, 5L), teams.getFirst().executionPackageIds());
         assertEquals("EQ-01 - Brigada norte", teams.getFirst().label());
+        assertFalse(teams.getFirst().fromResources(), "uno de antes, sin las claves nuevas, es local");
+        TeamDto fromResources = teams.get(1);
+        assertTrue(fromResources.fromResources());
+        assertEquals(UUID.fromString("5e6f7081-0000-4000-8000-000000000001"), fromResources.sourceEntityId());
+        assertEquals("PER-000003 · Yossi Cohen", fromResources.leader().label());
+        assertEquals(PersonCategory.UNKNOWN, fromResources.members().getFirst().category(), "una categoria nueva no rompe la lista");
+        assertEquals(UUID.fromString("9d0e1f20-0000-4000-8000-000000000001"), fromResources.defaultVehicleId());
         assertEquals("EQ-02", created.code());
         assertEquals(TaskUnit.SPAN, types.getFirst().unit());
         assertTrue(types.getFirst().requiresFullPossession());

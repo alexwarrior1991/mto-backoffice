@@ -2,11 +2,16 @@ package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
+import com.alejandro.mtobackoffice.configuration.security.ResourcesRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
+import com.alejandro.mtobackoffice.ui.resources.UnitDetailView;
+import com.alejandro.mtobackoffice.ui.resources.VehicleDetailView;
 import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.grid.Grid;
@@ -27,7 +32,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/** Los equipos de mantenimiento, sin paginar (son pocos). Se dan de alta y se modifican; se retiran con «Activo». */
+/**
+ * Los equipos de mantenimiento, sin paginar (son pocos). Los locales se dan de alta y se modifican aqui, y
+ * se retiran con «Activo». Los que llegan de mto-resources se leen: su jefe, su supervisor, sus linemen y
+ * su vehiculo son de alli, y la fila lleva a su unidad del organigrama y a su vehiculo (con
+ * {@code resources-read}) en vez de a «Modificar», que el servicio rechazaria con 409 {@code TEA-001}.
+ */
 @Route(value = MaintenanceRoutes.TEAMS, layout = MainLayout.class)
 @PageTitle("Equipos")
 @Menu(title = "Equipos", order = 66, icon = "vaadin:specialist")
@@ -39,6 +49,7 @@ public class TeamsView extends VerticalLayout {
     private final MaintenanceClients clients;
     private final MaintenanceNames names;
     private final boolean canWrite;
+    private final boolean readsResources;
     private final Span count = new Span();
     private final Grid<TeamDto> grid = new Grid<>();
 
@@ -46,6 +57,7 @@ public class TeamsView extends VerticalLayout {
         this.clients = clients;
         this.names = MaintenanceNames.of(clients, authentication);
         this.canWrite = authentication.hasRole(MaintenanceRoles.MAINTENANCE_WRITE);
+        this.readsResources = authentication.hasRole(ResourcesRoles.RESOURCES_READ);
         setSizeFull();
 
         Button create = new Button("Nuevo equipo", VaadinIcon.PLUS.create(),
@@ -61,6 +73,11 @@ public class TeamsView extends VerticalLayout {
         grid.setId("teams-grid");
         grid.addColumn(TeamDto::code).setHeader("Codigo").setKey("code").setAutoWidth(true);
         grid.addColumn(TeamDto::name).setHeader("Nombre").setKey("name").setAutoWidth(true);
+        grid.addColumn(team -> team.fromResources() ? "mto-resources" : "Local").setHeader("Origen").setKey("origin").setAutoWidth(true);
+        grid.addColumn(team -> label(team.leader())).setHeader("Jefe").setKey("leader").setAutoWidth(true);
+        grid.addColumn(team -> label(team.supervisor())).setHeader("Supervisor").setKey("supervisor").setAutoWidth(true);
+        grid.addColumn(team -> team.fromResources() ? String.valueOf(team.members().size()) : "").setHeader("Linemen").setKey("members")
+                .setAutoWidth(true);
         grid.addColumn(TeamDto::baseName).setHeader("Base").setKey("baseName").setAutoWidth(true);
         grid.addColumn(TeamDto::vehicle).setHeader("Vehiculo").setKey("vehicle").setAutoWidth(true);
         grid.addColumn(team -> team.executionPackageIds().stream().sorted().map(names::packageName).collect(Collectors.joining(", ")))
@@ -77,11 +94,25 @@ public class TeamsView extends VerticalLayout {
     private Component rowActions(TeamDto team) {
         HorizontalLayout actions = new HorizontalLayout();
         actions.setSpacing(false);
-        if (canWrite) {
+        if (team.fromResources()) {
+            // Se cambia en mto-resources: aqui se ofrece ir alli, si se puede leer.
+            if (readsResources && team.sourceEntityId() != null) {
+                actions.add(Screens.rowButton("team-unit-" + team.id(), VaadinIcon.SITEMAP, "Abrir en el organigrama",
+                        click -> UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(team.sourceEntityId()))));
+            }
+            if (readsResources && team.defaultVehicleId() != null) {
+                actions.add(Screens.rowButton("team-vehicle-" + team.id(), VaadinIcon.TRUCK, "Abrir su vehiculo",
+                        click -> UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(team.defaultVehicleId()))));
+            }
+        } else if (canWrite) {
             actions.add(Screens.rowButton("team-edit-" + team.id(), VaadinIcon.EDIT, "Modificar",
                     click -> new TeamEditorDialog(team, clients, names, this::refresh).open()));
         }
         return actions;
+    }
+
+    private static String label(PersonSummaryDto person) {
+        return person == null ? "" : person.label();
     }
 
     void refresh() {

@@ -84,6 +84,12 @@ public final class UiErrors {
                     "Esa notificacion ya no existe o no va dirigida a ti.";
             case NotFoundApiException line when "ACT-404".equals(line.getProblem().code()) ->
                     "Esa linea del registro ya no existe.";
+            // mto-maintenance: una persona o un vehiculo de mto-resources que todavia no ha llegado por
+            // evento a mantenimiento (se acaba de dar de alta alli). Llega en unos segundos: reintentar vale.
+            case NotFoundApiException crew when "CRW-404".equals(crew.getProblem().code()) ->
+                    "Esa persona aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.";
+            case NotFoundApiException fleet when "FLT-404".equals(fleet.getProblem().code()) ->
+                    "Ese vehiculo aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.";
             case NotFoundApiException ignored -> "No se ha encontrado lo que se pedia."
                     + detail(exception);
             // mto-maintenance: la inspeccion no casa con su checklist (un OK con items defectuosos, un
@@ -120,6 +126,8 @@ public final class UiErrors {
                     "El turno no admite ese trabajo." + detail(exception);
             case ConflictApiException material when "MAT-001".equals(material.getProblem().code()) ->
                     "La linea de material no admite esta operacion." + detail(exception);
+            case ConflictApiException team when "TEA-001".equals(team.getProblem().code()) ->
+                    "El equipo es de mto-resources: se cambia en Recursos > Organigrama.";
             case ConflictApiException asset when "AST-001".equals(asset.getProblem().code()) ->
                     "El activo esta desactivado, o ese dato lo manda mto-configuration." + detail(exception);
             // Un codigo repetido en mto-maintenance (activos y equipos) y en los catalogos de mto-stock:

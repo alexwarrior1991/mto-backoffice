@@ -4942,6 +4942,14 @@ class ViewLayerTest {
                 null, "OPS-429", null, null, null, false, null, null);
         assertEquals("Hay demasiadas operaciones en marcha. Intentalo en 3 s.", UiErrors.message(BackofficeApiException.of(
                 HttpStatusCode.valueOf(429), tooMany, "corr-o1", Duration.ofSeconds(3), "POST /api/maintenance/orders/1/tasks/generate")));
+        // Lo que mantenimiento dice de lo que es de mto-resources: un equipo sincronizado, y una persona o un
+        // vehiculo que aun no ha llegado por evento (reintentar vale; recargar la pantalla no hace falta).
+        assertEquals("El equipo es de mto-resources: se cambia en Recursos > Organigrama.",
+                UiErrors.message(maintenanceError(409, "TEA-001", "Team A is synchronized from mto-resources")));
+        assertEquals("Esa persona aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.",
+                UiErrors.message(maintenanceError(404, "CRW-404", "Crew person not found")));
+        assertEquals("Ese vehiculo aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.",
+                UiErrors.message(maintenanceError(404, "FLT-404", "Fleet vehicle not found")));
     }
 
     @Test
@@ -5225,8 +5233,8 @@ class ViewLayerTest {
                                 new BigDecimal("5700"), true, 1)))));
 
         UI.getCurrent().navigate(MaintenanceRoutes.TEAMS);
-        assertEquals(List.of("EQ-01", "Brigada norte", "Base Norte", "DR-2", "PAQ NORTE, PAQ SUR", "Activo"),
-                GridKt._getFormattedRow(gridWithId("teams-grid"), 0).subList(0, 6));
+        assertEquals(List.of("EQ-01", "Brigada norte", "Local", "", "", "", "Base Norte", "DR-2", "PAQ NORTE, PAQ SUR", "Activo"),
+                GridKt._getFormattedRow(gridWithId("teams-grid"), 0).subList(0, 10));
         LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("teams-grid"), 0, TeamsView.ACTIONS_COLUMN), Button.class,
                 spec -> spec.withId("team-edit-" + TEAM1)));
         LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("team-base")), "");
@@ -5244,6 +5252,56 @@ class ViewLayerTest {
         assertEquals(2, GridKt._size(gridWithId("templates-grid")));
         LocatorJ._get(H3.class, spec -> spec.withText("Puntos de Perfil (version 2)"));
         assertEquals(List.of("P-01", "Altura del hilo", "Si", "mm", "5300", "5700"), GridKt._getFormattedRow(gridWithId("template-items-grid"), 0));
+    }
+
+    /**
+     * Un equipo de mto-resources se lee: su origen, su jefe, su supervisor y sus linemen en la fila, y en
+     * vez de «Modificar» los botones a su unidad y a su vehiculo (con resources-read). El 409 TEA-001 de
+     * un equipo que se sincronizo entre medias dice donde se cambia.
+     */
+    @Test
+    void aSynchronizedTeamIsOnlyReadAndLeadsToItsUnitAndItsVehicle() {
+        loginAs("mantenimiento.responsable", "ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_CONFIG_READ", "ROLE_STOCK_READ",
+                "ROLE_RESOURCES_READ");
+        stubReferencesForMaintenance();
+        stubOrganization(true);
+        when(organizationClient.findById(TEAM_UNIT)).thenReturn(team(2, true));
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(linemen(2));
+        stubVehicles(List.of(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true)));
+        when(vehicleClient.locations(eq(VEHICLE1), any(), any(), anyInt(), anyInt())).thenReturn(page(List.of(), 0, 20));
+        PersonSummaryDto leader = new PersonSummaryDto(UUID.randomUUID(), "PER-000003", "Yossi Cohen", "equipo.jefe", PersonCategory.TEAM_LEADER);
+        PersonSummaryDto supervisor = new PersonSummaryDto(UUID.randomUUID(), "PER-000020", "Dana Levi", null, PersonCategory.SUPERVISOR);
+        List<PersonSummaryDto> members = List.of(new PersonSummaryDto(UUID.randomUUID(), "PER-000011", "Lineman 1", null, PersonCategory.WORKER),
+                new PersonSummaryDto(UUID.randomUUID(), "PER-000012", "Lineman 2", null, PersonCategory.WORKER));
+        TeamDto synced = new TeamDto(TEAM1, "A", "Equipo A", null, "DR-01", true, Set.of(3L), true, TEAM_UNIT, leader, supervisor, members,
+                VEHICLE1, null);
+        TeamDto local = new TeamDto(UUID.randomUUID(), "B", "Equipo B", "Base Sur", null, true, Set.of(5L), null);
+        when(maintenanceCatalogClient.teams()).thenReturn(List.of(local, synced));
+        when(maintenanceCatalogClient.updateTeam(any(), any())).thenThrow(maintenanceError(409, "TEA-001", "Team B is synchronized from mto-resources"));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.TEAMS);
+        Grid<Object> grid = gridWithId("teams-grid");
+        assertEquals(List.of("A", "Equipo A", "mto-resources", "PER-000003 · Yossi Cohen", "PER-000020 · Dana Levi", "2", "", "DR-01"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 8));
+        assertEquals(List.of("B", "Equipo B", "Local", "", "", "", "Base Sur"), GridKt._getFormattedRow(grid, 1).subList(0, 7));
+        Component syncedActions = GridKt._getCellComponent(grid, 0, TeamsView.ACTIONS_COLUMN);
+        assertTrue(LocatorJ._find(syncedActions, Button.class, spec -> spec.withId("team-edit-" + TEAM1)).isEmpty(), "uno sincronizado no se modifica");
+
+        LocatorJ._click(LocatorJ._get(syncedActions, Button.class, spec -> spec.withId("team-vehicle-" + TEAM1)));
+        assertEquals(ResourcesRoutes.FLEET + "/" + VEHICLE1, UI.getCurrent().getInternals().getActiveViewLocation().getPath());
+        UI.getCurrent().navigate(MaintenanceRoutes.TEAMS);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("teams-grid"), 0, TeamsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("team-unit-" + TEAM1)));
+        assertEquals(ResourcesRoutes.ORGANIZATION + "/" + TEAM_UNIT, UI.getCurrent().getInternals().getActiveViewLocation().getPath());
+
+        // Se sincronizo mientras se editaba: el servicio lo rechaza, lo dice y el dialogo sigue abierto.
+        UI.getCurrent().navigate(MaintenanceRoutes.TEAMS);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("teams-grid"), 1, TeamsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("team-edit-" + local.id())));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(TeamEditorDialog.SAVE_ID)));
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("El equipo es de mto-resources: se cambia en Recursos > Organigrama."));
+        LocatorJ._get(TeamEditorDialog.class);
     }
 
     // --- Mantenimiento: ordenes y tareas ----------------------------------------------------------
