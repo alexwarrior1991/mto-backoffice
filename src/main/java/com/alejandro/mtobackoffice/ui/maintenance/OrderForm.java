@@ -3,12 +3,13 @@ package com.alejandro.mtobackoffice.ui.maintenance;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.stock.ProjectSummaryDto;
+import com.alejandro.mtobackoffice.ui.support.Changes;
 
 import java.time.LocalDate;
 

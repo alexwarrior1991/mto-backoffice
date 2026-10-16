@@ -38,8 +38,9 @@ class SecurityLayerTest {
     private static final String STOCK_CLIENT_ID = "mto-stock-api";
     private static final String MAINTENANCE_CLIENT_ID = "mto-maintenance-api";
     private static final String NOTIFICATION_CLIENT_ID = "mto-notification-api";
+    private static final String RESOURCES_CLIENT_ID = "mto-resources-api";
     private static final List<String> LISTED_CLIENTS = List.of(CLIENT_ID, USERS_CLIENT_ID, STOCK_CLIENT_ID, MAINTENANCE_CLIENT_ID,
-            NOTIFICATION_CLIENT_ID);
+            NOTIFICATION_CLIENT_ID, RESOURCES_CLIENT_ID);
     private static final KeycloakProperties PROPERTIES = new KeycloakProperties("http://localhost:8082/realms/mto/",
             "mto-backoffice", "secret", LISTED_CLIENTS);
 
@@ -235,7 +236,7 @@ class SecurityLayerTest {
     }
 
     /**
-     * Emitir ROLE_ para los cinco clientes solo es inocuo mientras sus nombres de rol no se solapen.
+     * Emitir ROLE_ para los seis clientes solo es inocuo mientras sus nombres de rol no se solapen.
      * Los {@code ops-*} se repiten en todos a proposito (son de operacion, no de pantalla) y ninguna
      * vista los comprueba, asi que no hay constante que los nombre.
      */
@@ -251,8 +252,10 @@ class SecurityLayerTest {
                 MaintenanceRoles.MAINTENANCE_DELETE, MaintenanceRoles.MAINTENANCE_SUPERVISE);
         Set<String> notification = Set.of(NotificationRoles.NOTIFICATION_INBOX, NotificationRoles.NOTIFICATION_ACTIVITY_READ,
                 NotificationRoles.NOTIFICATION_ACCESS_READ, NotificationRoles.NOTIFICATION_ADMIN);
+        Set<String> resources = Set.of(ResourcesRoles.RESOURCES_READ, ResourcesRoles.RESOURCES_WRITE, ResourcesRoles.RESOURCES_FLEET_WRITE,
+                ResourcesRoles.RESOURCES_LOCATION_WRITE, ResourcesRoles.RESOURCES_DELETE);
 
-        List<Set<String>> sets = List.of(configuration, users, stock, maintenance, notification);
+        List<Set<String>> sets = List.of(configuration, users, stock, maintenance, notification, resources);
         for (int i = 0; i < sets.size(); i++) {
             for (int j = i + 1; j < sets.size(); j++) {
                 assertTrue(java.util.Collections.disjoint(sets.get(i), sets.get(j)), sets.get(i) + " / " + sets.get(j));
@@ -329,5 +332,33 @@ class SecurityLayerTest {
         assertTrue(names.contains("ROLE_NOTIFICATION_INBOX"));
         assertTrue(names.contains("ROLE_CLIENT_MTO_NOTIFICATION_API_NOTIFICATION_ACTIVITY_READ"));
         assertFalse(names.contains("ROLE_NOTIFICATION_ACCESS_READ"));
+    }
+
+    @Test
+    void resourcesRolesMatchTheClientRolesOfMtoResourcesApiOnceNormalized() {
+        Set<String> declared = Set.of(ResourcesRoles.RESOURCES_READ, ResourcesRoles.RESOURCES_WRITE, ResourcesRoles.RESOURCES_FLEET_WRITE,
+                ResourcesRoles.RESOURCES_LOCATION_WRITE, ResourcesRoles.RESOURCES_DELETE);
+        Set<String> fromRealm = Set.of("resources-read", "resources-write", "resources-fleet-write", "resources-location-write",
+                        "resources-delete")
+                .stream().map(KeycloakRoleMapper::normalize).collect(Collectors.toSet());
+
+        assertEquals(fromRealm, declared);
+    }
+
+    /**
+     * Los perfiles de puesto ({@code mto-position-team-leader}...) y los de recursos son composites:
+     * lo que abre Recursos es el rol de cliente que traen dentro, nunca un rol de realm con su nombre.
+     */
+    @Test
+    void aRealmRoleNamedLikeAResourcesPermissionNeverOpensTheModule() {
+        Set<String> names = authorities(mapper.authorities(Map.of(
+                JwtClaimNames.REALM_ACCESS, Map.of(JwtClaimNames.ROLES, List.of("resources-read", "mto-position-team-leader")),
+                JwtClaimNames.RESOURCE_ACCESS, Map.of(RESOURCES_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("resources-location-write"))))));
+
+        assertTrue(names.contains("ROLE_REALM_RESOURCES_READ"));
+        assertTrue(names.contains("ROLE_REALM_MTO_POSITION_TEAM_LEADER"));
+        assertTrue(names.contains("ROLE_RESOURCES_LOCATION_WRITE"));
+        assertTrue(names.contains("ROLE_CLIENT_MTO_RESOURCES_API_RESOURCES_LOCATION_WRITE"));
+        assertFalse(names.contains("ROLE_RESOURCES_READ"));
     }
 }

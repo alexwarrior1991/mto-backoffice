@@ -5,7 +5,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.AssetDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
@@ -14,6 +14,7 @@ import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPages;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasValue;
@@ -155,23 +156,23 @@ public class AssetsView extends VerticalLayout {
     private Component rowActions(AssetDto asset) {
         HorizontalLayout actions = new HorizontalLayout();
         actions.setSpacing(false);
-        actions.add(MaintenanceUi.rowButton("asset-orders-" + asset.id(), VaadinIcon.LIST, "Ordenes",
+        actions.add(Screens.rowButton("asset-orders-" + asset.id(), VaadinIcon.LIST, "Ordenes",
                 click -> new AssetOrdersDialog(asset, clients).open()));
-        actions.add(MaintenanceUi.rowButton("asset-history-" + asset.id(), VaadinIcon.CLOCK, "Historial",
+        actions.add(Screens.rowButton("asset-history-" + asset.id(), VaadinIcon.CLOCK, "Historial",
                 click -> MaintenanceHistory.dialog(asset.code(), (page, size) -> clients.assets().revisions(asset.id(), page, size),
                         MaintenanceHistory::asset).open()));
         if (canWrite) {
-            actions.add(MaintenanceUi.rowButton("asset-edit-" + asset.id(), VaadinIcon.EDIT, "Modificar",
+            actions.add(Screens.rowButton("asset-edit-" + asset.id(), VaadinIcon.EDIT, "Modificar",
                     click -> new AssetEditorDialog(asset, clients, names, this::refresh).open()));
         }
         if (!asset.isDisabledLocally() && canDelete) {
-            Button disable = MaintenanceUi.rowButton("asset-disable-" + asset.id(), VaadinIcon.BAN, "Desactivar",
-                    click -> MaintenanceUi.confirm("Desactivar " + asset.label(), disableWarning(asset), "Desactivar",
+            Button disable = Screens.rowButton("asset-disable-" + asset.id(), VaadinIcon.BAN, "Desactivar",
+                    click -> Screens.confirm("Desactivar " + asset.label(), disableWarning(asset), "Desactivar",
                             () -> disable(asset)));
             disable.addThemeVariants(ButtonVariant.LUMO_ERROR);
             actions.add(disable);
         } else if (asset.isDisabledLocally() && !asset.isDisabledAtSource() && canWrite) {
-            actions.add(MaintenanceUi.rowButton("asset-enable-" + asset.id(), VaadinIcon.CHECK_CIRCLE, "Reactivar",
+            actions.add(Screens.rowButton("asset-enable-" + asset.id(), VaadinIcon.CHECK_CIRCLE, "Reactivar",
                     click -> enable(asset)));
         }
         return actions;
@@ -186,7 +187,7 @@ public class AssetsView extends VerticalLayout {
     private void disable(AssetDto asset) {
         try {
             clients.assets().disable(asset.id());
-            MaintenanceUi.success("Desactivado " + asset.label());
+            Screens.success("Desactivado " + asset.label());
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }
@@ -196,7 +197,7 @@ public class AssetsView extends VerticalLayout {
     private void enable(AssetDto asset) {
         try {
             clients.assets().update(asset.id(), MergePatch.of(AssetUpdateRequest.enabled(true), asset.version()));
-            MaintenanceUi.success("Reactivado " + asset.label());
+            Screens.success("Reactivado " + asset.label());
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }

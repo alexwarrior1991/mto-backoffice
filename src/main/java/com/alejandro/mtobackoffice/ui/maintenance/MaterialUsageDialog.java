@@ -4,7 +4,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenanceOrderStatus
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageUpdateRequest;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
 import com.alejandro.mtobackoffice.client.dto.stock.MaterialSummaryDto;
@@ -13,6 +13,7 @@ import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.stock.StockPickers;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.HasValidation;
@@ -112,11 +113,11 @@ public class MaterialUsageDialog extends Dialog {
                     }
                 }
                 close();
-                MaintenanceUi.success("Material guardado");
+                Screens.success("Material guardado");
                 saved.run();
             } catch (ValidationApiException validation) {
                 // La referencia del material es el material del dialogo, como en mto-frontend.
-                MaintenanceUi.showValidation(Map.<String, HasValidation>of("materialId", material, "materialReference", material,
+                Screens.showValidation(Map.<String, HasValidation>of("materialId", material, "materialReference", material,
                         "hasMaterialReference", material, "warehouseId", warehouse, "plannedQuantity", planned,
                         "consumedQuantity", consumed, "taskId", task), validation);
             } catch (BackofficeApiException failure) {

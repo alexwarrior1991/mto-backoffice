@@ -218,7 +218,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.ResolveDefectRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageUpdateRequest;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.StockSyncStatus;
 import com.alejandro.mtobackoffice.ui.maintenance.MaterialUsageDialog;
 import com.alejandro.mtobackoffice.ui.maintenance.DefectDetailView;
@@ -999,10 +999,14 @@ class ViewLayerTest {
 
         List<ListItem> audiences = LocatorJ._find(ListItem.class).stream()
                 .filter(item -> item.getElement().hasAttribute("data-audience")).toList();
-        assertEquals(6, audiences.size());
+        assertEquals(8, audiences.size());
         long present = audiences.stream().filter(item -> "true".equals(item.getElement().getAttribute("data-present"))).count();
         assertEquals(4, present);
         assertTrue(audiences.stream().anyMatch(item -> "mto-notification-api".equals(item.getElement().getAttribute("data-audience"))
+                && "false".equals(item.getElement().getAttribute("data-present"))));
+        assertTrue(audiences.stream().anyMatch(item -> "mto-resources-api".equals(item.getElement().getAttribute("data-audience"))
+                && "false".equals(item.getElement().getAttribute("data-present"))));
+        assertTrue(audiences.stream().anyMatch(item -> "mto-field-api".equals(item.getElement().getAttribute("data-audience"))
                 && "false".equals(item.getElement().getAttribute("data-present"))));
         assertTrue(audiences.stream().anyMatch(item -> "mto-gateway-api".equals(item.getElement().getAttribute("data-audience"))
                 && "false".equals(item.getElement().getAttribute("data-present"))));
@@ -4837,6 +4841,28 @@ class ViewLayerTest {
                 UiErrors.message(maintenanceError(409, "STK-001", "mto-stock rejected 'reserve' with 409 STK-001: Insufficient stock")));
         assertEquals("El servicio no esta disponible ahora mismo. Intentalo mas tarde.",
                 UiErrors.message(maintenanceError(503, null, null)), "el 503 del gateway sigue siendo el de siempre");
+    }
+
+    /**
+     * Los de mto-resources, que llegan con la misma forma que los de mantenimiento: una regla del
+     * organigrama o de la flota dice cual con el detalle del servicio, un valor repetido no pide
+     * recargar, y el tope de operaciones de fondo (de los dos servicios) dice cuando reintentar.
+     */
+    @Test
+    void resourcesErrorsSayWhatBlocksTheChange() {
+        assertEquals("El organigrama no admite ese cambio. Team EQ-NORTE would have 1 linemen: between 2 and 6",
+                UiErrors.message(maintenanceError(409, "UNI-001", "Team EQ-NORTE would have 1 linemen: between 2 and 6")));
+        assertEquals("La flota no admite ese cambio. A rail-only vehicle is never on the road",
+                UiErrors.message(maintenanceError(409, "VEH-001", "A rail-only vehicle is never on the road")));
+        for (String duplicated : List.of("PER-409", "UNI-409", "VEH-409", "VTY-409", "PRK-409")) {
+            assertEquals("Ya existe otro con ese valor (codigo, usuario, numero de empleado, matricula o numero ferroviario)."
+                    + " Username equipo.jefe is already in use", UiErrors.message(maintenanceError(409, duplicated,
+                    "Username equipo.jefe is already in use")), duplicated);
+        }
+        ApiProblem tooMany = new ApiProblem(null, "TOO_MANY_REQUESTS", 429, "There are already 4 background operations",
+                null, "OPS-429", null, null, null, false, null, null);
+        assertEquals("Hay demasiadas operaciones en marcha. Intentalo en 3 s.", UiErrors.message(BackofficeApiException.of(
+                HttpStatusCode.valueOf(429), tooMany, "corr-o1", Duration.ofSeconds(3), "POST /api/maintenance/orders/1/tasks/generate")));
     }
 
     @Test

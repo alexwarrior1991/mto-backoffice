@@ -1,4 +1,4 @@
-package com.alejandro.mtobackoffice.client.dto.maintenance;
+package com.alejandro.mtobackoffice.client.dto;
 
 import com.fasterxml.jackson.annotation.JsonValue;
 
@@ -12,7 +12,8 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 /**
- * Una modificacion de mto-maintenance como {@code application/merge-patch+json} (RFC 7396): lo que
+ * Una modificacion de mto-maintenance o de mto-resources como {@code application/merge-patch+json}
+ * (RFC 7396): lo que
  * cambio viaja con su valor ({@code values}, el record de la modificacion con {@code null} en lo que
  * no se toca), lo que se vacio viaja a {@code null} ({@code cleared}) y lo demas no viaja. La
  * {@code version} leida va siempre: si otra persona guardo entre medias, el servicio responde 409

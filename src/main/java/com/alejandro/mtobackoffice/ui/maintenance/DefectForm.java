@@ -5,7 +5,8 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.DefectDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectSeverity;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectUpdateRequest;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
+import com.alejandro.mtobackoffice.ui.support.Changes;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 
 import java.math.BigDecimal;

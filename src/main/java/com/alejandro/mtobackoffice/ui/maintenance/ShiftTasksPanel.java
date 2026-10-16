@@ -10,6 +10,7 @@ import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPanel;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
@@ -74,7 +75,7 @@ class ShiftTasksPanel extends LazyPanel {
     private Component rowActions(TaskDto task) {
         HorizontalLayout actions = new HorizontalLayout();
         actions.setSpacing(false);
-        actions.add(MaintenanceUi.rowButton("shift-task-order-" + task.id(), VaadinIcon.EXTERNAL_LINK, "Abrir la orden",
+        actions.add(Screens.rowButton("shift-task-order-" + task.id(), VaadinIcon.EXTERNAL_LINK, "Abrir la orden",
                 click -> UI.getCurrent().navigate(OrderDetailView.class, OrderDetailView.parametersOf(task.orderId()))));
         if (!canWrite || !task.isOpen()) {
             return actions;
@@ -82,20 +83,20 @@ class ShiftTasksPanel extends LazyPanel {
         ShiftDto current = shift.get();
         boolean working = current.status() != null && current.status().canClose();
         if (working && task.status() == MaintenanceTaskStatus.PENDING) {
-            actions.add(MaintenanceUi.rowButton("shift-task-start-" + task.id(), VaadinIcon.PLAY, "Iniciar", click -> start(task)));
+            actions.add(Screens.rowButton("shift-task-start-" + task.id(), VaadinIcon.PLAY, "Iniciar", click -> start(task)));
         }
         if (!task.checkItems().isEmpty()) {
-            actions.add(MaintenanceUi.rowButton("shift-task-checklist-" + task.id(), VaadinIcon.CHECK_SQUARE_O, "Checklist",
+            actions.add(Screens.rowButton("shift-task-checklist-" + task.id(), VaadinIcon.CHECK_SQUARE_O, "Checklist",
                     click -> CheckItemsDialog.ofTask(task.orderId(), task, clients, this::changed).open()));
         }
         if (working) {
-            actions.add(MaintenanceUi.rowButton("shift-task-complete-" + task.id(), VaadinIcon.CHECK, "Completar",
+            actions.add(Screens.rowButton("shift-task-complete-" + task.id(), VaadinIcon.CHECK, "Completar",
                     click -> new CompleteTaskDialog(task.orderId(), List.of(), task, current, clients, catalogs, canPickMaterials, this::changed).open()));
         }
         if (current.status() != null && current.status().isOpen()) {
-            actions.add(MaintenanceUi.rowButton("shift-task-unassign-" + task.id(), VaadinIcon.ARROW_BACKWARD, "Quitar del turno", click -> unassign(task)));
+            actions.add(Screens.rowButton("shift-task-unassign-" + task.id(), VaadinIcon.ARROW_BACKWARD, "Quitar del turno", click -> unassign(task)));
         }
-        Button cancel = MaintenanceUi.rowButton("shift-task-cancel-" + task.id(), VaadinIcon.CLOSE_CIRCLE, "Cancelar",
+        Button cancel = Screens.rowButton("shift-task-cancel-" + task.id(), VaadinIcon.CLOSE_CIRCLE, "Cancelar",
                 click -> new ReasonDialog("Cancelar la tarea " + task.sequence(), "La tarea queda cancelada con su motivo; no se puede reabrir.",
                         "Cancelar la tarea", reason -> cancel(task, reason)).open());
         cancel.addThemeVariants(ButtonVariant.LUMO_ERROR);
@@ -106,7 +107,7 @@ class ShiftTasksPanel extends LazyPanel {
     private void start(TaskDto task) {
         try {
             clients.orders().startTask(task.orderId(), task.id(), new StartTaskRequest(shift.get().id(), null));
-            MaintenanceUi.success("Tarea " + task.sequence() + " iniciada");
+            Screens.success("Tarea " + task.sequence() + " iniciada");
             changed();
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
@@ -117,7 +118,7 @@ class ShiftTasksPanel extends LazyPanel {
     private void unassign(TaskDto task) {
         try {
             clients.shifts().unassignTask(shift.get().id(), task.id());
-            MaintenanceUi.success("Tarea " + task.sequence() + " quitada del turno: vuelve a su orden");
+            Screens.success("Tarea " + task.sequence() + " quitada del turno: vuelve a su orden");
             changed();
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
@@ -127,7 +128,7 @@ class ShiftTasksPanel extends LazyPanel {
     private boolean cancel(TaskDto task, String reason) {
         try {
             clients.orders().cancelTask(task.orderId(), task.id(), new ReasonRequest(reason));
-            MaintenanceUi.success("Tarea " + task.sequence() + " cancelada");
+            Screens.success("Tarea " + task.sequence() + " cancelada");
             changed();
             return true;
         } catch (BackofficeApiException failure) {

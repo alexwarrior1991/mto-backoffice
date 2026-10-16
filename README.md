@@ -414,9 +414,9 @@ ve la campana y su bandeja. El registro lo ven los responsables de cada módulo
 `usuarios.responsable` y `notificacion.auditor`. Qué perfil concede cada rol lo declara cada
 servicio en su parcial del realm.
 
-La pantalla **Inicio** muestra el principal, las autoridades y las seis audiencias del access token
+La pantalla **Inicio** muestra el principal, las autoridades y las ocho audiencias del access token
 (`mto-configuration-api`, `mto-stock-api`, `mto-maintenance-api`, `mto-users-api`, `mto-notification-api`,
-`mto-gateway-api`):
+`mto-resources-api`, `mto-field-api`, `mto-gateway-api`):
 si falta una, el servicio correspondiente responderá 401 aunque la persona tenga permisos.
 
 Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el que fija
@@ -428,7 +428,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 | `KEYCLOAK_ISSUER_URI` | Realm que emite los tokens | `http://auth.mto.local:8082/realms/mto` |
 | `KEYCLOAK_CLIENT_ID` | Cliente confidencial de esta aplicación | `mto-backoffice` |
 | `KEYCLOAK_CLIENT_SECRET` | Su secreto | vacío (`dev`: el local; `prod`: obligatorio) |
-| `KEYCLOAK_ROLES_CLIENT_IDS` | Clientes cuyos roles del access token son los permisos (lista por comas) | `mto-configuration-api,mto-users-api,mto-stock-api,mto-maintenance-api,mto-notification-api` |
+| `KEYCLOAK_ROLES_CLIENT_IDS` | Clientes cuyos roles del access token son los permisos (lista por comas) | `mto-configuration-api,mto-users-api,mto-stock-api,mto-maintenance-api,mto-notification-api,mto-resources-api` |
 | `MTO_GATEWAY_URL` | El gateway | `http://localhost:8090` |
 | `MTO_FRONTEND_URL` | La SPA `mto-frontend`, para «Abrir en mto-frontend» (vacío: la barra no lo ofrece) | vacío (`dev`: `http://localhost:4200`) |
 | `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP | `2s` / `15s` |
@@ -442,17 +442,19 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 - Cliente **confidencial** `mto-backoffice` (Authorization Code con secreto) declarado en
   `keycloak/mto-backoffice-partial-import.json`, con los mismos seis audience mapper que
   `mto-frontend`, el cliente público de la SPA con la que convive. Detalle en `keycloak/README.md`.
-- Los permisos son roles de **cliente** de cinco clientes: `mto-configuration-api` (`config-read`,
+- Los permisos son roles de **cliente** de seis clientes: `mto-configuration-api` (`config-read`,
   `config-write`, `config-delete`, `config-import`, `lov-manage`, `config-audit`) para las
   pantallas de configuración, `mto-users-api` (`users-read`, `users-write`, `users-delete`,
   `users-roles-write`, `users-password-reset`, `users-profiles-write`, `users-sessions-write`,
   `users-credentials-write`) para el módulo de usuarios, `mto-stock-api` (`stock-read`,
   `stock-write`, `stock-delete`, `stock-adjust`) para el de almacén, `mto-maintenance-api`
   (`maintenance-read`, `maintenance-write`, `maintenance-delete`, `maintenance-supervise`) para el
-  de mantenimiento y `mto-notification-api` (`notification-inbox`, `notification-activity-read`,
+  de mantenimiento, `mto-notification-api` (`notification-inbox`, `notification-activity-read`,
   `notification-access-read`, `notification-admin`) para la campana, la bandeja, el registro y los
-  accesos. Llegan como `ROLE_CONFIG_READ`, `ROLE_USERS_READ`, `ROLE_STOCK_READ`,
-  `ROLE_MAINTENANCE_READ`, `ROLE_NOTIFICATION_INBOX`... y se comprueban con `@RolesAllowed` en cada vista; cada
+  accesos, y `mto-resources-api` (`resources-read`, `resources-write`, `resources-fleet-write`,
+  `resources-location-write`, `resources-delete`) para el personal, el organigrama y la flota.
+  Llegan como `ROLE_CONFIG_READ`, `ROLE_USERS_READ`, `ROLE_STOCK_READ`,
+  `ROLE_MAINTENANCE_READ`, `ROLE_NOTIFICATION_INBOX`, `ROLE_RESOURCES_READ`... y se comprueban con `@RolesAllowed` en cada vista; cada
   uno sale además cualificado por su cliente (`ROLE_CLIENT_MTO_USERS_API_USERS_READ`). Que un rol
   de un cliente no se confunda con uno de otro depende de que sus nombres no se solapen, cosa que
   `SecurityLayerTest` comprueba. Los roles de realm (`mto-admin`, `mto-users-manager`...) llegan

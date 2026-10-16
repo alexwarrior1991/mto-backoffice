@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -101,7 +102,7 @@ public class DefectDetailView extends VerticalLayout implements BeforeEnterObser
             toList.accept(DefectsView.class);
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
-            MaintenanceUi.showLoadFailure(this, "el defecto", failure, () -> UI.getCurrent().navigate(DefectsView.class),
+            Screens.showLoadFailure(this, "el defecto", failure, () -> UI.getCurrent().navigate(DefectsView.class),
                     () -> load(id, target -> UI.getCurrent().navigate(target)));
         }
     }
@@ -117,7 +118,7 @@ public class DefectDetailView extends VerticalLayout implements BeforeEnterObser
     }
 
     private void paint(DefectDto loaded) {
-        MaintenanceUi.clearLoadFailure(this);
+        Screens.clearLoadFailure(this);
         defect = loaded;
         title.setText(loaded.code());
         severityBadge.setText(loaded.severity() == null ? "" : "Gravedad " + loaded.severity().label().toLowerCase());
@@ -188,7 +189,7 @@ public class DefectDetailView extends VerticalLayout implements BeforeEnterObser
     private boolean call(String reason, Function<String, DefectDto> operation, String done) {
         try {
             DefectDto result = operation.apply(reason);
-            MaintenanceUi.success(result.code() + " " + done);
+            Screens.success(result.code() + " " + done);
             changed(result);
             return true;
         } catch (BackofficeApiException failure) {

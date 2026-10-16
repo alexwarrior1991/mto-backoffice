@@ -83,8 +83,9 @@ class MtoBackofficeApplicationTests {
             assertNotNull(context.getBean(maintenanceClient), maintenanceClient.getSimpleName());
         }
         assertNotNull(context.getBean(NotificationClient.class));
-        assertEquals(List.of("mto-configuration-api", "mto-users-api", "mto-stock-api", "mto-maintenance-api", "mto-notification-api"),
-                context.getBean(KeycloakProperties.class).rolesClientIds(), "los cinco clientes cuyos roles son permisos");
+        assertEquals(List.of("mto-configuration-api", "mto-users-api", "mto-stock-api", "mto-maintenance-api", "mto-notification-api",
+                        "mto-resources-api"),
+                context.getBean(KeycloakProperties.class).rolesClientIds(), "los seis clientes cuyos roles son permisos");
         ClientRegistration keycloak = context.getBean(ClientRegistrationRepository.class).findByRegistrationId("keycloak");
         assertNotNull(keycloak);
         assertEquals("http://localhost:8082/realms/mto/protocol/openid-connect/token", keycloak.getProviderDetails().getTokenUri());

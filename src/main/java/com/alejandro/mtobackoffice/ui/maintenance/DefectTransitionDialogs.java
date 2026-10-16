@@ -7,6 +7,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.ResolveDefectRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftFilter;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -53,7 +54,7 @@ final class DefectTransitionDialogs {
             try {
                 DefectDto result = clients.defects().linkOrder(defect.id(), order.getValue().id());
                 dialog.close();
-                MaintenanceUi.success(result.code() + " vinculado a " + order.getValue().code());
+                Screens.success(result.code() + " vinculado a " + order.getValue().code());
                 linked.accept(result);
             } catch (BackofficeApiException failure) {
                 UiErrors.show(failure);
@@ -98,7 +99,7 @@ final class DefectTransitionDialogs {
                         shift.getValue() == null ? null : shift.getValue().id(), TransitionForm.nullIfBlank(correctionType.getValue()),
                         TransitionForm.nullIfBlank(partsReplaced.getValue())));
                 dialog.close();
-                MaintenanceUi.success(result.code() + " resuelto");
+                Screens.success(result.code() + " resuelto");
                 resolved.accept(result);
             } catch (BackofficeApiException failure) {
                 UiErrors.show(failure);

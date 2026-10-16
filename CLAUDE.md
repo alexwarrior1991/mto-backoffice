@@ -62,9 +62,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (claims → `ROLE_*` para los clientes de `app.keycloak.roles-client-ids`, más el sinónimo
   `ROLE_CLIENT_<CLIENTE>_*`), `BackofficeUser` (el usuario con las audiencias del access token),
   `CurrentPrincipal` (nombre del principal desde cualquier hilo), `PrincipalSessionRecorder`,
-  `SecurityRoles`, `UserRoles`, `StockRoles`, `MaintenanceRoles` y `NotificationRoles` (los
-  permisos de `mto-configuration-api`, `mto-users-api`, `mto-stock-api`, `mto-maintenance-api` y
-  `mto-notification-api`), `SecurityAuthorityPrefixes`, `JwtClaimNames`, `KeycloakProperties`.
+  `SecurityRoles`, `UserRoles`, `StockRoles`, `MaintenanceRoles`, `NotificationRoles` y
+  `ResourcesRoles` (los permisos de `mto-configuration-api`, `mto-users-api`, `mto-stock-api`,
+  `mto-maintenance-api`, `mto-notification-api` y `mto-resources-api`), `SecurityAuthorityPrefixes`,
+  `JwtClaimNames`, `KeycloakProperties`.
 - `configuration/client` — `GatewayClientConfiguration` (un `RestClient` hacia el gateway con dos
   interceptores, `BearerTokenInterceptor` y `CorrelationIdInterceptor`, y `ApiErrorDecoder` como
   manejador de estado; `HttpServiceProxyFactory` para las interfaces `@HttpExchange`),
@@ -101,7 +102,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `DefectClient` y `ReportClient` —cada informe en JSON y como fichero `ResponseEntity<byte[]>`—,
   todos con `revisions` salvo los catálogos y los informes; DTO como records en
   `client/dto/maintenance`: filtros (`OrderFilter`, `AssetFilter`...), peticiones `*Request`, las
-  modificaciones como `MergePatch<*UpdateRequest>` (lo cambiado, lo vaciado y la versión leída) y
+  modificaciones como `MergePatch<*UpdateRequest>` (en `client/dto`, porque `mto-resources` modifica
+  igual: lo cambiado, lo vaciado y la versión leída) y
   enumerados tolerantes —ver las reglas—); `client/notification/NotificationClient` (la API de
   `mto-notification` bajo `/api/notifications`: mi bandeja paginada con sus filtros, el contador
   acotado, marcar una o todas, el registro con sus filtros y el detalle de una línea, y los
@@ -123,7 +125,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `BackofficeApiException`, con `TooManyRequestsApiException` llevando el cuerpo del 429).
 - `ui` — `MainLayout` (AppLayout, con «Abrir en mto-frontend» en la barra; el menú lo dan las vistas anotadas con `@Menu`, filtradas por
   `AccessAnnotationChecker`; las rutas con prefijo conocido (`infraestructura/*`, `usuarios/*`,
-  `almacen/*`, `mantenimiento/*`) se agrupan por prefijo (`MainLayout.GROUPS`), una entrada cuya ruta es el propio prefijo es el
+  `almacen/*`, `mantenimiento/*`, `recursos/*`) se agrupan por prefijo (`MainLayout.GROUPS`), una entrada cuya ruta es el propio prefijo es el
   nodo del grupo, y los catálogos se listan a mano porque su vista lleva el recurso en la ruta),
   `ui/views/HomeView`,
   `ui/lov` (`LovCrudView` en `catalogos/:resource`, `LovEditorDialog` con `Binder` sobre el modelo
@@ -189,8 +191,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   catálogos; un `*EditorDialog` con `Binder` sobre un `*Form` mutable por recurso, cuyas
   propiedades se llaman como los campos de la petición para `ServerValidation`;
   `MaintenanceHistory`, el botón «Historial» y la línea de cada recurso en `RevisionsDialog`;
-  `MaintenanceUi`, `MaintenancePickers`, `MaintenanceCatalogs` y `MaintenanceFormats`, lo
-  compartido), `ui/notification` (`NotificationRoutes`: `notificaciones`, `actividad` y
+  `MaintenancePickers`, `MaintenanceCatalogs` y `MaintenanceFormats`, lo compartido), `ui/notification` (`NotificationRoutes`: `notificaciones`, `actividad` y
   `actividad/accesos`; `InboxBell`, la campana de la barra, que `MainLayout` pone solo con
   `notification-inbox` y que pide el contador al entrar y cada 30 s desde `SharedPolling` con
   `CurrentPrincipal.callAs` + `UI.access()`; `NotificationsView`, la bandeja paginada en el
@@ -199,7 +200,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `ActivityView`, el registro con los filtros del servicio y los de la URL (`BeforeEnterObserver`);
   `AccessView`, los accesos con su permiso aparte; `EventDetailDialog`, una línea entera con su
   `payload` clave a clave), `ui/support` (`UiErrors`: excepción →
-  `Notification`; `ServerValidation`: `errors[]` del servicio → campos del `Binder`;
+  `Notification`; `Screens`: los botones de fila, las confirmaciones, los avisos y la ficha que no se
+  puede leer, que comparten mantenimiento y recursos; `Changes`: lo que cambió en un editor frente a
+  lo leído, para un `MergePatch`, con los conjuntos comparados sin orden; `ServerValidation`: `errors[]` del servicio → campos del `Binder`;
   `OffsetPager`: anteriores/siguientes para una lista `first`/`max` sin total, donde una página
   llena es la única señal de que hay más; `RevisionsDialog<D>`, el historial de cualquier fila
   (paginado, la más reciente primero; el 404 es «sin historial»); `LazyPanel`, la pestaña que
@@ -235,11 +238,12 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 - **Los roles de realm se emiten solo como `ROLE_REALM_*`, nunca como `ROLE_*`.** Los permisos que
   comprueban las vistas (`@RolesAllowed("CONFIG_READ")`, `@RolesAllowed("USERS_READ")`) son roles
   de **cliente** de `mto-configuration-api`, `mto-users-api`, `mto-stock-api`,
-  `mto-maintenance-api` y `mto-notification-api` (`app.keycloak.roles-client-ids`).
+  `mto-maintenance-api`, `mto-notification-api` y `mto-resources-api` (`app.keycloak.roles-client-ids`).
   Si un rol de realm se emitiera con `ROLE_`, quien administre el realm podría crear un rol llamado
   como un permiso y concederlo a cualquiera (`SecurityLayerTest`). El mapeo emite `ROLE_X` para
-  los cinco clientes, así que sus nombres de rol no pueden solaparse (`config-*` y `lov-manage`,
-  `users-*`, `stock-*`, `maintenance-*` y `notification-*`; `SecurityLayerTest` lo comprueba), y además
+  los seis clientes, así que sus nombres de rol no pueden solaparse (`config-*` y `lov-manage`,
+  `users-*`, `stock-*`, `maintenance-*`, `notification-*` y `resources-*`; `SecurityLayerTest` lo
+  comprueba), y además
   `ROLE_CLIENT_<CLIENTE>_X`.
 - **Sin descubrimiento OIDC en el arranque.** `KeycloakClientRegistrations` deriva los endpoints del
   issuer y añade `end_session_endpoint` a los metadatos; con `issuer-uri` en YAML la aplicación no
@@ -354,7 +358,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `force` y resolver, cerrar o descartar un defecto; `force` ni se ve sin él. Tras guardar, la ficha
   pinta lo que devuelve el servicio o relee. Una ficha (orden, turno, inspección, defecto) que no se
   puede leer por algo que no es un 404 se queda con el motivo, «Volver a la lista» y «Reintentar»
-  (`MaintenanceUi.showLoadFailure`); un 404 dice que no existe y vuelve a la lista.
+  (`Screens.showLoadFailure`); un 404 dice que no existe y vuelve a la lista.
 - **Una modificación de mantenimiento es un `PATCH` merge-patch con la versión leída.** Cada
   `*Form.toPatch(original)` compara con lo leído (`Changes`) y arma un `MergePatch`
   (`application/merge-patch+json`, RFC 7396): lo que cambió viaja con su valor, lo que se vació
@@ -678,10 +682,11 @@ como `POST` sin cuerpo y el 404 `NTF-404` por alias, el registro con todos sus f
 (`includeSuperseded` solo cuando es verdadero), una categoría y un actor desconocidos, el detalle
 con su `payload`, los accesos por usuario, IP, tipo y resultado, y el 400 `REQ-400` de un `sort`
 desconocido),
-`SecurityLayerTest` (mapeo de roles de los cinco clientes con el sinónimo cualificado, un cliente
-no listado no aporta nada, un rol de realm `users-read`, `stock-read`, `maintenance-read` o
-`notification-access-read` nunca abre el módulo, `SecurityRoles`, `UserRoles`, `StockRoles`,
-`MaintenanceRoles` y `NotificationRoles` coinciden con el realm y son disjuntos, registro OIDC sin
+`SecurityLayerTest` (mapeo de roles de los seis clientes con el sinónimo cualificado, un cliente
+no listado no aporta nada, un rol de realm `users-read`, `stock-read`, `maintenance-read`,
+`notification-access-read` o `resources-read` nunca abre el módulo, `SecurityRoles`, `UserRoles`,
+`StockRoles`, `MaintenanceRoles`, `NotificationRoles` y `ResourcesRoles` coinciden con el realm y son
+disjuntos, registro OIDC sin
 descubrimiento, roles desde el access token, `CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
 de la ruta y su filtro local, menú por roles, controles de escritura ocultos sin permiso, alta por
 diálogo, errores del servicio campo a campo, la modificación con la versión leída y la siguiente
@@ -778,7 +783,7 @@ sin ofrecer los accesos, una categoría nueva como «Desconocido», la ráfaga c
 fundida, el detalle con su `payload`; los accesos desde el enlace de una regla con el usuario en
 la URL, filtrados en el servicio, un resultado nuevo como «Desconocido» y su detalle) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway, con los clientes de
-cada servicio y los cinco clientes cuyos roles son permisos; redirección al login; sonda de
+cada servicio y los seis clientes cuyos roles son permisos; redirección al login; sonda de
 salud; ausencia de artefactos comerciales; las dos hojas de Lumo en el shell). Lo que trajo la
 convivencia con mto-frontend son casos de esas mismas clases: el enlace a la SPA con su query, el
 tipo padre y los `extras` de un catálogo, la referencia vaciada, el aviso fijo de la lista de

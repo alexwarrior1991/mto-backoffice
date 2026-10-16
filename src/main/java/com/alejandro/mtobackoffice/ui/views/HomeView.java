@@ -33,7 +33,7 @@ public class HomeView extends VerticalLayout {
     /** Las audiencias que un solo token tiene que llevar para valer en todo el dominio. */
     static final List<String> EXPECTED_AUDIENCES = List.of(
             "mto-configuration-api", "mto-stock-api", "mto-maintenance-api", "mto-users-api", "mto-notification-api",
-            "mto-gateway-api");
+            "mto-resources-api", "mto-field-api", "mto-gateway-api");
 
     public HomeView(AuthenticationContext authenticationContext) {
         add(new H2("Inicio"));

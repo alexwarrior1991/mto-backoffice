@@ -4,6 +4,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.TeamDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.button.Button;
@@ -77,7 +78,7 @@ public class TeamsView extends VerticalLayout {
         HorizontalLayout actions = new HorizontalLayout();
         actions.setSpacing(false);
         if (canWrite) {
-            actions.add(MaintenanceUi.rowButton("team-edit-" + team.id(), VaadinIcon.EDIT, "Modificar",
+            actions.add(Screens.rowButton("team-edit-" + team.id(), VaadinIcon.EDIT, "Modificar",
                     click -> new TeamEditorDialog(team, clients, names, this::refresh).open()));
         }
         return actions;

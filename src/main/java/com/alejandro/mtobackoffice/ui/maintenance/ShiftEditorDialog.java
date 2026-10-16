@@ -2,7 +2,7 @@ package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.PossessionType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftUpdateRequest;
@@ -12,6 +12,7 @@ import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -158,10 +159,10 @@ public class ShiftEditorDialog extends Dialog {
                 result = clients.shifts().update(existing.id(), patch);
             }
             close();
-            MaintenanceUi.success("Guardado " + result.code());
+            Screens.success("Guardado " + result.code());
             saved.accept(result);
         } catch (ValidationApiException validation) {
-            MaintenanceUi.showValidation(binder, validation);
+            Screens.showValidation(binder, validation);
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }

@@ -1,13 +1,14 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskUpdateRequest;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -92,18 +93,18 @@ public class TaskEditorDialog extends Dialog {
         try {
             if (existing == null) {
                 TaskDto created = clients.orders().createTask(order.id(), form.toRequest());
-                MaintenanceUi.success("Tarea " + created.sequence() + " anadida a " + order.code());
+                Screens.success("Tarea " + created.sequence() + " anadida a " + order.code());
             } else {
                 MergePatch<TaskUpdateRequest> patch = form.toPatch(existing);
                 if (!patch.changesNothing()) {
                     clients.orders().updateTask(order.id(), existing.id(), patch);
-                    MaintenanceUi.success("Tarea " + existing.sequence() + " guardada");
+                    Screens.success("Tarea " + existing.sequence() + " guardada");
                 }
             }
             close();
             saved.run();
         } catch (ValidationApiException validation) {
-            MaintenanceUi.showValidation(binder, validation);
+            Screens.showValidation(binder, validation);
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }

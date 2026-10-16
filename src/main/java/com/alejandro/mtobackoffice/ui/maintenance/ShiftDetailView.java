@@ -11,6 +11,7 @@ import com.alejandro.mtobackoffice.configuration.security.StockRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPanel;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -113,7 +114,7 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
             toList.accept(ShiftsView.class);
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
-            MaintenanceUi.showLoadFailure(this, "el turno", failure, () -> UI.getCurrent().navigate(ShiftsView.class),
+            Screens.showLoadFailure(this, "el turno", failure, () -> UI.getCurrent().navigate(ShiftsView.class),
                     () -> load(id, target -> UI.getCurrent().navigate(target)));
         }
     }
@@ -128,7 +129,7 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
     }
 
     private void show(ShiftDto loaded) {
-        MaintenanceUi.clearLoadFailure(this);
+        Screens.clearLoadFailure(this);
         paint(loaded);
         TabSheet tabs = new TabSheet();
         tabs.setWidthFull();
@@ -231,7 +232,7 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
     private boolean cancel(String reason) {
         try {
             ShiftDto cancelled = clients.shifts().cancel(shift.id(), new ReasonRequest(reason));
-            MaintenanceUi.success(cancelled.code() + " cancelado");
+            Screens.success(cancelled.code() + " cancelado");
             changed(cancelled);
             return true;
         } catch (BackofficeApiException failure) {

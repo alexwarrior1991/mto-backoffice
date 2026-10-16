@@ -3,11 +3,13 @@ package com.alejandro.mtobackoffice.ui.maintenance;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemResult;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.ui.support.Changes;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -135,7 +137,7 @@ public class CheckItemsDialog extends Dialog {
     private void save(CheckItemDto item, MergePatch<CheckItemUpdateRequest> patch) {
         try {
             List<CheckItemDto> updated = save.apply(item.id(), patch);
-            MaintenanceUi.success("Guardado " + item.code());
+            Screens.success("Guardado " + item.code());
             paint(updated);
             changed.run();
         } catch (BackofficeApiException failure) {

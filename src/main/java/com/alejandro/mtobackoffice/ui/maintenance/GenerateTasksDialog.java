@@ -12,6 +12,7 @@ import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.HasValidation;
 import com.vaadin.flow.component.button.Button;
@@ -167,7 +168,7 @@ public class GenerateTasksDialog extends Dialog {
                 return;
             }
             close();
-            MaintenanceUi.success(describe(result, false));
+            Screens.success(describe(result, false));
             done.run();
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);

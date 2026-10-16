@@ -1,10 +1,8 @@
-package com.alejandro.mtobackoffice.ui.maintenance;
+package com.alejandro.mtobackoffice.ui.support;
 
 import com.alejandro.mtobackoffice.client.error.ApiFieldError;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
-import com.alejandro.mtobackoffice.ui.support.ServerValidation;
-import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.HasValidation;
@@ -25,13 +23,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** Lo que repiten las pantallas de mantenimiento: botones de fila, confirmaciones y avisos. */
-final class MaintenanceUi {
+/** Lo que repiten las pantallas de mantenimiento y de recursos: botones de fila, confirmaciones, avisos y fichas que no se leen. */
+public final class Screens {
 
-    private MaintenanceUi() {
+    private Screens() {
     }
 
-    static Button rowButton(String id, VaadinIcon icon, String tooltip, ComponentEventListener<ClickEvent<Button>> listener) {
+    public static Button rowButton(String id, VaadinIcon icon, String tooltip, ComponentEventListener<ClickEvent<Button>> listener) {
         Button button = new Button(icon.create(), listener);
         button.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
         button.setTooltipText(tooltip);
@@ -39,18 +37,18 @@ final class MaintenanceUi {
         return button;
     }
 
-    static void confirm(String header, String text, String confirmText, Runnable action) {
+    public static void confirm(String header, String text, String confirmText, Runnable action) {
         ConfirmDialog dialog = new ConfirmDialog(header, text, confirmText, confirm -> action.run(), "Volver", cancel -> { });
         dialog.setConfirmButtonTheme("primary");
         dialog.open();
     }
 
-    static void success(String message) {
+    public static void success(String message) {
         Notification.show(message, 3000, Notification.Position.BOTTOM_START).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
     }
 
     /** Los errores del servicio campo a campo; lo que no cae en un campo, como notificacion. El dialogo sigue abierto. */
-    static void showValidation(Binder<?> binder, ValidationApiException validation) {
+    public static void showValidation(Binder<?> binder, ValidationApiException validation) {
         List<String> unattributed = ServerValidation.apply(binder, validation);
         if (!unattributed.isEmpty()) {
             Notification.show(String.join(". ", unattributed), 8000, Notification.Position.BOTTOM_START)
@@ -63,7 +61,7 @@ final class MaintenanceUi {
      * servicio cae en el componente que se llama como su campo (varios nombres pueden ir al mismo), lo
      * demas se notifica, y sin errores por campo es la notificacion de siempre. El dialogo sigue abierto.
      */
-    static void showValidation(Map<String, ? extends HasValidation> fields, ValidationApiException validation) {
+    public static void showValidation(Map<String, ? extends HasValidation> fields, ValidationApiException validation) {
         if (!validation.getProblem().hasFieldErrors()) {
             UiErrors.show(validation);
             return;
@@ -84,15 +82,15 @@ final class MaintenanceUi {
         }
     }
 
-    static final String LOAD_FAILURE_ID = "detail-load-failure";
-    static final String LOAD_RETRY_ID = "detail-load-retry";
+    public static final String LOAD_FAILURE_ID = "detail-load-failure";
+    public static final String LOAD_RETRY_ID = "detail-load-retry";
 
     /**
      * Una ficha que no se ha podido leer por algo que no es un 404, como en mto-frontend: lo que habia
      * se esconde y se ensena el motivo con «Volver a la lista» y «Reintentar». Un 404 no pasa por aqui:
      * dice que no existe y vuelve a la lista.
      */
-    static void showLoadFailure(VerticalLayout view, String what, BackofficeApiException failure, Runnable back, Runnable retry) {
+    public static void showLoadFailure(VerticalLayout view, String what, BackofficeApiException failure, Runnable back, Runnable retry) {
         clearLoadFailure(view);
         List<Component> hidden = view.getChildren().filter(Component::isVisible).toList();
         hidden.forEach(child -> child.setVisible(false));
@@ -109,7 +107,7 @@ final class MaintenanceUi {
     }
 
     /** La ficha se ha leido: fuera el aviso, y lo que se escondio vuelve a verse. */
-    static void clearLoadFailure(VerticalLayout view) {
+    public static void clearLoadFailure(VerticalLayout view) {
         view.getChildren().filter(child -> LOAD_FAILURE_ID.equals(child.getId().orElse(null))).toList().forEach(view::remove);
         HiddenByFailure hidden = ComponentUtil.getData(view, HiddenByFailure.class);
         if (hidden != null) {
@@ -121,7 +119,7 @@ final class MaintenanceUi {
     private record HiddenByFailure(List<Component> components) {
     }
 
-    static String yesNo(Boolean value) {
+    public static String yesNo(Boolean value) {
         return value == null ? "" : value ? "Si" : "No";
     }
 }

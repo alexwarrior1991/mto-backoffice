@@ -15,6 +15,7 @@ import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.stock.StockPickers;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.HasValidation;
@@ -141,10 +142,10 @@ public class CompleteTaskDialog extends Dialog {
             try {
                 clients.orders().completeTask(orderId, task.id(), request);
                 close();
-                MaintenanceUi.success("Tarea " + task.sequence() + " completada");
+                Screens.success("Tarea " + task.sequence() + " completada");
                 done.run();
             } catch (ValidationApiException validation) {
-                MaintenanceUi.showValidation(Map.<String, HasValidation>of("shiftId", shiftPicker, "taskTypeCodes", types, "notes", notes,
+                Screens.showValidation(Map.<String, HasValidation>of("shiftId", shiftPicker, "taskTypeCodes", types, "notes", notes,
                         "defectsFound", defectsFound, "repairPlannedDate", repairPlannedDate), validation);
             } catch (BackofficeApiException failure) {
                 UiErrors.show(failure);
@@ -172,7 +173,7 @@ public class CompleteTaskDialog extends Dialog {
         defectsGrid.addColumn(defect -> defect.severity() == null ? "" : defect.severity().label()).setHeader("Gravedad").setAutoWidth(true);
         defectsGrid.addColumn(InlineDefectRequest::description).setHeader("Descripcion").setFlexGrow(1);
         defectsGrid.addColumn(InlineDefectRequest::correctionType).setHeader("Correccion").setAutoWidth(true);
-        defectsGrid.addColumn(new ComponentRenderer<>(defect -> MaintenanceUi.rowButton("complete-task-defect-remove-" + defects.indexOf(defect),
+        defectsGrid.addColumn(new ComponentRenderer<>(defect -> Screens.rowButton("complete-task-defect-remove-" + defects.indexOf(defect),
                 VaadinIcon.TRASH, "Quitar", click -> {
                     defects.remove(defect);
                     defectsGrid.setItems(defects);
@@ -193,7 +194,7 @@ public class CompleteTaskDialog extends Dialog {
         materialsGrid.addColumn(line -> line.warehouse().label()).setHeader("Almacen").setAutoWidth(true);
         materialsGrid.addColumn(line -> Formats.quantity(line.quantity()) + (line.unit() == null ? "" : " " + line.unit()))
                 .setHeader("Cantidad").setAutoWidth(true);
-        materialsGrid.addColumn(new ComponentRenderer<>(line -> MaintenanceUi.rowButton("complete-task-material-remove-" + materials.indexOf(line),
+        materialsGrid.addColumn(new ComponentRenderer<>(line -> Screens.rowButton("complete-task-material-remove-" + materials.indexOf(line),
                 VaadinIcon.TRASH, "Quitar", click -> {
                     materials.remove(line);
                     materialsGrid.setItems(materials);
