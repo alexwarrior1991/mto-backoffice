@@ -7,6 +7,7 @@ import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.UnitSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.WorkDiscipline;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.support.Changes;
@@ -35,6 +36,7 @@ public class UnitForm {
     private PersonSummaryDto headPersonId;
     private Set<RefItem> executionPackageIds = new LinkedHashSet<>();
     private Set<PersonSummaryDto> memberPersonIds = new LinkedHashSet<>();
+    private VehicleSummaryDto defaultVehicleId;
     private LocalDate joinedOn;
 
     /** Una unidad nueva, colgando de {@code parent} si se dio de alta desde la fila o la ficha de su padre. */
@@ -54,6 +56,7 @@ public class UnitForm {
         form.setParentId(dto.parent());
         form.setHeadPersonId(dto.head());
         form.setExecutionPackageIds(dto.executionPackageIds().stream().sorted().map(packageRef).collect(Collectors.toCollection(LinkedHashSet::new)));
+        form.setDefaultVehicleId(dto.defaultVehicle());
         return form;
     }
 
@@ -65,14 +68,14 @@ public class UnitForm {
         boolean team = kind == OrganizationUnitKind.TEAM;
         boolean project = kind == OrganizationUnitKind.PROJECT;
         return new OrganizationUnitRequest(code.trim(), name.trim(), kind, project ? null : discipline, project || parentId == null ? null : parentId.id(),
-                headPersonId == null ? null : headPersonId.id(), packageIds(executionPackageIds), null,
+                headPersonId == null ? null : headPersonId.id(), packageIds(executionPackageIds), team && defaultVehicleId != null ? defaultVehicleId.id() : null,
                 team ? memberPersonIds.stream().map(PersonSummaryDto::id).toList() : List.of(), team ? joinedOn : null);
     }
 
     /**
      * Lo que cambio respecto a lo leido, lo vaciado y la version. El jefe se vacia salvo en un equipo
      * (el editor lo pide obligatorio), los EP se comparan como conjunto y quitarlos todos viaja como
-     * {@code null}. Sin {@code config-read} los EP no se tocan: los leidos no se mandan a vaciar.
+     * {@code null}; el vehiculo por defecto, solo de un equipo, se cambia o se vacia. Sin {@code config-read} los EP no se tocan: los leidos no se mandan a vaciar.
      */
     public MergePatch<OrganizationUnitUpdateRequest> toPatch(OrganizationUnitDto original, boolean readsPackages) {
         Changes changes = new Changes();
@@ -81,7 +84,9 @@ public class UnitForm {
                 changes.value("parentId", idOf(parentId), original.parent() == null ? null : original.parent().id()),
                 changes.value("headPersonId", headPersonId == null ? null : headPersonId.id(), original.head() == null ? null : original.head().id()),
                 readsPackages ? changes.set("executionPackageIds", packageIds(executionPackageIds), original.executionPackageIds()) : null,
-                null, null, null, null);
+                original.isTeam() ? changes.value("defaultVehicleId", idOf(defaultVehicleId),
+                        original.defaultVehicle() == null ? null : original.defaultVehicle().id()) : null,
+                null, null, null);
         return changes.patch(values, original.version());
     }
 
@@ -91,6 +96,10 @@ public class UnitForm {
 
     private static UUID idOf(UnitSummaryDto unit) {
         return unit == null ? null : unit.id();
+    }
+
+    private static UUID idOf(VehicleSummaryDto vehicle) {
+        return vehicle == null ? null : vehicle.id();
     }
 
     public String getCode() {
@@ -155,6 +164,14 @@ public class UnitForm {
 
     public void setMemberPersonIds(Set<PersonSummaryDto> memberPersonIds) {
         this.memberPersonIds = memberPersonIds == null ? new LinkedHashSet<>() : new LinkedHashSet<>(memberPersonIds);
+    }
+
+    public VehicleSummaryDto getDefaultVehicleId() {
+        return defaultVehicleId;
+    }
+
+    public void setDefaultVehicleId(VehicleSummaryDto defaultVehicleId) {
+        this.defaultVehicleId = defaultVehicleId;
     }
 
     public LocalDate getJoinedOn() {

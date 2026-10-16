@@ -28,6 +28,7 @@ import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
 import com.alejandro.mtobackoffice.client.dto.master.StationDto;
 import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
 import com.alejandro.mtobackoffice.client.dto.resources.DrivingLicence;
+import com.alejandro.mtobackoffice.client.dto.resources.FleetPositionDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationTreeNodeDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitKind;
@@ -86,6 +87,7 @@ import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
+import com.alejandro.mtobackoffice.ui.resources.FleetBoardView;
 import com.alejandro.mtobackoffice.ui.resources.OrganizationView;
 import com.alejandro.mtobackoffice.ui.resources.ParkingSiteEditorDialog;
 import com.alejandro.mtobackoffice.ui.resources.ParkingSitesView;
@@ -8760,5 +8762,80 @@ class ViewLayerTest {
         LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, VehiclesView.ACTIONS_COLUMN), Button.class,
                 spec -> spec.withId("vehicle-activate-" + VEHICLE2)));
         verify(vehicleClient).update(VEHICLE2, MergePatch.of(VehicleUpdateRequest.active(true), 6L));
+    }
+
+    // --- Recursos: tablero de la flota y vehiculo por defecto ------------------------------------------
+
+    /**
+     * El tablero va por via y kp, con el vehiculo para desempatar; la via y el kp de uno remolcado son
+     * los de su portador y la fila dice con quien va. Filtra por EP y via en el servicio, «Actualizar»
+     * vuelve a pedirlo, y registrar donde esta lee antes el vehiculo.
+     */
+    @Test
+    void theFleetBoardGoesByTrackAndKpAndATowedVehicleIsWhereItsCarrierIs() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        VehicleDto carrier = vehicle(VEHICLE2, "DR-02", RAIL_MODEL, location(VehicleLocationKind.ON_TRACK, 12L, "10.5", null, null), true);
+        VehicleLocationDto towedAt = location(VehicleLocationKind.ATTACHED, null, null, carrier.summary(), null);
+        stubVehicles(List.of(vehicle(VEHICLE1, "PL-01", RAIL_MODEL, towedAt, true), carrier));
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(), 0, 200));
+        when(vehicleClient.positions(any(), any(), any(), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(
+                new FleetPositionDto(carrier.summary(), VehicleOperationalStatus.OPERATIONAL, true, carrier.position(), null),
+                new FleetPositionDto(new VehicleSummaryDto(VEHICLE1, "PL-01", "Vehiculo PL-01", VehicleMobility.RAIL_ONLY, VehicleCategory.RAIL_WAGON),
+                        VehicleOperationalStatus.OPERATIONAL, true, towedAt, carrier.position())), 0, 50));
+
+        UI.getCurrent().navigate(HomeView.class);
+        assertTrue(menuLabels().contains("Tablero de la flota"), menuLabels().toString());
+        UI.getCurrent().navigate(ResourcesRoutes.BOARD);
+        Grid<Object> grid = gridWithId("board-grid");
+        assertEquals(List.of("VIA 1 (EP 4)", "10.5", "DR-02 · Vehiculo DR-02", "Solo via", "En via", "", "Operativo"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 7));
+        assertEquals(List.of("VIA 1 (EP 4)", "10.5", "PL-01 · Vehiculo PL-01", "Solo via", "Remolcado por DR-02"),
+                GridKt._getFormattedRow(grid, 1).subList(0, 5), "uno remolcado esta donde su portador");
+        verify(vehicleClient, atLeastOnce()).positions(null, null, null, 0, 50, VehicleClient.BY_TRACK_AND_KP);
+
+        LocatorJ._setValue(comboWithId("board-package"), new RefItem(4L, "EP 4"));
+        ComboBox<RefItem> track = comboWithId("board-track");
+        assertEquals(List.of("VIA 1 (EP 4)"), ComboBoxKt.getSuggestionItems(track).stream().map(RefItem::label).toList(), "las vias del EP");
+        LocatorJ._setValue(track, new RefItem(12L, "VIA 1 (EP 4)"));
+        GridKt._size(grid);
+        verify(vehicleClient, atLeastOnce()).positions(4L, 12L, null, 0, 50, VehicleClient.BY_TRACK_AND_KP);
+        clearInvocations(vehicleClient);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("board-refresh")));
+        GridKt._size(grid);
+        verify(vehicleClient, atLeastOnce()).positions(4L, 12L, null, 0, 50, VehicleClient.BY_TRACK_AND_KP);
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, FleetBoardView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("board-locate-" + VEHICLE1)));
+        verify(vehicleClient).findById(VEHICLE1);
+        LocatorJ._get(VehicleLocationDialog.class);
+    }
+
+    /** El vehiculo por defecto de un equipo se elige en su editor y viaja en el merge-patch; vaciarlo viaja a null. */
+    @Test
+    void aTeamCarriesItsDefaultVehicleAndItIsEmptiedByPatch() {
+        loginAs("recursos.gestor", RESOURCES_MANAGER);
+        stubOrganization(true);
+        OrganizationUnitDto withVehicle = new OrganizationUnitDto(TEAM_UNIT, "A", "Equipo A", OrganizationUnitKind.TEAM, WorkDiscipline.MAINTENANCE,
+                new UnitSummaryDto(SUPERVISION_UNIT, "SUP-N", "Supervision norte", OrganizationUnitKind.SUPERVISION), LEADER, Set.of(4L, 5L),
+                new VehicleSummaryDto(VEHICLE1, "DR-01", "Dresina 1", VehicleMobility.RAIL_ONLY, VehicleCategory.CATENARY_TOWER_CAR), linemen(2), 2,
+                true, null, null, true, 7L);
+        when(organizationClient.findById(TEAM_UNIT)).thenReturn(withVehicle);
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(linemen(2));
+        when(organizationClient.update(any(), any())).thenReturn(withVehicle);
+        stubVehicles(List.of(vehicle(VEHICLE2, "DR-02", RAIL_MODEL, null, true)));
+
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(TEAM_UNIT));
+        LocatorJ._get(Div.class, spec -> spec.withId("unit-team-summary").withText("Linemen: 2 de 2 a 6 · Completo: Si · Supervisor: - · "
+                + "Jefe de supervisores: - · Vehiculo: DR-01 · Dresina 1"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-edit")));
+        ComboBox<VehicleSummaryDto> vehicle = comboWithId("unit-default-vehicle");
+        assertEquals("DR-01", vehicle.getValue().code());
+        assertEquals(List.of("DR-02"), ComboBoxKt.getSuggestionItems(vehicle).stream().map(VehicleSummaryDto::code).toList());
+        verify(vehicleClient, atLeastOnce()).search(eq(VehicleFilter.availableMatching("")), eq(0), anyInt(), anyList());
+        LocatorJ._setValue(vehicle, null);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        verify(organizationClient).update(TEAM_UNIT, new MergePatch<>(new OrganizationUnitUpdateRequest(null, null, null, null, null, null, null,
+                null), Set.of("defaultVehicleId"), 7L));
     }
 }

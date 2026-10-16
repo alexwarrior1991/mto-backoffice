@@ -7,6 +7,9 @@ import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitUpdateRe
 import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.UnitSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.WorkDiscipline;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
@@ -30,6 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 /**
  * Alta y modificacion de una unidad del organigrama. Lo que decide sin llamar sale del arbol ya
@@ -59,6 +63,7 @@ public class UnitEditorDialog extends Dialog {
     private final ComboBox<PersonSummaryDto> head;
     private final MultiSelectComboBox<PersonSummaryDto> members;
     private final DatePicker joinedOn = new DatePicker("Entran el");
+    private final ComboBox<VehicleSummaryDto> defaultVehicle = new ComboBox<>("Vehiculo por defecto");
 
     /**
      * @param existing la unidad a modificar, o {@code null} para dar una de alta
@@ -101,6 +106,20 @@ public class UnitEditorDialog extends Dialog {
         members.setId("unit-members");
         joinedOn.setId("unit-joined-on");
         joinedOn.setHelperText("Vacio: hoy");
+        defaultVehicle.setId("unit-default-vehicle");
+        defaultVehicle.setItemLabelGenerator(VehicleSummaryDto::label);
+        defaultVehicle.setClearButtonVisible(true);
+        defaultVehicle.setPlaceholder("Escribe su codigo");
+        defaultVehicle.setHelperText("El que copia un turno nuevo del equipo si no se dice otro");
+        defaultVehicle.setItems(query -> {
+            try {
+                return clients.vehicles().search(VehicleFilter.availableMatching(query.getFilter().orElse("")), query.getPage(), query.getPageSize(),
+                        List.of("code,asc")).content().stream().map(VehicleDto::summary);
+            } catch (BackofficeApiException failure) {
+                UiErrors.show(failure);
+                return Stream.empty();
+            }
+        });
 
         binder.forField(code).asRequired(Required.text("El codigo es obligatorio")).bind("code");
         binder.forField(name).asRequired(Required.text("El nombre es obligatorio")).bind("name");
@@ -120,8 +139,9 @@ public class UnitEditorDialog extends Dialog {
                 .withValidator(this::membersValid, "Un equipo nace con 2 a 6 linemen, sin su jefe entre ellos")
                 .bind("memberPersonIds");
         binder.forField(joinedOn).bind("joinedOn");
+        binder.forField(defaultVehicle).bind("defaultVehicleId");
 
-        FormLayout layout = new FormLayout(code, name, kind, parent, discipline, head, packagesField());
+        FormLayout layout = new FormLayout(code, name, kind, parent, discipline, head, packagesField(), defaultVehicle);
         if (creating) {
             layout.add(members, joinedOn);
         }
@@ -191,6 +211,7 @@ public class UnitEditorDialog extends Dialog {
         members.setVisible(team && existing == null);
         members.setRequiredIndicatorVisible(team);
         joinedOn.setVisible(team && existing == null);
+        defaultVehicle.setVisible(team);
         parentChanged();
         countMembers();
     }
