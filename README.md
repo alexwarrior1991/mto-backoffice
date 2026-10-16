@@ -111,8 +111,9 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   republicar los datos maestros. Lanzar es una llamada que responde 202 con el trabajo, o **429 con
   el trabajo ya rechazado** y un `Retry-After` cuando no hay cupo: se apunta igual, como rechazado,
   y se dice cuándo reintentar. Seguirlos es lo que hace `@Push`: mientras la pantalla está abierta
-  y hay algo en curso, un hilo compartido vuelve a pedir la página cada dos segundos y lleva el
-  progreso al navegador con `UI.access()`. El fichero de un trabajo (el CSV, o el informe JSON de
+  y hay algo en curso, un reloj compartido vuelve a pedir la página cada dos segundos y lleva el
+  progreso al navegador con `UI.access()`. Con los hilos virtuales, cada pasada corre en su propio
+  hilo: una pantalla cuyo gateway tarda no retrasa la de las demás. El fichero de un trabajo (el CSV, o el informe JSON de
   una importación, disponible también cuando terminó con errores) se descarga **a través de esta
   aplicación**, con el token de la persona: el navegador nunca habla con el gateway. La lista es
   la del servicio (`GET /jobs`, añadido en `mto-configuration` para esto): todas las familias, del
@@ -431,6 +432,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 | `MTO_GATEWAY_URL` | El gateway | `http://localhost:8090` |
 | `MTO_FRONTEND_URL` | La SPA `mto-frontend`, para «Abrir en mto-frontend» (vacío: la barra no lo ofrece) | vacío (`dev`: `http://localhost:4200`) |
 | `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP | `2s` / `15s` |
+| `SPRING_THREADS_VIRTUAL_ENABLED` | Hilos virtuales: Tomcat, las tareas de Vaadin y cada pasada del sondeo compartido | `true` |
 
 `.env.example` las recoge todas. Perfiles: `dev` (8085, abre el navegador, secreto local), `test`
 (nadie escucha en Keycloak ni en el gateway) y `prod` (realm, secreto y gateway obligatorios).

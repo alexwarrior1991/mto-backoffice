@@ -81,6 +81,7 @@ import com.alejandro.mtobackoffice.ui.notification.NotificationRoutes;
 import com.alejandro.mtobackoffice.ui.notification.NotificationsView;
 import com.alejandro.mtobackoffice.ui.users.UserAttributes;
 import com.alejandro.mtobackoffice.ui.support.PageVisibility;
+import com.alejandro.mtobackoffice.ui.support.SharedPolling;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.alejandro.mtobackoffice.ui.users.UsersView;
 import com.alejandro.mtobackoffice.client.dto.stock.CatalogueRequest;
@@ -317,6 +318,11 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import org.springframework.mock.env.MockEnvironment;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -1320,6 +1326,74 @@ class ViewLayerTest {
         assertTrue(LocatorJ._find(dialog, Svg.class).isEmpty(), "sin perfiles no se dibuja nada");
         assertEquals("0 perfiles · 0 mensulas · 0 seccionadores · 0 aisladores · sin estaciones · via inactiva",
                 LocatorJ._get(dialog, Span.class, spec -> spec.withId(TrackSchematicDialog.SUMMARY_ID)).getText());
+    }
+
+    /**
+     * Con los hilos virtuales, cada pasada del sondeo compartido corre en su propio hilo virtual: una
+     * pantalla cuyo gateway tarda no retrasa la de las demas, y la suya no se pisa consigo misma (sus
+     * tics se saltan mientras la anterior espera, y vuelve cuando termina).
+     */
+    @Test
+    void theSharedPollingRunsEachScreenOnItsOwnVirtualThreadSoASlowOneHoldsNoOtherBack() throws Exception {
+        SharedPolling polling = new SharedPolling(new MockEnvironment().withProperty("spring.threads.virtual.enabled", "true"));
+        CountDownLatch slowStarted = new CountDownLatch(1);
+        CountDownLatch slowAgain = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch fastRanThreeTimes = new CountDownLatch(3);
+        AtomicInteger slowRuns = new AtomicInteger();
+        AtomicInteger inFlight = new AtomicInteger();
+        AtomicInteger maxInFlight = new AtomicInteger();
+        AtomicReference<Thread> slowThread = new AtomicReference<>();
+        try {
+            polling.every(Duration.ofMillis(10), () -> {
+                maxInFlight.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
+                slowThread.set(Thread.currentThread());
+                slowRuns.incrementAndGet();
+                slowStarted.countDown();
+                slowAgain.countDown();
+                try {
+                    release.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    inFlight.decrementAndGet();
+                }
+            });
+            assertTrue(slowStarted.await(5, TimeUnit.SECONDS));
+            polling.every(Duration.ofMillis(10), fastRanThreeTimes::countDown);
+
+            assertTrue(fastRanThreeTimes.await(5, TimeUnit.SECONDS), "la pasada que espera no retrasa la de otra pantalla");
+            assertEquals(1, slowRuns.get(), "mientras espera, sus tics se saltan");
+            assertTrue(slowThread.get().isVirtual(), slowThread.get().getName());
+            assertTrue(slowThread.get().getName().startsWith("shared-polling-"), slowThread.get().getName());
+
+            release.countDown();
+            assertTrue(slowAgain.await(5, TimeUnit.SECONDS), "al terminar, vuelve a su ritmo");
+            assertEquals(1, maxInFlight.get(), "nunca dos pasadas de la misma pantalla a la vez");
+        } finally {
+            release.countDown();
+            polling.shutdown();
+        }
+    }
+
+    /** Sin hilos virtuales, las pasadas corren en el hilo del reloj, una detras de otra, como antes. */
+    @Test
+    void withoutVirtualThreadsTheSharedPollingRunsOnItsClockThread() throws Exception {
+        SharedPolling polling = new SharedPolling(new MockEnvironment().withProperty("spring.threads.virtual.enabled", "false"));
+        AtomicReference<Thread> thread = new AtomicReference<>();
+        CountDownLatch ran = new CountDownLatch(1);
+        try {
+            polling.every(Duration.ofMillis(10), () -> {
+                thread.set(Thread.currentThread());
+                ran.countDown();
+            });
+
+            assertTrue(ran.await(5, TimeUnit.SECONDS));
+            assertFalse(thread.get().isVirtual());
+            assertEquals("shared-polling", thread.get().getName());
+        } finally {
+            polling.shutdown();
+        }
     }
 
     /** El reparto del dibujo, sin Vaadin: espaciado uniforme, el aislador entre sus vecinos por KP, el brazo al lado del poste. */

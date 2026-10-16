@@ -41,6 +41,8 @@ ni de offline.
 
 Entorno local: `cd ../mto-platform && docker compose --profile all up -d && ./keycloak/apply-partials.sh`
 (con `127.0.0.1 auth.mto.local otel.mto.local` en `/etc/hosts`; levanta también `mto-frontend`, en el 4200). Perfiles `dev`, `test`, `prod`.
+Hilos virtuales activos (`SPRING_THREADS_VIRTUAL_ENABLED`): Tomcat, las tareas de Vaadin (el executor de
+tareas de Spring) y cada pasada de `SharedPolling`; con `false`, todo vuelve a hilos de plataforma.
 Puerto **8085** (`dev`); el contenedor escucha en 8080 y se publica en 8085. Usuarios de desarrollo:
 `config.responsable` (todo), `config.lector` (solo lectura), contraseña `local`.
 
@@ -203,8 +205,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (paginado, la más reciente primero; el 404 es «sin historial»); `LazyPanel`, la pestaña que
   pide sus datos al abrirse; `Downloads`, el fichero de un servicio servido a través de esta
   aplicación con `DownloadHandler`, que notifica en la pantalla un fallo; `Formats`, cantidades y
-  fechas; `SharedPolling`, el hilo compartido que vuelve a preguntar al servicio mientras hay una
-  pantalla abierta: los trabajos en curso y el contador de la campana; `PageVisibility`, si la
+  fechas; `SharedPolling`, el reloj compartido que vuelve a preguntar al servicio mientras hay una
+  pantalla abierta: los trabajos en curso y el contador de la campana (un hilo lleva el reloj y, con
+  los hilos virtuales, cada pasada corre en el suyo: una llamada lenta solo retrasa su pantalla, y la
+  pasada de una pantalla nunca se pisa consigo misma); `PageVisibility`, si la
   pestaña del navegador se ve, para no preguntar con ella oculta; `TextMatching`, el orden natural
   y la comparación sin mayúsculas ni tildes de una lista que ya está entera en pantalla;
   `Required`, lo obligatorio que no admite solo espacios; `LazyPages`, la lista paginada en el
