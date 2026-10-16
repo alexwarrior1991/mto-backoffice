@@ -26,6 +26,12 @@ import com.alejandro.mtobackoffice.client.dto.master.StationDto;
 import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
 import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.provider.SortDirection;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonEmployer;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonUpdateRequest;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
@@ -33,6 +39,7 @@ import com.alejandro.mtobackoffice.client.error.ServiceUnavailableApiException;
 import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
 import com.alejandro.mtobackoffice.client.error.TooManyRequestsApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
+import com.alejandro.mtobackoffice.client.resources.PersonClient;
 import com.alejandro.mtobackoffice.configuration.client.GatewayClientConfiguration;
 import com.alejandro.mtobackoffice.configuration.client.UserTokenProvider;
 import com.alejandro.mtobackoffice.configuration.security.CurrentPrincipal;
@@ -260,6 +267,7 @@ class ClientLayerTest {
     private DefectClient defectClient;
     private ReportClient reportClient;
     private NotificationClient notificationClient;
+    private PersonClient personClient;
 
     @BeforeEach
     void setUp() {
@@ -295,6 +303,7 @@ class ClientLayerTest {
         defectClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(DefectClient.class);
         reportClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ReportClient.class);
         notificationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(NotificationClient.class);
+        personClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(PersonClient.class);
     }
 
     @AfterEach
@@ -2929,6 +2938,97 @@ class ClientLayerTest {
         assertEquals("Unknown sort property 'payload'", invalid.getProblem().detail());
         assertFalse(invalid.getProblem().hasFieldErrors());
         assertEquals("corr-n2", invalid.getReference());
+        server.verify();
+    }
+
+    // --- Recursos (mto-resources) -----------------------------------------------------------------
+
+    private static final String RESOURCES = GATEWAY + "/api/resources";
+    private static final String PERSON_ID = "3c4d5e6f-0000-4000-8000-000000000001";
+
+    private static String personJson(String id, String code, String category, boolean active) {
+        return "{\"id\":\"" + id + "\",\"code\":\"" + code + "\",\"employeeNumber\":\"E-1042\",\"firstName\":\"Yossi\","
+                + "\"lastName\":\"Cohen\",\"fullName\":\"Yossi Cohen\",\"username\":\"equipo.jefe\",\"keycloakUserId\":null,"
+                + "\"category\":\"" + category + "\",\"employer\":\"SUBCONTRACTOR\",\"company\":\"Catenarias del Norte\","
+                + "\"phone\":\"+972 50 000 0000\",\"active\":" + active + ",\"version\":3,\"audit\":null}";
+    }
+
+    /**
+     * Personas: la busqueda con la categoria repetida (cualquiera de ellas, en el orden del enumerado),
+     * la unidad y el estado, con el id para desempatar; el alta sin lo vacio; la modificacion con lo
+     * cambiado, lo vaciado a {@code null} y la version; la reactivacion; la baja con un {@code DELETE};
+     * el historial. Una categoria nueva se lee como {@code UNKNOWN}.
+     */
+    @Test
+    void peopleAreSearchedByRepeatedCategoryCreatedPatchedDeactivatedAndReactivated() {
+        UUID unitId = UUID.fromString("4d5e6f70-0000-4000-8000-000000000002");
+        server.expect(requestTo(RESOURCES + "/people?search=cohen&category=WORKER&category=TEAM_LEADER&unitId=" + unitId
+                        + "&active=true&page=0&size=50&sort=lastName%2Casc&sort=firstName%2Casc&sort=id%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(personJson(PERSON_ID, "PER-000003", "TEAM_LEADER", true) + ","
+                        + personJson("3c4d5e6f-0000-4000-8000-000000000002", "PER-000004", "SAFETY_OFFICER", false), 0, 50, 2),
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/people")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"firstName\":\"Yossi\",\"lastName\":\"Cohen\",\"category\":\"WORKER\",\"employer\":\"OWN\"}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(personJson(PERSON_ID, "PER-000003", "WORKER", true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/people/" + PERSON_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"category\":\"SUPERVISOR\",\"phone\":null,\"version\":3}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(personJson(PERSON_ID, "PER-000003", "SUPERVISOR", true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/people/" + PERSON_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(RESOURCES + "/people/" + PERSON_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"active\":true,\"version\":4}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(personJson(PERSON_ID, "PER-000003", "SUPERVISOR", true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/people/" + PERSON_ID + "/revisions?page=0&size=20")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(maintenanceRevision(2, "UPDATED", "HTTP", personJson(PERSON_ID, "PER-000003", "SUPERVISOR", true)),
+                        0, 20, 1), MediaType.APPLICATION_JSON));
+
+        PageResponse<PersonDto> page = asUser(() -> personClient.search(new PersonFilter(" cohen ",
+                Set.of(PersonCategory.TEAM_LEADER, PersonCategory.WORKER), unitId, true), 0, 50, List.of("lastName,asc", "firstName,asc")));
+        PersonDto created = asUser(() -> personClient.create(new PersonRequest("Yossi", "Cohen", PersonCategory.WORKER, null, null,
+                PersonEmployer.OWN, null, null)));
+        asUser(() -> personClient.update(UUID.fromString(PERSON_ID), new MergePatch<>(
+                new PersonUpdateRequest(null, null, PersonCategory.SUPERVISOR, null, null, null, null, null, null), Set.of("phone"), 3L)));
+        asUser(() -> {
+            personClient.deactivate(UUID.fromString(PERSON_ID));
+            return null;
+        });
+        asUser(() -> personClient.update(UUID.fromString(PERSON_ID), MergePatch.of(PersonUpdateRequest.active(true), 4L)));
+        PageResponse<RevisionDto<PersonDto>> revisions = asUser(() -> personClient.revisions(UUID.fromString(PERSON_ID), 0, 20));
+
+        PersonDto leader = page.content().getFirst();
+        assertEquals("PER-000003 · Yossi Cohen", leader.label());
+        assertEquals(PersonCategory.TEAM_LEADER, leader.category());
+        assertEquals(PersonEmployer.SUBCONTRACTOR, leader.employer());
+        assertEquals("Catenarias del Norte", leader.company());
+        assertEquals(3L, leader.version());
+        assertEquals(PersonCategory.UNKNOWN, page.content().get(1).category(), "una categoria nueva se lee como desconocida");
+        assertFalse(page.content().get(1).isActive());
+        assertEquals(PersonCategory.WORKER, created.category());
+        assertEquals(PersonCategory.SUPERVISOR, revisions.content().getFirst().entity().category());
+        assertEquals(List.of(PersonCategory.TEAM_LEADER, PersonCategory.SUPERVISOR, PersonCategory.CHIEF_SUPERVISOR,
+                PersonCategory.CHIEF_MAINTENANCE, PersonCategory.CHIEF_CONSTRUCTION, PersonCategory.PROJECT_MANAGER), PersonCategory.atLeast(2));
+        server.verify();
+    }
+
+    /** El 409 de un usuario repetido de mto-resources llega con la misma forma que los de mantenimiento. */
+    @Test
+    void aRepeatedUsernameIsAConflictOfTheResourcesServiceReadByAlias() {
+        server.expect(requestTo(RESOURCES + "/people")).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON).header("X-Correlation-Id", "corr-r1")
+                        .body("{\"timestamp\":\"2026-10-16T06:07:00Z\",\"status\":409,\"error\":\"CONFLICT\","
+                                + "\"message\":\"Username equipo.jefe is already in use\",\"path\":\"/api/v1/resources/people\",\"method\":\"POST\","
+                                + "\"errorCode\":\"PER-409\",\"correlationId\":\"corr-r1\",\"validationErrors\":[]}"));
+
+        ConflictApiException conflict = assertThrows(ConflictApiException.class, () -> asUser(() -> personClient.create(
+                new PersonRequest("Otra", "Persona", PersonCategory.WORKER, null, "equipo.jefe", PersonEmployer.OWN, null, null))));
+
+        assertEquals("PER-409", conflict.getProblem().code());
+        assertEquals("Username equipo.jefe is already in use", conflict.getProblem().detail());
+        assertEquals("corr-r1", conflict.getReference());
         server.verify();
     }
 }

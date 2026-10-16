@@ -27,6 +27,12 @@ import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
 import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
 import com.alejandro.mtobackoffice.client.dto.master.StationDto;
 import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonEmployer;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.users.ClientDto;
 import com.alejandro.mtobackoffice.client.dto.users.ClientRoleAssignmentDto;
 import com.alejandro.mtobackoffice.client.dto.users.ClientRoleDto;
@@ -38,6 +44,11 @@ import com.alejandro.mtobackoffice.client.dto.users.RoleNamesRequest;
 import com.alejandro.mtobackoffice.client.dto.users.UserCredentialDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
+import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.ui.resources.PeopleView;
+import com.alejandro.mtobackoffice.ui.resources.PersonEditorDialog;
+import com.alejandro.mtobackoffice.ui.resources.ResourcesRoutes;
+import com.alejandro.mtobackoffice.ui.support.RevisionsDialog;
 import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.alejandro.mtobackoffice.ui.maintenance.CheckItemsDialog;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
@@ -450,6 +461,8 @@ class ViewLayerTest {
     private ReportClient reportClient;
     @MockitoBean
     private NotificationClient notificationClient;
+    @MockitoBean
+    private PersonClient personClient;
 
     @BeforeEach
     void setUp() {
@@ -7625,5 +7638,194 @@ class ViewLayerTest {
         assertEquals("", LocatorJ._get(TextField.class, spec -> spec.withId("access-username")).getValue());
         assertEquals("10.0.0.9", LocatorJ._get(TextField.class, spec -> spec.withId("access-ip")).getValue());
         assertNull(LocatorJ._get(ComboBox.class, spec -> spec.withId("access-outcome")).getValue());
+    }
+
+    // --- Recursos: personal ----------------------------------------------------------------------
+
+    private static final String[] RESOURCES_READER = {"ROLE_RESOURCES_READ", "ROLE_CONFIG_READ", "ROLE_NOTIFICATION_INBOX",
+            "ROLE_REALM_MTO_RESOURCES_VIEWER"};
+    private static final String[] RESOURCES_MANAGER = {"ROLE_RESOURCES_READ", "ROLE_RESOURCES_WRITE", "ROLE_RESOURCES_FLEET_WRITE",
+            "ROLE_RESOURCES_LOCATION_WRITE", "ROLE_CONFIG_READ", "ROLE_NOTIFICATION_INBOX", "ROLE_REALM_MTO_RESOURCES_MANAGER"};
+    private static final String[] RESOURCES_ADMIN = {"ROLE_RESOURCES_READ", "ROLE_RESOURCES_WRITE", "ROLE_RESOURCES_FLEET_WRITE",
+            "ROLE_RESOURCES_LOCATION_WRITE", "ROLE_RESOURCES_DELETE", "ROLE_CONFIG_READ", "ROLE_NOTIFICATION_INBOX"};
+    private static final UUID PERSON1 = UUID.fromString("3c4d5e6f-0000-4000-8000-000000000001");
+    private static final UUID PERSON2 = UUID.fromString("3c4d5e6f-0000-4000-8000-000000000002");
+
+    private static PersonDto person(UUID id, String code, String first, String last, PersonCategory category, boolean active) {
+        return new PersonDto(id, code, "E-" + code.substring(4), first, last, first + " " + last, null, category, PersonEmployer.OWN, null,
+                "+972 50 000 0000", active, 2L);
+    }
+
+    private void stubPeople(List<PersonDto> all) {
+        doAnswer(call -> page(all, call.getArgument(1), call.getArgument(2)))
+                .when(personClient).search(any(PersonFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    @Test
+    void theResourcesGroupShowsWithResourcesRead() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        UI.getCurrent().navigate(HomeView.class);
+        assertTrue(menuLabels().containsAll(List.of("Recursos", "Personal")), menuLabels().toString());
+    }
+
+    @Test
+    void withoutResourcesReadThereIsNoResourcesGroupAndARealmRoleOpensNothing() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        UI.getCurrent().navigate(HomeView.class);
+        assertFalse(menuLabels().contains("Recursos"), menuLabels().toString());
+        assertFalse(menuLabels().contains("Personal"), menuLabels().toString());
+
+        loginAs("recursos.impostor", "ROLE_REALM_RESOURCES_READ", "ROLE_REALM_MTO_POSITION_TEAM_LEADER");
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(ResourcesRoutes.PEOPLE));
+        assertTrue(LocatorJ._find(PeopleView.class).isEmpty());
+        verify(personClient, never()).search(any(PersonFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    /** La lista se pide al servicio con sus filtros (la categoria, cualquiera de las elegidas) y quien solo lee ve solo el historial. */
+    @Test
+    void thePeopleAreSearchedAndFilteredInTheServerAndAReaderOnlySeesTheHistory() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubPeople(List.of(person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.TEAM_LEADER, true),
+                person(PERSON2, "PER-000004", "Dana", "Levi", PersonCategory.WORKER, false)));
+
+        UI.getCurrent().navigate(ResourcesRoutes.PEOPLE);
+
+        Grid<Object> grid = gridWithId("people-grid");
+        assertEquals(List.of("PER-000003", "Yossi Cohen", "Jefe de equipo", "Propio", "", "E-000003", "+972 50 000 0000", "Activa"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 8));
+        assertEquals("Inactiva", GridKt._getFormattedRow(grid, 1).get(7));
+        verify(personClient, atLeastOnce()).search(eq(PersonFilter.NONE), eq(0), anyInt(), eq(List.of("lastName,asc", "firstName,asc")));
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("people-search")), "cohen");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<PersonCategory> categories = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("people-categories"));
+        LocatorJ._setValue(categories, Set.of(PersonCategory.WORKER, PersonCategory.TEAM_LEADER));
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("people-state")), EnabledFilter.ENABLED);
+        GridKt._size(grid);
+        verify(personClient, atLeastOnce()).search(eq(new PersonFilter("cohen", Set.of(PersonCategory.WORKER, PersonCategory.TEAM_LEADER),
+                null, true)), eq(0), anyInt(), anyList());
+
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("person-create")).isEmpty(), "sin resources-write no hay alta");
+        assertEquals(List.of("person-history-" + PERSON1), LocatorJ._find(GridKt._getCellComponent(grid, 0, PeopleView.ACTIONS_COLUMN),
+                Button.class).stream().map(button -> button.getId().orElse("")).toList(), "quien solo lee ve el historial y nada mas");
+    }
+
+    /**
+     * El alta exige lo evidente antes de llamar (una subcontrata dice su empresa) y un error del
+     * servicio cae en su campo con el dialogo abierto; viaja solo lo escrito.
+     */
+    @Test
+    void aPersonIsCreatedWithItsCompanyIfSubcontractedAndTheServiceErrorsFallInTheirFields() {
+        loginAs("recursos.gestor", RESOURCES_MANAGER);
+        stubPeople(List.of());
+        when(personClient.create(any()))
+                .thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, new ApiProblem(null, "BAD_REQUEST", 400, "Validation failed", null,
+                        "REQ-VALIDATION", null, null, null, false, List.of(new ApiFieldError("username", null, "size must be between 0 and 100")),
+                        null), "corr-r2", null, "POST /api/resources/people"))
+                .thenReturn(person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.WORKER, true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.PEOPLE);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("person-create")));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("person-first-name")), " Yossi ");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("person-last-name")), "Cohen");
+        LocatorJ._setValue(comboWithId("person-category"), PersonCategory.WORKER);
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("person-employer")), PersonEmployer.SUBCONTRACTOR);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(PersonEditorDialog.SAVE_ID)));
+
+        verify(personClient, never()).create(any());
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("person-company")).isInvalid(), "una subcontrata dice su empresa");
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("person-company")), "Catenarias del Norte");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("person-username")), "equipo.nuevo");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(PersonEditorDialog.SAVE_ID)));
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("person-username")).isInvalid(), "el error del servicio, en su campo");
+        assertFalse(LocatorJ._find(PersonEditorDialog.class).isEmpty(), "el dialogo sigue abierto con lo escrito");
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(PersonEditorDialog.SAVE_ID)));
+        verify(personClient, times(2)).create(new PersonRequest("Yossi", "Cohen", PersonCategory.WORKER, null, "equipo.nuevo",
+                PersonEmployer.SUBCONTRACTOR, "Catenarias del Norte", null));
+        assertTrue(LocatorJ._find(PersonEditorDialog.class).isEmpty());
+    }
+
+    /** Modificar manda lo cambiado, lo vaciado y la version leida; una version vieja deja el dialogo abierto y pide recargar. */
+    @Test
+    void aPersonIsPatchedWithWhatChangedAndAStaleVersionKeepsTheDialogOpen() {
+        loginAs("recursos.gestor", RESOURCES_MANAGER);
+        PersonDto yossi = person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.WORKER, true);
+        stubPeople(List.of(yossi));
+        when(personClient.update(any(), any()))
+                .thenThrow(maintenanceError(409, "CON-001", "Person PER-000003 was changed by someone else"))
+                .thenReturn(yossi);
+
+        UI.getCurrent().navigate(ResourcesRoutes.PEOPLE);
+        Grid<Object> grid = gridWithId("people-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-edit-" + PERSON1)));
+        LocatorJ._setValue(comboWithId("person-category"), PersonCategory.TEAM_LEADER);
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("person-phone")), "  ");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(PersonEditorDialog.SAVE_ID)));
+
+        MergePatch<PersonUpdateRequest> expected = new MergePatch<>(new PersonUpdateRequest(null, null, PersonCategory.TEAM_LEADER, null,
+                null, null, null, null, null), Set.of("phone"), 2L);
+        verify(personClient).update(PERSON1, expected);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Conflicto con otro cambio: recarga y vuelve a intentarlo."));
+        assertFalse(LocatorJ._find(PersonEditorDialog.class).isEmpty(), "el dialogo sigue abierto con lo escrito");
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(PersonEditorDialog.SAVE_ID)));
+        verify(personClient, times(2)).update(PERSON1, expected);
+        assertTrue(LocatorJ._find(PersonEditorDialog.class).isEmpty());
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-edit-" + PERSON1)));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(PersonEditorDialog.SAVE_ID)));
+        verify(personClient, times(2)).update(any(), any());
+        assertTrue(LocatorJ._find(PersonEditorDialog.class).isEmpty(), "sin cambios se cierra sin llamar");
+    }
+
+    /**
+     * Desactivar pide resources-delete y confirmacion, y la regla de 2 a 6 la dice el servicio;
+     * reactivar es un PATCH active=true con resources-write. El historial se abre desde la fila.
+     */
+    @Test
+    void aPersonIsDeactivatedWithConfirmationReactivatedByPatchAndItsHistoryOpensFromTheRow() {
+        loginAs("recursos.responsable", RESOURCES_ADMIN);
+        stubPeople(List.of(person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.WORKER, true),
+                person(PERSON2, "PER-000004", "Dana", "Levi", PersonCategory.WORKER, false)));
+        doThrow(maintenanceError(409, "UNI-001", "Team EQ-NORTE would have 1 linemen: between 2 and 6")).doNothing()
+                .when(personClient).deactivate(PERSON1);
+        when(personClient.update(any(), any())).thenReturn(person(PERSON2, "PER-000004", "Dana", "Levi", PersonCategory.WORKER, true));
+        when(personClient.revisions(PERSON1, 0, RevisionsDialog.PAGE_SIZE)).thenReturn(page(List.of(new RevisionDto<>(
+                new RevisionMetadataDto(4L, Instant.parse("2026-10-16T06:00:00Z"), RevisionOperation.UPDATED, "recursos.gestor", "HTTP",
+                        "c-4"), person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.TEAM_LEADER, true))), 0, RevisionsDialog.PAGE_SIZE));
+
+        UI.getCurrent().navigate(ResourcesRoutes.PEOPLE);
+        Grid<Object> grid = gridWithId("people-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-deactivate-" + PERSON1)));
+        verify(personClient, never()).deactivate(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("El organigrama no admite ese cambio. Team EQ-NORTE would have 1 linemen: between 2 and 6"));
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-deactivate-" + PERSON1)));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(personClient, times(2)).deactivate(PERSON1);
+
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 1, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-deactivate-" + PERSON2)).isEmpty(), "una inactiva no se desactiva otra vez");
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-activate-" + PERSON2)));
+        verify(personClient).update(PERSON2, MergePatch.of(PersonUpdateRequest.active(true), 2L));
+        NotificationsKt.expectNotifications("Reactivada PER-000004 · Dana Levi");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-history-" + PERSON1)));
+        Grid<Object> revisions = gridWithId("revisions-grid");
+        assertEquals(1, GridKt._size(revisions));
+        assertEquals("Yossi Cohen · Jefe de equipo · Propio · activa", GridKt._getFormattedRow(revisions, 0).get(5),
+                "como quedo la persona en esa revision");
+        verify(personClient, atLeastOnce()).revisions(PERSON1, 0, RevisionsDialog.PAGE_SIZE);
     }
 }
