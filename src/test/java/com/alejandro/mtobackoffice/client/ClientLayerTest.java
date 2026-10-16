@@ -26,12 +26,22 @@ import com.alejandro.mtobackoffice.client.dto.master.StationDto;
 import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
 import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.provider.SortDirection;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationTreeNodeDto;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitDto;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitKind;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonEmployer;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonFilter;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberDto;
+import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberLeaveRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.TeamMembersRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.WorkDiscipline;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
@@ -39,6 +49,7 @@ import com.alejandro.mtobackoffice.client.error.ServiceUnavailableApiException;
 import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
 import com.alejandro.mtobackoffice.client.error.TooManyRequestsApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
+import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
 import com.alejandro.mtobackoffice.configuration.client.GatewayClientConfiguration;
 import com.alejandro.mtobackoffice.configuration.client.UserTokenProvider;
@@ -268,6 +279,7 @@ class ClientLayerTest {
     private ReportClient reportClient;
     private NotificationClient notificationClient;
     private PersonClient personClient;
+    private OrganizationClient organizationClient;
 
     @BeforeEach
     void setUp() {
@@ -304,6 +316,7 @@ class ClientLayerTest {
         reportClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ReportClient.class);
         notificationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(NotificationClient.class);
         personClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(PersonClient.class);
+        organizationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(OrganizationClient.class);
     }
 
     @AfterEach
@@ -3030,5 +3043,151 @@ class ClientLayerTest {
         assertEquals("Username equipo.jefe is already in use", conflict.getProblem().detail());
         assertEquals("corr-r1", conflict.getReference());
         server.verify();
+    }
+
+    private static final String UNIT_TEAM_ID = "5e6f7081-0000-4000-8000-000000000001";
+    private static final String SUPERVISION_ID = "5e6f7081-0000-4000-8000-000000000002";
+    private static final String LINEMAN_A = "3c4d5e6f-0000-4000-8000-00000000000a";
+    private static final String LINEMAN_B = "3c4d5e6f-0000-4000-8000-00000000000b";
+
+    private static String personSummary(String id, String code, String name, String category) {
+        return "{\"id\":\"" + id + "\",\"code\":\"" + code + "\",\"fullName\":\"" + name + "\",\"username\":null,\"category\":\"" + category + "\"}";
+    }
+
+    private static String teamJson(int linemen, boolean active) {
+        StringBuilder members = new StringBuilder();
+        for (int i = 0; i < linemen; i++) {
+            members.append(i == 0 ? "" : ",").append("{\"id\":\"6f708192-0000-4000-8000-00000000000").append(i)
+                    .append("\",\"person\":").append(personSummary("3c4d5e6f-0000-4000-8000-00000000001" + i, "PER-00001" + i,
+                            "Lineman " + i, "WORKER")).append(",\"joinedOn\":\"2026-10-01\",\"leftOn\":null}");
+        }
+        return "{\"id\":\"" + UNIT_TEAM_ID + "\",\"code\":\"A\",\"name\":\"Equipo A\",\"kind\":\"TEAM\",\"discipline\":\"MAINTENANCE\","
+                + "\"parent\":{\"id\":\"" + SUPERVISION_ID + "\",\"code\":\"SUP-N\",\"name\":\"Supervision norte\",\"kind\":\"SUPERVISION\"},"
+                + "\"head\":" + personSummary(PERSON_ID, "PER-000003", "Yossi Cohen", "TEAM_LEADER") + ",\"executionPackageIds\":[6,4,5],"
+                + "\"defaultVehicle\":{\"id\":\"7a8b9c0d-0000-4000-8000-000000000001\",\"code\":\"DR-01\",\"name\":\"Dresina 1\","
+                + "\"mobility\":\"RAIL_ONLY\",\"category\":\"CATENARY_TOWER_CAR\"},\"members\":[" + members + "],\"linemen\":" + linemen
+                + ",\"complete\":" + (linemen >= 2) + ",\"supervisor\":" + personSummary("3c4d5e6f-0000-4000-8000-000000000020", "PER-000020",
+                "Dana Levi", "SUPERVISOR") + ",\"chiefSupervisor\":null,\"active\":" + active + ",\"version\":7,\"audit\":null}";
+    }
+
+    /**
+     * El organigrama: el arbol con las inactivas, una unidad nivel desconocido leido como {@code UNKNOWN},
+     * un equipo con sus linemen, su supervisor y su vehiculo; el alta de un equipo completo sin lo vacio;
+     * la modificacion con los EP como conjunto y el jefe vaciado; las hijas por codigo con el id para
+     * desempatar; la baja; los linemen enteros, uno que entra y uno que sale, cada uno con su fecha; la
+     * reactivacion de un equipo con sus linemen.
+     */
+    @Test
+    void theOrganizationIsReadAsATreeAndATeamChangesItsLinemenWithoutLeavingTheRule() {
+        server.expect(requestTo(RESOURCES + "/units/tree?includeInactive=true")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[{\"id\":\"5e6f7081-0000-4000-8000-000000000009\",\"code\":\"PRJ\",\"name\":\"Proyecto\",\"kind\":\"PROJECT\","
+                        + "\"discipline\":null,\"head\":null,\"executionPackageIds\":[],\"linemen\":null,\"active\":true,\"children\":["
+                        + "{\"id\":\"" + SUPERVISION_ID + "\",\"code\":\"SUP-N\",\"name\":\"Supervision norte\",\"kind\":\"SUPERVISION\","
+                        + "\"discipline\":\"MAINTENANCE\",\"head\":null,\"executionPackageIds\":[4],\"linemen\":null,\"active\":true,\"children\":["
+                        + "{\"id\":\"" + UNIT_TEAM_ID + "\",\"code\":\"A\",\"name\":\"Equipo A\",\"kind\":\"TEAM\",\"discipline\":\"MAINTENANCE\","
+                        + "\"head\":" + personSummary(PERSON_ID, "PER-000003", "Yossi Cohen", "TEAM_LEADER") + ",\"executionPackageIds\":[4,5],"
+                        + "\"linemen\":4,\"active\":false,\"children\":[]}]},"
+                        + "{\"id\":\"5e6f7081-0000-4000-8000-000000000008\",\"code\":\"ZONA\",\"name\":\"Zona\",\"kind\":\"ZONE\",\"discipline\":null,"
+                        + "\"head\":null,\"executionPackageIds\":null,\"linemen\":null,\"active\":true,\"children\":null}]}]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units/" + UNIT_TEAM_ID)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(teamJson(2, true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"B\",\"name\":\"Equipo B\",\"kind\":\"TEAM\",\"discipline\":\"MAINTENANCE\","
+                        + "\"parentId\":\"" + SUPERVISION_ID + "\",\"headPersonId\":\"" + PERSON_ID + "\",\"executionPackageIds\":[9,11],"
+                        + "\"memberPersonIds\":[\"" + LINEMAN_A + "\",\"" + LINEMAN_B + "\"],\"joinedOn\":\"2026-10-16\"}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(teamJson(2, true)));
+        server.expect(requestTo(RESOURCES + "/units")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"SUP-S\",\"name\":\"Supervision sur\",\"kind\":\"SUPERVISION\",\"discipline\":\"MAINTENANCE\","
+                        + "\"parentId\":\"" + SUPERVISION_ID + "\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(teamJson(2, true)));
+        server.expect(requestTo(RESOURCES + "/units/" + SUPERVISION_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"executionPackageIds\":[4,6],\"headPersonId\":null,\"version\":2}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(teamJson(2, true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units?parentId=" + SUPERVISION_ID + "&page=0&size=200&sort=code%2Casc&sort=id%2Casc"))
+                .andExpect(method(HttpMethod.GET)).andRespond(withSuccess(stockPage(teamJson(4, true), 0, 200, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units/" + UNIT_TEAM_ID + "/members")).andExpect(method(HttpMethod.PUT))
+                .andExpect(content().json("{\"memberPersonIds\":[\"" + LINEMAN_A + "\",\"" + LINEMAN_B + "\"],\"effectiveOn\":\"2026-10-20\"}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(teamJson(2, true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units/" + UNIT_TEAM_ID + "/members")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"personId\":\"" + LINEMAN_A + "\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(teamJson(3, true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units/" + UNIT_TEAM_ID + "/members/" + LINEMAN_A + "/leave")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"leftOn\":\"2026-10-21\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(teamJson(2, true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units/" + UNIT_TEAM_ID + "/members?includeFormer=true")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[{\"id\":\"6f708192-0000-4000-8000-0000000000aa\",\"person\":"
+                        + personSummary(LINEMAN_A, "PER-00000A", "Avi Mizrahi", "WORKER") + ",\"joinedOn\":\"2026-10-01\",\"leftOn\":\"2026-10-21\"}]",
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units/" + UNIT_TEAM_ID)).andExpect(method(HttpMethod.DELETE)).andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(RESOURCES + "/units/" + UNIT_TEAM_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"active\":true,\"memberPersonIds\":[\"" + LINEMAN_A + "\",\"" + LINEMAN_B + "\"],\"version\":8}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(teamJson(2, true), MediaType.APPLICATION_JSON));
+
+        List<OrganizationTreeNodeDto> tree = asUser(() -> organizationClient.tree(true));
+        OrganizationUnitDto team = asUser(() -> organizationClient.findById(UUID.fromString(UNIT_TEAM_ID)));
+        UUID supervision = UUID.fromString(SUPERVISION_ID);
+        List<UUID> linemen = List.of(UUID.fromString(LINEMAN_A), UUID.fromString(LINEMAN_B));
+        asUser(() -> organizationClient.create(new OrganizationUnitRequest("B", "Equipo B", OrganizationUnitKind.TEAM, WorkDiscipline.MAINTENANCE,
+                supervision, UUID.fromString(PERSON_ID), new java.util.TreeSet<>(Set.of(9L, 11L)), null, linemen, java.time.LocalDate.of(2026, 10, 16))));
+        asUser(() -> organizationClient.create(new OrganizationUnitRequest("SUP-S", "Supervision sur", OrganizationUnitKind.SUPERVISION,
+                WorkDiscipline.MAINTENANCE, supervision, null, Set.of(), null, List.of(), null)));
+        asUser(() -> organizationClient.update(supervision, new MergePatch<>(new OrganizationUnitUpdateRequest(null, null, null,
+                new java.util.TreeSet<>(Set.of(6L, 4L)), null, null, null, null), Set.of("headPersonId"), 2L)));
+        PageResponse<OrganizationUnitDto> children = asUser(() -> organizationClient.children(supervision, 0, 200));
+        asUser(() -> organizationClient.replaceMembers(team.id(), new TeamMembersRequest(linemen, java.time.LocalDate.of(2026, 10, 20))));
+        asUser(() -> organizationClient.addMember(team.id(), new TeamMemberRequest(linemen.getFirst(), null)));
+        asUser(() -> organizationClient.leave(team.id(), linemen.getFirst(), new TeamMemberLeaveRequest(java.time.LocalDate.of(2026, 10, 21))));
+        List<TeamMemberDto> former = asUser(() -> organizationClient.members(team.id(), true));
+        asUser(() -> {
+            organizationClient.deactivate(team.id());
+            return null;
+        });
+        asUser(() -> organizationClient.update(team.id(), MergePatch.of(OrganizationUnitUpdateRequest.reactivateTeam(linemen, null), 8L)));
+
+        OrganizationTreeNodeDto project = tree.getFirst();
+        assertEquals(OrganizationUnitKind.PROJECT, project.kind());
+        assertEquals(List.of("SUP-N", "ZONA"), project.children().stream().map(OrganizationTreeNodeDto::code).toList());
+        assertEquals(OrganizationUnitKind.UNKNOWN, project.children().get(1).kind(), "un nivel nuevo se lee como desconocido");
+        assertTrue(project.children().get(1).children().isEmpty());
+        OrganizationTreeNodeDto teamNode = project.children().getFirst().children().getFirst();
+        assertEquals(4, teamNode.linemen());
+        assertFalse(teamNode.isActive());
+        assertEquals(Set.of(4L, 5L), teamNode.executionPackageIds());
+        assertTrue(team.isTeam());
+        assertEquals("A · Equipo A", team.label());
+        assertEquals("SUP-N", team.parent().code());
+        assertEquals("PER-000003 · Yossi Cohen", team.head().label());
+        assertEquals("Dana Levi", team.supervisor().fullName());
+        assertEquals("DR-01", team.defaultVehicle().code());
+        assertEquals(2, team.currentMembers().size());
+        assertEquals(7L, team.version());
+        assertEquals(4, children.content().getFirst().linemen());
+        assertFalse(former.getFirst().isCurrent());
+        assertEquals(java.time.LocalDate.of(2026, 10, 21), former.getFirst().leftOn());
+        server.verify();
+    }
+
+    /** Las reglas copiadas del servicio para no ofrecer lo que va a fallar: de quien cuelga cada nivel y quien lo dirige. */
+    @Test
+    void eachLevelHangsFromAHigherOneAndIsLedByItsCategories() {
+        assertTrue(OrganizationUnitKind.TEAM.canHangFrom(OrganizationUnitKind.SUPERVISION));
+        assertTrue(OrganizationUnitKind.TEAM.canHangFrom(OrganizationUnitKind.DEPARTMENT), "se admite saltar niveles");
+        assertFalse(OrganizationUnitKind.TEAM.canHangFrom(OrganizationUnitKind.TEAM));
+        assertFalse(OrganizationUnitKind.SUPERVISION.canHangFrom(OrganizationUnitKind.SUPERVISION));
+        assertFalse(OrganizationUnitKind.PROJECT.canHangFrom(OrganizationUnitKind.PROJECT), "un proyecto no cuelga de nada");
+        assertFalse(OrganizationUnitKind.TEAM.canHangFrom(OrganizationUnitKind.UNKNOWN));
+        assertEquals(List.of(PersonCategory.CHIEF_MAINTENANCE, PersonCategory.PROJECT_MANAGER),
+                OrganizationUnitKind.DEPARTMENT.headCategories(WorkDiscipline.MAINTENANCE));
+        assertEquals(List.of(PersonCategory.CHIEF_CONSTRUCTION, PersonCategory.PROJECT_MANAGER),
+                OrganizationUnitKind.DEPARTMENT.headCategories(WorkDiscipline.CONSTRUCTION));
+        assertEquals(PersonCategory.atLeast(2), OrganizationUnitKind.TEAM.headCategories(WorkDiscipline.MAINTENANCE));
+        assertEquals(List.of(PersonCategory.PROJECT_MANAGER), OrganizationUnitKind.PROJECT.headCategories(null));
+        assertEquals(List.of(), OrganizationUnitKind.UNKNOWN.headCategories(null));
+        assertEquals(List.of(PersonCategory.WORKER, PersonCategory.TEAM_LEADER), OrganizationUnitKind.LINEMAN_CATEGORIES);
     }
 }

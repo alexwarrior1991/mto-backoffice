@@ -27,12 +27,22 @@ import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
 import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
 import com.alejandro.mtobackoffice.client.dto.master.StationDto;
 import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationTreeNodeDto;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitDto;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitKind;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonEmployer;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonFilter;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberDto;
+import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberLeaveRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.UnitSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.WorkDiscipline;
 import com.alejandro.mtobackoffice.client.dto.users.ClientDto;
 import com.alejandro.mtobackoffice.client.dto.users.ClientRoleAssignmentDto;
 import com.alejandro.mtobackoffice.client.dto.users.ClientRoleDto;
@@ -44,10 +54,15 @@ import com.alejandro.mtobackoffice.client.dto.users.RoleNamesRequest;
 import com.alejandro.mtobackoffice.client.dto.users.UserCredentialDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
+import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.ui.resources.OrganizationView;
 import com.alejandro.mtobackoffice.ui.resources.PeopleView;
 import com.alejandro.mtobackoffice.ui.resources.PersonEditorDialog;
 import com.alejandro.mtobackoffice.ui.resources.ResourcesRoutes;
+import com.alejandro.mtobackoffice.ui.resources.TeamMembersDialog;
+import com.alejandro.mtobackoffice.ui.resources.UnitDetailView;
+import com.alejandro.mtobackoffice.ui.resources.UnitEditorDialog;
 import com.alejandro.mtobackoffice.ui.support.RevisionsDialog;
 import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.alejandro.mtobackoffice.ui.maintenance.CheckItemsDialog;
@@ -393,6 +408,8 @@ import static org.mockito.Mockito.when;
 import com.alejandro.mtobackoffice.client.dto.master.TrackSchematicDto;
 import com.alejandro.mtobackoffice.ui.master.SchematicDrawing;
 import com.alejandro.mtobackoffice.ui.master.TrackSchematicDialog;
+import java.util.EnumSet;
+import com.vaadin.flow.component.treegrid.TreeGrid;
 import com.vaadin.flow.component.Svg;
 
 /**
@@ -463,6 +480,8 @@ class ViewLayerTest {
     private NotificationClient notificationClient;
     @MockitoBean
     private PersonClient personClient;
+    @MockitoBean
+    private OrganizationClient organizationClient;
 
     @BeforeEach
     void setUp() {
@@ -7827,5 +7846,411 @@ class ViewLayerTest {
         assertEquals("Yossi Cohen · Jefe de equipo · Propio · activa", GridKt._getFormattedRow(revisions, 0).get(5),
                 "como quedo la persona en esa revision");
         verify(personClient, atLeastOnce()).revisions(PERSON1, 0, RevisionsDialog.PAGE_SIZE);
+    }
+
+    // --- Recursos: organigrama -------------------------------------------------------------------
+
+    private static final UUID PROJECT_UNIT = UUID.fromString("5e6f7081-0000-4000-8000-000000000009");
+    private static final UUID DEPARTMENT_UNIT = UUID.fromString("5e6f7081-0000-4000-8000-000000000008");
+    private static final UUID SUPERVISION_UNIT = UUID.fromString("5e6f7081-0000-4000-8000-000000000002");
+    private static final UUID TEAM_UNIT = UUID.fromString("5e6f7081-0000-4000-8000-000000000001");
+    private static final PersonSummaryDto LEADER = new PersonSummaryDto(PERSON1, "PER-000003", "Yossi Cohen", "equipo.jefe",
+            PersonCategory.TEAM_LEADER);
+
+    private static PersonSummaryDto lineman(int n) {
+        return new PersonSummaryDto(UUID.fromString("3c4d5e6f-0000-4000-8000-00000000001" + n), "PER-00001" + n, "Lineman " + n, null,
+                PersonCategory.WORKER);
+    }
+
+    private static List<TeamMemberDto> linemen(int count) {
+        List<TeamMemberDto> members = new java.util.ArrayList<>();
+        for (int n = 0; n < count; n++) {
+            members.add(new TeamMemberDto(UUID.fromString("6f708192-0000-4000-8000-00000000000" + n), lineman(n), LocalDate.of(2026, 10, 1), null));
+        }
+        return members;
+    }
+
+    private static OrganizationTreeNodeDto node(UUID id, String code, String name, OrganizationUnitKind kind, WorkDiscipline discipline,
+                                                PersonSummaryDto head, Set<Long> packages, Integer linemen, boolean active,
+                                                OrganizationTreeNodeDto... children) {
+        return new OrganizationTreeNodeDto(id, code, name, kind, discipline, head, packages, linemen, active, List.of(children));
+    }
+
+    private static List<OrganizationTreeNodeDto> organization(boolean teamActive) {
+        return List.of(node(PROJECT_UNIT, "PRJ", "Proyecto", OrganizationUnitKind.PROJECT, null, null, Set.of(), null, true,
+                node(DEPARTMENT_UNIT, "MNT", "Mantenimiento", OrganizationUnitKind.DEPARTMENT, WorkDiscipline.MAINTENANCE, null, Set.of(), null, true,
+                        node(SUPERVISION_UNIT, "SUP-N", "Supervision norte", OrganizationUnitKind.SUPERVISION, WorkDiscipline.MAINTENANCE, null,
+                                Set.of(4L), null, true,
+                                node(TEAM_UNIT, "A", "Equipo A", OrganizationUnitKind.TEAM, WorkDiscipline.MAINTENANCE, LEADER, Set.of(5L, 4L), 4,
+                                        teamActive)))));
+    }
+
+    private static OrganizationUnitDto team(int count, boolean active) {
+        List<TeamMemberDto> members = active ? linemen(count) : List.of();
+        return new OrganizationUnitDto(TEAM_UNIT, "A", "Equipo A", OrganizationUnitKind.TEAM, WorkDiscipline.MAINTENANCE,
+                new UnitSummaryDto(SUPERVISION_UNIT, "SUP-N", "Supervision norte", OrganizationUnitKind.SUPERVISION), LEADER, Set.of(4L, 5L), null,
+                members, members.size(), members.size() >= 2,
+                new PersonSummaryDto(PERSON2, "PER-000020", "Dana Levi", null, PersonCategory.SUPERVISOR), null, active, 7L);
+    }
+
+    private static OrganizationUnitDto supervision(boolean active) {
+        return new OrganizationUnitDto(SUPERVISION_UNIT, "SUP-N", "Supervision norte", OrganizationUnitKind.SUPERVISION, WorkDiscipline.MAINTENANCE,
+                new UnitSummaryDto(DEPARTMENT_UNIT, "MNT", "Mantenimiento", OrganizationUnitKind.DEPARTMENT),
+                new PersonSummaryDto(PERSON2, "PER-000020", "Dana Levi", null, PersonCategory.SUPERVISOR), Set.of(4L), null, List.of(), null, null,
+                null, null, active, 2L);
+    }
+
+    private void stubOrganization(boolean teamActive) {
+        when(organizationClient.tree(anyBoolean())).thenReturn(organization(teamActive));
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(executionPackage(4L, "EP 4"), executionPackage(5L, "EP 5"), executionPackage(6L, "EP 6")), 0, 1000));
+        stubPeople(List.of());
+    }
+
+    /**
+     * El arbol entero y desplegado, con el jefe o «Vacante», los linemen de un equipo frente a la regla
+     * y los EP con su nombre; quien solo lee abre las fichas y nada mas; las inactivas se piden aparte.
+     */
+    @Test
+    void theOrganizationIsAnExpandedTreeWithItsHeadsLinemenAndPackagesAndARowOpensItsUnit() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubOrganization(true);
+        when(organizationClient.findById(TEAM_UNIT)).thenReturn(team(4, true));
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(linemen(4));
+
+        UI.getCurrent().navigate(HomeView.class);
+        assertTrue(menuLabels().contains("Organigrama"), menuLabels().toString());
+        UI.getCurrent().navigate(ResourcesRoutes.ORGANIZATION);
+
+        @SuppressWarnings("unchecked")
+        TreeGrid<OrganizationTreeNodeDto> tree = LocatorJ._get(TreeGrid.class, spec -> spec.withId("organization-tree"));
+        assertEquals(4, GridKt._size(tree), "el arbol llega desplegado");
+        assertEquals(List.of("A · Equipo A", "Equipo", "Mantenimiento", "PER-000003 · Yossi Cohen", "4 de 2 a 6", "EP 4, EP 5", "Activa"),
+                GridKt._getFormattedRow(tree, 3).subList(0, 7));
+        assertEquals("Vacante", GridKt._getFormattedRow(tree, 1).get(3));
+        assertEquals("", GridKt._getFormattedRow(tree, 1).get(4), "solo un equipo cuenta linemen");
+        LocatorJ._get(Span.class, spec -> spec.withText("4 unidades"));
+        verify(organizationClient).tree(false);
+
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("unit-create")).isEmpty(), "sin resources-write no hay alta");
+        assertEquals(List.of("unit-open-" + SUPERVISION_UNIT), LocatorJ._find(GridKt._getCellComponent(tree, 2, OrganizationView.ACTIONS_COLUMN),
+                Button.class).stream().map(button -> button.getId().orElse("")).toList());
+
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("organization-include-inactive")), true);
+        verify(organizationClient).tree(true);
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tree, 3, OrganizationView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("unit-open-" + TEAM_UNIT)));
+        LocatorJ._get(UnitDetailView.class);
+        LocatorJ._get(H2.class, spec -> spec.withText("A · Equipo A"));
+        LocatorJ._get(Div.class, spec -> spec.withId("unit-team-summary").withText("Linemen: 4 de 2 a 6 · Completo: Si · "
+                + "Supervisor: PER-000020 · Dana Levi · Jefe de supervisores: - · Vehiculo: -"));
+        Grid<Object> members = gridWithId("members-grid");
+        assertEquals(4, GridKt._size(members), "la pestana de linemen se pide al abrirse");
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("member-add")).stream().noneMatch(Button::isVisible),
+                "quien solo lee no cambia los linemen");
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("unit-edit")).isEmpty());
+    }
+
+    /** Una ficha que no existe se dice y vuelve al organigrama, como las de mantenimiento; un id que no es un UUID, igual. */
+    @Test
+    void aUnitThatDoesNotExistIsSaidAndGoesBackToTheTree() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubOrganization(true);
+        UUID missing = UUID.fromString("5e6f7081-0000-4000-8000-0000000000ff");
+        when(organizationClient.findById(missing)).thenThrow(maintenanceError(404, "UNI-404", "Organization unit not found"));
+
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(missing));
+        LocatorJ._get(OrganizationView.class);
+        NotificationsKt.expectNotifications("No existe la unidad " + missing);
+
+        NotificationsKt.clearNotifications();
+        UI.getCurrent().navigate(ResourcesRoutes.ORGANIZATION + "/no-es-un-id");
+        LocatorJ._get(OrganizationView.class);
+        NotificationsKt.expectNotifications("No existe la unidad no-es-un-id");
+    }
+
+    /**
+     * Un equipo nace completo: con su jefe (de las categorias del nivel) y de 2 a 6 linemen que no
+     * sean el jefe, comprobados antes de llamar; el padre sale del arbol (de un nivel superior) y la
+     * disciplina es la suya; los EP viajan como ids. Un error del servicio cae en su campo.
+     */
+    @Test
+    void aTeamIsCreatedCompleteUnderItsParentAndTheRuleOfTwoToSixIsCheckedBeforeCalling() {
+        loginAs("recursos.gestor", RESOURCES_MANAGER);
+        stubOrganization(true);
+        when(organizationClient.create(any()))
+                .thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, new ApiProblem(null, "BAD_REQUEST", 400, "Validation failed", null,
+                        "REQ-VALIDATION", null, null, null, false, List.of(new ApiFieldError("code", null, "must match [A-Za-z0-9_-]+")), null),
+                        "corr-r3", null, "POST /api/resources/units"))
+                .thenReturn(team(2, true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.ORGANIZATION);
+        @SuppressWarnings("unchecked")
+        TreeGrid<OrganizationTreeNodeDto> tree = LocatorJ._get(TreeGrid.class, spec -> spec.withId("organization-tree"));
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(tree, 3, OrganizationView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("unit-create-under-" + TEAM_UNIT)).isEmpty(), "de un equipo no cuelga nada");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tree, 2, OrganizationView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("unit-create-under-" + SUPERVISION_UNIT)));
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("unit-code")), "B");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("unit-name")), " Equipo B ");
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("unit-kind")), OrganizationUnitKind.TEAM);
+        ComboBox<UnitSummaryDto> parent = comboWithId("unit-parent");
+        assertEquals("SUP-N", parent.getValue().code(), "el padre de la fila");
+        assertEquals(List.of("PRJ", "MNT", "SUP-N"), ComboBoxKt.getSuggestionItems(parent).stream().map(UnitSummaryDto::code).toList(),
+                "un equipo cuelga de cualquier nivel superior, nunca de otro equipo");
+        @SuppressWarnings("unchecked")
+        Select<WorkDiscipline> discipline = LocatorJ._get(Select.class, spec -> spec.withId("unit-discipline"));
+        assertEquals(WorkDiscipline.MAINTENANCE, discipline.getValue());
+        assertTrue(discipline.isReadOnly(), "la disciplina es la del padre");
+        ComboBox<PersonSummaryDto> head = comboWithId("unit-head");
+        ComboBoxKt.getSuggestionItems(head);
+        verify(personClient, atLeastOnce()).search(eq(PersonFilter.activeOf("", EnumSet.copyOf(PersonCategory.atLeast(2)))), eq(0), anyInt(),
+                anyList());
+
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<PersonSummaryDto> members = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("unit-members"));
+        LocatorJ._setValue(members, Set.of(lineman(1)));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        verify(organizationClient, never()).create(any());
+        assertTrue(head.isInvalid(), "un equipo trabaja siempre con su jefe");
+        assertTrue(members.isInvalid(), "con un lineman no nace");
+        assertEquals("1 de 2 a 6", members.getHelperText());
+
+        LocatorJ._setValue(head, LEADER);
+        LocatorJ._setValue(members, new java.util.LinkedHashSet<>(List.of(lineman(1), LEADER)));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        verify(organizationClient, never()).create(any());
+        assertTrue(members.isInvalid(), "el jefe no va tambien de lineman");
+
+        LocatorJ._setValue(members, new java.util.LinkedHashSet<>(List.of(lineman(1), lineman(2))));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RefItem> packages = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("unit-packages"));
+        LocatorJ._setValue(packages, Set.of(new RefItem(6L, "EP 6"), new RefItem(4L, "EP 4")));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("unit-code")).isInvalid(), "el error del servicio, en su campo");
+        assertFalse(LocatorJ._find(UnitEditorDialog.class).isEmpty(), "el dialogo sigue abierto con lo escrito");
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        verify(organizationClient, times(2)).create(argThat(request -> request.code().equals("B") && request.name().equals("Equipo B")
+                && request.kind() == OrganizationUnitKind.TEAM && request.discipline() == WorkDiscipline.MAINTENANCE
+                && request.parentId().equals(SUPERVISION_UNIT) && request.headPersonId().equals(PERSON1)
+                && request.executionPackageIds().equals(Set.of(4L, 6L)) && Set.copyOf(request.memberPersonIds()).equals(Set.of(lineman(1).id(),
+                lineman(2).id())) && request.joinedOn() == null && request.defaultVehicleId() == null));
+        assertTrue(LocatorJ._find(UnitEditorDialog.class).isEmpty());
+    }
+
+    /**
+     * Modificar desde la ficha manda lo cambiado (los EP como conjunto, el jefe vaciado) y la version
+     * leida; una version vieja deja el dialogo abierto. Sin config-read los EP se ven como #id y no
+     * viajan. El historial dice como quedo la unidad.
+     */
+    @Test
+    void aUnitIsPatchedWithItsPackagesAsASetAndWithoutConfigReadTheyStayAsTheyAre() {
+        loginAs("recursos.gestor", RESOURCES_MANAGER);
+        stubOrganization(true);
+        when(organizationClient.findById(SUPERVISION_UNIT)).thenReturn(supervision(true));
+        when(organizationClient.children(eq(SUPERVISION_UNIT), anyInt(), anyInt())).thenReturn(page(List.of(team(4, true)), 0, 200));
+        when(organizationClient.update(any(), any()))
+                .thenThrow(maintenanceError(409, "CON-001", "Organization unit SUP-N was changed by someone else"))
+                .thenReturn(supervision(true));
+        when(organizationClient.revisions(SUPERVISION_UNIT, 0, RevisionsDialog.PAGE_SIZE)).thenReturn(page(List.of(new RevisionDto<>(
+                new RevisionMetadataDto(3L, Instant.parse("2026-10-16T06:00:00Z"), RevisionOperation.UPDATED, "recursos.gestor", "HTTP", "c-5"),
+                supervision(true))), 0, RevisionsDialog.PAGE_SIZE));
+
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(SUPERVISION_UNIT));
+        assertEquals(List.of("A · Equipo A", "Equipo", "PER-000003 · Yossi Cohen", "4 de 2 a 6", "EP 4, EP 5", "Activa"),
+                GridKt._getFormattedRow(gridWithId("unit-children-grid"), 0).subList(0, 6), "la pestana de unidades, con sus hijas");
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-edit")));
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("unit-code")).isReadOnly());
+        ComboBox<UnitSummaryDto> parent = comboWithId("unit-parent");
+        assertEquals(List.of("PRJ", "MNT"), ComboBoxKt.getSuggestionItems(parent).stream().map(UnitSummaryDto::code).toList());
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RefItem> packages = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("unit-packages"));
+        assertEquals(Set.of(new RefItem(4L, "EP 4")), packages.getValue());
+        LocatorJ._setValue(packages, Set.of(new RefItem(6L, "EP 6"), new RefItem(4L, "EP 4")));
+        LocatorJ._setValue(comboWithId("unit-head"), null);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        MergePatch<OrganizationUnitUpdateRequest> expected = new MergePatch<>(new OrganizationUnitUpdateRequest(null, null, null,
+                new java.util.TreeSet<>(Set.of(4L, 6L)), null, null, null, null), Set.of("headPersonId"), 2L);
+        verify(organizationClient).update(SUPERVISION_UNIT, expected);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Conflicto con otro cambio: recarga y vuelve a intentarlo."));
+        assertFalse(LocatorJ._find(UnitEditorDialog.class).isEmpty(), "el dialogo sigue abierto con lo escrito");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        verify(organizationClient, times(2)).update(SUPERVISION_UNIT, expected);
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-history")));
+        assertEquals("Supervision norte · Supervision · Mantenimiento · en MNT · jefe per-000020 · dana levi · EP 4 · activa",
+                GridKt._getFormattedRow(gridWithId("revisions-grid"), 0).get(5));
+    }
+
+    /** Sin config-read no se llama a mto-configuration: los EP se ven como #id, de solo lectura, y no viajan. */
+    @Test
+    void withoutConfigReadTheUnitPackagesAreIdsAndDoNotTravel() {
+        loginAs("recursos.gestor", "ROLE_RESOURCES_READ", "ROLE_RESOURCES_WRITE");
+        stubOrganization(true);
+        when(organizationClient.findById(SUPERVISION_UNIT)).thenReturn(supervision(true));
+        when(organizationClient.children(eq(SUPERVISION_UNIT), anyInt(), anyInt())).thenReturn(page(List.of(), 0, 200));
+        when(organizationClient.update(any(), any())).thenReturn(supervision(true));
+
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(SUPERVISION_UNIT));
+        LocatorJ._get(Div.class, spec -> spec.withText("Disciplina: Mantenimiento · Depende de: MNT · Mantenimiento · "
+                + "Jefe: PER-000020 · Dana Levi · EP: #4"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-edit")));
+        assertEquals("#4", LocatorJ._get(TextField.class, spec -> spec.withId("unit-packages-readonly")).getValue());
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("unit-name")), "Supervision del norte");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        verify(organizationClient).update(SUPERVISION_UNIT, new MergePatch<>(new OrganizationUnitUpdateRequest("Supervision del norte", null, null,
+                null, null, null, null, null), Set.of(), 2L));
+        verify(executionPackageClient, never()).filter(anyInt(), anyInt(), anyList(), anyMap());
+    }
+
+    /**
+     * La regla de 2 a 6 en pantalla: con 6 no se ofrece anadir, con 2 no se ofrece que salga nadie, y
+     * cambiar varios es la lista entera de una vez, con su contador y su fecha. Lo que el servicio
+     * rechaza (409 UNI-001) deja el dialogo abierto.
+     */
+    @Test
+    void aTeamAddsLinemenUpToSixLetsThemLeaveDownToTwoAndChangesThemAllAtOnce() {
+        loginAs("recursos.gestor", RESOURCES_MANAGER);
+        stubOrganization(true);
+        when(organizationClient.findById(TEAM_UNIT)).thenReturn(team(6, true));
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(linemen(6));
+
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(TEAM_UNIT));
+        Button add = LocatorJ._get(Button.class, spec -> spec.withId("member-add"));
+        assertFalse(add.isEnabled(), "con 6 no se anade otro");
+        Grid<Object> members = gridWithId("members-grid");
+        assertTrue(LocatorJ._get(GridKt._getCellComponent(members, 0, "actions"), Button.class,
+                spec -> spec.withId("member-leave-" + lineman(0).id())).isEnabled());
+
+        when(organizationClient.findById(TEAM_UNIT)).thenReturn(team(2, true));
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(linemen(2));
+        when(organizationClient.addMember(eq(TEAM_UNIT), any()))
+                .thenThrow(maintenanceError(409, "UNI-001", "Lineman 5 is already a lineman of team B"))
+                .thenReturn(team(3, true));
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(TEAM_UNIT));
+        members = gridWithId("members-grid");
+        assertFalse(LocatorJ._get(GridKt._getCellComponent(members, 0, "actions"), Button.class,
+                spec -> spec.withId("member-leave-" + lineman(0).id())).isEnabled(), "con 2 no sale nadie");
+        add = LocatorJ._get(Button.class, spec -> spec.withId("member-add"));
+        assertTrue(add.isEnabled());
+        LocatorJ._click(add);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("member-add-save")));
+        verify(organizationClient, never()).addMember(any(), any());
+        LocatorJ._setValue(comboWithId("member-person"), lineman(5));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("member-add-save")));
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("El organigrama no admite ese cambio. Lineman 5 is already a lineman of team B"));
+        assertFalse(LocatorJ._find(Button.class, spec -> spec.withId("member-add-save")).isEmpty(), "el dialogo sigue abierto");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("member-add-save")));
+        verify(organizationClient, times(2)).addMember(TEAM_UNIT, new TeamMemberRequest(lineman(5).id(), null));
+        LocatorJ._get(H2.class, spec -> spec.withText("A · Equipo A"));
+        LocatorJ._get(Div.class, spec -> spec.withId("unit-team-summary").withText("Linemen: 3 de 2 a 6 · Completo: Si · "
+                + "Supervisor: PER-000020 · Dana Levi · Jefe de supervisores: - · Vehiculo: -"));
+
+        when(organizationClient.findById(TEAM_UNIT)).thenReturn(team(3, true));
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(linemen(3));
+        when(organizationClient.leave(eq(TEAM_UNIT), any(), any())).thenReturn(team(2, true));
+        when(organizationClient.replaceMembers(eq(TEAM_UNIT), any())).thenReturn(team(2, true));
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(TEAM_UNIT));
+        members = gridWithId("members-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(members, 2, "actions"), Button.class,
+                spec -> spec.withId("member-leave-" + lineman(2).id())));
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("member-left-on")), LocalDate.of(2026, 10, 21));
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(linemen(2));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("member-leave-save")));
+        verify(organizationClient).leave(TEAM_UNIT, lineman(2).id(), new TeamMemberLeaveRequest(LocalDate.of(2026, 10, 21)));
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("members-replace")));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<PersonSummaryDto> chosen = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("members-people"));
+        assertEquals(Set.of(lineman(0), lineman(1)), chosen.getValue(), "parte de los linemen de ahora");
+        LocatorJ._get(Span.class, spec -> spec.withId("members-count").withText("2 de 2 a 6"));
+        LocatorJ._setValue(chosen, Set.of(lineman(0)));
+        LocatorJ._get(Span.class, spec -> spec.withId("members-count").withText("1 de 2 a 6"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(TeamMembersDialog.SAVE_ID)));
+        verify(organizationClient, never()).replaceMembers(any(), any());
+        assertTrue(chosen.isInvalid());
+        LocatorJ._setValue(chosen, new java.util.LinkedHashSet<>(List.of(lineman(0), lineman(3), lineman(4))));
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("members-date")), LocalDate.of(2026, 10, 22));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(TeamMembersDialog.SAVE_ID)));
+        verify(organizationClient).replaceMembers(eq(TEAM_UNIT), argThat(request -> Set.copyOf(request.memberPersonIds())
+                .equals(Set.of(lineman(0).id(), lineman(3).id(), lineman(4).id())) && request.effectiveOn().equals(LocalDate.of(2026, 10, 22))));
+    }
+
+    /**
+     * Desactivar pide resources-delete y confirmacion; lo que el servicio no deja (unidades activas
+     * debajo) se dice. Un equipo vuelve completo: reactivarlo pide sus linemen en su dialogo; otra
+     * unidad vuelve con un PATCH active=true.
+     */
+    @Test
+    void aDeactivatedTeamComesBackWithItsLinemenAndAnotherUnitByPatch() {
+        loginAs("recursos.responsable", RESOURCES_ADMIN);
+        stubOrganization(false);
+        when(organizationClient.findById(SUPERVISION_UNIT)).thenReturn(supervision(true));
+        when(organizationClient.children(eq(SUPERVISION_UNIT), anyInt(), anyInt())).thenReturn(page(List.of(team(0, false)), 0, 200));
+        doThrow(maintenanceError(409, "UNI-001", "SUP-N has active units under it")).when(organizationClient).deactivate(SUPERVISION_UNIT);
+
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(SUPERVISION_UNIT));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-deactivate")));
+        verify(organizationClient, never()).deactivate(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(organizationClient).deactivate(SUPERVISION_UNIT);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("El organigrama no admite ese cambio. SUP-N has active units under it"));
+
+        when(organizationClient.findById(TEAM_UNIT)).thenReturn(team(0, false));
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(List.of());
+        when(organizationClient.update(eq(TEAM_UNIT), any())).thenReturn(team(2, true));
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(TEAM_UNIT));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("unit-deactivate")).isEmpty(), "una inactiva no se desactiva otra vez");
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("member-add")).stream().noneMatch(Button::isVisible),
+                "un equipo inactivo no cambia sus linemen: vuelve con ellos");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-reactivate")));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<PersonSummaryDto> chosen = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("members-people"));
+        assertTrue(chosen.getValue().isEmpty(), "sus linemen salieron al desactivarlo");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(TeamMembersDialog.SAVE_ID)));
+        verify(organizationClient, never()).update(any(), any());
+        LocatorJ._setValue(chosen, new java.util.LinkedHashSet<>(List.of(lineman(1), lineman(2))));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(TeamMembersDialog.SAVE_ID)));
+        verify(organizationClient).update(eq(TEAM_UNIT), argThat(patch -> patch.version() == 7L && Boolean.TRUE.equals(patch.values().active())
+                && Set.copyOf(patch.values().memberPersonIds()).equals(Set.of(lineman(1).id(), lineman(2).id()))));
+        LocatorJ._get(Span.class, spec -> spec.withId("unit-state").withText("Activa"));
+
+        when(organizationClient.findById(SUPERVISION_UNIT)).thenReturn(supervision(false));
+        when(organizationClient.update(eq(SUPERVISION_UNIT), any())).thenReturn(supervision(true));
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(SUPERVISION_UNIT));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-reactivate")));
+        verify(organizationClient).update(SUPERVISION_UNIT, MergePatch.of(OrganizationUnitUpdateRequest.reactivate(), 2L));
+    }
+
+    /** Personal toma la unidad de la URL (lo que abre la ficha de una unidad) y la quita al pedirlo. */
+    @Test
+    void thePeopleOfAUnitComeFromTheUrlAndTheFilterIsRemovedOnRequest() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubOrganization(true);
+        when(organizationClient.findById(SUPERVISION_UNIT)).thenReturn(supervision(true));
+        when(organizationClient.children(eq(SUPERVISION_UNIT), anyInt(), anyInt())).thenReturn(page(List.of(), 0, 200));
+
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(SUPERVISION_UNIT));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-people")));
+        LocatorJ._get(PeopleView.class);
+        LocatorJ._get(Span.class, spec -> spec.withId("people-unit").withText("Unidad: SUP-N · Supervision norte"));
+        GridKt._size(gridWithId("people-grid"));
+        verify(personClient, atLeastOnce()).search(eq(new PersonFilter(null, Set.of(), SUPERVISION_UNIT, null)), eq(0), anyInt(), anyList());
+
+        clearInvocations(personClient);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("people-unit-clear")));
+        assertTrue(LocatorJ._find(Span.class, spec -> spec.withId("people-unit")).isEmpty(), "sin unidad no hay filtro de unidad");
+        GridKt._size(gridWithId("people-grid"));
+        verify(personClient, atLeastOnce()).search(eq(PersonFilter.NONE), eq(0), anyInt(), anyList());
+
+        UI.getCurrent().navigate(ResourcesRoutes.PEOPLE, QueryParameters.of(PeopleView.UNIT_PARAMETER, "no-es-un-id"));
+        assertTrue(LocatorJ._find(Span.class, spec -> spec.withId("people-unit")).isEmpty(), "un id que no es un UUID no filtra");
     }
 }

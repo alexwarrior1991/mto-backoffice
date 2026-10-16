@@ -9,6 +9,8 @@ import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import com.alejandro.mtobackoffice.client.maintenance.ReportClient;
 import com.alejandro.mtobackoffice.client.maintenance.ShiftClient;
 import com.alejandro.mtobackoffice.client.notification.NotificationClient;
+import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
+import com.alejandro.mtobackoffice.client.resources.PersonClient;
 import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
 import com.alejandro.mtobackoffice.client.stock.MaterialClient;
 import com.alejandro.mtobackoffice.client.stock.MovementClient;
@@ -19,6 +21,7 @@ import com.alejandro.mtobackoffice.client.stock.WarehouseClient;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.configuration.security.KeycloakProperties;
 import com.alejandro.mtobackoffice.ui.maintenance.MaintenanceClients;
+import com.alejandro.mtobackoffice.ui.resources.ResourcesClients;
 import com.vaadin.flow.component.dependency.StyleSheet;
 import com.vaadin.flow.theme.lumo.Lumo;
 import org.junit.jupiter.api.Test;
@@ -83,6 +86,9 @@ class MtoBackofficeApplicationTests {
             assertNotNull(context.getBean(maintenanceClient), maintenanceClient.getSimpleName());
         }
         assertNotNull(context.getBean(NotificationClient.class));
+        for (Class<?> resourcesClient : List.of(PersonClient.class, OrganizationClient.class, ResourcesClients.class)) {
+            assertNotNull(context.getBean(resourcesClient), resourcesClient.getSimpleName());
+        }
         assertEquals(List.of("mto-configuration-api", "mto-users-api", "mto-stock-api", "mto-maintenance-api", "mto-notification-api",
                         "mto-resources-api"),
                 context.getBean(KeycloakProperties.class).rolesClientIds(), "los seis clientes cuyos roles son permisos");
