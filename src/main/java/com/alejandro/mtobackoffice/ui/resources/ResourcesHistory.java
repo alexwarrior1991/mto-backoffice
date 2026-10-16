@@ -2,6 +2,7 @@ package com.alejandro.mtobackoffice.ui.resources;
 
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDto;
 import com.alejandro.mtobackoffice.ui.support.RevisionsDialog;
 
 import java.util.Arrays;
@@ -35,6 +36,13 @@ final class ResourcesHistory {
                 unit.executionPackageIds().isEmpty() ? null : "EP " + unit.executionPackageIds().stream().sorted().map(String::valueOf)
                         .collect(Collectors.joining(", ")),
                 ResourcesFormats.state(unit.active()).toLowerCase());
+    }
+
+    /** El vehiculo como quedo; donde estuvo va en su pestana de ubicaciones, no aqui. */
+    static String vehicle(VehicleDto vehicle) {
+        return join(vehicle.name(), vehicle.type() == null ? null : vehicle.type().code(), vehicle.registrationPlate(), vehicle.railVehicleNumber(),
+                ResourcesFormats.operational(vehicle.operationalStatus(), vehicle.statusReason()), ResourcesFormats.owner(vehicle),
+                ResourcesFormats.vehicleState(vehicle.active()).toLowerCase());
     }
 
     /** Las partes que hay, separadas por {@code ·}; lo vacio no deja separadores sueltos. */

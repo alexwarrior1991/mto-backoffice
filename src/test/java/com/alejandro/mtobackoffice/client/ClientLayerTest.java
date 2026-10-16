@@ -27,6 +27,7 @@ import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
 import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.provider.SortDirection;
 import com.alejandro.mtobackoffice.client.dto.resources.DrivingLicence;
+import com.alejandro.mtobackoffice.client.dto.resources.FleetPositionDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationTreeNodeDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitKind;
@@ -48,13 +49,24 @@ import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberDto;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberLeaveRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMembersRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleAttachment;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleCapability;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleCategory;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationKind;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationSource;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleMobility;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleOperationalStatus;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleOwner;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeDto;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeFilter;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.WorkDiscipline;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
@@ -66,6 +78,7 @@ import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.VehicleClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import com.alejandro.mtobackoffice.configuration.client.GatewayClientConfiguration;
 import com.alejandro.mtobackoffice.configuration.client.UserTokenProvider;
@@ -298,6 +311,7 @@ class ClientLayerTest {
     private OrganizationClient organizationClient;
     private VehicleTypeClient vehicleTypeClient;
     private ParkingSiteClient parkingSiteClient;
+    private VehicleClient vehicleClient;
 
     @BeforeEach
     void setUp() {
@@ -337,6 +351,7 @@ class ClientLayerTest {
         organizationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(OrganizationClient.class);
         vehicleTypeClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(VehicleTypeClient.class);
         parkingSiteClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ParkingSiteClient.class);
+        vehicleClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(VehicleClient.class);
     }
 
     @AfterEach
@@ -3315,6 +3330,103 @@ class ClientLayerTest {
         assertEquals(ParkingSiteKind.SIDING, rishpon.kind());
         assertEquals(12L, rishpon.trackId());
         assertEquals(new java.math.BigDecimal("12.300"), rishpon.kp());
+        server.verify();
+    }
+
+    private static final String VEHICLE_ID = "9d0e1f20-0000-4000-8000-000000000001";
+    private static final String CARRIER_ID = "9d0e1f20-0000-4000-8000-000000000002";
+    private static final String LOCATION_SHIFT_ID = "a0b1c2d3-0000-4000-8000-000000000001";
+
+    private static String locationJson(String kind, String extra) {
+        return "{\"id\":\"b1c2d3e4-0000-4000-8000-000000000001\",\"kind\":\"" + kind + "\",\"parkingSite\":{\"id\":\"" + PARKING_SITE_ID
+                + "\",\"code\":\"APT-RSH\",\"name\":\"Apartadero\",\"kind\":\"SIDING\"},\"executionPackageId\":4,\"trackId\":12,\"kp\":12.300,"
+                + "\"latitude\":null,\"longitude\":null,\"accessPoint\":null,\"description\":null,\"carrier\":null,\"attachment\":null,"
+                + "\"source\":\"SHIFT\",\"sourceReference\":\"mto-maintenance:shift:" + LOCATION_SHIFT_ID + "\",\"observedAt\":\"2026-10-16T03:40:00Z\","
+                + "\"recordedAt\":\"2026-10-16T03:40:02Z\",\"recordedBy\":\"service-account-mto-maintenance-svc\"" + extra + "}";
+    }
+
+    private static String vehicleJson(String position) {
+        return "{\"id\":\"" + VEHICLE_ID + "\",\"code\":\"DR-01\",\"name\":\"Dresina 1\",\"type\":{\"id\":\"" + VEHICLE_TYPE_ID + "\","
+                + "\"code\":\"DIC-30\",\"name\":\"Plasser DIC-30\",\"mobility\":\"RAIL_ONLY\",\"category\":\"CATENARY_TOWER_CAR\","
+                + "\"selfPropelled\":true,\"seats\":6,\"railGearType\":null,\"transportModeAuthorised\":true,\"capabilities\":[\"PANTOGRAPH\"]},"
+                + "\"registrationPlate\":null,\"railVehicleNumber\":\"99 80 9427 001-1\",\"serialNumber\":null,\"manufactureYear\":2019,"
+                + "\"owner\":\"OWN\",\"ownerCompany\":null,\"operationalStatus\":\"LIMITED\",\"statusReason\":\"Plataforma en revision\","
+                + "\"available\":true,\"odometerKm\":null,\"engineHours\":1234.5,\"notes\":null,\"position\":" + position + ",\"active\":true,"
+                + "\"version\":6,\"audit\":null}";
+    }
+
+    /**
+     * Los vehiculos: la busqueda con sus filtros, el alta sin lo vacio, la modificacion, retirar, el
+     * historial, registrar donde esta (sin lo vacio y con la hora en ISO), sus ubicaciones entre dos
+     * instantes y el tablero por via y kp. Un turno firma su ubicacion con su id; un tipo de ubicacion
+     * nuevo se lee como desconocido.
+     */
+    @Test
+    void vehiclesAreSearchedWrittenLocatedAndShownOnTheBoard() {
+        server.expect(requestTo(RESOURCES + "/vehicles?search=dr&mobility=RAIL_ONLY&status=LIMITED&available=true&active=true"
+                        + "&page=0&size=50&sort=code%2Casc&sort=id%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(vehicleJson(locationJson("PARKED", "")), 0, 50, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/vehicles")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"DR-02\",\"typeId\":\"" + VEHICLE_TYPE_ID + "\",\"railVehicleNumber\":\"99 80 9427 002-9\","
+                        + "\"owner\":\"OWN\",\"operationalStatus\":\"OPERATIONAL\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(vehicleJson("null")));
+        server.expect(requestTo(RESOURCES + "/vehicles/" + VEHICLE_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"operationalStatus\":\"OPERATIONAL\",\"statusReason\":null,\"version\":6}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(vehicleJson("null"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/vehicles/" + VEHICLE_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(RESOURCES + "/vehicles/" + VEHICLE_ID + "/locations")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"kind\":\"ATTACHED\",\"carrierVehicleId\":\"" + CARRIER_ID + "\",\"attachment\":\"TOWED\","
+                        + "\"observedAt\":\"2026-10-16T03:40:00Z\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(locationJson("ATTACHED",
+                        ",\"extra\":1").replace("\"carrier\":null", "\"carrier\":{\"id\":\"" + CARRIER_ID + "\",\"code\":\"DR-02\",\"name\":null,"
+                        + "\"mobility\":\"RAIL_ONLY\",\"category\":\"TRACK_MAINTENANCE_CAR\"}").replace("\"attachment\":null", "\"attachment\":\"TOWED\"")));
+        server.expect(requestTo(RESOURCES + "/vehicles/" + VEHICLE_ID + "/locations?from=2026-10-01T00%3A00%3A00Z&to=2026-10-17T00%3A00%3A00Z"
+                        + "&page=0&size=20"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(locationJson("TELEPORTED", ""), 0, 20, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/vehicles/positions?trackId=12&page=0&size=50&sort=trackId%2Casc&sort=kp%2Casc&sort=vehicleId%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("{\"vehicle\":{\"id\":\"" + VEHICLE_ID + "\",\"code\":\"DR-01\",\"name\":\"Dresina 1\","
+                        + "\"mobility\":\"RAIL_ONLY\",\"category\":\"CATENARY_TOWER_CAR\"},\"operationalStatus\":\"OPERATIONAL\",\"available\":true,"
+                        + "\"position\":" + locationJson("ATTACHED", "") + ",\"effective\":" + locationJson("ON_TRACK", "") + "}", 0, 50, 1),
+                        MediaType.APPLICATION_JSON));
+
+        PageResponse<VehicleDto> page = asUser(() -> vehicleClient.search(new VehicleFilter(" dr ", null, VehicleMobility.RAIL_ONLY, null,
+                VehicleOperationalStatus.LIMITED, true, true), 0, 50, List.of("code,asc")));
+        asUser(() -> vehicleClient.create(new VehicleRequest("DR-02", null, UUID.fromString(VEHICLE_TYPE_ID), null, "99 80 9427 002-9", null, null,
+                VehicleOwner.OWN, null, VehicleOperationalStatus.OPERATIONAL, null, null, null, null)));
+        asUser(() -> vehicleClient.update(UUID.fromString(VEHICLE_ID), new MergePatch<>(new VehicleUpdateRequest(null, null, null, null, null, null,
+                null, null, VehicleOperationalStatus.OPERATIONAL, null, null, null, null, null), Set.of("statusReason"), 6L)));
+        asUser(() -> {
+            vehicleClient.deactivate(UUID.fromString(VEHICLE_ID));
+            return null;
+        });
+        VehicleLocationDto towed = asUser(() -> vehicleClient.recordLocation(UUID.fromString(VEHICLE_ID), new VehicleLocationRequest(
+                VehicleLocationKind.ATTACHED, null, null, null, null, null, null, null, null, UUID.fromString(CARRIER_ID), VehicleAttachment.TOWED,
+                java.time.Instant.parse("2026-10-16T03:40:00Z"))));
+        PageResponse<VehicleLocationDto> history = asUser(() -> vehicleClient.locations(UUID.fromString(VEHICLE_ID),
+                java.time.Instant.parse("2026-10-01T00:00:00Z"), java.time.Instant.parse("2026-10-17T00:00:00Z"), 0, 20));
+        PageResponse<FleetPositionDto> board = asUser(() -> vehicleClient.positions(null, 12L, null, 0, 50, VehicleClient.BY_TRACK_AND_KP));
+
+        VehicleDto dresina = page.content().getFirst();
+        assertEquals("DR-01 · Dresina 1", dresina.label());
+        assertEquals(VehicleMobility.RAIL_ONLY, dresina.mobility());
+        assertTrue(dresina.type().transportModeAuthorised());
+        assertEquals(VehicleOperationalStatus.LIMITED, dresina.operationalStatus());
+        assertEquals(new java.math.BigDecimal("1234.5"), dresina.engineHours());
+        assertEquals("APT-RSH", dresina.position().parkingSite().code());
+        assertEquals(UUID.fromString(LOCATION_SHIFT_ID), dresina.position().shiftId(), "la ubicacion que deja un turno lo nombra");
+        assertEquals(VehicleLocationSource.SHIFT, dresina.position().source());
+        assertEquals("DR-02", towed.carrier().code());
+        assertEquals(VehicleAttachment.TOWED, towed.attachment());
+        assertEquals(VehicleLocationKind.UNKNOWN, history.content().getFirst().kind(), "un tipo nuevo se lee como desconocido");
+        assertEquals(VehicleLocationKind.ON_TRACK, board.content().getFirst().where().kind(), "uno remolcado esta donde su portador");
+        assertEquals(List.of(VehicleLocationKind.PARKED, VehicleLocationKind.ON_TRACK, VehicleLocationKind.IN_WORKSHOP, VehicleLocationKind.ATTACHED,
+                VehicleLocationKind.UNKNOWN), VehicleLocationKind.recordable(VehicleMobility.RAIL_ONLY));
+        assertFalse(VehicleLocationKind.recordable(VehicleMobility.ROAD_ONLY).contains(VehicleLocationKind.ON_TRACK));
         server.verify();
     }
 }

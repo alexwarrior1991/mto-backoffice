@@ -36,6 +36,7 @@ import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteDto;
 import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteFilter;
 import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteKind;
 import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
@@ -49,12 +50,25 @@ import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberDto;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberLeaveRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.UnitSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleAttachment;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleCategory;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationKind;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationSource;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleMobility;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleOperationalStatus;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleOwner;
 import com.alejandro.mtobackoffice.client.dto.resources.VehiclePower;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeDto;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.WorkDiscipline;
 import com.alejandro.mtobackoffice.client.dto.users.ClientDto;
 import com.alejandro.mtobackoffice.client.dto.users.ClientRoleAssignmentDto;
@@ -70,6 +84,7 @@ import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.VehicleClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import com.alejandro.mtobackoffice.ui.resources.OrganizationView;
 import com.alejandro.mtobackoffice.ui.resources.ParkingSiteEditorDialog;
@@ -80,8 +95,12 @@ import com.alejandro.mtobackoffice.ui.resources.ResourcesRoutes;
 import com.alejandro.mtobackoffice.ui.resources.TeamMembersDialog;
 import com.alejandro.mtobackoffice.ui.resources.UnitDetailView;
 import com.alejandro.mtobackoffice.ui.resources.UnitEditorDialog;
+import com.alejandro.mtobackoffice.ui.resources.VehicleDetailView;
+import com.alejandro.mtobackoffice.ui.resources.VehicleEditorDialog;
+import com.alejandro.mtobackoffice.ui.resources.VehicleLocationDialog;
 import com.alejandro.mtobackoffice.ui.resources.VehicleTypeEditorDialog;
 import com.alejandro.mtobackoffice.ui.resources.VehicleTypesView;
+import com.alejandro.mtobackoffice.ui.resources.VehiclesView;
 import com.alejandro.mtobackoffice.ui.support.RevisionsDialog;
 import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.alejandro.mtobackoffice.ui.maintenance.CheckItemsDialog;
@@ -506,6 +525,8 @@ class ViewLayerTest {
     private VehicleTypeClient vehicleTypeClient;
     @MockitoBean
     private ParkingSiteClient parkingSiteClient;
+    @MockitoBean
+    private VehicleClient vehicleClient;
 
     @BeforeEach
     void setUp() {
@@ -8526,5 +8547,218 @@ class ViewLayerTest {
         verify(parkingSiteClient).update(PARKING_SITE1, new MergePatch<>(new ParkingSiteUpdateRequest(null, null, null, null, null, null, null,
                 true, null, null, null, null, null), Set.of("latitude", "longitude"), 2L));
         verify(executionPackageClient, never()).filter(anyInt(), anyInt(), anyList(), anyMap());
+    }
+
+    // --- Recursos: vehiculos y ubicaciones ----------------------------------------------------------
+
+    private static final UUID VEHICLE1 = UUID.fromString("9d0e1f20-0000-4000-8000-000000000001");
+    private static final UUID VEHICLE2 = UUID.fromString("9d0e1f20-0000-4000-8000-000000000002");
+    private static final UUID LOCATION_SHIFT = UUID.fromString("a0b1c2d3-0000-4000-8000-000000000001");
+    private static final String[] FLEET_OPERATOR = {"ROLE_RESOURCES_READ", "ROLE_RESOURCES_FLEET_WRITE", "ROLE_RESOURCES_LOCATION_WRITE",
+            "ROLE_RESOURCES_DELETE", "ROLE_CONFIG_READ", "ROLE_MAINTENANCE_READ", "ROLE_NOTIFICATION_INBOX"};
+    private static final VehicleTypeSummaryDto RAIL_MODEL = new VehicleTypeSummaryDto(VEHICLE_TYPE2, "DIC-30", "Plasser DIC-30",
+            VehicleMobility.RAIL_ONLY, VehicleCategory.CATENARY_TOWER_CAR, true, 6, null, true, Set.of("PANTOGRAPH"));
+    private static final VehicleTypeSummaryDto ROAD_RAIL_MODEL = new VehicleTypeSummaryDto(VEHICLE_TYPE1, "UNIMOG-RR", "Unimog bivial",
+            VehicleMobility.ROAD_RAIL, VehicleCategory.ROAD_RAIL_TRUCK, true, 3, RailGearType.RAIL_WHEEL_DRIVE, false, Set.of("TOWING"));
+
+    private static VehicleLocationDto location(VehicleLocationKind kind, Long trackId, String kp, VehicleSummaryDto carrier, String reference) {
+        return new VehicleLocationDto(UUID.randomUUID(), kind, kind == VehicleLocationKind.PARKED
+                ? new ParkingSiteSummaryDto(PARKING_SITE1, "APT-RSH", "Apartadero de Rishpon", ParkingSiteKind.SIDING) : null, 4L, trackId,
+                kp == null ? null : new BigDecimal(kp), null, null, null, null, carrier, carrier == null ? null : VehicleAttachment.TOWED,
+                reference == null ? VehicleLocationSource.MANUAL : VehicleLocationSource.SHIFT, reference, Instant.parse("2026-10-16T03:40:00Z"),
+                Instant.parse("2026-10-16T03:40:02Z"), reference == null ? "recursos.gestor" : "service-account-mto-maintenance-svc");
+    }
+
+    private static VehicleDto vehicle(UUID id, String code, VehicleTypeSummaryDto type, VehicleLocationDto position, boolean active) {
+        return new VehicleDto(id, code, "Vehiculo " + code, type, type.mobility() == VehicleMobility.RAIL_ONLY ? null : "1234-ABC",
+                type.mobility() == VehicleMobility.ROAD_ONLY ? null : "99 80 9427 001-1", null, 2019, VehicleOwner.OWN, null,
+                VehicleOperationalStatus.OPERATIONAL, null, true, null, null, null, position, active, 6L);
+    }
+
+    private void stubVehicles(List<VehicleDto> all) {
+        doAnswer(call -> page(all, call.getArgument(1), call.getArgument(2)))
+                .when(vehicleClient).search(any(VehicleFilter.class), anyInt(), anyInt(), anyList());
+        for (VehicleDto one : all) {
+            when(vehicleClient.findById(one.id())).thenReturn(one);
+        }
+    }
+
+    /** La lista dice donde esta cada vehiculo y se filtra en el servicio; quien solo lee solo abre las fichas. */
+    @Test
+    void theVehiclesSayWhereEachIsAndAReaderOnlyOpensThem() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubConfigurationNames();
+        stubVehicles(List.of(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, location(VehicleLocationKind.PARKED, 12L, "12.300", null, LOCATION_SHIFT.toString()), true),
+                vehicle(VEHICLE2, "UN-01", ROAD_RAIL_MODEL, null, false)));
+
+        UI.getCurrent().navigate(HomeView.class);
+        assertTrue(menuLabels().contains("Vehiculos"), menuLabels().toString());
+        UI.getCurrent().navigate(ResourcesRoutes.FLEET);
+        Grid<Object> grid = gridWithId("vehicles-grid");
+        assertEquals(List.of("DR-01", "Vehiculo DR-01", "DIC-30", "Solo via", "", "99 80 9427 001-1", "Operativo",
+                "Aparcado · APT-RSH · VIA 1 (EP 4) · kp 12.300", "Activo"), GridKt._getFormattedRow(grid, 0).subList(0, 9));
+        assertEquals(List.of("Sin ubicacion", "Retirado"), GridKt._getFormattedRow(grid, 1).subList(7, 9));
+        verify(vehicleClient, atLeastOnce()).search(eq(VehicleFilter.NONE), eq(0), anyInt(), eq(List.of("code,asc")));
+
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("vehicles-mobility")), VehicleMobility.RAIL_ONLY);
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("vehicles-available")), EnabledFilter.ENABLED);
+        GridKt._size(grid);
+        verify(vehicleClient, atLeastOnce()).search(eq(new VehicleFilter(null, null, VehicleMobility.RAIL_ONLY, null, null, true, null)), eq(0),
+                anyInt(), anyList());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("vehicle-create")).isEmpty());
+        assertEquals(List.of("vehicle-open-" + VEHICLE1), LocatorJ._find(GridKt._getCellComponent(grid, 0, VehiclesView.ACTIONS_COLUMN),
+                Button.class).stream().map(button -> button.getId().orElse("")).toList());
+    }
+
+    /**
+     * El editor exige lo que pide su modelo: matricula si va por carretera (ninguna en uno de solo via),
+     * numero ferroviario si su modelo va por via abierta, la empresa de uno que no es propio y el motivo
+     * de uno que no esta operativo.
+     */
+    @Test
+    void aVehicleAsksForWhatItsModelNeedsBeforeCalling() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        stubVehicles(List.of());
+        when(vehicleClient.create(any())).thenReturn(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.FLEET);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("vehicle-create")));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-code")), "DR-01");
+        LocatorJ._setValue(comboWithId("vehicle-type"), RAIL_MODEL);
+        assertTrue(LocatorJ._find(TextField.class, spec -> spec.withId("vehicle-plate")).isEmpty(), "uno de solo via no lleva matricula");
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("vehicle-owner")), VehicleOwner.SUBCONTRACTOR);
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("vehicle-status")), VehicleOperationalStatus.UNDER_REPAIR);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleEditorDialog.SAVE_ID)));
+        verify(vehicleClient, never()).create(any());
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-rail-number")).isInvalid(), "su modelo va por via abierta");
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-owner-company")).isInvalid());
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-status-reason")).isInvalid());
+
+        LocatorJ._setValue(comboWithId("vehicle-type"), ROAD_RAIL_MODEL);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleEditorDialog.SAVE_ID)));
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-plate")).isInvalid(), "una bivial va por carretera");
+        assertFalse(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-rail-number")).isInvalid(), "su modelo no va por via abierta");
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-plate")), "1234-ABC");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-owner-company")), "Alquileres del Norte");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-status-reason")), "Gato hidraulico");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleEditorDialog.SAVE_ID)));
+        verify(vehicleClient).create(new VehicleRequest("DR-01", null, VEHICLE_TYPE1, "1234-ABC", null, null, null, VehicleOwner.SUBCONTRACTOR,
+                "Alquileres del Norte", VehicleOperationalStatus.UNDER_REPAIR, "Gato hidraulico", null, null, null));
+    }
+
+    /**
+     * La ficha dice donde esta: uno que va remolcado dice con quien y donde esta su portador. Sus
+     * ubicaciones se filtran por dias (el fin viaja como el principio del dia siguiente) y la que dejo
+     * un turno enlaza con el turno.
+     */
+    @Test
+    void theVehicleDetailSaysWhereItIsAndATowedOneWhereItsCarrierIs() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        VehicleDto carrier = vehicle(VEHICLE2, "DR-02", RAIL_MODEL, location(VehicleLocationKind.ON_TRACK, 12L, "10.5", null, null), true);
+        VehicleDto towed = vehicle(VEHICLE1, "PL-01", RAIL_MODEL, location(VehicleLocationKind.ATTACHED, null, null, carrier.summary(), null), true);
+        stubVehicles(List.of(towed, carrier));
+        when(vehicleClient.locations(eq(VEHICLE1), any(), any(), anyInt(), anyInt())).thenReturn(page(List.of(
+                location(VehicleLocationKind.PARKED, 12L, "12.300", null, VehicleLocationDto.SHIFT_REFERENCE + LOCATION_SHIFT)), 0, 20));
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        LocatorJ._get(Div.class, spec -> spec.withId("vehicle-position-place").withText("Remolcado por DR-02"));
+        LocatorJ._get(Div.class, spec -> spec.withId("vehicle-carrier-position").withText("DR-02 esta: En via · VIA 1 (EP 4) · kp 10.5"));
+        Grid<Object> locations = gridWithId("locations-grid");
+        assertEquals(List.of("Aparcado · APT-RSH · VIA 1 (EP 4) · kp 12.300", "", "Turno", "service-account-mto-maintenance-svc"),
+                GridKt._getFormattedRow(locations, 0).subList(1, 5));
+        verify(vehicleClient, atLeastOnce()).locations(VEHICLE1, null, null, 0, 20);
+        LocatorJ._get(GridKt._getCellComponent(locations, 0, "actions"), Button.class, spec -> spec.withId("location-shift-" + ((VehicleLocationDto) GridKt._get(locations, 0)).id()));
+
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("locations-from")), LocalDate.of(2026, 10, 1));
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("locations-to")), LocalDate.of(2026, 10, 16));
+        GridKt._size(locations);
+        verify(vehicleClient, atLeastOnce()).locations(VEHICLE1, Formats.startOfDay(LocalDate.of(2026, 10, 1)),
+                Formats.startOfDay(LocalDate.of(2026, 10, 17)), 0, 20);
+    }
+
+    /** Una ficha que no existe se dice y vuelve a la flota. */
+    @Test
+    void aVehicleThatDoesNotExistGoesBackToTheFleet() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubConfigurationNames();
+        stubVehicles(List.of());
+        UUID missing = UUID.fromString("9d0e1f20-0000-4000-8000-0000000000ff");
+        when(vehicleClient.findById(missing)).thenThrow(maintenanceError(404, "VEH-404", "Vehicle not found"));
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(missing));
+        LocatorJ._get(VehiclesView.class);
+        NotificationsKt.expectNotifications("No existe el vehiculo " + missing);
+    }
+
+    /**
+     * Registrar donde esta: solo los tipos que admite su movilidad y los campos de cada uno; en uno de
+     * solo via, los sitios con acceso por via. Lo evidente se comprueba antes de llamar y lo que el
+     * servicio rechaza (409 VEH-001) deja el dialogo abierto.
+     */
+    @Test
+    void aLocationOffersOnlyWhatItsMobilityAdmitsAndTheServiceSaysTheRest() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        VehicleDto dresina = vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true);
+        stubVehicles(List.of(dresina));
+        when(vehicleClient.locations(eq(VEHICLE1), any(), any(), anyInt(), anyInt())).thenReturn(page(List.of(), 0, 20));
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(siding(true)), 0, 200));
+        when(vehicleClient.recordLocation(eq(VEHICLE1), any()))
+                .thenThrow(maintenanceError(409, "VEH-001", "Vehicle DR-01 is a rail-only vehicle: it is parked on a track"))
+                .thenReturn(location(VehicleLocationKind.ON_TRACK, 12L, "10.5", null, null));
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("vehicle-locate")));
+        verify(parkingSiteClient).search(eq(new ParkingSiteFilter(null, null, null, null, true, null, true)), eq(0), eq(200),
+                eq(List.of("code,asc")));
+        @SuppressWarnings("unchecked")
+        Select<VehicleLocationKind> kind = LocatorJ._get(Select.class, spec -> spec.withId("location-kind"));
+        assertEquals(VehicleLocationKind.recordable(VehicleMobility.RAIL_ONLY), ComboBoxKt.getSuggestionItems(kind), "uno de solo via no va por carretera");
+        assertTrue(LocatorJ._find(BigDecimalField.class, spec -> spec.withId("location-latitude")).size() == 1);
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("location-description")), "En la playa de vias");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        verify(vehicleClient, never()).recordLocation(any(), any());
+        assertTrue(comboWithId("location-site").isInvalid(), "uno de solo via se aparca sobre una via");
+
+        LocatorJ._setValue(kind, VehicleLocationKind.ON_TRACK);
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("location-site")).isEmpty(), "en via no hay sitio");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        assertTrue(comboWithId("location-track").isInvalid(), "en via dice su via");
+
+        LocatorJ._setValue(comboWithId("location-track"), new RefItem(12L, "VIA 1 (EP 4)"));
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("location-kp")), new BigDecimal("10.5"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("La flota no admite ese cambio. Vehicle DR-01 is a rail-only vehicle: it is parked on a track"));
+        assertFalse(LocatorJ._find(VehicleLocationDialog.class).isEmpty(), "el dialogo sigue abierto");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        verify(vehicleClient, times(2)).recordLocation(VEHICLE1, new VehicleLocationRequest(VehicleLocationKind.ON_TRACK, null, null, 12L,
+                new BigDecimal("10.5"), null, null, null, "En la playa de vias", null, null, null));
+        assertTrue(LocatorJ._find(VehicleLocationDialog.class).isEmpty());
+    }
+
+    /** Retirar pide confirmacion, y lo que el servicio no deja (el vehiculo por defecto de un equipo) se dice; reactivar es un PATCH. */
+    @Test
+    void aVehicleIsRetiredWithConfirmationAndTheDefaultVehicleOfATeamIsSaid() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        stubVehicles(List.of(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true), vehicle(VEHICLE2, "DR-02", RAIL_MODEL, null, false)));
+        doThrow(maintenanceError(409, "VEH-001", "Vehicle DR-01 is the default vehicle of team A")).when(vehicleClient).deactivate(VEHICLE1);
+        when(vehicleClient.update(any(), any())).thenReturn(vehicle(VEHICLE2, "DR-02", RAIL_MODEL, null, true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.FLEET);
+        Grid<Object> grid = gridWithId("vehicles-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, VehiclesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("vehicle-retire-" + VEHICLE1)));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(vehicleClient).deactivate(VEHICLE1);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("La flota no admite ese cambio. Vehicle DR-01 is the default vehicle of team A"));
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, VehiclesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("vehicle-activate-" + VEHICLE2)));
+        verify(vehicleClient).update(VEHICLE2, MergePatch.of(VehicleUpdateRequest.active(true), 6L));
     }
 }

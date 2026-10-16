@@ -21,6 +21,7 @@ import com.alejandro.mtobackoffice.client.notification.NotificationClient;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.VehicleClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
 import com.alejandro.mtobackoffice.client.stock.MaterialClient;
@@ -215,6 +216,11 @@ public class GatewayClientConfiguration {
     @Bean
     public ParkingSiteClient parkingSiteClient(RestClient gatewayRestClient) {
         return proxyFactory(gatewayRestClient).createClient(ParkingSiteClient.class);
+    }
+
+    @Bean
+    public VehicleClient vehicleClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(VehicleClient.class);
     }
 
     @Bean

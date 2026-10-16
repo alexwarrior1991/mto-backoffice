@@ -12,6 +12,7 @@ import com.alejandro.mtobackoffice.client.notification.NotificationClient;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.VehicleClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
 import com.alejandro.mtobackoffice.client.stock.MaterialClient;
@@ -89,7 +90,7 @@ class MtoBackofficeApplicationTests {
         }
         assertNotNull(context.getBean(NotificationClient.class));
         for (Class<?> resourcesClient : List.of(PersonClient.class, OrganizationClient.class, VehicleTypeClient.class,
-                ParkingSiteClient.class, ResourcesClients.class)) {
+                ParkingSiteClient.class, VehicleClient.class, ResourcesClients.class)) {
             assertNotNull(context.getBean(resourcesClient), resourcesClient.getSimpleName());
         }
         assertEquals(List.of("mto-configuration-api", "mto-users-api", "mto-stock-api", "mto-maintenance-api", "mto-notification-api",

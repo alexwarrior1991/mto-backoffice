@@ -7,6 +7,7 @@ import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.VehicleClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import org.springframework.stereotype.Component;
 
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public record ResourcesClients(PersonClient people, OrganizationClient organization, VehicleTypeClient vehicleTypes,
-                               ParkingSiteClient parkingSites, ExecutionPackageClient packages,
+                               ParkingSiteClient parkingSites, VehicleClient vehicles,
+                               ExecutionPackageClient packages,
                                StationClient stations, TrackClient tracks, BusinessEntityClient companies) {
 }
