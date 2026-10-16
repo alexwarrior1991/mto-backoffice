@@ -27,10 +27,16 @@ import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
 import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
 import com.alejandro.mtobackoffice.client.dto.master.StationDto;
 import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
+import com.alejandro.mtobackoffice.client.dto.resources.DrivingLicence;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationTreeNodeDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitKind;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteDto;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteKind;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonEmployer;
@@ -38,10 +44,17 @@ import com.alejandro.mtobackoffice.client.dto.resources.PersonFilter;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.RailGearType;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberDto;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberLeaveRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.UnitSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleCategory;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleMobility;
+import com.alejandro.mtobackoffice.client.dto.resources.VehiclePower;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.WorkDiscipline;
 import com.alejandro.mtobackoffice.client.dto.users.ClientDto;
 import com.alejandro.mtobackoffice.client.dto.users.ClientRoleAssignmentDto;
@@ -55,14 +68,20 @@ import com.alejandro.mtobackoffice.client.dto.users.UserCredentialDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
+import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import com.alejandro.mtobackoffice.ui.resources.OrganizationView;
+import com.alejandro.mtobackoffice.ui.resources.ParkingSiteEditorDialog;
+import com.alejandro.mtobackoffice.ui.resources.ParkingSitesView;
 import com.alejandro.mtobackoffice.ui.resources.PeopleView;
 import com.alejandro.mtobackoffice.ui.resources.PersonEditorDialog;
 import com.alejandro.mtobackoffice.ui.resources.ResourcesRoutes;
 import com.alejandro.mtobackoffice.ui.resources.TeamMembersDialog;
 import com.alejandro.mtobackoffice.ui.resources.UnitDetailView;
 import com.alejandro.mtobackoffice.ui.resources.UnitEditorDialog;
+import com.alejandro.mtobackoffice.ui.resources.VehicleTypeEditorDialog;
+import com.alejandro.mtobackoffice.ui.resources.VehicleTypesView;
 import com.alejandro.mtobackoffice.ui.support.RevisionsDialog;
 import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.alejandro.mtobackoffice.ui.maintenance.CheckItemsDialog;
@@ -408,6 +427,7 @@ import static org.mockito.Mockito.when;
 import com.alejandro.mtobackoffice.client.dto.master.TrackSchematicDto;
 import com.alejandro.mtobackoffice.ui.master.SchematicDrawing;
 import com.alejandro.mtobackoffice.ui.master.TrackSchematicDialog;
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import java.util.EnumSet;
 import com.vaadin.flow.component.treegrid.TreeGrid;
 import com.vaadin.flow.component.Svg;
@@ -482,6 +502,10 @@ class ViewLayerTest {
     private PersonClient personClient;
     @MockitoBean
     private OrganizationClient organizationClient;
+    @MockitoBean
+    private VehicleTypeClient vehicleTypeClient;
+    @MockitoBean
+    private ParkingSiteClient parkingSiteClient;
 
     @BeforeEach
     void setUp() {
@@ -8252,5 +8276,255 @@ class ViewLayerTest {
 
         UI.getCurrent().navigate(ResourcesRoutes.PEOPLE, QueryParameters.of(PeopleView.UNIT_PARAMETER, "no-es-un-id"));
         assertTrue(LocatorJ._find(Span.class, spec -> spec.withId("people-unit")).isEmpty(), "un id que no es un UUID no filtra");
+    }
+
+    // --- Recursos: modelos de vehiculo y sitios de aparcamiento -------------------------------------
+
+    private static final UUID VEHICLE_TYPE1 = UUID.fromString("7b8c9d0e-0000-4000-8000-000000000001");
+    private static final UUID VEHICLE_TYPE2 = UUID.fromString("7b8c9d0e-0000-4000-8000-000000000002");
+    private static final UUID PARKING_SITE1 = UUID.fromString("8c9d0e1f-0000-4000-8000-000000000001");
+    private static final String[] FLEET_MANAGER = {"ROLE_RESOURCES_READ", "ROLE_RESOURCES_WRITE", "ROLE_RESOURCES_FLEET_WRITE",
+            "ROLE_CONFIG_READ", "ROLE_NOTIFICATION_INBOX"};
+
+    private static VehicleTypeDto unimog(Set<String> capabilities, BigDecimal crane, boolean active) {
+        return new VehicleTypeDto(VEHICLE_TYPE1, "UNIMOG-RR", "Unimog bivial", "Mercedes-Benz", "U423", VehicleMobility.ROAD_RAIL,
+                VehicleCategory.ROAD_RAIL_TRUCK, true, false, new BigDecimal("6.20"), null, null, null, null, null, 2, 3, null, VehiclePower.DIESEL,
+                1435, 20, 40, null, null, null, false, RailGearType.RAIL_WHEEL_DRIVE, 10, null, 90, DrivingLicence.C, capabilities, crane, null,
+                null, null, null, null, null, active, 4L);
+    }
+
+    private static VehicleTypeDto dresina() {
+        return new VehicleTypeDto(VEHICLE_TYPE2, "DIC-30", "Plasser DIC-30", "Plasser", "DIC-30", VehicleMobility.RAIL_ONLY,
+                VehicleCategory.CATENARY_TOWER_CAR, true, false, null, null, null, null, null, null, 4, 6, null, VehiclePower.DIESEL, 1435, 10, 80,
+                null, null, null, true, null, null, null, null, null, Set.of("ELEVATING_PLATFORM", "PANTOGRAPH"), null, null, null, null, null,
+                null, null, true, 2L);
+    }
+
+    private void stubVehicleTypes(List<VehicleTypeDto> all) {
+        doAnswer(call -> page(all, call.getArgument(1), call.getArgument(2)))
+                .when(vehicleTypeClient).search(any(VehicleTypeFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    private void stubConfigurationNames() {
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(executionPackage(4L, "EP 4"), executionPackage(5L, "EP 5")), 0, 1000));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(12L, "VIA 1", true, 4L, List.of()), track(20L, "VIA 9", true, 5L, List.of())), 0, 1000));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(station(7L, "Rishpon", 4L)), 0, 1000));
+    }
+
+    /** Los modelos se piden al servicio con sus filtros; quien solo lee no ve controles y el menu ofrece la flota. */
+    @Test
+    void theVehicleModelsAreFilteredInTheServerAndAReaderHasNoControls() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubVehicleTypes(List.of(unimog(Set.of("CRANE", "LASER_SCANNER"), new BigDecimal("5.00"), true), dresina()));
+
+        UI.getCurrent().navigate(HomeView.class);
+        assertTrue(menuLabels().containsAll(List.of("Modelos de vehiculo", "Sitios de aparcamiento")), menuLabels().toString());
+        UI.getCurrent().navigate(ResourcesRoutes.VEHICLE_TYPES);
+
+        Grid<Object> grid = gridWithId("vehicle-types-grid");
+        assertEquals(List.of("UNIMOG-RR", "Unimog bivial", "Mercedes-Benz · U423", "Bivial", "Camion bivial", "3", "Grua, LASER_SCANNER", "Activo"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 8), "una capacidad que no se conoce se pinta con su codigo");
+        verify(vehicleTypeClient, atLeastOnce()).search(eq(VehicleTypeFilter.NONE), eq(0), anyInt(), eq(List.of("code,asc")));
+
+        @SuppressWarnings("unchecked")
+        Select<VehicleMobility> mobility = LocatorJ._get(Select.class, spec -> spec.withId("vehicle-types-mobility"));
+        LocatorJ._setValue(mobility, VehicleMobility.RAIL_ONLY);
+        ComboBox<VehicleCategory> category = comboWithId("vehicle-types-category");
+        assertEquals(VehicleCategory.of(VehicleMobility.RAIL_ONLY), ComboBoxKt.getSuggestionItems(category), "las categorias de esa movilidad");
+        LocatorJ._setValue(category, VehicleCategory.CATENARY_TOWER_CAR);
+        LocatorJ._setValue(comboWithId("vehicle-types-capability"), "PANTOGRAPH");
+        GridKt._size(grid);
+        verify(vehicleTypeClient, atLeastOnce()).search(eq(new VehicleTypeFilter(null, VehicleMobility.RAIL_ONLY, VehicleCategory.CATENARY_TOWER_CAR,
+                "PANTOGRAPH", null)), eq(0), anyInt(), anyList());
+
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("vehicle-type-create")).isEmpty());
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, VehicleTypesView.ACTIONS_COLUMN), Button.class).isEmpty());
+    }
+
+    /**
+     * El alta va por secciones segun la movilidad: uno de solo carretera no ofrece cifras de via ni de
+     * bivial; una bivial dice su equipo ferroviario; cada capacidad ensena sus cifras; los numeros se
+     * comprueban con su columna antes de llamar.
+     */
+    @Test
+    void aModelIsCreatedBySectionsOfItsMobilityAndItsFiguresAreCheckedBeforeCalling() {
+        loginAs("recursos.gestor", FLEET_MANAGER);
+        stubVehicleTypes(List.of());
+        when(vehicleTypeClient.create(any())).thenReturn(unimog(Set.of("CRANE"), new BigDecimal("5.00"), true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.VEHICLE_TYPES);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("vehicle-type-create")));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-type-code")), "UNIMOG-RR");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-type-name")), "Unimog bivial");
+        @SuppressWarnings("unchecked")
+        Select<VehicleMobility> mobility = LocatorJ._get(Select.class, spec -> spec.withId("vehicle-type-mobility"));
+        LocatorJ._setValue(mobility, VehicleMobility.ROAD_ONLY);
+        assertTrue(LocatorJ._find(VerticalLayout.class, spec -> spec.withId("vehicle-type-section-track")).isEmpty(), "sin cifras de via");
+        assertTrue(LocatorJ._find(VerticalLayout.class, spec -> spec.withId("vehicle-type-section-road-rail")).isEmpty(), "ni de bivial");
+        LocatorJ._get(VerticalLayout.class, spec -> spec.withId("vehicle-type-section-road"));
+        ComboBox<VehicleCategory> category = comboWithId("vehicle-type-category");
+        assertEquals(VehicleCategory.of(VehicleMobility.ROAD_ONLY), ComboBoxKt.getSuggestionItems(category));
+        LocatorJ._setValue(category, VehicleCategory.VAN);
+
+        LocatorJ._setValue(mobility, VehicleMobility.ROAD_RAIL);
+        assertNull(category.getValue(), "una furgoneta no es una bivial");
+        LocatorJ._get(VerticalLayout.class, spec -> spec.withId("vehicle-type-section-track"));
+        LocatorJ._get(VerticalLayout.class, spec -> spec.withId("vehicle-type-section-road-rail"));
+        LocatorJ._setValue(category, VehicleCategory.ROAD_RAIL_TRUCK);
+        assertTrue(LocatorJ._find(BigDecimalField.class, spec -> spec.withId("vehicle-type-craneCapacityT")).isEmpty(), "sin grua no hay cifras de grua");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<String> capabilities = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("vehicle-type-capabilities"));
+        LocatorJ._setValue(capabilities, Set.of("CRANE"));
+        BigDecimalField crane = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("vehicle-type-craneCapacityT"));
+        LocatorJ._setValue(crane, new BigDecimal("5.5"));
+        BigDecimalField length = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("vehicle-type-lengthM"));
+        LocatorJ._setValue(length, new BigDecimal("12345"));
+        LocatorJ._setValue(LocatorJ._get(IntegerField.class, spec -> spec.withId("vehicle-type-trackGaugeMm")), 1435);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleTypeEditorDialog.SAVE_ID)));
+        verify(vehicleTypeClient, never()).create(any());
+        assertEquals("Como mucho 4 cifras enteras", length.getErrorMessage());
+        assertTrue(LocatorJ._get(Select.class, spec -> spec.withId("vehicle-type-rail-gear")).isInvalid(), "una bivial dice su equipo ferroviario");
+
+        LocatorJ._setValue(length, new BigDecimal("6.20"));
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("vehicle-type-rail-gear")), RailGearType.RAIL_WHEEL_DRIVE);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleTypeEditorDialog.SAVE_ID)));
+        verify(vehicleTypeClient).create(argThat(request -> request.code().equals("UNIMOG-RR") && request.mobility() == VehicleMobility.ROAD_RAIL
+                && request.category() == VehicleCategory.ROAD_RAIL_TRUCK && request.railGearType() == RailGearType.RAIL_WHEEL_DRIVE
+                && Boolean.FALSE.equals(request.needsPreparedAccess()) && Boolean.FALSE.equals(request.transportModeAuthorised())
+                && request.trackGaugeMm() == 1435 && new BigDecimal("6.20").equals(request.lengthM())
+                && new BigDecimal("5.5").equals(request.craneCapacityT()) && request.capabilities().equals(Set.of("CRANE"))
+                && Boolean.TRUE.equals(request.selfPropelled())));
+        assertTrue(LocatorJ._find(VehicleTypeEditorDialog.class).isEmpty());
+    }
+
+    /**
+     * Modificar no cambia el codigo ni la movilidad, manda lo cambiado y la version, y quitar una
+     * capacidad vacia sus cifras; una capacidad que no se conoce vuelve tal cual. Lo que el servicio
+     * dice de un modelo incoherente se notifica con el dialogo abierto.
+     */
+    @Test
+    void aModelIsPatchedWithWhatChangedAndRemovingACapabilityEmptiesItsFigures() {
+        loginAs("recursos.gestor", FLEET_MANAGER);
+        VehicleTypeDto existing = unimog(Set.of("CRANE", "LASER_SCANNER"), new BigDecimal("5.00"), true);
+        stubVehicleTypes(List.of(existing));
+        when(vehicleTypeClient.update(any(), any()))
+                .thenThrow(maintenanceError(400, "VAL-001", "Crane figures (craneCapacityT, craneReachM) need the CRANE capability"))
+                .thenReturn(existing);
+
+        UI.getCurrent().navigate(ResourcesRoutes.VEHICLE_TYPES);
+        Grid<Object> grid = gridWithId("vehicle-types-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, VehicleTypesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("vehicle-type-edit-" + VEHICLE_TYPE1)));
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-type-code")).isReadOnly());
+        assertTrue(LocatorJ._get(Select.class, spec -> spec.withId("vehicle-type-mobility")).isReadOnly());
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<String> capabilities = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("vehicle-type-capabilities"));
+        assertEquals(Set.of("CRANE", "LASER_SCANNER"), capabilities.getValue());
+        LocatorJ._setValue(capabilities, Set.of("LASER_SCANNER", "TOWING"));
+        assertTrue(LocatorJ._find(BigDecimalField.class, spec -> spec.withId("vehicle-type-craneCapacityT")).isEmpty());
+        LocatorJ._setValue(LocatorJ._get(IntegerField.class, spec -> spec.withId("vehicle-type-seats")), 5);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleTypeEditorDialog.SAVE_ID)));
+
+        MergePatch<VehicleTypeUpdateRequest> expected = new MergePatch<>(new VehicleTypeUpdateRequest(null, null, null, null, null, null, null,
+                null, null, null, null, null, null, 5, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                Set.of("LASER_SCANNER", "TOWING"), null, null, null, null, null, null, null, null), Set.of("craneCapacityT"), 4L);
+        verify(vehicleTypeClient).update(VEHICLE_TYPE1, expected);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("La peticion no es valida. Crane figures (craneCapacityT, craneReachM) need the CRANE capability"));
+        assertFalse(LocatorJ._find(VehicleTypeEditorDialog.class).isEmpty(), "el dialogo sigue abierto con lo escrito");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleTypeEditorDialog.SAVE_ID)));
+        verify(vehicleTypeClient, times(2)).update(VEHICLE_TYPE1, expected);
+    }
+
+    /** Retirar un modelo pide resources-delete y confirmacion; volver a ofrecerlo es un PATCH active=true. */
+    @Test
+    void aModelIsRetiredWithConfirmationAndOfferedAgainByPatch() {
+        loginAs("recursos.responsable", RESOURCES_ADMIN);
+        VehicleTypeDto retired = unimog(Set.of(), null, false);
+        stubVehicleTypes(List.of(dresina(), retired));
+        when(vehicleTypeClient.update(any(), any())).thenReturn(unimog(Set.of(), null, true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.VEHICLE_TYPES);
+        Grid<Object> grid = gridWithId("vehicle-types-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, VehicleTypesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("vehicle-type-retire-" + VEHICLE_TYPE2)));
+        verify(vehicleTypeClient, never()).deactivate(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(vehicleTypeClient).deactivate(VEHICLE_TYPE2);
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, VehicleTypesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("vehicle-type-activate-" + VEHICLE_TYPE1)));
+        verify(vehicleTypeClient).update(VEHICLE_TYPE1, MergePatch.of(VehicleTypeUpdateRequest.active(true), 4L));
+    }
+
+    private static ParkingSiteDto siding(boolean active) {
+        return new ParkingSiteDto(PARKING_SITE1, "APT-RSH", "Apartadero de Rishpon", ParkingSiteKind.SIDING, 4L, 7L, 12L, new BigDecimal("12.300"),
+                true, false, null, new BigDecimal("32.200000"), new BigDecimal("34.820000"), null, active, 2L);
+    }
+
+    /**
+     * Un sitio se alcanza por via, por carretera o por las dos; con acceso por via dice su via; las
+     * coordenadas van juntas. Las vias que se ofrecen son las del EP elegido.
+     */
+    @Test
+    void aParkingSiteNeedsAnAccessAndATrackForRailAccessAndItsCoordinatesTogether() {
+        loginAs("recursos.gestor", FLEET_MANAGER);
+        stubConfigurationNames();
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(siding(true)), 0, 50));
+        when(parkingSiteClient.create(any())).thenReturn(siding(true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.PARKING_SITES);
+        assertEquals(List.of("APT-RSH", "Apartadero de Rishpon", "Apartadero", "EP 4", "VIA 1 (EP 4) · kp 12.300", "Via", "Activo"),
+                GridKt._getFormattedRow(gridWithId("parking-sites-grid"), 0).subList(0, 7));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("parking-site-create")));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("parking-site-code")), "APT-RSH");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("parking-site-name")), "Apartadero de Rishpon");
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("parking-site-kind")), ParkingSiteKind.SIDING);
+        Checkbox rail = LocatorJ._get(Checkbox.class, spec -> spec.withId("parking-site-rail-access"));
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("parking-site-road-access")), false);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(ParkingSiteEditorDialog.SAVE_ID)));
+        verify(parkingSiteClient, never()).create(any());
+        assertEquals("Un sitio se alcanza por via, por carretera o por las dos", rail.getErrorMessage());
+
+        LocatorJ._setValue(rail, true);
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("parking-site-latitude")), new BigDecimal("32.2"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(ParkingSiteEditorDialog.SAVE_ID)));
+        verify(parkingSiteClient, never()).create(any());
+        ComboBox<RefItem> track = comboWithId("parking-site-track");
+        assertTrue(track.isInvalid(), "con acceso por via dice su via");
+        assertTrue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("parking-site-latitude")).isInvalid(), "las coordenadas van juntas");
+
+        LocatorJ._setValue(comboWithId("parking-site-package"), new RefItem(4L, "EP 4"));
+        assertEquals(List.of("VIA 1 (EP 4)"), ComboBoxKt.getSuggestionItems(track).stream().map(RefItem::label).toList(), "las vias del EP");
+        LocatorJ._setValue(track, new RefItem(12L, "VIA 1 (EP 4)"));
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("parking-site-latitude")), null);
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("parking-site-kp")), new BigDecimal("12.300"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(ParkingSiteEditorDialog.SAVE_ID)));
+        verify(parkingSiteClient).create(new ParkingSiteRequest("APT-RSH", "Apartadero de Rishpon", ParkingSiteKind.SIDING, 4L, null, 12L,
+                new BigDecimal("12.300"), true, false, null, null, null, null));
+    }
+
+    /** Modificar un sitio manda lo cambiado; sin config-read su EP, estacion y via se ven como #id y no viajan. */
+    @Test
+    void withoutConfigReadAParkingSiteKeepsItsPlacesAndOnlyWhatChangedTravels() {
+        loginAs("recursos.gestor", "ROLE_RESOURCES_READ", "ROLE_RESOURCES_WRITE");
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(siding(true)), 0, 50));
+        when(parkingSiteClient.update(any(), any())).thenReturn(siding(true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.PARKING_SITES);
+        Grid<Object> grid = gridWithId("parking-sites-grid");
+        assertEquals(List.of("#4", "#12 · kp 12.300"), GridKt._getFormattedRow(grid, 0).subList(3, 5));
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, ParkingSitesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("parking-site-edit-" + PARKING_SITE1)));
+        assertEquals("#4 · #7 · #12", LocatorJ._get(TextField.class, spec -> spec.withId("parking-site-where-readonly")).getValue());
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("parking-site-road-access")), true);
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("parking-site-latitude")), null);
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("parking-site-longitude")), null);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(ParkingSiteEditorDialog.SAVE_ID)));
+        verify(parkingSiteClient).update(PARKING_SITE1, new MergePatch<>(new ParkingSiteUpdateRequest(null, null, null, null, null, null, null,
+                true, null, null, null, null, null), Set.of("latitude", "longitude"), 2L));
+        verify(executionPackageClient, never()).filter(anyInt(), anyInt(), anyList(), anyMap());
     }
 }

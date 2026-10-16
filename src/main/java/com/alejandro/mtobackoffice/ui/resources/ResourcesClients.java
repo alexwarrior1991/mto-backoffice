@@ -5,7 +5,9 @@ import com.alejandro.mtobackoffice.client.configuration.ExecutionPackageClient;
 import com.alejandro.mtobackoffice.client.configuration.StationClient;
 import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
+import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import org.springframework.stereotype.Component;
 
 /**
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Component;
  * que mto-resources solo guarda como id ({@link ResourcesNames}).
  */
 @Component
-public record ResourcesClients(PersonClient people, OrganizationClient organization, ExecutionPackageClient packages,
+public record ResourcesClients(PersonClient people, OrganizationClient organization, VehicleTypeClient vehicleTypes,
+                               ParkingSiteClient parkingSites, ExecutionPackageClient packages,
                                StationClient stations, TrackClient tracks, BusinessEntityClient companies) {
 }

@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.ui.resources;
 
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitKind;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonEmployer;
@@ -52,5 +53,12 @@ final class ResourcesFormats {
 
     static String date(LocalDate date) {
         return date == null ? "" : Formats.date(date);
+    }
+
+    /** Por donde se llega a un sitio: «Via y carretera», «Via», «Carretera». */
+    static String access(ParkingSiteDto site) {
+        boolean rail = Boolean.TRUE.equals(site.railAccess());
+        boolean road = Boolean.TRUE.equals(site.roadAccess());
+        return rail && road ? "Via y carretera" : rail ? "Via" : road ? "Carretera" : "";
     }
 }

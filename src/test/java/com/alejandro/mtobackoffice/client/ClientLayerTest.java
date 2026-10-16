@@ -26,21 +26,35 @@ import com.alejandro.mtobackoffice.client.dto.master.StationDto;
 import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
 import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.provider.SortDirection;
+import com.alejandro.mtobackoffice.client.dto.resources.DrivingLicence;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationTreeNodeDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitKind;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteDto;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteKind;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonEmployer;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonFilter;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.RailGearType;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberDto;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberLeaveRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMembersRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleCapability;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleCategory;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleMobility;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.WorkDiscipline;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
@@ -50,7 +64,9 @@ import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
 import com.alejandro.mtobackoffice.client.error.TooManyRequestsApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
+import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import com.alejandro.mtobackoffice.configuration.client.GatewayClientConfiguration;
 import com.alejandro.mtobackoffice.configuration.client.UserTokenProvider;
 import com.alejandro.mtobackoffice.configuration.security.CurrentPrincipal;
@@ -280,6 +296,8 @@ class ClientLayerTest {
     private NotificationClient notificationClient;
     private PersonClient personClient;
     private OrganizationClient organizationClient;
+    private VehicleTypeClient vehicleTypeClient;
+    private ParkingSiteClient parkingSiteClient;
 
     @BeforeEach
     void setUp() {
@@ -317,6 +335,8 @@ class ClientLayerTest {
         notificationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(NotificationClient.class);
         personClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(PersonClient.class);
         organizationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(OrganizationClient.class);
+        vehicleTypeClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(VehicleTypeClient.class);
+        parkingSiteClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ParkingSiteClient.class);
     }
 
     @AfterEach
@@ -3189,5 +3209,112 @@ class ClientLayerTest {
         assertEquals(List.of(PersonCategory.PROJECT_MANAGER), OrganizationUnitKind.PROJECT.headCategories(null));
         assertEquals(List.of(), OrganizationUnitKind.UNKNOWN.headCategories(null));
         assertEquals(List.of(PersonCategory.WORKER, PersonCategory.TEAM_LEADER), OrganizationUnitKind.LINEMAN_CATEGORIES);
+    }
+
+    private static final String VEHICLE_TYPE_ID = "7b8c9d0e-0000-4000-8000-000000000001";
+    private static final String PARKING_SITE_ID = "8c9d0e1f-0000-4000-8000-000000000001";
+
+    private static String vehicleTypeJson(String category, String capabilities) {
+        return "{\"id\":\"" + VEHICLE_TYPE_ID + "\",\"code\":\"UNIMOG-RR\",\"name\":\"Unimog bivial\",\"manufacturer\":\"Mercedes-Benz\","
+                + "\"model\":\"U423\",\"mobility\":\"ROAD_RAIL\",\"category\":\"" + category + "\",\"selfPropelled\":true,\"portable\":false,"
+                + "\"lengthM\":6.20,\"seats\":3,\"trackGaugeMm\":1435,\"railGearType\":\"RAIL_WHEEL_DRIVE\",\"onTrackingMinutes\":10,"
+                + "\"needsPreparedAccess\":false,\"maxSpeedRoadKmh\":90,\"requiredLicence\":\"C\",\"capabilities\":" + capabilities + ","
+                + "\"craneCapacityT\":5.00,\"towingCapacityT\":40.00,\"active\":true,\"version\":4,\"audit\":null}";
+    }
+
+    /**
+     * Los modelos: la busqueda con sus filtros y el id para desempatar; el alta sin lo vacio (las
+     * capacidades en orden); la modificacion con lo cambiado, lo vaciado y la version; retirar. Una
+     * categoria nueva se lee como UNKNOWN y una capacidad nueva vuelve tal cual, como texto.
+     */
+    @Test
+    void vehicleModelsAreSearchedCreatedPatchedAndRetiredAndAnUnknownCapabilitySurvives() {
+        server.expect(requestTo(RESOURCES + "/vehicle-types?search=unimog&mobility=ROAD_RAIL&category=ROAD_RAIL_TRUCK&capability=CRANE&active=true"
+                        + "&page=0&size=50&sort=code%2Casc&sort=id%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(vehicleTypeJson("ROAD_RAIL_TRUCK", "[\"TOWING\",\"CRANE\",\"LASER_SCANNER\"]") + ","
+                        + vehicleTypeJson("HOVERCRAFT", "[]"), 0, 50, 2), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/vehicle-types")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"VAN-1\",\"name\":\"Furgoneta\",\"mobility\":\"ROAD_ONLY\",\"category\":\"VAN\","
+                        + "\"selfPropelled\":true,\"portable\":false,\"seats\":3,\"capabilities\":[\"CREW_CABIN\",\"EARTHING\"]}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(vehicleTypeJson("ROAD_RAIL_TRUCK", "[]")));
+        server.expect(requestTo(RESOURCES + "/vehicle-types/" + VEHICLE_TYPE_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"capabilities\":[\"LASER_SCANNER\",\"TOWING\"],\"craneCapacityT\":null,\"version\":4}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(vehicleTypeJson("ROAD_RAIL_TRUCK", "[]"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/vehicle-types/" + VEHICLE_TYPE_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        PageResponse<VehicleTypeDto> page = asUser(() -> vehicleTypeClient.search(new VehicleTypeFilter(" unimog ", VehicleMobility.ROAD_RAIL,
+                VehicleCategory.ROAD_RAIL_TRUCK, "CRANE", true), 0, 50, List.of("code,asc")));
+        asUser(() -> vehicleTypeClient.create(new VehicleTypeRequest("VAN-1", "Furgoneta", null, null, VehicleMobility.ROAD_ONLY,
+                VehicleCategory.VAN, true, false, null, null, null, null, null, null, null, 3, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, new java.util.TreeSet<>(Set.of("EARTHING", "CREW_CABIN")), null, null, null, null, null,
+                null, null)));
+        VehicleTypeDto unimog = page.content().getFirst();
+        asUser(() -> vehicleTypeClient.update(unimog.id(), new MergePatch<>(new VehicleTypeUpdateRequest(null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, new java.util.TreeSet<>(Set.of("TOWING", "LASER_SCANNER")), null, null, null, null, null, null, null, null),
+                Set.of("craneCapacityT"), 4L)));
+        asUser(() -> {
+            vehicleTypeClient.deactivate(unimog.id());
+            return null;
+        });
+
+        assertEquals("UNIMOG-RR · Unimog bivial", unimog.label());
+        assertEquals(VehicleMobility.ROAD_RAIL, unimog.mobility());
+        assertEquals(RailGearType.RAIL_WHEEL_DRIVE, unimog.railGearType());
+        assertEquals(DrivingLicence.C, unimog.requiredLicence());
+        assertEquals(new java.math.BigDecimal("5.00"), unimog.craneCapacityT());
+        assertEquals(Set.of("CRANE", "LASER_SCANNER", "TOWING"), unimog.capabilities(), "una capacidad nueva se queda como texto");
+        assertEquals("LASER_SCANNER", VehicleCapability.labelOf("LASER_SCANNER"));
+        assertEquals("Grua", VehicleCapability.labelOf("CRANE"));
+        assertEquals(VehicleCategory.UNKNOWN, page.content().get(1).category(), "una categoria nueva se lee como desconocida");
+        assertTrue(VehicleMobility.ROAD_RAIL.runsOnTrack() && VehicleMobility.ROAD_RAIL.runsOnRoad());
+        assertFalse(VehicleMobility.RAIL_ONLY.runsOnRoad());
+        assertFalse(VehicleMobility.ROAD_ONLY.runsOnTrack());
+        assertEquals(List.of(VehicleCategory.VAN, VehicleCategory.PICKUP, VehicleCategory.CREW_BUS, VehicleCategory.CRANE_TRUCK,
+                VehicleCategory.TRUCK, VehicleCategory.LOW_LOADER, VehicleCategory.CAR), VehicleCategory.of(VehicleMobility.ROAD_ONLY));
+        server.verify();
+    }
+
+    /** Los sitios de aparcamiento: la busqueda con sus filtros, el alta sin lo vacio, la modificacion y retirar. */
+    @Test
+    void parkingSitesAreSearchedCreatedPatchedAndRetired() {
+        String site = "{\"id\":\"" + PARKING_SITE_ID + "\",\"code\":\"APT-RSH\",\"name\":\"Apartadero de Rishpon\",\"kind\":\"SIDING\","
+                + "\"executionPackageId\":4,\"stationId\":null,\"trackId\":12,\"kp\":12.300,\"railAccess\":true,\"roadAccess\":false,"
+                + "\"address\":null,\"latitude\":32.200000,\"longitude\":34.820000,\"notes\":null,\"active\":true,\"version\":2,\"audit\":null}";
+        server.expect(requestTo(RESOURCES + "/parking-sites?kind=SIDING&executionPackageId=4&active=true&page=0&size=50&sort=code%2Casc&sort=id%2Casc"))
+                .andExpect(method(HttpMethod.GET)).andRespond(withSuccess(stockPage(site, 0, 50, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/parking-sites")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"APT-RSH\",\"name\":\"Apartadero de Rishpon\",\"kind\":\"SIDING\",\"trackId\":12,"
+                        + "\"kp\":12.300,\"railAccess\":true,\"roadAccess\":false}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(site));
+        server.expect(requestTo(RESOURCES + "/parking-sites/" + PARKING_SITE_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"roadAccess\":true,\"latitude\":null,\"longitude\":null,\"version\":2}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(site, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/parking-sites/" + PARKING_SITE_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        PageResponse<ParkingSiteDto> page = asUser(() -> parkingSiteClient.search(new ParkingSiteFilter(" ", ParkingSiteKind.SIDING, 4L, null, null,
+                null, true), 0, 50, List.of("code,asc")));
+        asUser(() -> parkingSiteClient.create(new ParkingSiteRequest("APT-RSH", "Apartadero de Rishpon", ParkingSiteKind.SIDING, null, null, 12L,
+                new java.math.BigDecimal("12.300"), true, false, null, null, null, null)));
+        asUser(() -> parkingSiteClient.update(UUID.fromString(PARKING_SITE_ID), new MergePatch<>(new ParkingSiteUpdateRequest(null, null, null,
+                null, null, null, null, true, null, null, null, null, null), Set.of("latitude", "longitude"), 2L)));
+        asUser(() -> {
+            parkingSiteClient.deactivate(UUID.fromString(PARKING_SITE_ID));
+            return null;
+        });
+
+        ParkingSiteDto rishpon = page.content().getFirst();
+        assertEquals("APT-RSH · Apartadero de Rishpon", rishpon.label());
+        assertEquals(ParkingSiteKind.SIDING, rishpon.kind());
+        assertEquals(12L, rishpon.trackId());
+        assertEquals(new java.math.BigDecimal("12.300"), rishpon.kp());
+        server.verify();
     }
 }
