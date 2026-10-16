@@ -8,7 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Aplicación **Spring Boot 4.1 / Java 25 + Vaadin Flow 25** que consume las APIs del dominio a través
 de `mto-gateway` con el token de la persona, servidor a servidor. Es un **cliente**: sin base de
 datos, sin broker, sin lógica de negocio. Lo que una pantalla necesita y la API no da bien se
-arregla en el servicio (`mto-configuration`, `mto-users`, `mto-stock` o `mto-maintenance`), no aquí. `README.md` es la referencia funcional y
+arregla en el servicio (`mto-configuration`, `mto-users`, `mto-stock`, `mto-maintenance`, `mto-notification` o
+`mto-resources`), no aquí. `README.md` es la referencia funcional y
 operativa; `keycloak/README.md`, la del cliente OIDC en el realm.
 
 ⚠️ **Convive con `mto-frontend`**, la SPA en React del dominio: las dos aplicaciones se usan
@@ -18,7 +19,7 @@ una llamada distinta, lo que se ofrece, cómo se dice un error) se lleva a la ot
 cambio; los textos no tienen que coincidir (aquí siguen sin tildes). «Abrir en mto-frontend», en la
 barra, lleva a la misma pantalla allí, y la SPA tiene el enlace de vuelta.
 
-⚠️ `mto-configuration`, `mto-stock`, `mto-maintenance`, `mto-users` y `mto-gateway` son **repos
+⚠️ `mto-configuration`, `mto-stock`, `mto-maintenance`, `mto-users`, `mto-notification`, `mto-resources` y `mto-gateway` son **repos
 hermanos independientes**. La infraestructura local (Keycloak, el gateway, los servicios) la levanta
 `mto-platform`, cuyo `keycloak/apply-partials.sh` aplica `keycloak/mto-backoffice-partial-import.json`
 y `keycloak/mto-backoffice-dev.json` de este repositorio. `compose.yaml` aquí trae **solo la aplicación**.
@@ -100,7 +101,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   material—, `AssetClient`, `MaintenanceCatalogClient` —equipos, tipos de tarea, plantillas de
   inspección—, `ShiftClient` —turnos, sus tareas y perfiles, asignar una tarea y sacarla—, `InspectionClient`,
   `DefectClient` y `ReportClient` —cada informe en JSON y como fichero `ResponseEntity<byte[]>`—,
-  todos con `revisions` salvo los catálogos y los informes; DTO como records en
+  todos con `revisions` salvo los catálogos y los informes, y `OperationClient`, las operaciones de
+  fondo (`GET /operations/{id}`) que deja un `Prefer: respond-async`; DTO como records en
   `client/dto/maintenance`: filtros (`OrderFilter`, `AssetFilter`...), peticiones `*Request`, las
   modificaciones como `MergePatch<*UpdateRequest>` (en `client/dto`, porque `mto-resources` modifica
   igual: lo cambiado, lo vaciado y la versión leída) y
@@ -108,7 +110,16 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `mto-notification` bajo `/api/notifications`: mi bandeja paginada con sus filtros, el contador
   acotado, marcar una o todas, el registro con sus filtros y el detalle de una línea, y los
   accesos; DTO como records en `client/dto/notification`, con `payload` como `Map` y los
-  enumerados tolerantes `ActivityCategory`, `ActivitySeverity`, `ActorKind` y `AccessOutcome`).
+  enumerados tolerantes `ActivityCategory`, `ActivitySeverity`, `ActorKind` y `AccessOutcome`);
+  `client/resources` (la API de `mto-resources` bajo `/api/resources`: `PersonClient`,
+  `OrganizationClient` —el árbol, las unidades, sus hijas y los linemen de un equipo, con `PUT` de la
+  lista entera, `POST` para añadir uno y `leave` para que salga—, `VehicleTypeClient`,
+  `ParkingSiteClient` y `VehicleClient` —con sus ubicaciones y el tablero, `positions`, ordenado por vía
+  y kp con el vehículo para desempatar—; DTO como records en `client/dto/resources`, con los resúmenes
+  —`PersonSummaryDto`, `UnitSummaryDto`, `VehicleSummaryDto`...— iguales por id para que un desplegable
+  reconozca lo leído, y las reglas copiadas del servicio en sus enumerados: `OrganizationUnitKind`
+  con sus niveles, a qué puede colgar y qué categorías lo dirigen, `VehicleCategory` con su movilidad,
+  `VehicleLocationKind.recordable` con lo que admite cada movilidad).
   Los DTO
   (`client/dto`): `LovDto` es un record con solo las claves que usa la UI (con `versionNumber`,
   que vuelve como se leyó) y `@JsonInclude(NON_NULL)`; los maestros (`client/dto/master`) son
@@ -199,7 +210,16 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (una ruta de esta aplicación con sus parámetros, o una pestaña nueva si es absoluto);
   `ActivityView`, el registro con los filtros del servicio y los de la URL (`BeforeEnterObserver`);
   `AccessView`, los accesos con su permiso aparte; `EventDetailDialog`, una línea entera con su
-  `payload` clave a clave), `ui/support` (`UiErrors`: excepción →
+  `payload` clave a clave), `ui/resources` (`ResourcesRoutes`, las rutas bajo `recursos`;
+  `ResourcesClients`; `ResourcesNames`, los nombres de `mto-configuration` como en mantenimiento;
+  `ResourcesPickers`, las personas y los vehículos buscados en el servidor, que usan también los turnos
+  de mantenimiento; `PeopleView` con `PersonEditorDialog`; `OrganizationView`, el árbol en un
+  `TreeGrid`, y `UnitDetailView` con `UnitEditorDialog`, `TeamMembersPanel`, `TeamMembersDialog`,
+  `MemberDialogs` y `ChildUnitsPanel`; `VehiclesView`, `VehicleDetailView` con `VehicleLocationsPanel`,
+  `VehicleLocationDialog` y `VehicleEditorDialog`; `FleetBoardView`, el tablero; `VehicleTypesView` y
+  `ParkingSitesView` con sus editores; `ResourcesFormats` y `ResourcesHistory`; en `ui/maintenance`,
+  `TaskGeneration`, la generación con `Prefer` y su seguimiento, y `ParkingRows`, dónde queda cada
+  vehículo al cerrar un turno), `ui/support` (`UiErrors`: excepción →
   `Notification`; `Screens`: los botones de fila, las confirmaciones, los avisos y la ficha que no se
   puede leer, que comparten mantenimiento y recursos; `Changes`: lo que cambió en un editor frente a
   lo leído, para un `MergePatch`, con los conjuntos comparados sin orden; `ServerValidation`: `errors[]` del servicio → campos del `Binder`;
@@ -634,6 +654,42 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   recargue en cuanto lo detecte y la cadena de seguridad reentre por el SSO de Keycloak. No se
   persisten las sesiones (serializar una sesión de Vaadin es frágil y el almacén de tokens se
   perdería igual) ni se introduce una base de datos para los tokens: es un cliente.
+- **Personal, organigrama y flota son de `mto-resources`, y sus reglas las decide el servicio.** Lo que
+  se copia aquí es solo para no ofrecer lo que va a fallar: un equipo nace con su jefe y de 2 a 6
+  linemen (comprobado antes de llamar), «Añadir lineman» se apaga con 6 y «Sale del equipo» con 2, y
+  cambiar varios a la vez es la lista entera (`PUT /members`, con su fecha); el padre de una unidad es de
+  un nivel estrictamente superior y de la misma disciplina, y su jefe, de las categorías que admite el
+  nivel (en un equipo se sustituye, nunca se vacía); un modelo enseña solo las secciones de su movilidad
+  y sus capacidades con sus cifras (quitar una vacía sus cifras; una desconocida vuelve tal cual); un
+  vehículo pide lo que exige su modelo; y «Registrar ubicación» ofrece solo lo que admite su movilidad,
+  con los sitios que alcanza. Lo demás es su 409 `UNI-001` o `VEH-001`, con el diálogo abierto. Todo se
+  modifica con merge-patch y la versión leída, como en mantenimiento, y nada se borra: `DELETE`
+  desactiva o retira (`resources-delete`) y reactivar es un `PATCH active=true`. El tablero es una tabla
+  por vía y kp (`effective ?? position`: un remolcado está donde su portador) que se vuelve a pedir con
+  «Actualizar», sin sondeo. Las rutas `recursos/*` son las de mto-frontend
+  (`theResourcesRoutesAreTheOnesOfTheSpa`).
+- **Un equipo de mantenimiento que llega de `mto-resources` se lee.** Su origen, su jefe, su supervisor
+  y sus linemen salen en la lista, y su fila lleva a su unidad del organigrama y a su vehículo (con
+  `resources-read`) en vez de a «Modificar», que el servicio rechazaría con 409 `TEA-001`; si llega, se
+  dice que se cambia en Recursos > Organigrama.
+- **La dotación y los vehículos de un turno son de `mto-resources`.** Con `resources-read` el editor
+  elige el jefe (cualquiera menos un operario), el supervisor (de supervisor para arriba), los linemen
+  (operarios o jefes de equipo) y los vehículos disponibles; en el alta, lo que se deja vacío no viaja y
+  lo copia el servicio del equipo; al modificar, linemen y vehículos son conjuntos y quitarlos todos
+  viaja a `null`. Sin `resources-read` se leen y no viajan. Las demás reglas (de 2 a 6 linemen para
+  iniciar, las plazas, el remolque, una persona o un vehículo en otro turno del día) son el 409
+  `SHF-001` del servicio, y una persona o un vehículo que aún no ha llegado por evento, su 404
+  `CRW-404`/`FLT-404`. Cerrar el turno dice dónde queda cada vehículo (`ParkingRows`: un sitio que
+  alcanza por su movilidad, una vía y su kp, o un texto); solo viaja lo rellenado, lo evidente se dice
+  en su fila antes de llamar, y lo que `mto-resources` lee de ahí es lo que lo mueve.
+- **Generar tareas de verdad va con `Prefer: respond-async, wait=5`** (`TaskGeneration`). Si el servicio
+  termina en su espera contesta lo de siempre; si no, 202 con la operación, que el diálogo sigue cada
+  2 s desde `SharedPolling` con la pestaña a la vista (`GET /operations/{id}`, nunca el `Location`, que
+  es la ruta interna del servicio): al terminar bien dice lo mismo que la llamada síncrona y relee las
+  tareas; si falla, su error como el de la llamada síncrona (`TaskGeneration.failureOf`; `OPS-410` es una
+  abandonada), con el diálogo abierto; cerrarlo deja de seguirla y avisa de que continúa allí. El tope
+  de operaciones del despliegue es un 429 `OPS-429` con cuándo reintentar. La previsualización sigue
+  siendo síncrona. Un `OperationStatus` desconocido se da por terminado, para no preguntar sin fin.
 - **Nada de componentes de pago.** `vaadin-spring-boot-starter` trae solo `vaadin-core-internal`.
 
 ### Tests
@@ -792,7 +848,14 @@ retirado en los filtros del almacén, las fichas de mantenimiento ante un fallo 
 las notificaciones. Y las cinco diferencias que cerró la fase 9 de la SPA: una petición por página y
 un fallo avisado una vez, el catálogo de roles una vez por pantalla, las filas que se abren con doble
 clic o con su botón y no con un clic, el `ACT-404` dentro de su diálogo y los números de cada diálogo
-(lo que no cabe en la columna, el mínimo con su mensaje, la medida que el campo no sabe leer). Todo
-corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
+(lo que no cabe en la columna, el mínimo con su mensaje, la medida que el campo no sabe leer). Los
+recursos (fase 10) son casos de esas mismas clases: en `ClientLayerTest`, las personas, el organigrama
+con sus linemen, los modelos, los sitios, los vehículos con sus ubicaciones y el tablero, el turno con
+su dotación, sus vehículos y sus aparcamientos, y el 202 de una generación con su operación; en
+`ViewLayerTest`, el menú de recursos y sus permisos, el personal, el árbol y la ficha de una unidad con
+la regla de 2 a 6, los modelos por secciones, los vehículos y dónde están, el tablero, el vehículo por
+defecto de un equipo, el equipo sincronizado de solo lectura, la dotación del turno y su cierre con
+aparcamientos, la generación seguida hasta su resultado, su fallo y su 429, y las rutas de recursos
+iguales a las de la SPA. Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
 CI: `mto-platform/scripts/e2e.sh` construye la imagen de este commit, usa la publicada de cada
 hermano y corre el e2e de Playwright de mto-frontend, que recorre las dos aplicaciones.

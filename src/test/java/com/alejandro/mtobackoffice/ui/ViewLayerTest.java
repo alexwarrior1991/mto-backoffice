@@ -456,6 +456,8 @@ import static org.mockito.Mockito.when;
 import com.alejandro.mtobackoffice.client.dto.master.TrackSchematicDto;
 import com.alejandro.mtobackoffice.ui.master.SchematicDrawing;
 import com.alejandro.mtobackoffice.ui.master.TrackSchematicDialog;
+import java.util.Objects;
+import com.vaadin.flow.router.Route;
 import tools.jackson.databind.ObjectMapper;
 import com.vaadin.flow.data.provider.Query;
 import com.vaadin.flow.data.provider.DataProvider;
@@ -8074,6 +8076,25 @@ class ViewLayerTest {
     private static PersonDto person(UUID id, String code, String first, String last, PersonCategory category, boolean active) {
         return new PersonDto(id, code, "E-" + code.substring(4), first, last, first + " " + last, null, category, PersonEmployer.OWN, null,
                 "+972 50 000 0000", active, 2L);
+    }
+
+    /**
+     * Las rutas de recursos son las de mto-frontend, que tiene la misma lista copiada en
+     * src/test/fixtures/backoffice-routes.json: una ruta nueva o renombrada aqui se lleva alli en el mismo
+     * cambio, y la SPA lo comprueba contra ese fichero. Las literales (tablero, modelos, aparcamientos)
+     * ganan a las de parametro en los dos routers.
+     */
+    @Test
+    void theResourcesRoutesAreTheOnesOfTheSpa() {
+        List<String> routes = ROUTES.getRoutes().stream()
+                .map(view -> view.getAnnotation(Route.class))
+                .filter(Objects::nonNull)
+                .map(Route::value)
+                .filter(route -> route.startsWith(ResourcesRoutes.PREFIX + "/"))
+                .sorted()
+                .toList();
+        assertEquals(List.of("recursos/flota", "recursos/flota/:vehicleId", "recursos/flota/aparcamientos", "recursos/flota/modelos",
+                "recursos/flota/tablero", "recursos/organigrama", "recursos/organigrama/:unitId", "recursos/personal"), routes);
     }
 
     private void stubPeople(List<PersonDto> all) {

@@ -60,7 +60,7 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   (`APP_NOTIFICATION_LINK_BASE_URL`): las rutas son las mismas en las dos, así que cambiarlo es solo
   esa variable.
 
-## Estado: fase 9
+## Estado: fase 10
 
 - **Fase 0**: circuito completo con lo mínimo. Cliente `mto-backoffice` en el realm, login OIDC,
   marco con menú filtrado por roles y la pantalla de inicio con el diagnóstico del token.
@@ -295,6 +295,33 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   con el token, y un valor nuevo del servicio (una categoría, una gravedad, un resultado) se lee
   como desconocido en vez de romper la pantalla.
 
+- **Fase 10**: el módulo **Recursos** sobre `mto-resources` (`recursos/*`) y mantenimiento adaptado a
+  él. **Personal** (`recursos/personal`): las personas con su categoría, buscadas, filtradas y
+  ordenadas en el servidor, también por unidad desde la URL (`?unitId=`), con alta, modificación
+  (merge-patch con la versión leída), desactivar, reactivar e historial. **Organigrama**
+  (`recursos/organigrama`): el árbol entero desplegado (`GET /units/tree`), con el jefe o «Vacante», los
+  linemen de cada equipo y sus EP con nombre, y la **ficha de una unidad** con sus hijas o, en un equipo,
+  sus linemen: un equipo nace con su jefe y de **2 a 6 linemen**, «Añadir lineman» se apaga con 6,
+  «Sale del equipo» con 2, y cambiar varios a la vez es la lista entera (`PUT /members`); el padre solo
+  se elige de un nivel superior y de la misma disciplina, y el jefe, de las categorías que admite el
+  nivel. **Flota**: los **modelos** por secciones según su movilidad (solo vía, bivial con su equipo
+  ferroviario 9A/9B/9C, solo carretera) y sus capacidades con sus cifras; los **sitios de
+  aparcamiento**; los **vehículos**, con lo que exige su modelo (matrícula si va por carretera, número
+  ferroviario si circula por vía abierta), su ficha con dónde está y su histórico de ubicaciones, y
+  «Registrar ubicación» con solo lo que admite su movilidad; y el **tablero** (`recursos/flota/tablero`),
+  una tabla por vía y kp, con el vehículo para desempatar, donde un remolcado está donde su portador y
+  «Actualizar» vuelve a pedirla, sin sondeo. Todas esas reglas (la de 2 a 6, los niveles, las
+  categorías, la movilidad) están copiadas del servicio solo para no ofrecer lo que va a fallar: quien
+  decide es `mto-resources` (409 `UNI-001`, `VEH-001`). En **mantenimiento**, un equipo que llega de
+  `mto-resources` se lee (su jefe, su supervisor y sus linemen, y botones a su unidad y a su vehículo;
+  modificarlo sería 409 `TEA-001`); el **turno** elige su jefe, su supervisor, sus linemen y sus
+  vehículos en `mto-resources` (con `resources-read`; vacíos en el alta, los copia el servicio del
+  equipo), y **cerrarlo dice dónde queda cada vehículo** (un sitio que alcanza por su movilidad, una vía
+  y su kp, o un texto), que es lo que `mto-resources` lee para moverlo; y **generar tareas** de un EP
+  grande va con `Prefer: respond-async, wait=5`: si el servicio no termina en esos segundos contesta
+  202 con la operación, y el diálogo la sigue cada 2 s hasta su resultado (cerrarlo deja de seguirla y
+  avisa de que continúa en el servicio).
+
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|
 | Exportar perfiles, consultar, descargar | `config-read` |
@@ -354,8 +381,21 @@ Las pantallas de mantenimiento (fase 8) siguen los permisos de `mto-maintenance-
 | Desactivar un activo (también uno sincronizado), quitar una línea de material | `maintenance-delete` |
 | Cancelar una orden, completarla con `force`; resolver, cerrar o descartar un defecto | `maintenance-write` **y** `maintenance-supervise` |
 
-Los tres perfiles de mantenimiento del realm llevan `config-read` y `stock-read`, así que quien los
-tiene ve también Infraestructura, Catálogos, Trabajos y Almacén, en lectura.
+Los tres perfiles de mantenimiento del realm llevan `config-read`, `stock-read` y `resources-read`,
+así que quien los tiene ve también Infraestructura, Catálogos, Trabajos, Almacén y Recursos, en
+lectura; con `resources-read` elige además la dotación y los vehículos de un turno y nombra los sitios
+donde se dejaron.
+
+Las pantallas de recursos (fase 10) siguen los permisos de `mto-resources-api`, y ninguno implica otro:
+
+| Acción en recursos | Roles de cliente de `mto-resources-api` |
+|---|---|
+| Ver personal, organigrama, flota, tablero, fichas e historial | `resources-read` |
+| Nombres y desplegables de vías, estaciones y paquetes | además, `config-read` de `mto-configuration-api` |
+| Personas, unidades, linemen y sitios de aparcamiento: alta, modificación y reactivar | `resources-write` |
+| Modelos y vehículos: alta, modificación y reactivar | `resources-fleet-write` |
+| Registrar dónde está un vehículo | `resources-location-write` |
+| Desactivar una persona o una unidad, retirar un modelo, un sitio o un vehículo | `resources-delete` |
 
 Las pantallas de notificaciones (fase 9) siguen los permisos de `mto-notification-api`, donde el
 permiso lo decide el recurso y ninguno implica otro:
@@ -400,9 +440,12 @@ El módulo de mantenimiento necesita `mto-maintenance` y `mto-stock` levantados 
 | `usuarios.responsable` | `mto-users-admin` | el módulo Usuarios entero (fase 5); nada de configuración |
 | `usuarios.gestor` | `mto-users-manager` | Usuarios, todo menos borrar |
 | `usuarios.lector` | `mto-users-viewer` | Usuarios en solo lectura |
-| `mantenimiento.lector` | `mto-maintenance-viewer` | Mantenimiento en solo lectura (con los informes y sus ficheros); configuración y almacén en lectura |
+| `mantenimiento.lector` | `mto-maintenance-viewer` | Mantenimiento en solo lectura (con los informes y sus ficheros); configuración, almacén y recursos en lectura |
 | `mantenimiento.tecnico` | `mto-maintenance-technician` | Mantenimiento: órdenes, tareas, turnos, inspecciones, defectos y material, sin cancelar, `force`, quitar ni resolver |
 | `mantenimiento.responsable` | `mto-maintenance-manager` | el módulo Mantenimiento entero (fase 8) |
+| `recursos.lector` | `mto-resources-viewer` | Recursos en solo lectura: personal, organigrama, flota y tablero |
+| `recursos.gestor` | `mto-resources-manager` | Recursos: personas, unidades, linemen, sitios, modelos, vehículos y ubicaciones, sin desactivar ni retirar |
+| `recursos.responsable` | `mto-resources-admin` | el módulo Recursos entero (fase 10) |
 | `notificacion.lector` | `mto-notification-viewer` | la bandeja y el registro de actividad; nada más |
 | `notificacion.auditor` | `mto-notification-auditor` | además, los accesos |
 | `notificacion.responsable` | `mto-notification-admin` | todo lo de notificaciones (la administración del servicio no tiene pantalla todavía) |
