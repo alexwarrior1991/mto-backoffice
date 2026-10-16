@@ -24,8 +24,10 @@ import com.vaadin.flow.theme.lumo.Lumo;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.thread.Threading;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.ApplicationContext;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.security.oauth2.client.AuthorizedClientServiceOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -38,6 +40,8 @@ import org.springframework.util.ClassUtils;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.startsWith;
@@ -45,6 +49,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
@@ -83,6 +88,18 @@ class MtoBackofficeApplicationTests {
         ClientRegistration keycloak = context.getBean(ClientRegistrationRepository.class).findByRegistrationId("keycloak");
         assertNotNull(keycloak);
         assertEquals("http://localhost:8082/realms/mto/protocol/openid-connect/token", keycloak.getProviderDetails().getTokenUri());
+    }
+
+    /**
+     * La configuracion de la aplicacion enciende los hilos virtuales: Tomcat los toma de esta misma
+     * condicion, y el executor de tareas de Spring, el que Vaadin usa para las suyas, ejecuta en uno.
+     */
+    @Test
+    void theApplicationRunsOnVirtualThreadsAndSoDoesTheTaskExecutorVaadinUses() throws Exception {
+        assertTrue(Threading.VIRTUAL.isActive(context.getEnvironment()), "spring.threads.virtual.enabled");
+        CompletableFuture<Thread> thread = new CompletableFuture<>();
+        context.getBean("applicationTaskExecutor", TaskExecutor.class).execute(() -> thread.complete(Thread.currentThread()));
+        assertTrue(thread.get(5, TimeUnit.SECONDS).isVirtual());
     }
 
     /** Lo que hace que el token se pueda pedir por nombre de principal desde cualquier hilo. */
