@@ -1,8 +1,11 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteDto;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteFilter;
 import com.alejandro.mtobackoffice.client.dto.stock.ProjectSummaryDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
+import com.alejandro.mtobackoffice.configuration.security.ResourcesRoles;
 import com.alejandro.mtobackoffice.configuration.security.SecurityRoles;
 import com.alejandro.mtobackoffice.configuration.security.StockRoles;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
@@ -18,34 +21,43 @@ import java.util.function.Supplier;
 
 /**
  * Los nombres de lo que mto-maintenance solo guarda como id: vias, estaciones y paquetes de
- * mto-configuration, y almacenes y proyectos de mto-stock. El servicio no los copia (no re-modela
- * los datos maestros), asi que la pantalla los pide a su servicio con el token de la persona:
- * vias, estaciones y paquetes una vez por pantalla ({@link ReferenceCatalog}); almacenes y
- * proyectos por id, recordados mientras la pantalla vive.
+ * mto-configuration, almacenes y proyectos de mto-stock, y los sitios de aparcamiento de
+ * mto-resources. El servicio no los copia (no re-modela los datos maestros), asi que la pantalla los
+ * pide a su servicio con el token de la persona: vias, estaciones y paquetes una vez por pantalla
+ * ({@link ReferenceCatalog}); almacenes y proyectos por id, recordados mientras la pantalla vive; los
+ * sitios, todos los activos de una vez, la primera vez que hacen falta.
  *
- * <p>Sin {@code config-read} o sin {@code stock-read} no se llama a ese servicio: responderia 403
- * y la notificacion sobraria. Se pinta el id ({@code #12}, o el principio del UUID) y los
- * desplegables de ese servicio salen vacios. Los perfiles de mantenimiento del realm llevan los dos
+ * <p>Sin {@code config-read}, {@code stock-read} o {@code resources-read} no se llama a ese servicio:
+ * responderia 403 y la notificacion sobraria. Se pinta el id ({@code #12}, o el principio del UUID) y
+ * los desplegables de ese servicio salen vacios. Los perfiles de mantenimiento del realm llevan los tres
  * roles de lectura precisamente para esto.</p>
  */
 public final class MaintenanceNames {
 
+    /** Los sitios de aparcamiento de una pantalla: todos los activos en una pagina. */
+    static final int ALL_SITES = 200;
+
     private final ReferenceCatalog configuration;
     private final MaintenanceClients stock;
+    private final MaintenanceClients resources;
+    private List<ParkingSiteDto> parkingSites;
+    private boolean resourcesFailureShown;
     private final Map<UUID, String> warehouses = new HashMap<>();
     private final Map<UUID, ProjectSummaryDto> projects = new HashMap<>();
     private boolean stockFailureShown;
 
-    private MaintenanceNames(ReferenceCatalog configuration, MaintenanceClients stock) {
+    private MaintenanceNames(ReferenceCatalog configuration, MaintenanceClients stock, MaintenanceClients resources) {
         this.configuration = configuration;
         this.stock = stock;
+        this.resources = resources;
     }
 
     public static MaintenanceNames of(MaintenanceClients clients, AuthenticationContext authentication) {
         return new MaintenanceNames(authentication.hasRole(SecurityRoles.CONFIG_READ)
                 ? new ReferenceCatalog(clients.packages(), clients.stations(), clients.tracks(), clients.companies())
                 : null,
-                authentication.hasRole(StockRoles.STOCK_READ) ? clients : null);
+                authentication.hasRole(StockRoles.STOCK_READ) ? clients : null,
+                authentication.hasRole(ResourcesRoles.RESOURCES_READ) ? clients : null);
     }
 
     public boolean readsConfiguration() {
@@ -54,6 +66,42 @@ public final class MaintenanceNames {
 
     public boolean readsStock() {
         return stock != null;
+    }
+
+    /** La dotacion, los vehiculos y los sitios de un turno se eligen y se nombran con {@code resources-read}. */
+    public boolean readsResources() {
+        return resources != null;
+    }
+
+    /**
+     * Los sitios de aparcamiento activos de mto-resources, pedidos una vez (son pocos: un catalogo de
+     * sitios conocidos); vacio sin {@code resources-read} o si no responde, que se notifica una vez.
+     */
+    public List<ParkingSiteDto> parkingSites() {
+        if (resources == null) {
+            return List.of();
+        }
+        if (parkingSites == null) {
+            try {
+                parkingSites = resources.parkingSites().search(new ParkingSiteFilter(null, null, null, null, null, null, true), 0, ALL_SITES,
+                        List.of("code,asc")).content();
+            } catch (BackofficeApiException failure) {
+                parkingSites = List.of();
+                if (!resourcesFailureShown) {
+                    resourcesFailureShown = true;
+                    UiErrors.show(failure);
+                }
+            }
+        }
+        return parkingSites;
+    }
+
+    /** El sitio donde se dejo un vehiculo; el id si no se puede nombrar (o ya no esta activo). */
+    public String parkingSiteName(UUID id) {
+        if (id == null) {
+            return "";
+        }
+        return parkingSites().stream().filter(site -> id.equals(site.id())).findFirst().map(ParkingSiteDto::code).orElse(idOf(id));
     }
 
     public String trackName(Long id) {

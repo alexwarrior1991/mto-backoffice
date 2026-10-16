@@ -19,6 +19,8 @@ import com.alejandro.mtobackoffice.client.dto.jobs.JobFamily;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobStatus;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobType;
 import com.alejandro.mtobackoffice.client.dto.jobs.UploadedFile;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftVehicleDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.VehicleParkingRequest;
 import com.alejandro.mtobackoffice.client.dto.master.BusinessEntityDto;
 import com.alejandro.mtobackoffice.client.dto.master.LovRef;
 import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
@@ -43,6 +45,7 @@ import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonEmployer;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonFilter;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.RailGearType;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberDto;
@@ -62,6 +65,7 @@ import com.alejandro.mtobackoffice.client.dto.resources.VehicleMobility;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleOperationalStatus;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleOwner;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeDto;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeFilter;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeRequest;
@@ -2393,6 +2397,63 @@ class ClientLayerTest {
         assertEquals("12-2.27", profiles.getFirst().name());
         assertEquals(UUID.fromString(TASK_ID), assigned.id());
         assertEquals(MaintenanceTaskStatus.PENDING, unassigned.status());
+        server.verify();
+    }
+
+    /**
+     * La dotacion y los vehiculos de un turno, de mto-resources: se leen con su forma (la movilidad
+     * desconocida como UNKNOWN, el aparcamiento null hasta cerrarlo), el alta y el merge-patch mandan sus
+     * ids (los linemen quitados a null) y el cierre dice donde quedo cada vehiculo, sin lo que no se dijo.
+     */
+    @Test
+    void aShiftCarriesItsCrewAndVehiclesAndClosingSaysWhereEachIsLeft() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String shifts = MAINTENANCE + "/shifts";
+        String leader = "3c4d5e6f-0000-4000-8000-0000000000a1";
+        String lineman = "3c4d5e6f-0000-4000-8000-0000000000a2";
+        String vehicle = "9d0e1f20-0000-4000-8000-0000000000a1";
+        String site = "8c9d0e1f-0000-4000-8000-0000000000a1";
+        String withCrew = shiftJson("CLOSED").replace("\"audit\":null}", "\"audit\":null,\"version\":4,"
+                + "\"teamLeader\":{\"id\":\"" + leader + "\",\"code\":\"PER-000003\",\"fullName\":\"Yossi Cohen\",\"username\":\"equipo.jefe\","
+                + "\"category\":\"TEAM_LEADER\"},\"supervisor\":null,\"linemen\":[{\"id\":\"" + lineman + "\",\"code\":\"PER-000011\","
+                + "\"fullName\":\"Lineman Uno\",\"username\":null,\"category\":\"WORKER\"}],\"vehicles\":[{\"vehicleId\":\"" + vehicle + "\","
+                + "\"code\":\"DR-01\",\"name\":\"Dresina 1\",\"mobility\":\"RAIL_ONLY\",\"category\":\"CATENARY_TOWER_CAR\",\"available\":true,"
+                + "\"parking\":{\"siteId\":\"" + site + "\",\"trackId\":12,\"kp\":4.250,\"description\":null}},{\"vehicleId\":\"" + VEHICLE_ID
+                + "\",\"code\":\"HV-01\",\"name\":null,\"mobility\":\"HOVER\",\"category\":\"HOVERCRAFT\",\"available\":false,\"parking\":null}]}");
+        server.expect(requestTo(shifts)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"shiftDate\":\"2026-10-05\",\"possessionType\":\"PARTIAL\",\"trackIds\":[12],"
+                        + "\"vehicleIds\":[\"" + vehicle + "\"],\"teamLeaderPersonId\":\"" + leader + "\",\"linemanPersonIds\":[\"" + lineman + "\"]}", strict))
+                .andRespond(withSuccess(withCrew, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(shifts + "/" + SHIFT_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"vehicleIds\":[\"" + vehicle + "\"],\"linemanPersonIds\":null,\"version\":4}", strict))
+                .andRespond(withSuccess(withCrew, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(shifts + "/" + SHIFT_ID + "/close")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"parkings\":[{\"vehicleId\":\"" + vehicle + "\",\"parkingSiteId\":\"" + site + "\",\"trackId\":12,"
+                        + "\"kp\":4.250},{\"vehicleId\":\"" + VEHICLE_ID + "\",\"description\":\"Puerta 3\"}]}", strict))
+                .andRespond(withSuccess(withCrew, MediaType.APPLICATION_JSON));
+
+        UUID id = UUID.fromString(SHIFT_ID);
+        ShiftDto created = asUser(() -> shiftClient.create(new ShiftRequest(LocalDate.of(2026, 10, 5), null, null, null, PossessionType.PARTIAL,
+                null, null, null, null, null, null, Set.of(12L), null, null, null, null, null, Set.of(UUID.fromString(vehicle)), UUID.fromString(leader),
+                null, Set.of(UUID.fromString(lineman)))));
+        asUser(() -> shiftClient.update(id, new MergePatch<>(new ShiftUpdateRequest(null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, Set.of(UUID.fromString(vehicle)), null, null, null), Set.of("linemanPersonIds"), 4L)));
+        asUser(() -> shiftClient.close(id, new CloseShiftRequest(null, null, null, null, List.of(
+                new VehicleParkingRequest(UUID.fromString(vehicle), UUID.fromString(site), 12L, new BigDecimal("4.250"), null),
+                new VehicleParkingRequest(UUID.fromString(VEHICLE_ID), null, null, null, "Puerta 3")))));
+
+        assertEquals("PER-000003 · Yossi Cohen", created.teamLeader().label());
+        assertNull(created.supervisor());
+        assertEquals(List.of("PER-000011"), created.linemen().stream().map(PersonSummaryDto::code).toList());
+        ShiftVehicleDto dresina = created.vehicles().getFirst();
+        assertEquals(new ShiftVehicleDto.Parking(UUID.fromString(site), 12L, new BigDecimal("4.250"), null), dresina.parking());
+        assertEquals(new VehicleSummaryDto(UUID.fromString(vehicle), "DR-01", "Dresina 1", VehicleMobility.RAIL_ONLY, VehicleCategory.CATENARY_TOWER_CAR),
+                dresina.summary());
+        ShiftVehicleDto unknown = created.vehicles().get(1);
+        assertEquals(VehicleMobility.UNKNOWN, unknown.mobility(), "una movilidad nueva no rompe el turno");
+        assertEquals(VehicleCategory.UNKNOWN, unknown.category());
+        assertNull(unknown.parking());
+        assertEquals("HV-01", unknown.label());
         server.verify();
     }
 

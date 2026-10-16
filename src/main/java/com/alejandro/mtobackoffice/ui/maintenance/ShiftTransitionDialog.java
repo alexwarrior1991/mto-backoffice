@@ -20,13 +20,15 @@ import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.data.binder.Validator;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 
 /**
  * Iniciar o cerrar un turno. Lo que se deja vacio lo pone el servicio: el inicio o el fin reales,
  * ahora; los minutos netos, desde el corte de tension (o el inicio) hasta el fin. Al cerrar, las
- * tareas que no se terminaron vuelven a su orden sin cancelarse.
+ * tareas que no se terminaron vuelven a su orden sin cancelarse, y cada vehiculo del turno dice donde
+ * se deja ({@link ParkingRows}), que es lo que mto-resources lee para moverlo.
  */
 public class ShiftTransitionDialog extends Dialog {
 
@@ -47,7 +49,7 @@ public class ShiftTransitionDialog extends Dialog {
         }
     }
 
-    public ShiftTransitionDialog(Kind kind, ShiftDto shift, MaintenanceClients clients, Consumer<ShiftDto> done) {
+    public ShiftTransitionDialog(Kind kind, ShiftDto shift, MaintenanceClients clients, MaintenanceNames names, Consumer<ShiftDto> done) {
         setHeaderTitle(kind.label() + " " + shift.code());
         setCloseOnOutsideClick(false);
         FormLayout layout = new FormLayout();
@@ -70,24 +72,37 @@ public class ShiftTransitionDialog extends Dialog {
             layout.add(netMinutes, observations);
         }
         add(layout);
+        ParkingRows parkings = kind == Kind.CLOSE && !shift.vehicles().isEmpty() ? new ParkingRows(shift.vehicles(), names) : null;
+        if (parkings != null) {
+            setWidth("min(95vw, 900px)");
+            add(parkings);
+        }
 
         Button confirm = new Button(kind.label(), click -> {
             // Sin Binder: el minimo del campo y lo que no sabe leer se comprueban aqui.
             if (kind == Kind.CLOSE && !Numbers.check(netMinutes, Validator.alwaysPass())) {
                 return;
             }
+            if (parkings != null && !parkings.validate()) {
+                return;
+            }
             try {
                 ShiftDto result = kind == Kind.START
                         ? clients.shifts().start(shift.id(), new StartShiftRequest(Formats.toInstant(when.getValue()), Formats.toInstant(cutoff.getValue())))
                         : clients.shifts().close(shift.id(), new CloseShiftRequest(Formats.toInstant(when.getValue()),
-                        Formats.toInstant(cutoff.getValue()), netMinutes.getValue(), TransitionForm.nullIfBlank(observations.getValue())));
+                        Formats.toInstant(cutoff.getValue()), netMinutes.getValue(), TransitionForm.nullIfBlank(observations.getValue()),
+                        parkings == null ? null : parkings.requests()));
                 close();
                 Screens.success(result.code() + ": " + result.status().label().toLowerCase());
                 done.accept(result);
             } catch (ValidationApiException validation) {
-                // El inicio y el fin reales son el mismo campo del dialogo.
-                Screens.showValidation(Map.<String, HasValidation>of("actualStart", when, "actualEnd", when, "voltageCutoffAt", cutoff,
-                        "netWorkMinutes", netMinutes, "observations", observations), validation);
+                // El inicio y el fin reales son el mismo campo del dialogo; los de cada aparcamiento, los de su fila.
+                Map<String, HasValidation> fields = new HashMap<>(Map.<String, HasValidation>of("actualStart", when, "actualEnd", when, "voltageCutoffAt", cutoff,
+                        "netWorkMinutes", netMinutes, "observations", observations));
+                if (parkings != null) {
+                    fields.putAll(parkings.fields());
+                }
+                Screens.showValidation(fields, validation);
             } catch (BackofficeApiException failure) {
                 UiErrors.show(failure);
             }

@@ -21,6 +21,8 @@ import com.alejandro.mtobackoffice.client.dto.jobs.JobItemError;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobStatus;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobType;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftVehicleDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.VehicleParkingRequest;
 import com.alejandro.mtobackoffice.client.dto.master.ExecutionPackageDto;
 import com.alejandro.mtobackoffice.client.dto.master.LovRef;
 import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
@@ -448,6 +450,8 @@ import static org.mockito.Mockito.when;
 import com.alejandro.mtobackoffice.client.dto.master.TrackSchematicDto;
 import com.alejandro.mtobackoffice.ui.master.SchematicDrawing;
 import com.alejandro.mtobackoffice.ui.master.TrackSchematicDialog;
+import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.DataProvider;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import java.util.EnumSet;
 import com.vaadin.flow.component.treegrid.TreeGrid;
@@ -5846,6 +5850,185 @@ class ViewLayerTest {
 
         verify(shiftClient).update(eq(SHIFT1), argThat(patch -> patch.cleared().equals(Set.of("blockingDisconnectorIds"))
                 && patch.values().blockingDisconnectorIds() == null && patch.values().trackIds() == null));
+    }
+
+    // --- Mantenimiento: la dotacion y los vehiculos de un turno (mto-resources) ----------------------
+
+    private static final UUID CREW_LEADER = UUID.fromString("3c4d5e6f-0000-4000-8000-0000000000a1");
+    private static final UUID CREW_A = UUID.fromString("3c4d5e6f-0000-4000-8000-0000000000a2");
+    private static final UUID CREW_B = UUID.fromString("3c4d5e6f-0000-4000-8000-0000000000a3");
+    private static final UUID VAN = UUID.fromString("9d0e1f20-0000-4000-8000-0000000000a1");
+    private static final String[] SHIFT_CREW_WRITER = {"ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_CONFIG_READ", "ROLE_STOCK_READ",
+            "ROLE_RESOURCES_READ"};
+
+    private static PersonSummaryDto crew(UUID id, String code, String name, PersonCategory category) {
+        return new PersonSummaryDto(id, code, name, null, category);
+    }
+
+    /** Un turno con su jefe, dos linemen, una dresina y una furgoneta; {@code parking}, donde quedo la dresina. */
+    private static ShiftDto shiftWithCrew(ShiftStatus status, ShiftVehicleDto.Parking parking) {
+        ShiftDto base = shiftOf(status);
+        return new ShiftDto(base.id(), base.code(), base.shiftDate(), base.team(), base.baseName(), base.vehicle(), base.possessionType(),
+                base.plannedStart(), base.plannedEnd(), base.actualStart(), base.actualEnd(), base.voltageCutoffAt(), base.netWorkMinutes(),
+                base.blockingDisconnectors(), base.earthingPoints(), base.parkingPlace(), base.executionPackageId(), base.trackIds(),
+                base.startKp(), base.endKp(), base.personnel(), base.measurementEquipment(), base.status(), base.observations(), base.audit(), 4L,
+                crew(CREW_LEADER, "PER-000003", "Yossi Cohen", PersonCategory.TEAM_LEADER), null,
+                List.of(crew(CREW_A, "PER-000011", "Lineman Uno", PersonCategory.WORKER), crew(CREW_B, "PER-000012", "Lineman Dos", PersonCategory.WORKER)),
+                List.of(new ShiftVehicleDto(VEHICLE1, "DR-01", "Dresina 1", VehicleMobility.RAIL_ONLY, VehicleCategory.CATENARY_TOWER_CAR, true, parking),
+                        new ShiftVehicleDto(VAN, "VAN-01", "Furgoneta", VehicleMobility.ROAD_ONLY, VehicleCategory.VAN, true, null)));
+    }
+
+    /**
+     * El alta elige la dotacion y los vehiculos en mto-resources: el jefe entre cualquiera menos un operario,
+     * los linemen entre operarios y jefes de equipo, los vehiculos entre los disponibles; viajan sus ids, y lo
+     * que se deja vacio no viaja (lo copia el servicio del equipo).
+     */
+    @Test
+    void aNewShiftPicksItsCrewAndVehiclesInMtoResources() {
+        loginAs("mantenimiento.tecnico", SHIFT_CREW_WRITER);
+        stubReferencesForMaintenance();
+        stubPeople(List.of(person(CREW_LEADER, "PER-000003", "Yossi", "Cohen", PersonCategory.TEAM_LEADER, true),
+                person(CREW_A, "PER-000011", "Lineman", "Uno", PersonCategory.WORKER, true)));
+        stubVehicles(List.of(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true)));
+        when(shiftClient.create(any())).thenReturn(shiftWithCrew(ShiftStatus.PLANNED, null));
+        when(shiftClient.findById(SHIFT1)).thenReturn(shiftWithCrew(ShiftStatus.PLANNED, null));
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+
+        UI.getCurrent().navigate(MaintenanceRoutes.SHIFTS);
+        click("shift-create");
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("shift-date")), LocalDate.of(2026, 10, 5));
+        LocatorJ._setValue(comboWithId("shift-possession"), PossessionType.FULL);
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RefItem> tracks = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-tracks"));
+        LocatorJ._setValue(tracks, Set.of(new RefItem(12L, "VIA 1 (PAQ NORTE)")));
+        ComboBox<PersonSummaryDto> leader = LocatorJ._get(ComboBox.class, spec -> spec.withId("shift-leader"));
+        assertEquals("Vacio: el del equipo, si es de mto-resources", leader.getHelperText());
+        assertEquals(List.of("PER-000003 · Yossi Cohen", "PER-000011 · Lineman Uno"),
+                ComboBoxKt.getSuggestionItems(leader).stream().map(PersonSummaryDto::label).toList());
+        verify(personClient, atLeastOnce()).search(argThat((PersonFilter filter) -> filter != null
+                && filter.categories().equals(Set.copyOf(PersonCategory.atLeast(2))) && Boolean.TRUE.equals(filter.active())), anyInt(), anyInt(), anyList());
+        LocatorJ._setValue(leader, crew(CREW_LEADER, "PER-000003", "Yossi Cohen", PersonCategory.TEAM_LEADER));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<PersonSummaryDto> linemen = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-linemen"));
+        LocatorJ._setValue(linemen, Set.of(crew(CREW_A, "PER-000011", "Lineman Uno", PersonCategory.WORKER)));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<VehicleSummaryDto> vehicles = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-vehicles"));
+        @SuppressWarnings("unchecked")
+        DataProvider<VehicleSummaryDto, String> offered = (DataProvider<VehicleSummaryDto, String>) vehicles.getDataProvider();
+        assertEquals(List.of("DR-01 · Vehiculo DR-01"), offered.fetch(new Query<>(0, 50, List.of(), null, "")).map(VehicleSummaryDto::label).toList());
+        verify(vehicleClient, atLeastOnce()).search(eq(VehicleFilter.availableMatching("")), anyInt(), anyInt(), anyList());
+        LocatorJ._setValue(vehicles, Set.of(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true).summary()));
+        click(ShiftEditorDialog.SAVE_ID);
+
+        verify(shiftClient).create(new ShiftRequest(LocalDate.of(2026, 10, 5), null, null, null, PossessionType.FULL, null, null, null,
+                null, null, null, Set.of(12L), null, null, null, null, null, Set.of(VEHICLE1), CREW_LEADER, null, Set.of(CREW_A)));
+        LocatorJ._get(ShiftDetailView.class);
+        assertEquals("Jefe: PER-000003 · Yossi Cohen · Supervisor: - · Linemen (2): PER-000011 · Lineman Uno, PER-000012 · Lineman Dos",
+                LocatorJ._get(Div.class, spec -> spec.withId("shift-crew")).getText());
+    }
+
+    /**
+     * Modificar la dotacion: los linemen y los vehiculos son conjuntos, quitarlos todos viaja a null, y una
+     * persona que aun no ha llegado a mantenimiento (CRW-404) se dice con el dialogo abierto.
+     */
+    @Test
+    void theCrewOfAShiftChangesAsSets() {
+        loginAs("mantenimiento.tecnico", SHIFT_CREW_WRITER);
+        stubReferencesForMaintenance();
+        stubPeople(List.of());
+        stubVehicles(List.of());
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        when(shiftClient.update(eq(SHIFT1), any())).thenThrow(maintenanceError(404, "CRW-404", "Crew person not found"))
+                .thenReturn(shiftWithCrew(ShiftStatus.PLANNED, null));
+        openShift(shiftWithCrew(ShiftStatus.PLANNED, null));
+
+        click("shift-edit");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<PersonSummaryDto> linemen = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-linemen"));
+        assertEquals(2, linemen.getValue().size());
+        LocatorJ._setValue(linemen, Set.of());
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<VehicleSummaryDto> vehicles = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-vehicles"));
+        LocatorJ._setValue(vehicles, Set.of(vehicles.getValue().iterator().next()));
+        click(ShiftEditorDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Esa persona aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento."));
+        LocatorJ._get(ShiftEditorDialog.class);
+        click(ShiftEditorDialog.SAVE_ID);
+        verify(shiftClient, times(2)).update(eq(SHIFT1), argThat(patch -> patch.cleared().equals(Set.of("linemanPersonIds"))
+                && patch.values().vehicleIds().size() == 1 && patch.values().teamLeaderPersonId() == null && patch.version() == 4L));
+    }
+
+    /** Sin resources-read la dotacion de un turno se lee como esta, no se pide nada a mto-resources y no viaja. */
+    @Test
+    void withoutResourcesReadTheCrewOfAShiftIsOnlyReadAndDoesNotTravel() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        when(shiftClient.update(eq(SHIFT1), any())).thenReturn(shiftWithCrew(ShiftStatus.PLANNED, null));
+        openShift(shiftWithCrew(ShiftStatus.PLANNED, null));
+        click("shift-edit");
+        assertTrue(LocatorJ._find(MultiSelectComboBox.class, spec -> spec.withId("shift-linemen")).isEmpty());
+        assertEquals("Jefe: PER-000003 · Yossi Cohen · Supervisor: - · Linemen: PER-000011 · Lineman Uno, PER-000012 · Lineman Dos"
+                + " · Vehiculos: DR-01 · Dresina 1, VAN-01 · Furgoneta", LocatorJ._get(Div.class, spec -> spec.withId("shift-crew-readonly")).getText());
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("shift-observations")), "Con lluvia");
+        click(ShiftEditorDialog.SAVE_ID);
+        verify(shiftClient).update(eq(SHIFT1), argThat(patch -> patch.cleared().isEmpty() && "Con lluvia".equals(patch.values().observations())
+                && patch.values().vehicleIds() == null && patch.values().linemanPersonIds() == null));
+        verify(personClient, never()).search(any(PersonFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    /**
+     * Al cerrar, cada vehiculo dice donde se deja: un sitio que alcanza por su movilidad, una via y su kp
+     * (no en uno de solo carretera) o un texto. Lo evidente se dice en su fila antes de llamar, solo viaja
+     * lo rellenado, y un SHF-001 deja el dialogo abierto. La ficha dice luego donde quedo, con sus nombres.
+     */
+    @Test
+    void closingAShiftSaysWhereEachVehicleIsLeftAndTheDetailNamesIt() {
+        loginAs("mantenimiento.tecnico", SHIFT_CREW_WRITER);
+        stubReferencesForMaintenance();
+        ParkingSiteDto road = new ParkingSiteDto(UUID.fromString("8c9d0e1f-0000-4000-8000-0000000000a2"), "PRK-RSH", "Parking de Rishpon",
+                ParkingSiteKind.ROAD_PARKING, 3L, null, null, null, false, true, null, null, null, null, true, 1L);
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(siding(true), road), 0, 200));
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        ShiftVehicleDto.Parking parked = new ShiftVehicleDto.Parking(PARKING_SITE1, 12L, new BigDecimal("4.250"), null);
+        when(shiftClient.close(eq(SHIFT1), any())).thenThrow(maintenanceError(409, "SHF-001", "Vehicle DR-01 is rail-only: it is left on a track"))
+                .thenReturn(shiftWithCrew(ShiftStatus.CLOSED, parked));
+        openShift(shiftWithCrew(ShiftStatus.IN_PROGRESS, null));
+
+        click("shift-close");
+        assertEquals("DR-01 · Dresina 1", LocatorJ._get(Div.class, spec -> spec.withId("parking-vehicle-0")).getText());
+        ComboBox<ParkingSiteDto> railSite = LocatorJ._get(ComboBox.class, spec -> spec.withId("parking-site-0"));
+        assertEquals(List.of("APT-RSH"), ComboBoxKt.getSuggestionItems(railSite).stream().map(ParkingSiteDto::code).toList(), "uno de solo via, con acceso por via");
+        ComboBox<ParkingSiteDto> roadSite = LocatorJ._get(ComboBox.class, spec -> spec.withId("parking-site-1"));
+        assertEquals(List.of("PRK-RSH"), ComboBoxKt.getSuggestionItems(roadSite).stream().map(ParkingSiteDto::code).toList());
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("parking-track-1")).isEmpty(), "uno de solo carretera no se deja en una via");
+
+        TextField railText = LocatorJ._get(TextField.class, spec -> spec.withId("parking-description-0"));
+        LocatorJ._setValue(railText, "En la playa de vias");
+        click(ShiftTransitionDialog.CONFIRM_ID);
+        assertTrue(railText.isInvalid());
+        assertEquals("Uno de solo via se deja sobre una via: un sitio o una via", railText.getErrorMessage());
+        LocatorJ._setValue(railText, "");
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("parking-kp-0")), new BigDecimal("4.250"));
+        click(ShiftTransitionDialog.CONFIRM_ID);
+        ComboBox<RefItem> railTrack = LocatorJ._get(ComboBox.class, spec -> spec.withId("parking-track-0"));
+        assertEquals("Un KP va con su via", railTrack.getErrorMessage());
+        verify(shiftClient, never()).close(any(), any());
+
+        LocatorJ._setValue(railTrack, new RefItem(12L, "VIA 1 (PAQ NORTE)"));
+        LocatorJ._setValue(railSite, siding(true));
+        click(ShiftTransitionDialog.CONFIRM_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("El turno no admite ese trabajo. Vehicle DR-01 is rail-only: it is left on a track"));
+        LocatorJ._get(ShiftTransitionDialog.class);
+        click(ShiftTransitionDialog.CONFIRM_ID);
+        verify(shiftClient, times(2)).close(SHIFT1, new CloseShiftRequest(null, null, null, null,
+                List.of(new VehicleParkingRequest(VEHICLE1, PARKING_SITE1, 12L, new BigDecimal("4.250"), null))));
+
+        assertEquals("Cerrado", spanText("shift-status"));
+        assertEquals("Vehiculos: DR-01 · Dresina 1 (aparcado: APT-RSH · VIA 1 (PAQ NORTE) kp 4.25), VAN-01 · Furgoneta",
+                LocatorJ._get(Div.class, spec -> spec.withId("shift-vehicles-summary")).getText());
     }
 
     /** Lo que el servicio dice de un campo cae en el suyo, tambien en los dialogos sin Binder; el dialogo sigue abierto. */
