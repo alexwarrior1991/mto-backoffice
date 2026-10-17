@@ -10,6 +10,7 @@ import com.alejandro.mtobackoffice.client.configuration.LovClient;
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
 import com.alejandro.mtobackoffice.client.configuration.ProfileClient;
 import com.alejandro.mtobackoffice.client.configuration.StationClient;
+import com.alejandro.mtobackoffice.client.configuration.TrackAccessPointClient;
 import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.configuration.LovResource;
 import com.alejandro.mtobackoffice.client.dto.LovDto;
@@ -27,9 +28,14 @@ import com.alejandro.mtobackoffice.client.dto.master.BusinessEntityDto;
 import com.alejandro.mtobackoffice.client.dto.master.LovRef;
 import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
 import com.alejandro.mtobackoffice.client.dto.master.StationDto;
+import com.alejandro.mtobackoffice.client.dto.master.TrackAccessPointDto;
+import com.alejandro.mtobackoffice.client.dto.master.TrackAccessPointKind;
+import com.alejandro.mtobackoffice.client.dto.master.TrackAccessPointSide;
 import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
 import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.provider.SortDirection;
+import com.alejandro.mtobackoffice.client.dto.resources.AccessPointDto;
+import com.alejandro.mtobackoffice.client.dto.resources.AccessPointKind;
 import com.alejandro.mtobackoffice.client.dto.resources.DrivingLicence;
 import com.alejandro.mtobackoffice.client.dto.resources.FleetPositionDto;
 import com.alejandro.mtobackoffice.client.dto.resources.InstrumentDto;
@@ -101,6 +107,7 @@ import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
 import com.alejandro.mtobackoffice.client.error.TooManyRequestsApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.client.maintenance.OperationClient;
+import com.alejandro.mtobackoffice.client.resources.AccessPointClient;
 import com.alejandro.mtobackoffice.client.resources.InstrumentClient;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
@@ -993,6 +1000,24 @@ class ClientLayerTest {
         server.verify();
     }
 
+    /** Los puntos de acceso a la via se republican como los perfiles: acotados por via, sin estacion. */
+    @Test
+    void republishingTheAccessPointsCanBeNarrowedToATrack() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/master-data/republish?entity=track-access-point&trackId=3"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.ACCEPTED).contentType(MediaType.APPLICATION_JSON).body("""
+                        {"id":"6f1c0000-0000-4000-8000-000000000001","type":"MASTER_DATA_REPUBLISH","status":"PENDING",
+                         "createdAt":"2026-10-17T09:12:03Z","trackId":3,"totalItems":4,"processedItems":0,"successfulItems":0,"failedItems":0}
+                        """));
+
+        JobDto job = asUser(() -> jobsClient.republish("track-access-point", 3L, null));
+
+        assertEquals(JobType.MASTER_DATA_REPUBLISH, job.type());
+        assertEquals(Optional.of(JobFamily.REPUBLISH), job.family());
+        assertEquals(3L, job.trackId());
+        server.verify();
+    }
+
     @Test
     void whatIsDownloadableDependsOnTheTypeAndTheStatus() {
         JobDto export = new JobDto(JOB_ID, JobType.PROFILE_EXPORT, JobStatus.COMPLETED, null, null, null, 3L, "basic", 10, 10, 10, 0, null, null, null);
@@ -1204,6 +1229,109 @@ class ClientLayerTest {
         read.setConnectedTrackId(null);
         read.setVersionNumber(saved.getVersionNumber());
         asUser(() -> disconnectors.update(5L, read));
+        server.verify();
+    }
+
+    /**
+     * mto-configuration V28 (README_API.md §4 quinquies): los puntos de acceso a la via se filtran por la
+     * via, la clase y el estado en el cuerpo del {@code /filter}; sus decimales son numeros JSON (el KP en
+     * metros, las toneladas y las coordenadas), y vuelven enteros, con su version y lo que la UI no conoce.
+     * Quitarle la estacion es mandarla a {@code null}; la clase y el lado vuelven como se leyeron, tambien
+     * uno que esta version no conoce; un nombre repetido en la via es el 409 BUS-002, y borrar es logico (204).
+     */
+    @Test
+    void trackAccessPointsAreFilteredAndTravelWholeWithTheirDecimalsAsNumbers() {
+        TrackAccessPointClient accessPoints = GatewayClientConfiguration.proxyFactory(restClient).createClient(TrackAccessPointClient.class);
+        server.expect(requestTo(matchesRegex("http://gateway/api/configuration/track-access-points/filter\\?page=0&size=50&sort=kp(,|%2C)asc")))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"searchText\":\"km\",\"trackId\":3,\"kind\":\"PREPARED_ACCESS\",\"enabled\":true}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess("""
+                        {"content":[{"id":77,"name":"Acceso km 110+176","trackId":3,"stationId":12,"kp":110176.000,"kind":"PREPARED_ACCESS",
+                                     "side":"LEFT","roadRailAccess":true,"maxAxleLoadT":12.500,"maxGrossWeightT":40.000,
+                                     "latitude":31.669342,"longitude":34.574119,"enabled":true,"versionNumber":4,
+                                     "versionDate":"2026-10-17T07:00:00","brandNewField":"x"}],
+                         "page":{"size":50,"number":0,"totalElements":1,"totalPages":1}}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/track-access-points/77"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.name").value("Acceso km 110+180"))
+                .andExpect(jsonPath("$.trackId").value(3))
+                .andExpect(jsonPath("$.stationId").value(nullValue()))
+                .andExpect(jsonPath("$.kind").value("PREPARED_ACCESS"))
+                .andExpect(jsonPath("$.side").value("BOTH"))
+                .andExpect(jsonPath("$.roadRailAccess").value(true))
+                .andExpect(jsonPath("$.versionNumber").value(4))
+                .andExpect(jsonPath("$.brandNewField").value("x"))
+                .andExpect(content().string(containsString("\"kp\":110176.000")))
+                .andExpect(content().string(containsString("\"maxAxleLoadT\":12.500")))
+                .andExpect(content().string(containsString("\"latitude\":31.669342")))
+                .andExpect(content().string(containsString("\"longitude\":34.574119")))
+                .andRespond(withSuccess("{\"id\":77,\"name\":\"Acceso km 110+180\",\"trackId\":3,\"kind\":\"PREPARED_ACCESS\",\"side\":\"BOTH\","
+                        + "\"roadRailAccess\":true,\"enabled\":true,\"versionNumber\":5}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/track-access-points/78"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"id":78,"name":"Rampa del puerto","trackId":3,"stationId":null,"kp":null,"kind":"FERRY_RAMP","side":"UPSTREAM",
+                         "roadRailAccess":false,"enabled":true,"versionNumber":1}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/track-access-points/78"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.kind").value("FERRY_RAMP"))
+                .andExpect(jsonPath("$.side").value("UPSTREAM"))
+                .andExpect(jsonPath("$.roadRailAccess").value(false))
+                .andRespond(withSuccess("{\"id\":78,\"versionNumber\":2}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/track-access-points"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.id").value(nullValue()))
+                .andExpect(jsonPath("$.roadRailAccess").value(true))
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("""
+                                {"type":"https://api.mto-configuration/errors/bus-002","title":"Regla de negocio incumplida","status":409,
+                                 "detail":"La operación entra en conflicto con un registro existente: valor único repetido o referencia en uso",
+                                 "instance":"/api/v1/configuration/track-access-points","code":"BUS-002","traceId":"t-tap"}
+                                """));
+        server.expect(requestTo(GATEWAY + "/api/configuration/track-access-points/77"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        PageResponse<TrackAccessPointDto> page = asUser(() -> accessPoints.filter(0, 50, List.of("kp,asc"),
+                MasterFilters.of("searchText", " km ", "trackId", 3L, "kind", TrackAccessPointKind.PREPARED_ACCESS.name(), "enabled", true,
+                        "stationName", " ")));
+        TrackAccessPointDto read = page.content().getFirst();
+        assertEquals("Acceso km 110+176", read.getName());
+        assertEquals(new java.math.BigDecimal("110176.000"), read.getKp());
+        assertEquals("PREPARED_ACCESS", read.getKind());
+        assertEquals("Acceso preparado", TrackAccessPointKind.labelOf(read.getKind()));
+        assertEquals("LEFT", read.getSide());
+        assertEquals("Izquierda", TrackAccessPointSide.labelOf(read.getSide()));
+        assertEquals(new java.math.BigDecimal("12.500"), read.getMaxAxleLoadT());
+        assertEquals(new java.math.BigDecimal("31.669342"), read.getLatitude());
+        assertEquals("x", read.extras().get("brandNewField"));
+
+        read.setName("Acceso km 110+180");
+        read.setStationId(null);
+        read.setSide(TrackAccessPointSide.BOTH.name());
+        TrackAccessPointDto saved = asUser(() -> accessPoints.save(read));
+        assertEquals(5, saved.getVersionNumber());
+
+        TrackAccessPointDto unknown = asUser(() -> accessPoints.findById(78L));
+        assertEquals("FERRY_RAMP", TrackAccessPointKind.labelOf(unknown.getKind()), "un valor nuevo se ensena crudo");
+        assertEquals("UPSTREAM", TrackAccessPointSide.labelOf(unknown.getSide()));
+        asUser(() -> accessPoints.save(unknown));
+
+        TrackAccessPointDto repeated = new TrackAccessPointDto();
+        repeated.setName("Acceso km 110+180");
+        repeated.setTrackId(3L);
+        repeated.setKind(TrackAccessPointKind.LEVEL_CROSSING.name());
+        repeated.setSide(TrackAccessPointSide.RIGHT.name());
+        ConflictApiException conflict = assertThrows(ConflictApiException.class, () -> asUser(() -> accessPoints.save(repeated)));
+        assertEquals("BUS-002", conflict.getProblem().code(), "un nombre repetido en la via");
+        asUser(() -> {
+            accessPoints.delete(77L);
+            return null;
+        });
         server.verify();
     }
 
@@ -3494,7 +3622,8 @@ class ClientLayerTest {
     private static String locationJson(String kind, String extra) {
         return "{\"id\":\"b1c2d3e4-0000-4000-8000-000000000001\",\"kind\":\"" + kind + "\",\"parkingSite\":{\"id\":\"" + PARKING_SITE_ID
                 + "\",\"code\":\"APT-RSH\",\"name\":\"Apartadero\",\"kind\":\"SIDING\"},\"executionPackageId\":4,\"trackId\":12,\"kp\":12.300,"
-                + "\"latitude\":null,\"longitude\":null,\"accessPoint\":null,\"description\":null,\"carrier\":null,\"attachment\":null,"
+                + "\"latitude\":null,\"longitude\":null,\"accessPoint\":null,\"trackAccessPoint\":null,\"description\":null,\"carrier\":null,"
+                + "\"attachment\":null,"
                 + "\"source\":\"SHIFT\",\"sourceReference\":\"mto-maintenance:shift:" + LOCATION_SHIFT_ID + "\",\"observedAt\":\"2026-10-16T03:40:00Z\","
                 + "\"recordedAt\":\"2026-10-16T03:40:02Z\",\"recordedBy\":\"service-account-mto-maintenance-svc\"" + extra + "}";
     }
@@ -3559,7 +3688,7 @@ class ClientLayerTest {
             return null;
         });
         VehicleLocationDto towed = asUser(() -> vehicleClient.recordLocation(UUID.fromString(VEHICLE_ID), new VehicleLocationRequest(
-                VehicleLocationKind.ATTACHED, null, null, null, null, null, null, null, null, UUID.fromString(CARRIER_ID), VehicleAttachment.TOWED,
+                VehicleLocationKind.ATTACHED, null, null, null, null, null, null, null, null, null, UUID.fromString(CARRIER_ID), VehicleAttachment.TOWED,
                 java.time.Instant.parse("2026-10-16T03:40:00Z"))));
         PageResponse<VehicleLocationDto> history = asUser(() -> vehicleClient.locations(UUID.fromString(VEHICLE_ID),
                 java.time.Instant.parse("2026-10-01T00:00:00Z"), java.time.Instant.parse("2026-10-17T00:00:00Z"), 0, 20));
@@ -3581,6 +3710,81 @@ class ClientLayerTest {
         assertEquals(List.of(VehicleLocationKind.PARKED, VehicleLocationKind.ON_TRACK, VehicleLocationKind.IN_WORKSHOP, VehicleLocationKind.ATTACHED,
                 VehicleLocationKind.UNKNOWN), VehicleLocationKind.recordable(VehicleMobility.RAIL_ONLY));
         assertFalse(VehicleLocationKind.recordable(VehicleMobility.ROAD_ONLY).contains(VehicleLocationKind.ON_TRACK));
+        server.verify();
+    }
+
+    // --- Recursos: los puntos de acceso a la via (fase 4, bloque D) ---------------------------------------
+
+    /**
+     * mto-resources V9: los puntos de acceso de una via son una lista entera, sin paginar, de lo que ha
+     * recibido de mto-configuration (una clase nueva se lee como desconocida y lo que no se usa se ignora; si
+     * llegara una pagina, se lee su {@code content}). Registrar donde esta un vehiculo lleva el elegido como
+     * {@code accessPointId}, y la ubicacion lo dice en {@code trackAccessPoint {id, name, kind}}, con el texto
+     * libre en {@code accessPoint}, como siempre: se ensena el nombre del maestro ({@code #id} sin el) y, sin
+     * el, el texto. Uno que no conoce es el 404 TAP-404.
+     */
+    @Test
+    void theAccessPointsOfATrackComeFromResourcesAndALocationNamesTheOneItUsed() {
+        AccessPointClient accessPoints = GatewayClientConfiguration.proxyFactory(restClient).createClient(AccessPointClient.class);
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String locations = RESOURCES + "/vehicles/" + VEHICLE_ID + "/locations";
+        server.expect(requestTo(RESOURCES + "/track-access-points?trackId=12&enabled=true"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        [{"id":77,"name":"Acceso km 110+176","trackId":12,"executionPackageId":4,"stationId":7,"kp":110176.000,
+                          "kind":"PREPARED_ACCESS","side":"LEFT","roadRailAccess":true,"maxAxleLoadT":12.500,"maxGrossWeightT":40.000,
+                          "latitude":31.669342,"longitude":34.574119,"enabled":true},
+                         {"id":78,"name":"Embarcadero","trackId":12,"kp":null,"kind":"FERRY_RAMP","side":"BOTH","roadRailAccess":false,
+                          "maxAxleLoadT":null,"maxGrossWeightT":null,"enabled":true}]
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/track-access-points?trackId=13&enabled=true"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("{\"id\":80,\"name\":\"Base Lod\",\"trackId\":13,\"kp\":5.000,\"kind\":\"DEPOT\","
+                        + "\"roadRailAccess\":true,\"enabled\":true}", 0, 50, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(locations)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"kind\":\"ON_TRACK\",\"trackId\":12,\"kp\":10.5,\"accessPointId\":77}", strict))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(locationJson("ON_TRACK", "")
+                        .replace("\"trackAccessPoint\":null",
+                                "\"trackAccessPoint\":{\"id\":77,\"name\":\"Acceso km 110+176\",\"kind\":\"PREPARED_ACCESS\"}")));
+        server.expect(requestTo(locations)).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":404,\"error\":\"NOT_FOUND\",\"message\":\"Track access point 99 not found\","
+                                + "\"errorCode\":\"TAP-404\",\"correlationId\":\"corr-tap\",\"validationErrors\":[]}"));
+        server.expect(requestTo(locations + "?page=0&size=20")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(String.join(",",
+                        locationJson("ON_TRACK", "").replace("\"accessPoint\":null", "\"accessPoint\":\"LC-31\""),
+                        locationJson("ON_TRACK", "").replace("\"trackAccessPoint\":null", "\"trackAccessPoint\":{\"id\":77,\"name\":\"Acceso km 110+176\","
+                                + "\"kind\":\"DEPOT\"}").replace("\"accessPoint\":null", "\"accessPoint\":\"Camino de la base\""),
+                        locationJson("PARKED", "").replace("\"trackAccessPoint\":null", "\"trackAccessPoint\":{\"id\":81,\"name\":null,\"kind\":null}"),
+                        locationJson("PARKED", "")), 0, 20, 4), MediaType.APPLICATION_JSON));
+
+        List<AccessPointDto> offered = asUser(() -> accessPoints.enabledOnTrack(12L));
+        List<AccessPointDto> paged = asUser(() -> accessPoints.enabledOnTrack(13L));
+        UUID vehicle = UUID.fromString(VEHICLE_ID);
+        VehicleLocationDto recorded = asUser(() -> vehicleClient.recordLocation(vehicle, new VehicleLocationRequest(VehicleLocationKind.ON_TRACK, null,
+                null, 12L, new java.math.BigDecimal("10.5"), null, null, 77L, null, null, null, null, null)));
+        NotFoundApiException unknown = assertThrows(NotFoundApiException.class, () -> asUser(() -> vehicleClient.recordLocation(vehicle,
+                new VehicleLocationRequest(VehicleLocationKind.ON_TRACK, null, null, 12L, null, null, null, 99L, null, null, null, null, null))));
+        PageResponse<VehicleLocationDto> history = asUser(() -> vehicleClient.locations(vehicle, null, null, 0, 20));
+
+        assertEquals(2, offered.size());
+        assertEquals("Acceso km 110+176 · Acceso preparado · kp 110176.000", offered.getFirst().label());
+        assertEquals(Boolean.TRUE, offered.getFirst().roadRailAccess());
+        assertEquals(new java.math.BigDecimal("40.000"), offered.getFirst().maxGrossWeightT());
+        assertEquals(AccessPointKind.UNKNOWN, offered.get(1).kind(), "una clase nueva se lee como desconocida");
+        assertEquals("Embarcadero · Desconocido · sin biviales", offered.get(1).label());
+        assertEquals(List.of("Base Lod · Base o cochera · kp 5.000"), paged.stream().map(AccessPointDto::label).toList(), "una pagina, por su content");
+        assertEquals("Acceso km 110+176", recorded.accessPointLabel());
+        assertEquals(77L, recorded.trackAccessPoint().id());
+        assertEquals(AccessPointKind.PREPARED_ACCESS, recorded.trackAccessPoint().kind());
+        assertEquals("TAP-404", unknown.getProblem().code());
+        assertEquals("LC-31", history.content().getFirst().accessPointLabel(), "el texto libre");
+        assertNull(history.content().getFirst().trackAccessPoint());
+        assertEquals("Acceso km 110+176", history.content().get(1).accessPointLabel(), "el del maestro manda sobre el texto");
+        assertEquals("Camino de la base", history.content().get(1).accessPoint());
+        assertEquals(AccessPointKind.DEPOT, history.content().get(1).trackAccessPoint().kind());
+        assertEquals("#81", history.content().get(2).accessPointLabel(), "sin nombre, su id");
+        assertNull(history.content().get(3).accessPointLabel(), "sin punto de acceso");
         server.verify();
     }
 

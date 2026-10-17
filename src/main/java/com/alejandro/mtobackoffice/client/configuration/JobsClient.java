@@ -38,6 +38,12 @@ public interface JobsClient {
     @PostExchange("/profiles/jobs/export")
     JobDto exportProfiles(@RequestParam("trackId") Long trackId, @RequestParam("mapperType") String mapperType);
 
+    /**
+     * Vuelve a emitir los eventos de datos maestros. {@code entity}: {@code profile},
+     * {@code disconnector}, {@code section-insulator}, {@code track-access-point} o {@code all};
+     * {@code trackId} acota los perfiles y los accesos a via, y {@code stationId}, los seccionadores y
+     * los aisladores.
+     */
     @PostExchange("/master-data/republish")
     JobDto republish(@RequestParam("entity") String entity,
                      @RequestParam(value = "trackId", required = false) Long trackId,

@@ -12,6 +12,7 @@ import com.alejandro.mtobackoffice.client.configuration.MasterResource;
 import com.alejandro.mtobackoffice.client.configuration.ProfileClient;
 import com.alejandro.mtobackoffice.client.configuration.SectionInsulatorClient;
 import com.alejandro.mtobackoffice.client.configuration.StationClient;
+import com.alejandro.mtobackoffice.client.configuration.TrackAccessPointClient;
 import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.configuration.LovResource;
 import com.alejandro.mtobackoffice.client.dto.LovDto;
@@ -112,7 +113,15 @@ import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
 import com.alejandro.mtobackoffice.client.resources.QualificationTypeClient;
+import com.alejandro.mtobackoffice.client.resources.AccessPointClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleClient;
+import com.alejandro.mtobackoffice.client.dto.master.TrackAccessPointDto;
+import com.alejandro.mtobackoffice.client.dto.master.TrackAccessPointKind;
+import com.alejandro.mtobackoffice.client.dto.master.TrackAccessPointSide;
+import com.alejandro.mtobackoffice.client.dto.resources.AccessPointDto;
+import com.alejandro.mtobackoffice.client.dto.resources.AccessPointKind;
+import com.alejandro.mtobackoffice.client.dto.resources.AccessPointSummaryDto;
+import com.alejandro.mtobackoffice.ui.master.TrackAccessPointsView;
 import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import com.alejandro.mtobackoffice.ui.maintenance.TaskGeneration;
 import com.alejandro.mtobackoffice.ui.resources.Expiry;
@@ -528,6 +537,10 @@ class ViewLayerTest {
     @MockitoBean
     private SectionInsulatorClient sectionInsulatorClient;
     @MockitoBean
+    private TrackAccessPointClient trackAccessPointClient;
+    @MockitoBean
+    private AccessPointClient accessPointClient;
+    @MockitoBean
     private BusinessEntityClient businessEntityClient;
     @MockitoBean
     private JobsClient jobsClient;
@@ -642,7 +655,7 @@ class ViewLayerTest {
     }
 
     @Test
-    void theMenuGroupsTheSixMastersUnderInfrastructure() {
+    void theMenuGroupsTheSevenMastersUnderInfrastructure() {
         loginAs("config.lector", "ROLE_CONFIG_READ");
 
         UI.getCurrent().navigate(HomeView.class);
@@ -1165,6 +1178,7 @@ class ViewLayerTest {
         when(businessEntityClient.findAll()).thenReturn(List.of());
         when(disconnectorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<DisconnectorDto>of(), 0, 50));
         when(sectionInsulatorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<SectionInsulatorDto>of(), 0, 50));
+        when(trackAccessPointClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.<TrackAccessPointDto>of(), 0, 50));
         when(jobsClient.list(anyInt(), anyInt(), any(), any())).thenReturn(page(List.<JobDto>of(), 0, 20));
         when(notificationClient.unreadCount()).thenReturn(new UnreadCountDto(0, false));
         when(notificationClient.inbox(any(InboxFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<InboxItemDto>of(), 0, 20));
@@ -2019,6 +2033,161 @@ class ViewLayerTest {
                 && Boolean.TRUE.equals(dto.getSwitches().get(1).getEnabled())));
     }
 
+    // --- Accesos a via (mto-configuration V28) -----------------------------------------------------
+
+    private static TrackAccessPointDto accessPointRow() {
+        TrackAccessPointDto dto = new TrackAccessPointDto();
+        dto.setId(77L);
+        dto.setName("Acceso km 110+176");
+        dto.setTrackId(3L);
+        dto.setStationId(12L);
+        dto.setKp(new BigDecimal("110176.000"));
+        dto.setKind("PREPARED_ACCESS");
+        dto.setSide("LEFT");
+        dto.setRoadRailAccess(true);
+        dto.setMaxAxleLoadT(new BigDecimal("12.500"));
+        dto.setMaxGrossWeightT(new BigDecimal("40.000"));
+        dto.setLatitude(new BigDecimal("31.669342"));
+        dto.setLongitude(new BigDecimal("34.574119"));
+        dto.setEnabled(true);
+        dto.setVersionNumber(4);
+        dto.putExtra("brandNewField", "x");
+        return dto;
+    }
+
+    private void stubAccessPointReferences(List<TrackAccessPointDto> rows) {
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(executionPackage(100L, "EP4")), 0, 50));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(station(12L, "ATOCHA", 100L)), 0, 50));
+        when(trackAccessPointClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(rows, 0, 50));
+    }
+
+    /**
+     * Los accesos a via son un maestro mas de Infraestructura: la lista con los nombres de su via y su
+     * estacion, sus cifras tal como llegan (un tipo que esta version no conoce, crudo), y los filtros (via,
+     * tipo y estado) en el cuerpo del /filter. Quien solo lee no tiene controles de escritura.
+     */
+    @Test
+    void theAccessPointsAreListedWithTheNamesOfTheirTrackAndStationAndFilteredInTheService() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        TrackAccessPointDto ferry = accessPointRow();
+        ferry.setId(78L);
+        ferry.setName("Rampa del puerto");
+        ferry.setStationId(null);
+        ferry.setKind("FERRY_RAMP");
+        ferry.setSide("BOTH");
+        ferry.setRoadRailAccess(false);
+        stubAccessPointReferences(List.of(accessPointRow(), ferry));
+
+        UI.getCurrent().navigate(HomeView.class);
+        assertTrue(menuLabels().contains("Accesos a via"), menuLabels().toString());
+        UI.getCurrent().navigate(TrackAccessPointsView.ROUTE);
+
+        LocatorJ._get(H2.class, spec -> spec.withText("Accesos a via"));
+        @SuppressWarnings("unchecked")
+        Grid<TrackAccessPointDto> grid = LocatorJ._get(Grid.class);
+        assertEquals(List.of("Acceso km 110+176", "TRACK 1 (EP4)", "ATOCHA (EP4)", "110176.000", "Acceso preparado", "Izquierda", "Si", "12.500",
+                "40.000", "Si"), GridKt._getFormattedRow(grid, 0).subList(0, 10));
+        assertEquals(List.of("Rampa del puerto", "", "FERRY_RAMP", "Los dos lados", "No"),
+                List.of(GridKt._getFormattedRow(grid, 1).get(0), GridKt._getFormattedRow(grid, 1).get(2), GridKt._getFormattedRow(grid, 1).get(4),
+                        GridKt._getFormattedRow(grid, 1).get(5), GridKt._getFormattedRow(grid, 1).get(6)), "un tipo que no se conoce, crudo");
+        LocatorJ._get(Span.class, spec -> spec.withText("2 accesos a via"));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withText("Nuevo")).isEmpty(), "quien solo lee no da de alta");
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, "actions"), Button.class).isEmpty(), "ni modifica ni borra");
+
+        LocatorJ._setValue(comboWithId("access-points-track"), new RefItem(3L, "TRACK 1 (EP4)"));
+        LocatorJ._setValue(comboWithId("access-points-kind"), TrackAccessPointKind.PREPARED_ACCESS);
+        @SuppressWarnings("unchecked")
+        Select<EnabledFilter> state = LocatorJ._get(Select.class, spec -> spec.withId("access-points-state"));
+        LocatorJ._setValue(state, EnabledFilter.DISABLED);
+        GridKt._size(grid);
+        verify(trackAccessPointClient, atLeastOnce()).filter(anyInt(), anyInt(), anyList(),
+                eq(Map.of("trackId", 3L, "kind", "PREPARED_ACCESS", "enabled", false)));
+    }
+
+    /**
+     * El editor comprueba lo que dice la columna antes de llamar (el KP y las toneladas no negativos y con
+     * sus cifras, las coordenadas en su rango y juntas: se marca la que falta) y devuelve entera la copia
+     * de la fila, con su version y lo que la UI no conoce. Un nombre repetido en la via es el BUS-002 con
+     * el dialogo abierto, y borrar pide confirmacion.
+     */
+    @Test
+    void anAccessPointIsCheckedBeforeCallingAndSentBackWholeWithItsVersion() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_CONFIG_DELETE");
+        stubAccessPointReferences(List.of(accessPointRow()));
+        when(trackAccessPointClient.create(any())).thenAnswer(call -> call.getArgument(0));
+        when(trackAccessPointClient.update(eq(77L), any()))
+                .thenThrow(configurationConflict("BUS-002", "La operación entra en conflicto con un registro existente: valor único repetido"))
+                .thenAnswer(call -> call.getArgument(1));
+
+        UI.getCurrent().navigate(TrackAccessPointsView.ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withId("access-point-name")), "Paso a nivel LC-31");
+        LocatorJ._setValue(comboWithId("access-point-track"), new RefItem(3L, "TRACK 1 (EP4)"));
+        assertEquals(List.of("Acceso preparado", "Paso a nivel", "Base o cochera"), ViewLayerTest.<String>comboWithId("access-point-kind")
+                .getListDataView().getItems().map(TrackAccessPointKind::labelOf).toList());
+        LocatorJ._setValue(comboWithId("access-point-kind"), TrackAccessPointKind.LEVEL_CROSSING.name());
+        LocatorJ._setValue(comboWithId("access-point-side"), TrackAccessPointSide.BOTH.name());
+        assertTrue(LocatorJ._get(dialog, Checkbox.class, spec -> spec.withId("access-point-road-rail")).getValue(), "por defecto admite biviales");
+        BigDecimalField kp = LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withId("access-point-kp"));
+        BigDecimalField axle = LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withId("access-point-max-axle-load"));
+        BigDecimalField gross = LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withId("access-point-max-gross-weight"));
+        BigDecimalField latitude = LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withId("access-point-latitude"));
+        BigDecimalField longitude = LocatorJ._get(dialog, BigDecimalField.class, spec -> spec.withId("access-point-longitude"));
+        LocatorJ._setValue(kp, new BigDecimal("-1"));
+        LocatorJ._setValue(axle, new BigDecimal("12.5005"));
+        LocatorJ._setValue(gross, new BigDecimal("100000"));
+        LocatorJ._setValue(latitude, new BigDecimal("91"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        assertTrue(kp.isInvalid(), "el KP no es negativo");
+        assertTrue(axle.isInvalid(), "tres decimales como mucho");
+        assertTrue(gross.isInvalid(), "cinco cifras enteras como mucho");
+        assertTrue(latitude.isInvalid(), "entre -90 y 90");
+        verify(trackAccessPointClient, never()).create(any());
+
+        LocatorJ._setValue(kp, new BigDecimal("98375.5"));
+        LocatorJ._setValue(axle, new BigDecimal("12.5"));
+        LocatorJ._setValue(gross, new BigDecimal("40"));
+        LocatorJ._setValue(latitude, new BigDecimal("31.669342"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        assertTrue(longitude.isInvalid(), "las coordenadas van juntas: se marca la que falta");
+        assertEquals("Con la latitud va tambien la longitud", longitude.getErrorMessage());
+        LocatorJ._setValue(longitude, new BigDecimal("34.5741195"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        assertTrue(longitude.isInvalid(), "seis decimales como mucho");
+        verify(trackAccessPointClient, never()).create(any());
+        LocatorJ._setValue(longitude, new BigDecimal("34.574119"));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        verify(trackAccessPointClient).create(argThat(dto -> dto.getId() == null && "Paso a nivel LC-31".equals(dto.getName())
+                && Long.valueOf(3L).equals(dto.getTrackId()) && dto.getStationId() == null && new BigDecimal("98375.5").equals(dto.getKp())
+                && "LEVEL_CROSSING".equals(dto.getKind()) && "BOTH".equals(dto.getSide())
+                && Boolean.TRUE.equals(dto.getRoadRailAccess()) && Boolean.TRUE.equals(dto.getEnabled())
+                && new BigDecimal("12.5").equals(dto.getMaxAxleLoadT()) && new BigDecimal("34.574119").equals(dto.getLongitude())));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
+
+        @SuppressWarnings("unchecked")
+        Grid<TrackAccessPointDto> grid = LocatorJ._get(Grid.class);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("edit-77")));
+        dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withId("access-point-name")), "Acceso km 110+180");
+        LocatorJ._setValue(comboWithId("access-point-station"), null);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Ya existe otro registro con ese valor (un codigo que no se puede repetir), o la entrada esta en uso."));
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto con lo escrito");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        verify(trackAccessPointClient, times(2)).update(eq(77L), argThat(dto -> "Acceso km 110+180".equals(dto.getName())
+                && dto.getStationId() == null && Integer.valueOf(4).equals(dto.getVersionNumber()) && "x".equals(dto.extras().get("brandNewField"))
+                && new BigDecimal("110176.000").equals(dto.getKp()) && "LEFT".equals(dto.getSide())
+                && new BigDecimal("31.669342").equals(dto.getLatitude())));
+        assertEquals("Acceso km 110+176", GridKt._get(grid, 0).getName(), "la fila sigue siendo lo que llego del servicio");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("delete-77")));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(trackAccessPointClient).delete(77L);
+    }
+
     /** El servicio manda profileCode y profileKp con cada seccionador: la lista no va perfil por perfil. */
     @Test
     void theDisconnectorListShowsTheProfileByItsCodeAndKp() {
@@ -2760,6 +2929,39 @@ class ViewLayerTest {
         LocatorJ._get(Button.class, spec -> spec.withId("import-profiles"));
         LocatorJ._get(Button.class, spec -> spec.withId("republish"));
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("import-lovs")).isEmpty());
+    }
+
+    /**
+     * Republicar ofrece tambien los puntos de acceso a via, antes de «Todo», que se acotan por via como los
+     * perfiles: pasar de los perfiles a ellos conserva la via elegida (los seccionadores y los aisladores
+     * se acotan por estacion, y la vaciarian).
+     */
+    @Test
+    void theAccessPointsAreRepublishedNarrowedToATrackLikeTheProfiles() {
+        loginAs("config.editor", "ROLE_CONFIG_READ", "ROLE_CONFIG_IMPORT");
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(station(12L, "ATOCHA", 100L)), 0, 50));
+        when(jobsClient.republish(any(), any(), any()))
+                .thenReturn(job(JOB_ID, JobType.MASTER_DATA_REPUBLISH, JobStatus.PENDING, Instant.parse("2026-10-17T09:12:03Z")));
+
+        UI.getCurrent().navigate(JobsView.ROUTE);
+        @SuppressWarnings("unchecked")
+        Select<String> target = LocatorJ._get(Select.class, spec -> spec.withId("republish-target"));
+        assertEquals(List.of("profile", "disconnector", "section-insulator", "track-access-point", "all"), ComboBoxKt.getSuggestionItems(target));
+        assertEquals("Puntos de acceso a via", target.getItemLabelGenerator().apply("track-access-point"));
+        LocatorJ._setValue(comboWithId("republish-track"), new RefItem(3L, "TRACK 1"));
+        LocatorJ._setValue(target, "track-access-point");
+        assertEquals(new RefItem(3L, "TRACK 1"), comboWithId("republish-track").getValue(), "de los perfiles a los accesos, la via se queda");
+        assertTrue(comboWithId("republish-track").isEnabled());
+        assertFalse(comboWithId("republish-station").isEnabled());
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("republish")));
+        verify(jobsClient).republish("track-access-point", 3L, null);
+        NotificationsKt.expectNotifications("Trabajo encolado: Republicado de puntos de acceso a via");
+
+        LocatorJ._setValue(target, "disconnector");
+        assertNull(comboWithId("republish-track").getValue(), "por estacion, la via se vacia");
+        assertFalse(comboWithId("republish-track").isEnabled());
+        assertTrue(comboWithId("republish-station").isEnabled());
     }
 
     // --- Usuarios (mto-users) ---------------------------------------------------------------------
@@ -8991,7 +9193,7 @@ class ViewLayerTest {
     private static VehicleLocationDto location(VehicleLocationKind kind, Long trackId, String kp, VehicleSummaryDto carrier, String reference) {
         return new VehicleLocationDto(UUID.randomUUID(), kind, kind == VehicleLocationKind.PARKED
                 ? new ParkingSiteSummaryDto(PARKING_SITE1, "APT-RSH", "Apartadero de Rishpon", ParkingSiteKind.SIDING) : null, 4L, trackId,
-                kp == null ? null : new BigDecimal(kp), null, null, null, null, carrier, carrier == null ? null : VehicleAttachment.TOWED,
+                kp == null ? null : new BigDecimal(kp), null, null, null, null, null, carrier, carrier == null ? null : VehicleAttachment.TOWED,
                 reference == null ? VehicleLocationSource.MANUAL : VehicleLocationSource.SHIFT, reference, Instant.parse("2026-10-16T03:40:00Z"),
                 Instant.parse("2026-10-16T03:40:02Z"), reference == null ? "recursos.gestor" : "service-account-mto-maintenance-svc");
     }
@@ -9163,7 +9365,91 @@ class ViewLayerTest {
         assertFalse(LocatorJ._find(VehicleLocationDialog.class).isEmpty(), "el dialogo sigue abierto");
         LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
         verify(vehicleClient, times(2)).recordLocation(VEHICLE1, new VehicleLocationRequest(VehicleLocationKind.ON_TRACK, null, null, 12L,
-                new BigDecimal("10.5"), null, null, null, "En la playa de vias", null, null, null));
+                new BigDecimal("10.5"), null, null, null, null, "En la playa de vias", null, null, null));
+        assertTrue(LocatorJ._find(VehicleLocationDialog.class).isEmpty());
+    }
+
+    private static VehicleLocationDto withAccessPoint(VehicleLocationDto location, String accessPoint, AccessPointSummaryDto trackAccessPoint) {
+        return new VehicleLocationDto(location.id(), location.kind(), location.parkingSite(), location.executionPackageId(), location.trackId(),
+                location.kp(), location.latitude(), location.longitude(), accessPoint, trackAccessPoint, location.description(), location.carrier(),
+                location.attachment(), location.source(), location.sourceReference(), location.observedAt(), location.recordedAt(), location.recordedBy());
+    }
+
+    /**
+     * El punto de acceso por el que encarrilo: donde se ofrece la via y en cuanto hay una elegida, los
+     * activos de esa via, pedidos a mto-resources cada vez que cambia (que lo vacia); un fallo al pedirlos
+     * lo dice su ayuda, sin aviso. Viaja como accessPointId; el 404 TAP-404 vuelve a pedir la lista y se dice
+     * en su campo, y el 409 VEH-001 (no le vale al vehiculo), con el dialogo abierto. La ficha y el historial
+     * dicen su nombre, y el texto libre, si no hay otro.
+     */
+    @Test
+    void aLocationOffersTheAccessPointsOfItsTrackAndTheVehicleSaysWhichOneItUsed() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        AccessPointSummaryDto used = new AccessPointSummaryDto(77L, "Acceso km 110+176", AccessPointKind.PREPARED_ACCESS);
+        VehicleLocationDto onTrack = withAccessPoint(location(VehicleLocationKind.ON_TRACK, 12L, "10.5", null, null), "Camino de la base", used);
+        stubVehicles(List.of(vehicle(VEHICLE1, "UN-01", ROAD_RAIL_MODEL, onTrack, true)));
+        when(vehicleClient.locations(eq(VEHICLE1), any(), any(), anyInt(), anyInt())).thenReturn(page(List.of(onTrack,
+                withAccessPoint(location(VehicleLocationKind.ON_TRACK, 12L, "9.0", null, null), "LC-31", null)), 0, 20));
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(), 0, 200));
+        AccessPointDto prepared = new AccessPointDto(77L, "Acceso km 110+176", 12L, new BigDecimal("110176.000"), AccessPointKind.PREPARED_ACCESS, true,
+                new BigDecimal("12.500"), new BigDecimal("40.000"), true);
+        AccessPointDto crossing = new AccessPointDto(78L, "Paso a nivel LC-31", 12L, new BigDecimal("98375.500"), AccessPointKind.LEVEL_CROSSING, false,
+                null, null, true);
+        when(accessPointClient.enabledOnTrack(12L)).thenReturn(List.of(prepared, crossing), List.of(prepared, crossing), List.of(prepared));
+        when(accessPointClient.enabledOnTrack(20L)).thenThrow(maintenanceError(503, "SVC-503", "mto-resources is not available"));
+        when(vehicleClient.recordLocation(eq(VEHICLE1), any()))
+                .thenThrow(maintenanceError(404, "TAP-404", "Track access point 78 not found"))
+                .thenThrow(maintenanceError(409, "VEH-001", "Access point Acceso km 110+176 is not on track 12"))
+                .thenReturn(onTrack);
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        LocatorJ._get(Div.class, spec -> spec.withText("EP EP 4 · Acceso: Acceso km 110+176"));
+        Grid<Object> locations = gridWithId("locations-grid");
+        assertEquals("Acceso km 110+176", GridKt._getFormattedRow(locations, 0).get(2), "el del maestro manda sobre el texto");
+        assertEquals("LC-31", GridKt._getFormattedRow(locations, 1).get(2), "sin el, el texto libre");
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("vehicle-locate")));
+        @SuppressWarnings("unchecked")
+        Select<VehicleLocationKind> kind = LocatorJ._get(Select.class, spec -> spec.withId("location-kind"));
+        LocatorJ._setValue(kind, VehicleLocationKind.ON_ROAD);
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("location-access-point")).isEmpty(), "por carretera no hay via");
+        assertEquals("Acceso (texto)", LocatorJ._get(TextField.class, spec -> spec.withId("location-access-point-text")).getLabel());
+        LocatorJ._setValue(kind, VehicleLocationKind.ON_TRACK);
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("location-access-point")).isEmpty(), "sin via elegida no se ofrece");
+        verify(accessPointClient, never()).enabledOnTrack(any());
+
+        LocatorJ._setValue(comboWithId("location-track"), new RefItem(12L, "VIA 1 (EP 4)"));
+        ComboBox<AccessPointDto> accessPoint = comboWithId("location-access-point");
+        assertEquals(List.of("Acceso km 110+176 · Acceso preparado · kp 110176.000", "Paso a nivel LC-31 · Paso a nivel · kp 98375.500 · sin biviales"),
+                ComboBoxKt.getSuggestionItems(accessPoint).stream().map(AccessPointDto::label).toList());
+        LocatorJ._setValue(accessPoint, crossing);
+        LocatorJ._setValue(comboWithId("location-track"), new RefItem(20L, "VIA 9 (EP 5)"));
+        assertNull(accessPoint.getValue(), "cambiar de via lo vacia: era de la otra");
+        assertTrue(ComboBoxKt.getSuggestionItems(accessPoint).isEmpty());
+        assertTrue(accessPoint.getHelperText().startsWith("No se han podido leer los puntos de acceso de la via"), accessPoint.getHelperText());
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "un fallo al pedirlos no se avisa");
+
+        LocatorJ._setValue(comboWithId("location-track"), new RefItem(12L, "VIA 1 (EP 4)"));
+        LocatorJ._setValue(accessPoint, crossing);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        verify(accessPointClient, times(3)).enabledOnTrack(12L);
+        assertEquals(List.of(prepared), ComboBoxKt.getSuggestionItems(accessPoint), "el TAP-404 vuelve a pedir la lista");
+        assertNull(accessPoint.getValue());
+        assertTrue(accessPoint.isInvalid(), "y se dice en su campo");
+        assertEquals("Ese punto de acceso ya no existe o aun no ha llegado a Recursos.", accessPoint.getErrorMessage());
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Ese punto de acceso ya no existe o aun no ha llegado a Recursos."));
+        assertFalse(LocatorJ._find(VehicleLocationDialog.class).isEmpty(), "el dialogo sigue abierto");
+        LocatorJ._setValue(accessPoint, prepared);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        assertFalse(accessPoint.isInvalid());
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("La flota no admite ese cambio. Access point Acceso km 110+176 is not on track 12"));
+        assertFalse(LocatorJ._find(VehicleLocationDialog.class).isEmpty(), "el dialogo sigue abierto");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        verify(vehicleClient, times(2)).recordLocation(VEHICLE1, new VehicleLocationRequest(VehicleLocationKind.ON_TRACK, null, null, 12L, null, null,
+                null, 77L, null, null, null, null, null));
         assertTrue(LocatorJ._find(VehicleLocationDialog.class).isEmpty());
     }
 
@@ -9341,6 +9627,8 @@ class ViewLayerTest {
         assertEquals("Ese documento del vehiculo ya no existe.", UiErrors.message(maintenanceError(404, "VDO-404", "Document not found")));
         assertEquals("Ese instrumento no existe.", UiErrors.message(maintenanceError(404, "INT-404", "Instrument not found")));
         assertEquals("Ese tipo de cualificacion no existe.", UiErrors.message(maintenanceError(404, "QTY-404", "Qualification type not found")));
+        assertEquals("Ese punto de acceso ya no existe o aun no ha llegado a Recursos.",
+                UiErrors.message(maintenanceError(404, "TAP-404", "Track access point 77 not found")));
         assertEquals("Ese instrumento aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.",
                 UiErrors.message(maintenanceError(404, "MSI-404", "Maintenance instrument not found")));
         assertEquals("No se ha encontrado lo que se pedia. Something", UiErrors.message(maintenanceError(404, null, "Something")),

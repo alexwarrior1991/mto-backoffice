@@ -197,7 +197,7 @@ public class VehicleDetailView extends VerticalLayout implements BeforeEnterObse
             return;
         }
         String details = ResourcesHistory.join(location.executionPackageId() == null ? null : "EP " + names.packageName(location.executionPackageId()),
-                location.accessPoint() == null ? null : "Acceso: " + location.accessPoint(),
+                location.accessPointLabel() == null ? null : "Acceso: " + location.accessPointLabel(),
                 location.latitude() == null ? null : location.latitude().toPlainString() + ", " + location.longitude().toPlainString());
         if (!details.isEmpty()) {
             position.add(new Div(details));

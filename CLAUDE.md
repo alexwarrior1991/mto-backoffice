@@ -75,9 +75,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 - `client` — las interfaces `@HttpExchange` por servicio: `client/configuration/LovClient` (los
   ocho endpoints de `AbstractLovController` parametrizados por recurso; `LovResource`, los 17
   catálogos con su ruta y su título), `MasterClient<D>` (lo que comparten los maestros de
-  `CRUDController`: `POST /filter` paginado, `GET/POST/PUT/DELETE`) con seis subinterfaces vacías (salvo `TrackClient`, que añade `schematic`: el esquema de la vía en una llamada)
-  que solo ponen la ruta y el tipo (`StationClient`, `TrackClient`...; Spring resuelve el genérico
-  contra la subinterfaz), `BusinessEntityClient` (solo lectura), `MasterFilters` (cuerpo y orden
+  `CRUDController`: `POST /filter` paginado, `GET/POST/PUT/DELETE`) con siete subinterfaces vacías (salvo `TrackClient`, que añade `schematic`: el esquema de la vía en una llamada)
+  que solo ponen la ruta y el tipo (`StationClient`, `TrackClient`, `TrackAccessPointClient`...; Spring
+  resuelve el genérico contra la subinterfaz), `BusinessEntityClient` (solo lectura), `MasterFilters` (cuerpo y orden
   del `/filter`) y `JobsClient` (los trabajos en segundo plano: importaciones multipart con
   `@RequestPart Resource`, exportación, republicado, la lista de todas las familias (`GET /jobs`,
   paginada y filtrable por tipo y estado), estado y fichero por familia, `JobFamily`);
@@ -117,14 +117,19 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   lista entera, `POST` para añadir uno y `leave` para que salga—, `VehicleTypeClient`,
   `ParkingSiteClient` y `VehicleClient` —con sus ubicaciones y el tablero, `positions`, ordenado por vía
   y kp con el vehículo para desempatar, y sus documentos, `/vehicles/{id}/documents`—,
-  `QualificationTypeClient` —el catálogo de tipos de cualificación— e `InstrumentClient` —los
-  instrumentos con su calibración, filtrables por `calibrationExpiresBefore`, y su historial—; DTO como
+  `QualificationTypeClient` —el catálogo de tipos de cualificación—, `InstrumentClient` —los
+  instrumentos con su calibración, filtrables por `calibrationExpiresBefore`, y su historial— y
+  `AccessPointClient` —los puntos de acceso a la vía que `mto-resources` ha recibido de
+  `mto-configuration`, una lista entera sin paginar, que `AccessPointListDto` lee también como página
+  (`enabledOnTrack`: los activos de una vía)—; DTO como
   records en `client/dto/resources`, con los resúmenes —`PersonSummaryDto`, `UnitSummaryDto`,
   `VehicleSummaryDto`, `QualificationTypeSummaryDto`, `InstrumentSummaryDto`...— iguales por id para que
   un desplegable reconozca lo leído, y las reglas copiadas del servicio en sus enumerados: `OrganizationUnitKind`
   con sus niveles, a qué puede colgar y qué categorías lo dirigen, `VehicleCategory` con su movilidad,
   `VehicleLocationKind.recordable` con lo que admite cada movilidad; `QualificationKind`,
-  `VehicleDocumentKind` e `InstrumentKind`, tolerantes).
+  `VehicleDocumentKind`, `InstrumentKind` y `AccessPointKind`, tolerantes; `AccessPointDto`, igual por
+  id, y en una ubicación `trackAccessPoint` (`AccessPointSummaryDto {id, name, kind}`) junto al texto
+  libre de siempre, `accessPoint`).
   Los DTO
   (`client/dto`): `LovDto` es un record con solo las claves que usa la UI (con `versionNumber`,
   que vuelve como se leyó) y `@JsonInclude(NON_NULL)`; los maestros (`client/dto/master`) son
@@ -134,7 +139,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   salida, `kp`, el suyo, solo sin poste, `trackId`, el suyo sin poste y, con poste, la vía que
   maniobra cuando no es la del poste (un haz de vías, en talleres y cocheras), `connectedTrackId`,
   la otra vía de uno que pone dos en paralelo, con poste o sin él, y `stationId`, opcional: uno en
-  plena vía no es de ninguna); `PageResponse<T>` con la forma `{content, page}`; los trabajos (`client/dto/jobs`:
+  plena vía no es de ninguna; `TrackAccessPointDto`, el punto de acceso a la vía del `V28`, con la vía
+  obligatoria, la estación opcional, sus decimales —KP, toneladas, coordenadas— como números y sin
+  hijos, y su clase y su lado como la cadena leída, con las etiquetas de `TrackAccessPointKind` y
+  `TrackAccessPointSide`); `PageResponse<T>` con la forma `{content, page}`; los trabajos (`client/dto/jobs`:
   `JobDto`, la unión de las tres respuestas del servicio, `JobStatus`, `JobType`, `UploadedFile`);
   `ClientEnums`, lo que comparten los enumerados tolerantes (`parse` y `selectable`). Los
   errores en `client/error` (`ApiProblem`, `ApiErrorDecoder` y la jerarquía
@@ -147,7 +155,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `ui/lov` (`LovCrudView` en `catalogos/:resource`, `LovEditorDialog` con `Binder` sobre el modelo
   mutable `LovForm`, `LovBulkCreateDialog` con su parser de líneas), `ui/master` (`MasterView<D>`,
   la lista paginada en el servidor con `LazyPages` (una petición por página) sobre `POST /filter`;
-  `MasterEditorDialog<D>`, el `Binder` sobre el DTO leído; una vista y un editor por maestro;
+  `MasterEditorDialog<D>`, el `Binder` sobre el DTO leído; una vista y un editor por maestro, también
+  `TrackAccessPointsView` en `infraestructura/accesos` con `TrackAccessPointEditor`;
   `ReferenceCatalog` y `LovCatalog`, los nombres y las entradas de catálogo cargados una vez por
   pantalla; `Pickers`, desplegables y conversores; `EnabledFilter`, el filtro de tres estados;
   `ChildrenEditor<C>`, la tabla de hijos dentro del editor del padre, con `CantileverDialog` y
@@ -226,7 +235,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `OrganizationView`, el árbol en un
   `TreeGrid`, y `UnitDetailView` con `UnitEditorDialog`, `TeamMembersPanel`, `TeamMembersDialog`,
   `MemberDialogs` y `ChildUnitsPanel`; `VehiclesView`, `VehicleDetailView` con `VehicleLocationsPanel`,
-  `VehicleLocationDialog`, `VehicleDocumentsPanel` (`VehicleDocumentDialog`) y `VehicleEditorDialog`;
+  `VehicleLocationDialog` (con el punto de acceso de la vía elegida), `VehicleDocumentsPanel`
+  (`VehicleDocumentDialog`) y `VehicleEditorDialog`;
   `FleetBoardView`, el tablero; `VehicleTypesView` y
   `ParkingSitesView` con sus editores; `ResourcesFormats` y `ResourcesHistory`; en `ui/maintenance`,
   `TaskGeneration`, la generación con `Prefer` y su seguimiento, y `ParkingRows`, dónde queda cada
@@ -312,7 +322,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `mto-resources` tampoco piden recargar: `QUA-001` (la persona ya tiene ese tipo, o el tipo está
   retirado: renovar es cambiar la caducidad), `VDO-409` (el vehículo ya tiene un documento de ese tipo) y
   `QTY-409`/`INT-409` (código repetido); `QUA-404`, `VDO-404`, `INT-404` y `QTY-404` dicen qué ya no existe,
-  y el 404 `MSI-404` de mantenimiento, que el instrumento aún no ha llegado allí desde `mto-resources`.
+  y el 404 `MSI-404` de mantenimiento, que el instrumento aún no ha llegado allí desde `mto-resources`. El
+  404 `TAP-404` es un punto de acceso a la vía que ya no existe o aún no ha llegado a `mto-resources`.
 - **La paginación es la forma DTO** `{content, page:{size,number,totalElements,totalPages}}`, fijada
   en `mto-configuration` con `spring.data.web.pageable.serialization-mode: via_dto` y pinada allí
   por test. `PageResponse<T>` la lee (y tolera `first`/`last` de stock y maintenance). La API de
@@ -457,7 +468,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   mantenimiento, los de almacén (`MovementType`, `ReservationStatus`), el del historial
   (`RevisionOperation`), los de los trabajos (`JobStatus`, `JobType`), los de notificaciones
   (`ActivityCategory`, `ActivitySeverity`, `ActorKind`, `AccessOutcome`) y los de recursos (también
-  `QualificationKind`, `VehicleDocumentKind` e `InstrumentKind`). Cada uno lleva `UNKNOWN`
+  `QualificationKind`, `VehicleDocumentKind`, `InstrumentKind` y `AccessPointKind`, la clase de un punto de
+  acceso tal como la cuenta `mto-resources`). Cada uno lleva `UNKNOWN`
   («Desconocido»), un `@JsonCreator(mode = DELEGATING) of(String)` que delega en
   `ClientEnums.parse` y `selectable()` sin `UNKNOWN` para los desplegables: un valor nuevo en el
   servicio se lee como desconocido en vez de romper la página entera, que además fallaría sin
@@ -470,7 +482,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   viajan en peticiones (`AdjustmentDirection`, `RequiredAction`, `ReportFormat`) y el de los
   maestros de `mto-configuration` (`SectionInsulatorInstallationType`): el maestro se devuelve
   entero, y un `UNKNOWN` volvería al servicio como un valor que no existe; tolerarlo exigiría
-  guardar la cadena original.
+  guardar la cadena original. Es lo que hace el punto de acceso a la vía: su clase y su lado son la
+  cadena leída (`TrackAccessPointDto.kind`/`side`), que vuelve tal cual y se enseña cruda si no se
+  conoce (`TrackAccessPointKind.labelOf`, `TrackAccessPointSide.labelOf`); el editor la ofrece además de
+  las conocidas.
 - **Un `LocalDate` en un `@HttpExchange` lleva `@DateTimeFormat(iso = DATE)`** (y un `YearMonth`,
   `pattern = "yyyy-MM"`): sin él sale con el formato corto de la máquina y el servicio responde 400.
   Los `Instant` viajan en ISO sin nada, con `:` codificado.
@@ -574,7 +589,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   defecto puede ser el inicial, nunca menor. En infraestructura, el vano, las alturas, el viento y
   los KP de agujas y aisladores no son negativos; lo que va en mm del perfil y el descentramiento son
   enteros, la longitud de un paquete son solo cifras y el KP del perfil, y el propio de un seccionador
-  sin poste, viajan recortados. Lo demás (un
+  sin poste, viajan recortados. Un punto de acceso a la vía lleva su KP sin signo con 9 enteros y 3
+  decimales (`Numbers.infrastructureKp`), sus toneladas sin signo con 5 y 3 (`tonnes`) y sus coordenadas
+  en su rango con 6 decimales (`coordinate(90)`, `coordinate(180)`, las mismas que una ubicación de
+  `mto-resources`), y las dos juntas o ninguna: se marca la que falta («Con la latitud va tambien la
+  longitud», y al revés), como el 400 del servicio. Lo demás (un
   rango, una regla de negocio) lo decide el servicio. El `Binder` aplica antes que nada la
   comprobación propia del campo (su mínimo y lo que no sabe leer), así que un `IntegerField` con
   mínimo lleva su mensaje (`Numbers.atLeast`); en un diálogo sin `Binder`, `Numbers.check` hace lo
@@ -727,6 +746,30 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   su 404 `CRW-404`/`FLT-404`/`MSI-404`. Cerrar el turno dice dónde queda cada vehículo (`ParkingRows`: un sitio que
   alcanza por su movilidad, una vía y su kp, o un texto); solo viaja lo rellenado, lo evidente se dice
   en su fila antes de llamar, y lo que `mto-resources` lee de ahí es lo que lo mueve.
+- **Un punto de acceso a la vía es un maestro de `mto-configuration`, y lo aplica `mto-resources`.** Es
+  un maestro más de Infraestructura (`infraestructura/accesos`, «Accesos a via», `TrackAccessPointsView`):
+  la lista paginada en el servidor con el nombre de su vía y de su estación, filtrada por texto, vía
+  (`trackId`), tipo (`kind`) y estado (`enabled`) en el cuerpo del `/filter`, y ordenable por nombre, vía,
+  estación, KP, tipo, lado, biviales, activo y «Modificado»; el editor sobre una copia de la fila,
+  devuelta entera con su `versionNumber` y sus `extras` (un alta empieza admitiendo biviales y activa; la
+  estación se puede vaciar); el borrado (lógico) con confirmación, con los permisos de los maestros. Un
+  nombre repetido en la vía es el 409 `BUS-002`, con el diálogo abierto. Republicar ofrece también
+  «Puntos de acceso a via» (`track-access-point`), antes de «Todo» y acotado por vía como los perfiles
+  (`JobsView.REPUBLISH_BY_TRACK`): pasar de uno a otro conserva la vía elegida. En «Registrar ubicacion»
+  de un vehículo, donde se ofrece la vía (en vía, o aparcado si no es de solo carretera, y con
+  `config-read`) y en cuanto se elige una, se ofrece el punto de acceso por el que encarriló, para
+  cualquier movilidad: los activos de esa vía tal como los tiene `mto-resources`
+  (`AccessPointClient.enabledOnTrack`, `GET /track-access-points?trackId=&enabled=true`), pedidos cada vez
+  que cambia la vía, que lo vacía; un fallo al pedirlos no se avisa: lo dice la ayuda del campo. Cada uno
+  dice su nombre, su tipo y su kp, y «sin biviales» si no sirve para encarrilarlos; no se filtra nada más
+  aquí: si le vale al vehículo (biviales, acceso preparado, pesos) lo dice el servicio con su 409
+  `VEH-001`, con el diálogo abierto. Es opcional y viaja como `accessPointId`. Uno que ya no existe o aún
+  no ha llegado a Recursos es su 404 `TAP-404`: se vuelve a pedir la lista, se dice en el campo y el
+  diálogo sigue abierto. El texto libre se sigue ofreciendo, «Acceso (texto)» (`accessPoint` en la
+  petición), a una bivial en vía o por carretera. Una ubicación trae el punto de acceso del maestro en
+  `trackAccessPoint {id, name, kind}` y el texto, como siempre, en `accessPoint`: la ficha («Acceso: …»)
+  y la columna «Acceso» del histórico enseñan `VehicleLocationDto.accessPointLabel()`, el nombre del
+  maestro (`#id` si llega sin él) y, sin él, el texto. El tablero no lo enseña.
 - **Generar tareas de verdad va con `Prefer: respond-async, wait=5`** (`TaskGeneration`). Si el servicio
   termina en su espera contesta lo de siempre; si no, 202 con la operación, que el diálogo sigue cada
   2 s desde `SharedPolling` con la pestaña a la vista (`GET /operations/{id}`, nunca el `Location`, que
@@ -911,6 +954,19 @@ su fila con sus cualificaciones (el alta con los tipos que no tiene, el error de
 `QUA-001`, renovar, quitar con confirmación, solo lectura sin `resources-write`), el catálogo de tipos, los
 instrumentos, la pestaña de documentos (un tipo desconocido no abre nada), el editor de modelos y los
 instrumentos de un turno (un conjunto que se vacía a `null`, el `MSI-404`, la ficha y el parte, de solo
-lectura sin `resources-read`). Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
+lectura sin `resources-read`). Los puntos de acceso a la vía (fase 4, bloque D) también: en
+`ClientLayerTest`, el maestro filtrado por vía, tipo y estado con sus decimales como números, devuelto
+entero con su versión y lo desconocido, el 409 `BUS-002` de un nombre repetido y el borrado; el
+republicado con `entity=track-access-point` y la vía; una clase y un lado nuevos devueltos como se
+leyeron; la lista de `mto-resources` de una vía (una clase nueva como `UNKNOWN`, «sin biviales», y una
+página leída por su `content`), la ubicación con `accessPointId`, el 404 `TAP-404` y lo que enseña una
+ubicación (`trackAccessPoint` sobre el texto de `accessPoint`, `#id` sin nombre); en `ViewLayerTest`, el
+menú, la lista con los nombres de su vía y su estación, un tipo nuevo crudo y sus filtros en el
+servicio, lectura sin controles, el editor con lo que se comprueba antes de llamar (KP, toneladas,
+coordenadas y la que falta marcada), la copia devuelta entera con su versión, el `BUS-002` con el diálogo
+abierto, el borrado confirmado, el republicado acotado por vía que conserva la vía de los perfiles, el
+mensaje del `TAP-404`, y el diálogo de ubicación con los puntos de acceso de la vía (solo con una elegida,
+pedidos al elegirla, vaciados al cambiarla, el fallo en su ayuda sin aviso, el `TAP-404` que relee la lista
+y se dice en su campo, el `VEH-001` con el diálogo abierto) y la ficha y el histórico con su nombre. Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
 CI: `mto-platform/scripts/e2e.sh` construye la imagen de este commit, usa la publicada de cada
 hermano y corre el e2e de Playwright de mto-frontend, que recorre las dos aplicaciones.

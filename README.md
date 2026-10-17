@@ -338,13 +338,34 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   lo dice `mto-maintenance` (409 `SHF-001`), no esta pantalla. Esas fichas son también los enlaces de
   los avisos de caducidad de `mto-notification`.
 
+- **Puntos de acceso a la vía**, a la par con mto-frontend: por dónde un vehículo bivial sale de la
+  carretera y se encarrila. Son un **maestro más de Infraestructura** (`infraestructura/accesos`,
+  «Accesos a via», el maestro `V28` de `mto-configuration`): la lista paginada en el servidor con el
+  nombre de su vía y de su estación, su KP en metros, su tipo (acceso preparado, paso a nivel, base o
+  cochera), su lado, si admite biviales y sus cargas máximas, filtrada por texto, vía, tipo y estado; el
+  editor sobre la fila leída, devuelta entera con su versión (el tipo y el lado vuelven como se leyeron,
+  también uno que esta versión no conoce, que se enseña crudo), y el borrado (lógico) con confirmación.
+  Antes de llamar se comprueba lo que dice la columna: el KP y las toneladas no negativos y con sus
+  cifras, la latitud entre -90 y 90 y la longitud entre -180 y 180 con 6 decimales, y las dos juntas (se
+  marca la que falta); un nombre repetido en la vía es el 409 `BUS-002` del servicio. Los **trabajos**
+  republican también los puntos de acceso (`entity=track-access-point`), acotados por vía como los
+  perfiles. Y en **Recursos**, «Registrar ubicación» ofrece, en cuanto se elige la vía, el **punto de
+  acceso** por el que encarriló: los activos de esa vía, tal como los tiene `mto-resources`
+  (`GET /api/resources/track-access-points?trackId=&enabled=true`), que se vuelven a pedir y se vacían al
+  cambiar de vía, con «sin biviales» en los que no sirven para encarrilarlos, y viajan como
+  `accessPointId`. Si le vale al vehículo (biviales, acceso preparado, pesos) lo decide `mto-resources`
+  (409 `VEH-001`); uno que ya no existe o aún no ha llegado a Recursos es su 404 `TAP-404`, que vuelve a
+  pedir la lista y se dice en el campo; los dos con el diálogo abierto. La ficha del vehículo y su
+  histórico enseñan el nombre del punto de acceso (`trackAccessPoint`) y, sin él, el texto libre de
+  siempre (`accessPoint`, «Acceso (texto)» en el diálogo de una bivial en vía o por carretera).
+
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|
 | Exportar perfiles, consultar, descargar | `config-read` |
 | Importar el maestro de perfiles, republicar | `config-import` |
 | Importar el catálogo de LOV | `config-import` + `lov-manage` |
 
-| Acción sobre un maestro | Roles de cliente de `mto-configuration-api` |
+| Acción sobre un maestro (también los accesos a vía) | Roles de cliente de `mto-configuration-api` |
 |---|---|
 | Ver la lista y buscar | `config-read` |
 | Nuevo, modificar | `config-write` |
@@ -410,7 +431,7 @@ Las pantallas de recursos (fase 10) siguen los permisos de `mto-resources-api`, 
 | Nombres y desplegables de vías, estaciones y paquetes | además, `config-read` de `mto-configuration-api` |
 | Personas, unidades, linemen, sitios de aparcamiento, cualificaciones de una persona y tipos de cualificación: alta, modificación y reactivar | `resources-write` |
 | Modelos, vehículos, sus documentos e instrumentos: alta, modificación y reactivar | `resources-fleet-write` |
-| Registrar dónde está un vehículo | `resources-location-write` |
+| Registrar dónde está un vehículo (el punto de acceso, entre los de la vía elegida, que se lee con `resources-read`) | `resources-location-write` |
 | Desactivar una persona o una unidad, retirar un modelo, un sitio, un vehículo, un tipo de cualificación o un instrumento; quitar una cualificación o un documento | `resources-delete` |
 
 Las pantallas de notificaciones (fase 9) siguen los permisos de `mto-notification-api`, donde el

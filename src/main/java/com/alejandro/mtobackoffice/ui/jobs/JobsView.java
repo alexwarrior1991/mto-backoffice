@@ -72,6 +72,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
 import java.util.function.Consumer;
@@ -109,8 +110,13 @@ public class JobsView extends VerticalLayout {
     static final int MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
     public static final String XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     static final List<String> MAPPER_TYPES = List.of("basic", "default", "technical");
+    /** Lo que se puede republicar, con su etiqueta: el parametro {@code entity} del servicio. */
     static final Map<String, String> REPUBLISH_TARGETS = Map.of(
-            "profile", "Perfiles", "disconnector", "Seccionadores", "section-insulator", "Aisladores de seccion", "all", "Todo");
+            "profile", "Perfiles", "disconnector", "Seccionadores", "section-insulator", "Aisladores de seccion",
+            "track-access-point", "Puntos de acceso a via", "all", "Todo");
+    /** Los que se acotan por via (el resto de los que se acotan, por estacion). */
+    static final Set<String> REPUBLISH_BY_TRACK = Set.of("profile", "track-access-point");
+    static final Set<String> REPUBLISH_BY_STATION = Set.of("disconnector", "section-insulator");
 
     private static final Logger LOGGER = LoggerFactory.getLogger(JobsView.class);
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("dd/MM HH:mm:ss").withZone(ZoneId.systemDefault());
@@ -269,18 +275,22 @@ public class JobsView extends VerticalLayout {
     private Component republishCard() {
         Select<String> target = new Select<>();
         target.setLabel("Que republicar");
-        target.setItems(List.of("profile", "disconnector", "section-insulator", "all"));
+        target.setId("republish-target");
+        target.setItems(List.of("profile", "disconnector", "section-insulator", "track-access-point", "all"));
         target.setItemLabelGenerator(REPUBLISH_TARGETS::get);
         target.setValue("profile");
         ComboBox<RefItem> track = Pickers.reference("Solo la via", catalog.tracks());
+        track.setId("republish-track");
         ComboBox<RefItem> station = Pickers.reference("Solo la estacion", catalog.stations());
+        station.setId("republish-station");
         station.setEnabled(false);
         target.addValueChangeListener(change -> {
-            boolean profiles = "profile".equals(change.getValue());
-            boolean stationScoped = "disconnector".equals(change.getValue()) || "section-insulator".equals(change.getValue());
-            track.setEnabled(profiles);
+            // Los perfiles y los accesos a via se acotan por via; los seccionadores y los aisladores, por estacion.
+            boolean trackScoped = REPUBLISH_BY_TRACK.contains(change.getValue());
+            boolean stationScoped = REPUBLISH_BY_STATION.contains(change.getValue());
+            track.setEnabled(trackScoped);
             station.setEnabled(stationScoped);
-            if (!profiles) {
+            if (!trackScoped) {
                 track.clear();
             }
             if (!stationScoped) {

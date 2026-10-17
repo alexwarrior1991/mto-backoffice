@@ -36,12 +36,16 @@ public final class UiErrors {
      * empleado (personas), una matricula o un numero ferroviario (vehiculos). El detalle dice cual.
      */
     private static final Set<String> RESOURCES_DUPLICATED = Set.of("PER-409", "UNI-409", "VEH-409", "VTY-409", "PRK-409");
-    /** Los 404 de mto-resources de lo que cuelga de una ficha o de un catalogo, cada uno dicho por lo que es. */
+    /**
+     * Los 404 de mto-resources de lo que cuelga de una ficha o de un catalogo, cada uno dicho por lo que es;
+     * un punto de acceso a la via, ademas, puede no haber llegado todavia por evento desde mto-configuration.
+     */
     private static final Map<String, String> RESOURCES_MISSING = Map.of(
             "QUA-404", "Esa cualificacion ya no existe.",
             "VDO-404", "Ese documento del vehiculo ya no existe.",
             "INT-404", "Ese instrumento no existe.",
-            "QTY-404", "Ese tipo de cualificacion no existe.");
+            "QTY-404", "Ese tipo de cualificacion no existe.",
+            "TAP-404", "Ese punto de acceso ya no existe o aun no ha llegado a Recursos.");
 
     private UiErrors() {
     }
