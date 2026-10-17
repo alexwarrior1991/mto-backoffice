@@ -9,6 +9,7 @@ import com.alejandro.mtobackoffice.ui.maintenance.MaintenanceRoutes;
 import com.alejandro.mtobackoffice.ui.master.MasterView;
 import com.alejandro.mtobackoffice.ui.notification.InboxBell;
 import com.alejandro.mtobackoffice.ui.notification.NotificationRoutes;
+import com.alejandro.mtobackoffice.ui.resources.ResourcesRoutes;
 import com.alejandro.mtobackoffice.ui.stock.StockRoutes;
 import com.alejandro.mtobackoffice.ui.support.SharedPolling;
 import com.alejandro.mtobackoffice.ui.users.UsersView;
@@ -140,6 +141,7 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
             UsersView.ROUTE_PREFIX, new MenuGroup("Usuarios", "users"),
             StockRoutes.PREFIX, new MenuGroup("Almacen", "storage"),
             MaintenanceRoutes.PREFIX, new MenuGroup("Mantenimiento", "wrench"),
+            ResourcesRoutes.PREFIX, new MenuGroup("Recursos", "group"),
             NotificationRoutes.ACTIVITY, new MenuGroup("Actividad", "records"));
 
     private Component menu() {

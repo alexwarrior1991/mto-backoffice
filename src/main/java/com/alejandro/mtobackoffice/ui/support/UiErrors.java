@@ -7,6 +7,7 @@ import com.alejandro.mtobackoffice.client.error.ForbiddenApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.client.error.ServiceUnavailableApiException;
 import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
+import com.alejandro.mtobackoffice.client.error.TooManyRequestsApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.configuration.security.SecurityConfiguration;
 import com.vaadin.flow.component.UI;
@@ -29,6 +30,11 @@ public final class UiErrors {
     private static final int DURATION_MS = 8000;
     /** Los 409 de un codigo repetido: mantenimiento (activos, equipos) y los cinco catalogos de almacen. */
     private static final Set<String> DUPLICATED_CODES = Set.of("AST-409", "TEA-409", "MAT-409", "WH-409", "SUP-409", "PRJ-409", "ASM-409");
+    /**
+     * Los 409 de un valor repetido en mto-resources: ademas del codigo, un usuario o un numero de
+     * empleado (personas), una matricula o un numero ferroviario (vehiculos). El detalle dice cual.
+     */
+    private static final Set<String> RESOURCES_DUPLICATED = Set.of("PER-409", "UNI-409", "VEH-409", "VTY-409", "PRK-409");
 
     private UiErrors() {
     }
@@ -78,6 +84,12 @@ public final class UiErrors {
                     "Esa notificacion ya no existe o no va dirigida a ti.";
             case NotFoundApiException line when "ACT-404".equals(line.getProblem().code()) ->
                     "Esa linea del registro ya no existe.";
+            // mto-maintenance: una persona o un vehiculo de mto-resources que todavia no ha llegado por
+            // evento a mantenimiento (se acaba de dar de alta alli). Llega en unos segundos: reintentar vale.
+            case NotFoundApiException crew when "CRW-404".equals(crew.getProblem().code()) ->
+                    "Esa persona aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.";
+            case NotFoundApiException fleet when "FLT-404".equals(fleet.getProblem().code()) ->
+                    "Ese vehiculo aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.";
             case NotFoundApiException ignored -> "No se ha encontrado lo que se pedia."
                     + detail(exception);
             // mto-maintenance: la inspeccion no casa con su checklist (un OK con items defectuosos, un
@@ -114,12 +126,24 @@ public final class UiErrors {
                     "El turno no admite ese trabajo." + detail(exception);
             case ConflictApiException material when "MAT-001".equals(material.getProblem().code()) ->
                     "La linea de material no admite esta operacion." + detail(exception);
+            case ConflictApiException team when "TEA-001".equals(team.getProblem().code()) ->
+                    "El equipo es de mto-resources: se cambia en Recursos > Organigrama.";
             case ConflictApiException asset when "AST-001".equals(asset.getProblem().code()) ->
                     "El activo esta desactivado, o ese dato lo manda mto-configuration." + detail(exception);
             // Un codigo repetido en mto-maintenance (activos y equipos) y en los catalogos de mto-stock:
             // recargar no lo arregla, asi que no se pide.
             case ConflictApiException duplicated when DUPLICATED_CODES.contains(duplicated.getProblem().code()) ->
                     "Ya existe otro con ese codigo.";
+            case ConflictApiException duplicated when RESOURCES_DUPLICATED.contains(duplicated.getProblem().code()) ->
+                    "Ya existe otro con ese valor (codigo, usuario, numero de empleado, matricula o numero ferroviario)."
+                            + detail(exception);
+            // mto-resources: las reglas del organigrama (de 2 a 6 linemen, el nivel del padre, la categoria
+            // del jefe, una persona en otro equipo) y las de la flota (donde puede estar un vehiculo segun
+            // su movilidad, el remolque, un vehiculo retirado). Recargar no las arregla; el detalle dice cual.
+            case ConflictApiException unit when "UNI-001".equals(unit.getProblem().code()) ->
+                    "El organigrama no admite ese cambio." + detail(exception);
+            case ConflictApiException fleet when "VEH-001".equals(fleet.getProblem().code()) ->
+                    "La flota no admite ese cambio." + detail(exception);
             // mto-users: un nombre de usuario o un email repetido. Recargar tampoco lo arregla.
             case ConflictApiException duplicated when "USR-409".equals(duplicated.getProblem().code()) ->
                     "Ya existe un usuario con ese nombre de usuario o ese email." + detail(exception);
@@ -134,6 +158,15 @@ public final class UiErrors {
                     "El servicio no ha podido completar la operacion." + detail(exception);
             case ServiceUnavailableApiException unavailable -> "El servicio no esta disponible ahora mismo."
                     + unavailable.getRetryAfter().map(d -> " Intentalo en " + d.toSeconds() + " s.").orElse(" Intentalo mas tarde.");
+            // Las operaciones de fondo de mto-maintenance y mto-resources: el tope de todo el despliegue
+            // esta lleno. No es un fallo de la peticion; vale reintentarla pasado el Retry-After.
+            case TooManyRequestsApiException operations when "OPS-429".equals(operations.getProblem().code()) ->
+                    "Hay demasiadas operaciones en marcha."
+                            + operations.getRetryAfter().map(d -> " Intentalo en " + d.toSeconds() + " s.").orElse(" Intentalo mas tarde.");
+            // Una operacion de fondo de mto-maintenance cuya instancia dejo de latir (se paro a medias): no
+            // va a terminar, hay que volver a lanzarla. Llega como el error de la operacion, con estado 500.
+            case BackofficeApiException abandoned when "OPS-410".equals(abandoned.getProblem().code()) ->
+                    "La operacion se interrumpio en el servicio (se paro la instancia que la llevaba): vuelve a lanzarla.";
             // El unico 410 del dominio es el fichero de un trabajo de mto-configuration que ya no esta
             // (purgado, o generado en otra replica): reintentar no lo trae, hay que relanzar el trabajo.
             case BackofficeApiException gone when gone.getStatus().value() == 410 ->

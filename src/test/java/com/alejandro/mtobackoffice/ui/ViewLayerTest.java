@@ -21,12 +21,61 @@ import com.alejandro.mtobackoffice.client.dto.jobs.JobItemError;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobStatus;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobType;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OperationDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OperationErrorDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OperationStatus;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftVehicleDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.VehicleParkingRequest;
 import com.alejandro.mtobackoffice.client.dto.master.ExecutionPackageDto;
 import com.alejandro.mtobackoffice.client.dto.master.LovRef;
 import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
 import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
 import com.alejandro.mtobackoffice.client.dto.master.StationDto;
 import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
+import com.alejandro.mtobackoffice.client.dto.resources.DrivingLicence;
+import com.alejandro.mtobackoffice.client.dto.resources.FleetPositionDto;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationTreeNodeDto;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitDto;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitKind;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteDto;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteKind;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonEmployer;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.RailGearType;
+import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberDto;
+import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberLeaveRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.UnitSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleAttachment;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleCategory;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationKind;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationSource;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleMobility;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleOperationalStatus;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleOwner;
+import com.alejandro.mtobackoffice.client.dto.resources.VehiclePower;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.WorkDiscipline;
 import com.alejandro.mtobackoffice.client.dto.users.ClientDto;
 import com.alejandro.mtobackoffice.client.dto.users.ClientRoleAssignmentDto;
 import com.alejandro.mtobackoffice.client.dto.users.ClientRoleDto;
@@ -38,6 +87,30 @@ import com.alejandro.mtobackoffice.client.dto.users.RoleNamesRequest;
 import com.alejandro.mtobackoffice.client.dto.users.UserCredentialDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
+import com.alejandro.mtobackoffice.client.maintenance.OperationClient;
+import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
+import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
+import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.VehicleClient;
+import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
+import com.alejandro.mtobackoffice.ui.maintenance.TaskGeneration;
+import com.alejandro.mtobackoffice.ui.resources.FleetBoardView;
+import com.alejandro.mtobackoffice.ui.resources.OrganizationView;
+import com.alejandro.mtobackoffice.ui.resources.ParkingSiteEditorDialog;
+import com.alejandro.mtobackoffice.ui.resources.ParkingSitesView;
+import com.alejandro.mtobackoffice.ui.resources.PeopleView;
+import com.alejandro.mtobackoffice.ui.resources.PersonEditorDialog;
+import com.alejandro.mtobackoffice.ui.resources.ResourcesRoutes;
+import com.alejandro.mtobackoffice.ui.resources.TeamMembersDialog;
+import com.alejandro.mtobackoffice.ui.resources.UnitDetailView;
+import com.alejandro.mtobackoffice.ui.resources.UnitEditorDialog;
+import com.alejandro.mtobackoffice.ui.resources.VehicleDetailView;
+import com.alejandro.mtobackoffice.ui.resources.VehicleEditorDialog;
+import com.alejandro.mtobackoffice.ui.resources.VehicleLocationDialog;
+import com.alejandro.mtobackoffice.ui.resources.VehicleTypeEditorDialog;
+import com.alejandro.mtobackoffice.ui.resources.VehicleTypesView;
+import com.alejandro.mtobackoffice.ui.resources.VehiclesView;
+import com.alejandro.mtobackoffice.ui.support.RevisionsDialog;
 import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.alejandro.mtobackoffice.ui.maintenance.CheckItemsDialog;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
@@ -218,7 +291,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.ResolveDefectRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageUpdateRequest;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.StockSyncStatus;
 import com.alejandro.mtobackoffice.ui.maintenance.MaterialUsageDialog;
 import com.alejandro.mtobackoffice.ui.maintenance.DefectDetailView;
@@ -353,6 +426,7 @@ import java.util.Arrays;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -382,6 +456,14 @@ import static org.mockito.Mockito.when;
 import com.alejandro.mtobackoffice.client.dto.master.TrackSchematicDto;
 import com.alejandro.mtobackoffice.ui.master.SchematicDrawing;
 import com.alejandro.mtobackoffice.ui.master.TrackSchematicDialog;
+import java.util.Objects;
+import com.vaadin.flow.router.Route;
+import tools.jackson.databind.ObjectMapper;
+import com.vaadin.flow.data.provider.Query;
+import com.vaadin.flow.data.provider.DataProvider;
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import java.util.EnumSet;
+import com.vaadin.flow.component.treegrid.TreeGrid;
 import com.vaadin.flow.component.Svg;
 
 /**
@@ -399,6 +481,8 @@ class ViewLayerTest {
 
     @Autowired
     private ApplicationContext context;
+    @Autowired
+    private ObjectMapper jsonMapper;
 
     @MockitoBean
     private LovClient lovClient;
@@ -450,10 +534,26 @@ class ViewLayerTest {
     private ReportClient reportClient;
     @MockitoBean
     private NotificationClient notificationClient;
+    @MockitoBean
+    private PersonClient personClient;
+    @MockitoBean
+    private OrganizationClient organizationClient;
+    @MockitoBean
+    private VehicleTypeClient vehicleTypeClient;
+    @MockitoBean
+    private ParkingSiteClient parkingSiteClient;
+    @MockitoBean
+    private VehicleClient vehicleClient;
+    @MockitoBean
+    private OperationClient operationClient;
 
     @BeforeEach
     void setUp() {
         stubEmptyMasters();
+        // Generar de verdad va con Prefer: respond-async; sin decir otra cosa, el servicio termina dentro de
+        // su espera y contesta 200 con lo mismo que la llamada sincrona (que es lo que stubbea cada caso).
+        when(orderClient.generateTasksAsync(any(), any(), any())).thenAnswer(call -> ResponseEntity.ok(
+                jsonMapper.valueToTree(orderClient.generateTasks(call.getArgument(0), call.getArgument(1)))));
         MockSpringSecurity.mock();
         Function0<UI> uiFactory = UI::new;
         MockVaadin.setup(uiFactory, new MockSpringServlet(ROUTES, context, uiFactory));
@@ -999,10 +1099,14 @@ class ViewLayerTest {
 
         List<ListItem> audiences = LocatorJ._find(ListItem.class).stream()
                 .filter(item -> item.getElement().hasAttribute("data-audience")).toList();
-        assertEquals(6, audiences.size());
+        assertEquals(8, audiences.size());
         long present = audiences.stream().filter(item -> "true".equals(item.getElement().getAttribute("data-present"))).count();
         assertEquals(4, present);
         assertTrue(audiences.stream().anyMatch(item -> "mto-notification-api".equals(item.getElement().getAttribute("data-audience"))
+                && "false".equals(item.getElement().getAttribute("data-present"))));
+        assertTrue(audiences.stream().anyMatch(item -> "mto-resources-api".equals(item.getElement().getAttribute("data-audience"))
+                && "false".equals(item.getElement().getAttribute("data-present"))));
+        assertTrue(audiences.stream().anyMatch(item -> "mto-field-api".equals(item.getElement().getAttribute("data-audience"))
                 && "false".equals(item.getElement().getAttribute("data-present"))));
         assertTrue(audiences.stream().anyMatch(item -> "mto-gateway-api".equals(item.getElement().getAttribute("data-audience"))
                 && "false".equals(item.getElement().getAttribute("data-present"))));
@@ -4839,6 +4943,36 @@ class ViewLayerTest {
                 UiErrors.message(maintenanceError(503, null, null)), "el 503 del gateway sigue siendo el de siempre");
     }
 
+    /**
+     * Los de mto-resources, que llegan con la misma forma que los de mantenimiento: una regla del
+     * organigrama o de la flota dice cual con el detalle del servicio, un valor repetido no pide
+     * recargar, y el tope de operaciones de fondo (de los dos servicios) dice cuando reintentar.
+     */
+    @Test
+    void resourcesErrorsSayWhatBlocksTheChange() {
+        assertEquals("El organigrama no admite ese cambio. Team EQ-NORTE would have 1 linemen: between 2 and 6",
+                UiErrors.message(maintenanceError(409, "UNI-001", "Team EQ-NORTE would have 1 linemen: between 2 and 6")));
+        assertEquals("La flota no admite ese cambio. A rail-only vehicle is never on the road",
+                UiErrors.message(maintenanceError(409, "VEH-001", "A rail-only vehicle is never on the road")));
+        for (String duplicated : List.of("PER-409", "UNI-409", "VEH-409", "VTY-409", "PRK-409")) {
+            assertEquals("Ya existe otro con ese valor (codigo, usuario, numero de empleado, matricula o numero ferroviario)."
+                    + " Username equipo.jefe is already in use", UiErrors.message(maintenanceError(409, duplicated,
+                    "Username equipo.jefe is already in use")), duplicated);
+        }
+        ApiProblem tooMany = new ApiProblem(null, "TOO_MANY_REQUESTS", 429, "There are already 4 background operations",
+                null, "OPS-429", null, null, null, false, null, null);
+        assertEquals("Hay demasiadas operaciones en marcha. Intentalo en 3 s.", UiErrors.message(BackofficeApiException.of(
+                HttpStatusCode.valueOf(429), tooMany, "corr-o1", Duration.ofSeconds(3), "POST /api/maintenance/orders/1/tasks/generate")));
+        // Lo que mantenimiento dice de lo que es de mto-resources: un equipo sincronizado, y una persona o un
+        // vehiculo que aun no ha llegado por evento (reintentar vale; recargar la pantalla no hace falta).
+        assertEquals("El equipo es de mto-resources: se cambia en Recursos > Organigrama.",
+                UiErrors.message(maintenanceError(409, "TEA-001", "Team A is synchronized from mto-resources")));
+        assertEquals("Esa persona aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.",
+                UiErrors.message(maintenanceError(404, "CRW-404", "Crew person not found")));
+        assertEquals("Ese vehiculo aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.",
+                UiErrors.message(maintenanceError(404, "FLT-404", "Fleet vehicle not found")));
+    }
+
     @Test
     void theOrdersListNamesTracksAndPackagesFromConfigurationAndSortsInTheServer() {
         loginAs("mantenimiento.lector", MAINTENANCE_READER);
@@ -5120,8 +5254,8 @@ class ViewLayerTest {
                                 new BigDecimal("5700"), true, 1)))));
 
         UI.getCurrent().navigate(MaintenanceRoutes.TEAMS);
-        assertEquals(List.of("EQ-01", "Brigada norte", "Base Norte", "DR-2", "PAQ NORTE, PAQ SUR", "Activo"),
-                GridKt._getFormattedRow(gridWithId("teams-grid"), 0).subList(0, 6));
+        assertEquals(List.of("EQ-01", "Brigada norte", "Local", "", "", "", "Base Norte", "DR-2", "PAQ NORTE, PAQ SUR", "Activo"),
+                GridKt._getFormattedRow(gridWithId("teams-grid"), 0).subList(0, 10));
         LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("teams-grid"), 0, TeamsView.ACTIONS_COLUMN), Button.class,
                 spec -> spec.withId("team-edit-" + TEAM1)));
         LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("team-base")), "");
@@ -5139,6 +5273,56 @@ class ViewLayerTest {
         assertEquals(2, GridKt._size(gridWithId("templates-grid")));
         LocatorJ._get(H3.class, spec -> spec.withText("Puntos de Perfil (version 2)"));
         assertEquals(List.of("P-01", "Altura del hilo", "Si", "mm", "5300", "5700"), GridKt._getFormattedRow(gridWithId("template-items-grid"), 0));
+    }
+
+    /**
+     * Un equipo de mto-resources se lee: su origen, su jefe, su supervisor y sus linemen en la fila, y en
+     * vez de «Modificar» los botones a su unidad y a su vehiculo (con resources-read). El 409 TEA-001 de
+     * un equipo que se sincronizo entre medias dice donde se cambia.
+     */
+    @Test
+    void aSynchronizedTeamIsOnlyReadAndLeadsToItsUnitAndItsVehicle() {
+        loginAs("mantenimiento.responsable", "ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_CONFIG_READ", "ROLE_STOCK_READ",
+                "ROLE_RESOURCES_READ");
+        stubReferencesForMaintenance();
+        stubOrganization(true);
+        when(organizationClient.findById(TEAM_UNIT)).thenReturn(team(2, true));
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(linemen(2));
+        stubVehicles(List.of(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true)));
+        when(vehicleClient.locations(eq(VEHICLE1), any(), any(), anyInt(), anyInt())).thenReturn(page(List.of(), 0, 20));
+        PersonSummaryDto leader = new PersonSummaryDto(UUID.randomUUID(), "PER-000003", "Yossi Cohen", "equipo.jefe", PersonCategory.TEAM_LEADER);
+        PersonSummaryDto supervisor = new PersonSummaryDto(UUID.randomUUID(), "PER-000020", "Dana Levi", null, PersonCategory.SUPERVISOR);
+        List<PersonSummaryDto> members = List.of(new PersonSummaryDto(UUID.randomUUID(), "PER-000011", "Lineman 1", null, PersonCategory.WORKER),
+                new PersonSummaryDto(UUID.randomUUID(), "PER-000012", "Lineman 2", null, PersonCategory.WORKER));
+        TeamDto synced = new TeamDto(TEAM1, "A", "Equipo A", null, "DR-01", true, Set.of(3L), true, TEAM_UNIT, leader, supervisor, members,
+                VEHICLE1, null);
+        TeamDto local = new TeamDto(UUID.randomUUID(), "B", "Equipo B", "Base Sur", null, true, Set.of(5L), null);
+        when(maintenanceCatalogClient.teams()).thenReturn(List.of(local, synced));
+        when(maintenanceCatalogClient.updateTeam(any(), any())).thenThrow(maintenanceError(409, "TEA-001", "Team B is synchronized from mto-resources"));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.TEAMS);
+        Grid<Object> grid = gridWithId("teams-grid");
+        assertEquals(List.of("A", "Equipo A", "mto-resources", "PER-000003 · Yossi Cohen", "PER-000020 · Dana Levi", "2", "", "DR-01"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 8));
+        assertEquals(List.of("B", "Equipo B", "Local", "", "", "", "Base Sur"), GridKt._getFormattedRow(grid, 1).subList(0, 7));
+        Component syncedActions = GridKt._getCellComponent(grid, 0, TeamsView.ACTIONS_COLUMN);
+        assertTrue(LocatorJ._find(syncedActions, Button.class, spec -> spec.withId("team-edit-" + TEAM1)).isEmpty(), "uno sincronizado no se modifica");
+
+        LocatorJ._click(LocatorJ._get(syncedActions, Button.class, spec -> spec.withId("team-vehicle-" + TEAM1)));
+        assertEquals(ResourcesRoutes.FLEET + "/" + VEHICLE1, UI.getCurrent().getInternals().getActiveViewLocation().getPath());
+        UI.getCurrent().navigate(MaintenanceRoutes.TEAMS);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("teams-grid"), 0, TeamsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("team-unit-" + TEAM1)));
+        assertEquals(ResourcesRoutes.ORGANIZATION + "/" + TEAM_UNIT, UI.getCurrent().getInternals().getActiveViewLocation().getPath());
+
+        // Se sincronizo mientras se editaba: el servicio lo rechaza, lo dice y el dialogo sigue abierto.
+        UI.getCurrent().navigate(MaintenanceRoutes.TEAMS);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("teams-grid"), 1, TeamsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("team-edit-" + local.id())));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(TeamEditorDialog.SAVE_ID)));
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("El equipo es de mto-resources: se cambia en Recursos > Organigrama."));
+        LocatorJ._get(TeamEditorDialog.class);
     }
 
     // --- Mantenimiento: ordenes y tareas ----------------------------------------------------------
@@ -5685,6 +5869,185 @@ class ViewLayerTest {
                 && patch.values().blockingDisconnectorIds() == null && patch.values().trackIds() == null));
     }
 
+    // --- Mantenimiento: la dotacion y los vehiculos de un turno (mto-resources) ----------------------
+
+    private static final UUID CREW_LEADER = UUID.fromString("3c4d5e6f-0000-4000-8000-0000000000a1");
+    private static final UUID CREW_A = UUID.fromString("3c4d5e6f-0000-4000-8000-0000000000a2");
+    private static final UUID CREW_B = UUID.fromString("3c4d5e6f-0000-4000-8000-0000000000a3");
+    private static final UUID VAN = UUID.fromString("9d0e1f20-0000-4000-8000-0000000000a1");
+    private static final String[] SHIFT_CREW_WRITER = {"ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_WRITE", "ROLE_CONFIG_READ", "ROLE_STOCK_READ",
+            "ROLE_RESOURCES_READ"};
+
+    private static PersonSummaryDto crew(UUID id, String code, String name, PersonCategory category) {
+        return new PersonSummaryDto(id, code, name, null, category);
+    }
+
+    /** Un turno con su jefe, dos linemen, una dresina y una furgoneta; {@code parking}, donde quedo la dresina. */
+    private static ShiftDto shiftWithCrew(ShiftStatus status, ShiftVehicleDto.Parking parking) {
+        ShiftDto base = shiftOf(status);
+        return new ShiftDto(base.id(), base.code(), base.shiftDate(), base.team(), base.baseName(), base.vehicle(), base.possessionType(),
+                base.plannedStart(), base.plannedEnd(), base.actualStart(), base.actualEnd(), base.voltageCutoffAt(), base.netWorkMinutes(),
+                base.blockingDisconnectors(), base.earthingPoints(), base.parkingPlace(), base.executionPackageId(), base.trackIds(),
+                base.startKp(), base.endKp(), base.personnel(), base.measurementEquipment(), base.status(), base.observations(), base.audit(), 4L,
+                crew(CREW_LEADER, "PER-000003", "Yossi Cohen", PersonCategory.TEAM_LEADER), null,
+                List.of(crew(CREW_A, "PER-000011", "Lineman Uno", PersonCategory.WORKER), crew(CREW_B, "PER-000012", "Lineman Dos", PersonCategory.WORKER)),
+                List.of(new ShiftVehicleDto(VEHICLE1, "DR-01", "Dresina 1", VehicleMobility.RAIL_ONLY, VehicleCategory.CATENARY_TOWER_CAR, true, parking),
+                        new ShiftVehicleDto(VAN, "VAN-01", "Furgoneta", VehicleMobility.ROAD_ONLY, VehicleCategory.VAN, true, null)));
+    }
+
+    /**
+     * El alta elige la dotacion y los vehiculos en mto-resources: el jefe entre cualquiera menos un operario,
+     * los linemen entre operarios y jefes de equipo, los vehiculos entre los disponibles; viajan sus ids, y lo
+     * que se deja vacio no viaja (lo copia el servicio del equipo).
+     */
+    @Test
+    void aNewShiftPicksItsCrewAndVehiclesInMtoResources() {
+        loginAs("mantenimiento.tecnico", SHIFT_CREW_WRITER);
+        stubReferencesForMaintenance();
+        stubPeople(List.of(person(CREW_LEADER, "PER-000003", "Yossi", "Cohen", PersonCategory.TEAM_LEADER, true),
+                person(CREW_A, "PER-000011", "Lineman", "Uno", PersonCategory.WORKER, true)));
+        stubVehicles(List.of(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true)));
+        when(shiftClient.create(any())).thenReturn(shiftWithCrew(ShiftStatus.PLANNED, null));
+        when(shiftClient.findById(SHIFT1)).thenReturn(shiftWithCrew(ShiftStatus.PLANNED, null));
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+
+        UI.getCurrent().navigate(MaintenanceRoutes.SHIFTS);
+        click("shift-create");
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("shift-date")), LocalDate.of(2026, 10, 5));
+        LocatorJ._setValue(comboWithId("shift-possession"), PossessionType.FULL);
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RefItem> tracks = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-tracks"));
+        LocatorJ._setValue(tracks, Set.of(new RefItem(12L, "VIA 1 (PAQ NORTE)")));
+        ComboBox<PersonSummaryDto> leader = LocatorJ._get(ComboBox.class, spec -> spec.withId("shift-leader"));
+        assertEquals("Vacio: el del equipo, si es de mto-resources", leader.getHelperText());
+        assertEquals(List.of("PER-000003 · Yossi Cohen", "PER-000011 · Lineman Uno"),
+                ComboBoxKt.getSuggestionItems(leader).stream().map(PersonSummaryDto::label).toList());
+        verify(personClient, atLeastOnce()).search(argThat((PersonFilter filter) -> filter != null
+                && filter.categories().equals(Set.copyOf(PersonCategory.atLeast(2))) && Boolean.TRUE.equals(filter.active())), anyInt(), anyInt(), anyList());
+        LocatorJ._setValue(leader, crew(CREW_LEADER, "PER-000003", "Yossi Cohen", PersonCategory.TEAM_LEADER));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<PersonSummaryDto> linemen = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-linemen"));
+        LocatorJ._setValue(linemen, Set.of(crew(CREW_A, "PER-000011", "Lineman Uno", PersonCategory.WORKER)));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<VehicleSummaryDto> vehicles = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-vehicles"));
+        @SuppressWarnings("unchecked")
+        DataProvider<VehicleSummaryDto, String> offered = (DataProvider<VehicleSummaryDto, String>) vehicles.getDataProvider();
+        assertEquals(List.of("DR-01 · Vehiculo DR-01"), offered.fetch(new Query<>(0, 50, List.of(), null, "")).map(VehicleSummaryDto::label).toList());
+        verify(vehicleClient, atLeastOnce()).search(eq(VehicleFilter.availableMatching("")), anyInt(), anyInt(), anyList());
+        LocatorJ._setValue(vehicles, Set.of(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true).summary()));
+        click(ShiftEditorDialog.SAVE_ID);
+
+        verify(shiftClient).create(new ShiftRequest(LocalDate.of(2026, 10, 5), null, null, null, PossessionType.FULL, null, null, null,
+                null, null, null, Set.of(12L), null, null, null, null, null, Set.of(VEHICLE1), CREW_LEADER, null, Set.of(CREW_A)));
+        LocatorJ._get(ShiftDetailView.class);
+        assertEquals("Jefe: PER-000003 · Yossi Cohen · Supervisor: - · Linemen (2): PER-000011 · Lineman Uno, PER-000012 · Lineman Dos",
+                LocatorJ._get(Div.class, spec -> spec.withId("shift-crew")).getText());
+    }
+
+    /**
+     * Modificar la dotacion: los linemen y los vehiculos son conjuntos, quitarlos todos viaja a null, y una
+     * persona que aun no ha llegado a mantenimiento (CRW-404) se dice con el dialogo abierto.
+     */
+    @Test
+    void theCrewOfAShiftChangesAsSets() {
+        loginAs("mantenimiento.tecnico", SHIFT_CREW_WRITER);
+        stubReferencesForMaintenance();
+        stubPeople(List.of());
+        stubVehicles(List.of());
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        when(shiftClient.update(eq(SHIFT1), any())).thenThrow(maintenanceError(404, "CRW-404", "Crew person not found"))
+                .thenReturn(shiftWithCrew(ShiftStatus.PLANNED, null));
+        openShift(shiftWithCrew(ShiftStatus.PLANNED, null));
+
+        click("shift-edit");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<PersonSummaryDto> linemen = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-linemen"));
+        assertEquals(2, linemen.getValue().size());
+        LocatorJ._setValue(linemen, Set.of());
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<VehicleSummaryDto> vehicles = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-vehicles"));
+        LocatorJ._setValue(vehicles, Set.of(vehicles.getValue().iterator().next()));
+        click(ShiftEditorDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Esa persona aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento."));
+        LocatorJ._get(ShiftEditorDialog.class);
+        click(ShiftEditorDialog.SAVE_ID);
+        verify(shiftClient, times(2)).update(eq(SHIFT1), argThat(patch -> patch.cleared().equals(Set.of("linemanPersonIds"))
+                && patch.values().vehicleIds().size() == 1 && patch.values().teamLeaderPersonId() == null && patch.version() == 4L));
+    }
+
+    /** Sin resources-read la dotacion de un turno se lee como esta, no se pide nada a mto-resources y no viaja. */
+    @Test
+    void withoutResourcesReadTheCrewOfAShiftIsOnlyReadAndDoesNotTravel() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        when(shiftClient.update(eq(SHIFT1), any())).thenReturn(shiftWithCrew(ShiftStatus.PLANNED, null));
+        openShift(shiftWithCrew(ShiftStatus.PLANNED, null));
+        click("shift-edit");
+        assertTrue(LocatorJ._find(MultiSelectComboBox.class, spec -> spec.withId("shift-linemen")).isEmpty());
+        assertEquals("Jefe: PER-000003 · Yossi Cohen · Supervisor: - · Linemen: PER-000011 · Lineman Uno, PER-000012 · Lineman Dos"
+                + " · Vehiculos: DR-01 · Dresina 1, VAN-01 · Furgoneta", LocatorJ._get(Div.class, spec -> spec.withId("shift-crew-readonly")).getText());
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("shift-observations")), "Con lluvia");
+        click(ShiftEditorDialog.SAVE_ID);
+        verify(shiftClient).update(eq(SHIFT1), argThat(patch -> patch.cleared().isEmpty() && "Con lluvia".equals(patch.values().observations())
+                && patch.values().vehicleIds() == null && patch.values().linemanPersonIds() == null));
+        verify(personClient, never()).search(any(PersonFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    /**
+     * Al cerrar, cada vehiculo dice donde se deja: un sitio que alcanza por su movilidad, una via y su kp
+     * (no en uno de solo carretera) o un texto. Lo evidente se dice en su fila antes de llamar, solo viaja
+     * lo rellenado, y un SHF-001 deja el dialogo abierto. La ficha dice luego donde quedo, con sus nombres.
+     */
+    @Test
+    void closingAShiftSaysWhereEachVehicleIsLeftAndTheDetailNamesIt() {
+        loginAs("mantenimiento.tecnico", SHIFT_CREW_WRITER);
+        stubReferencesForMaintenance();
+        ParkingSiteDto road = new ParkingSiteDto(UUID.fromString("8c9d0e1f-0000-4000-8000-0000000000a2"), "PRK-RSH", "Parking de Rishpon",
+                ParkingSiteKind.ROAD_PARKING, 3L, null, null, null, false, true, null, null, null, null, true, 1L);
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(siding(true), road), 0, 200));
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        ShiftVehicleDto.Parking parked = new ShiftVehicleDto.Parking(PARKING_SITE1, 12L, new BigDecimal("4.250"), null);
+        when(shiftClient.close(eq(SHIFT1), any())).thenThrow(maintenanceError(409, "SHF-001", "Vehicle DR-01 is rail-only: it is left on a track"))
+                .thenReturn(shiftWithCrew(ShiftStatus.CLOSED, parked));
+        openShift(shiftWithCrew(ShiftStatus.IN_PROGRESS, null));
+
+        click("shift-close");
+        assertEquals("DR-01 · Dresina 1", LocatorJ._get(Div.class, spec -> spec.withId("parking-vehicle-0")).getText());
+        ComboBox<ParkingSiteDto> railSite = LocatorJ._get(ComboBox.class, spec -> spec.withId("parking-site-0"));
+        assertEquals(List.of("APT-RSH"), ComboBoxKt.getSuggestionItems(railSite).stream().map(ParkingSiteDto::code).toList(), "uno de solo via, con acceso por via");
+        ComboBox<ParkingSiteDto> roadSite = LocatorJ._get(ComboBox.class, spec -> spec.withId("parking-site-1"));
+        assertEquals(List.of("PRK-RSH"), ComboBoxKt.getSuggestionItems(roadSite).stream().map(ParkingSiteDto::code).toList());
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("parking-track-1")).isEmpty(), "uno de solo carretera no se deja en una via");
+
+        TextField railText = LocatorJ._get(TextField.class, spec -> spec.withId("parking-description-0"));
+        LocatorJ._setValue(railText, "En la playa de vias");
+        click(ShiftTransitionDialog.CONFIRM_ID);
+        assertTrue(railText.isInvalid());
+        assertEquals("Uno de solo via se deja sobre una via: un sitio o una via", railText.getErrorMessage());
+        LocatorJ._setValue(railText, "");
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("parking-kp-0")), new BigDecimal("4.250"));
+        click(ShiftTransitionDialog.CONFIRM_ID);
+        ComboBox<RefItem> railTrack = LocatorJ._get(ComboBox.class, spec -> spec.withId("parking-track-0"));
+        assertEquals("Un KP va con su via", railTrack.getErrorMessage());
+        verify(shiftClient, never()).close(any(), any());
+
+        LocatorJ._setValue(railTrack, new RefItem(12L, "VIA 1 (PAQ NORTE)"));
+        LocatorJ._setValue(railSite, siding(true));
+        click(ShiftTransitionDialog.CONFIRM_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("El turno no admite ese trabajo. Vehicle DR-01 is rail-only: it is left on a track"));
+        LocatorJ._get(ShiftTransitionDialog.class);
+        click(ShiftTransitionDialog.CONFIRM_ID);
+        verify(shiftClient, times(2)).close(SHIFT1, new CloseShiftRequest(null, null, null, null,
+                List.of(new VehicleParkingRequest(VEHICLE1, PARKING_SITE1, 12L, new BigDecimal("4.250"), null))));
+
+        assertEquals("Cerrado", spanText("shift-status"));
+        assertEquals("Vehiculos: DR-01 · Dresina 1 (aparcado: APT-RSH · VIA 1 (PAQ NORTE) kp 4.25), VAN-01 · Furgoneta",
+                LocatorJ._get(Div.class, spec -> spec.withId("shift-vehicles-summary")).getText());
+    }
+
     /** Lo que el servicio dice de un campo cae en el suyo, tambien en los dialogos sin Binder; el dialogo sigue abierto. */
     @Test
     void theFieldErrorsOfTheServiceLandOnTheirFieldsInTheMaintenanceDialogs() {
@@ -6227,6 +6590,104 @@ class ViewLayerTest {
 
         verify(orderClient).generateTasks(ORDER1, GenerateTasksRequest.ofSection(null, null,
                 List.of(CatenaryAssetType.PROFILE, CatenaryAssetType.DISCONNECTOR), null));
+    }
+
+    private static final UUID OPERATION1 = UUID.fromString("3c3c3c3c-0000-4000-8000-0000000000c1");
+
+    private static OperationDto<GenerateTasksResultDto> generation(OperationStatus status, GenerateTasksResultDto result, OperationErrorDto error) {
+        return new OperationDto<>(OPERATION1, "GENERATE_TASKS", "EP-3", status, "mantenimiento.tecnico", Instant.parse("2026-10-16T21:00:00Z"),
+                null, null, result == null ? null : 200, result, error);
+    }
+
+    private void stubGenerationAccepted() {
+        // doReturn y no when(...): when llamaria a la respuesta por defecto del setUp, que llama a otro metodo del doble.
+        doReturn(ResponseEntity.status(HttpStatus.ACCEPTED).body(jsonMapper.valueToTree(generation(OperationStatus.QUEUED, null, null))))
+                .when(orderClient).generateTasksAsync(eq(ORDER1), any(), any());
+    }
+
+    /**
+     * Una generacion que no termina en su espera se sigue en el propio dialogo: el 202 trae la operacion,
+     * cada pasada pregunta por ella, y al terminar dice lo mismo que la llamada sincrona y relee las tareas.
+     */
+    @Test
+    void aLongGenerationIsFollowedInTheDialogUntilItsResult() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        stubGenerationAccepted();
+        GenerateTasksResultDto result = new GenerateTasksResultDto(412, 0, 412, new BigDecimal("6000"), 12, 0, null, null, null, null, null, null, null);
+        AtomicReference<OperationDto<GenerateTasksResultDto>> state = new AtomicReference<>(generation(OperationStatus.RUNNING, null, null));
+        when(operationClient.generation(OPERATION1)).thenAnswer(call -> state.get());
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("task-generate");
+        click(GenerateTasksDialog.CONFIRM_ID);
+        verify(orderClient).generateTasksAsync(ORDER1, GenerateTasksRequest.ofSection(null, null, null, null), TaskGeneration.PREFER);
+        verify(orderClient, never()).generateTasks(any(), any());
+        GenerateTasksDialog dialog = LocatorJ._get(GenerateTasksDialog.class);
+        Paragraph progress = LocatorJ._get(Paragraph.class, spec -> spec.withId(GenerateTasksDialog.OPERATION_ID));
+        assertEquals("La generacion sigue en el servicio (en cola): se comprueba cada 2 s. Si cierras el dialogo, continua alli.", progress.getText());
+        assertFalse(LocatorJ._get(Button.class, spec -> spec.withId(GenerateTasksDialog.CONFIRM_ID)).isEnabled(), "no se lanza otra encima");
+
+        dialog.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertTrue(progress.getText().contains("(en marcha)"));
+        state.set(generation(OperationStatus.SUCCEEDED, result, null));
+        dialog.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertTrue(LocatorJ._find(GenerateTasksDialog.class).isEmpty(), "terminada, el dialogo se cierra");
+        NotificationsKt.expectNotifications("Tareas nuevas: 412; ya en la orden: 0. Total: 412, unos 6000 min en 12 turnos.");
+        verify(orderClient, atLeast(2)).tasks(ORDER1);
+    }
+
+    /**
+     * Una generacion que falla en el servicio dice su error como la llamada sincrona, con el dialogo abierto;
+     * cerrar uno que sigue una operacion deja de seguirla y avisa de que continua alli.
+     */
+    @Test
+    void aFailedGenerationSaysItsErrorAndClosingWhileFollowingWarnsItGoesOn() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        stubGenerationAccepted();
+        when(operationClient.generation(OPERATION1)).thenReturn(generation(OperationStatus.FAILED, null,
+                new OperationErrorDto(409, "TRN-001", "Order MO-000001 is COMPLETED: no tasks can be generated")));
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("task-generate");
+        click(GenerateTasksDialog.CONFIRM_ID);
+        LocatorJ._get(GenerateTasksDialog.class).pollOnce();
+        MockVaadin.clientRoundtrip();
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText(
+                "El estado actual no permite esta operacion. Order MO-000001 is COMPLETED: no tasks can be generated"));
+        assertTrue(LocatorJ._get(Button.class, spec -> spec.withId(GenerateTasksDialog.CONFIRM_ID)).isEnabled(), "se puede volver a lanzar");
+        assertTrue(LocatorJ._find(Paragraph.class, spec -> spec.withId(GenerateTasksDialog.OPERATION_ID)).isEmpty(), "ya no se sigue nada");
+
+        click(GenerateTasksDialog.CONFIRM_ID);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Volver")));
+        assertTrue(LocatorJ._find(GenerateTasksDialog.class).isEmpty());
+        assertEquals(GenerateTasksDialog.STILL_RUNNING, NotificationsKt.getNotifications().getLast().getElement().getProperty("text"));
+        assertEquals("La operacion se interrumpio en el servicio (se paro la instancia que la llevaba): vuelve a lanzarla.",
+                UiErrors.message(TaskGeneration.failureOf(generation(OperationStatus.FAILED, null, new OperationErrorDto(500, "OPS-410", "Abandoned")))));
+    }
+
+    /** El tope de operaciones del despliegue es un 429 OPS-429: dice cuando reintentar, con el dialogo abierto. */
+    @Test
+    void aGenerationBeyondTheOperationsCapSaysWhenToRetry() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        ApiProblem tooMany = new ApiProblem(null, "TOO_MANY_REQUESTS", 429, "There are already 8 background operations", null, "OPS-429",
+                null, null, null, false, null, null);
+        doThrow(BackofficeApiException.of(HttpStatusCode.valueOf(429), tooMany, "corr-o2", Duration.ofSeconds(5),
+                "POST /api/maintenance/orders/" + ORDER1 + "/tasks/generate")).when(orderClient).generateTasksAsync(eq(ORDER1), any(), any());
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("task-generate");
+        click(GenerateTasksDialog.CONFIRM_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Hay demasiadas operaciones en marcha. Intentalo en 5 s."));
+        LocatorJ._get(GenerateTasksDialog.class);
     }
 
     private static <T> void chooseByLabel(ComboBox<T> combo, String label) {
@@ -7599,5 +8060,1157 @@ class ViewLayerTest {
         assertEquals("", LocatorJ._get(TextField.class, spec -> spec.withId("access-username")).getValue());
         assertEquals("10.0.0.9", LocatorJ._get(TextField.class, spec -> spec.withId("access-ip")).getValue());
         assertNull(LocatorJ._get(ComboBox.class, spec -> spec.withId("access-outcome")).getValue());
+    }
+
+    // --- Recursos: personal ----------------------------------------------------------------------
+
+    private static final String[] RESOURCES_READER = {"ROLE_RESOURCES_READ", "ROLE_CONFIG_READ", "ROLE_NOTIFICATION_INBOX",
+            "ROLE_REALM_MTO_RESOURCES_VIEWER"};
+    private static final String[] RESOURCES_MANAGER = {"ROLE_RESOURCES_READ", "ROLE_RESOURCES_WRITE", "ROLE_RESOURCES_FLEET_WRITE",
+            "ROLE_RESOURCES_LOCATION_WRITE", "ROLE_CONFIG_READ", "ROLE_NOTIFICATION_INBOX", "ROLE_REALM_MTO_RESOURCES_MANAGER"};
+    private static final String[] RESOURCES_ADMIN = {"ROLE_RESOURCES_READ", "ROLE_RESOURCES_WRITE", "ROLE_RESOURCES_FLEET_WRITE",
+            "ROLE_RESOURCES_LOCATION_WRITE", "ROLE_RESOURCES_DELETE", "ROLE_CONFIG_READ", "ROLE_NOTIFICATION_INBOX"};
+    private static final UUID PERSON1 = UUID.fromString("3c4d5e6f-0000-4000-8000-000000000001");
+    private static final UUID PERSON2 = UUID.fromString("3c4d5e6f-0000-4000-8000-000000000002");
+
+    private static PersonDto person(UUID id, String code, String first, String last, PersonCategory category, boolean active) {
+        return new PersonDto(id, code, "E-" + code.substring(4), first, last, first + " " + last, null, category, PersonEmployer.OWN, null,
+                "+972 50 000 0000", active, 2L);
+    }
+
+    /**
+     * Las rutas de recursos son las de mto-frontend, que tiene la misma lista copiada en
+     * src/test/fixtures/backoffice-routes.json: una ruta nueva o renombrada aqui se lleva alli en el mismo
+     * cambio, y la SPA lo comprueba contra ese fichero. Las literales (tablero, modelos, aparcamientos)
+     * ganan a las de parametro en los dos routers.
+     */
+    @Test
+    void theResourcesRoutesAreTheOnesOfTheSpa() {
+        List<String> routes = ROUTES.getRoutes().stream()
+                .map(view -> view.getAnnotation(Route.class))
+                .filter(Objects::nonNull)
+                .map(Route::value)
+                .filter(route -> route.startsWith(ResourcesRoutes.PREFIX + "/"))
+                .sorted()
+                .toList();
+        assertEquals(List.of("recursos/flota", "recursos/flota/:vehicleId", "recursos/flota/aparcamientos", "recursos/flota/modelos",
+                "recursos/flota/tablero", "recursos/organigrama", "recursos/organigrama/:unitId", "recursos/personal"), routes);
+    }
+
+    private void stubPeople(List<PersonDto> all) {
+        doAnswer(call -> page(all, call.getArgument(1), call.getArgument(2)))
+                .when(personClient).search(any(PersonFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    @Test
+    void theResourcesGroupShowsWithResourcesRead() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        UI.getCurrent().navigate(HomeView.class);
+        assertTrue(menuLabels().containsAll(List.of("Recursos", "Personal")), menuLabels().toString());
+    }
+
+    @Test
+    void withoutResourcesReadThereIsNoResourcesGroupAndARealmRoleOpensNothing() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        UI.getCurrent().navigate(HomeView.class);
+        assertFalse(menuLabels().contains("Recursos"), menuLabels().toString());
+        assertFalse(menuLabels().contains("Personal"), menuLabels().toString());
+
+        loginAs("recursos.impostor", "ROLE_REALM_RESOURCES_READ", "ROLE_REALM_MTO_POSITION_TEAM_LEADER");
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(ResourcesRoutes.PEOPLE));
+        assertTrue(LocatorJ._find(PeopleView.class).isEmpty());
+        verify(personClient, never()).search(any(PersonFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    /** La lista se pide al servicio con sus filtros (la categoria, cualquiera de las elegidas) y quien solo lee ve solo el historial. */
+    @Test
+    void thePeopleAreSearchedAndFilteredInTheServerAndAReaderOnlySeesTheHistory() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubPeople(List.of(person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.TEAM_LEADER, true),
+                person(PERSON2, "PER-000004", "Dana", "Levi", PersonCategory.WORKER, false)));
+
+        UI.getCurrent().navigate(ResourcesRoutes.PEOPLE);
+
+        Grid<Object> grid = gridWithId("people-grid");
+        assertEquals(List.of("PER-000003", "Yossi Cohen", "Jefe de equipo", "Propio", "", "E-000003", "+972 50 000 0000", "Activa"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 8));
+        assertEquals("Inactiva", GridKt._getFormattedRow(grid, 1).get(7));
+        verify(personClient, atLeastOnce()).search(eq(PersonFilter.NONE), eq(0), anyInt(), eq(List.of("lastName,asc", "firstName,asc")));
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("people-search")), "cohen");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<PersonCategory> categories = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("people-categories"));
+        LocatorJ._setValue(categories, Set.of(PersonCategory.WORKER, PersonCategory.TEAM_LEADER));
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("people-state")), EnabledFilter.ENABLED);
+        GridKt._size(grid);
+        verify(personClient, atLeastOnce()).search(eq(new PersonFilter("cohen", Set.of(PersonCategory.WORKER, PersonCategory.TEAM_LEADER),
+                null, true)), eq(0), anyInt(), anyList());
+
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("person-create")).isEmpty(), "sin resources-write no hay alta");
+        assertEquals(List.of("person-history-" + PERSON1), LocatorJ._find(GridKt._getCellComponent(grid, 0, PeopleView.ACTIONS_COLUMN),
+                Button.class).stream().map(button -> button.getId().orElse("")).toList(), "quien solo lee ve el historial y nada mas");
+    }
+
+    /**
+     * El alta exige lo evidente antes de llamar (una subcontrata dice su empresa) y un error del
+     * servicio cae en su campo con el dialogo abierto; viaja solo lo escrito.
+     */
+    @Test
+    void aPersonIsCreatedWithItsCompanyIfSubcontractedAndTheServiceErrorsFallInTheirFields() {
+        loginAs("recursos.gestor", RESOURCES_MANAGER);
+        stubPeople(List.of());
+        when(personClient.create(any()))
+                .thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, new ApiProblem(null, "BAD_REQUEST", 400, "Validation failed", null,
+                        "REQ-VALIDATION", null, null, null, false, List.of(new ApiFieldError("username", null, "size must be between 0 and 100")),
+                        null), "corr-r2", null, "POST /api/resources/people"))
+                .thenReturn(person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.WORKER, true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.PEOPLE);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("person-create")));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("person-first-name")), " Yossi ");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("person-last-name")), "Cohen");
+        LocatorJ._setValue(comboWithId("person-category"), PersonCategory.WORKER);
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("person-employer")), PersonEmployer.SUBCONTRACTOR);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(PersonEditorDialog.SAVE_ID)));
+
+        verify(personClient, never()).create(any());
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("person-company")).isInvalid(), "una subcontrata dice su empresa");
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("person-company")), "Catenarias del Norte");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("person-username")), "equipo.nuevo");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(PersonEditorDialog.SAVE_ID)));
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("person-username")).isInvalid(), "el error del servicio, en su campo");
+        assertFalse(LocatorJ._find(PersonEditorDialog.class).isEmpty(), "el dialogo sigue abierto con lo escrito");
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(PersonEditorDialog.SAVE_ID)));
+        verify(personClient, times(2)).create(new PersonRequest("Yossi", "Cohen", PersonCategory.WORKER, null, "equipo.nuevo",
+                PersonEmployer.SUBCONTRACTOR, "Catenarias del Norte", null));
+        assertTrue(LocatorJ._find(PersonEditorDialog.class).isEmpty());
+    }
+
+    /** Modificar manda lo cambiado, lo vaciado y la version leida; una version vieja deja el dialogo abierto y pide recargar. */
+    @Test
+    void aPersonIsPatchedWithWhatChangedAndAStaleVersionKeepsTheDialogOpen() {
+        loginAs("recursos.gestor", RESOURCES_MANAGER);
+        PersonDto yossi = person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.WORKER, true);
+        stubPeople(List.of(yossi));
+        when(personClient.update(any(), any()))
+                .thenThrow(maintenanceError(409, "CON-001", "Person PER-000003 was changed by someone else"))
+                .thenReturn(yossi);
+
+        UI.getCurrent().navigate(ResourcesRoutes.PEOPLE);
+        Grid<Object> grid = gridWithId("people-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-edit-" + PERSON1)));
+        LocatorJ._setValue(comboWithId("person-category"), PersonCategory.TEAM_LEADER);
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("person-phone")), "  ");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(PersonEditorDialog.SAVE_ID)));
+
+        MergePatch<PersonUpdateRequest> expected = new MergePatch<>(new PersonUpdateRequest(null, null, PersonCategory.TEAM_LEADER, null,
+                null, null, null, null, null), Set.of("phone"), 2L);
+        verify(personClient).update(PERSON1, expected);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Conflicto con otro cambio: recarga y vuelve a intentarlo."));
+        assertFalse(LocatorJ._find(PersonEditorDialog.class).isEmpty(), "el dialogo sigue abierto con lo escrito");
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(PersonEditorDialog.SAVE_ID)));
+        verify(personClient, times(2)).update(PERSON1, expected);
+        assertTrue(LocatorJ._find(PersonEditorDialog.class).isEmpty());
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-edit-" + PERSON1)));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(PersonEditorDialog.SAVE_ID)));
+        verify(personClient, times(2)).update(any(), any());
+        assertTrue(LocatorJ._find(PersonEditorDialog.class).isEmpty(), "sin cambios se cierra sin llamar");
+    }
+
+    /**
+     * Desactivar pide resources-delete y confirmacion, y la regla de 2 a 6 la dice el servicio;
+     * reactivar es un PATCH active=true con resources-write. El historial se abre desde la fila.
+     */
+    @Test
+    void aPersonIsDeactivatedWithConfirmationReactivatedByPatchAndItsHistoryOpensFromTheRow() {
+        loginAs("recursos.responsable", RESOURCES_ADMIN);
+        stubPeople(List.of(person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.WORKER, true),
+                person(PERSON2, "PER-000004", "Dana", "Levi", PersonCategory.WORKER, false)));
+        doThrow(maintenanceError(409, "UNI-001", "Team EQ-NORTE would have 1 linemen: between 2 and 6")).doNothing()
+                .when(personClient).deactivate(PERSON1);
+        when(personClient.update(any(), any())).thenReturn(person(PERSON2, "PER-000004", "Dana", "Levi", PersonCategory.WORKER, true));
+        when(personClient.revisions(PERSON1, 0, RevisionsDialog.PAGE_SIZE)).thenReturn(page(List.of(new RevisionDto<>(
+                new RevisionMetadataDto(4L, Instant.parse("2026-10-16T06:00:00Z"), RevisionOperation.UPDATED, "recursos.gestor", "HTTP",
+                        "c-4"), person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.TEAM_LEADER, true))), 0, RevisionsDialog.PAGE_SIZE));
+
+        UI.getCurrent().navigate(ResourcesRoutes.PEOPLE);
+        Grid<Object> grid = gridWithId("people-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-deactivate-" + PERSON1)));
+        verify(personClient, never()).deactivate(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("El organigrama no admite ese cambio. Team EQ-NORTE would have 1 linemen: between 2 and 6"));
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-deactivate-" + PERSON1)));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(personClient, times(2)).deactivate(PERSON1);
+
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 1, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-deactivate-" + PERSON2)).isEmpty(), "una inactiva no se desactiva otra vez");
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-activate-" + PERSON2)));
+        verify(personClient).update(PERSON2, MergePatch.of(PersonUpdateRequest.active(true), 2L));
+        NotificationsKt.expectNotifications("Reactivada PER-000004 · Dana Levi");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-history-" + PERSON1)));
+        Grid<Object> revisions = gridWithId("revisions-grid");
+        assertEquals(1, GridKt._size(revisions));
+        assertEquals("Yossi Cohen · Jefe de equipo · Propio · activa", GridKt._getFormattedRow(revisions, 0).get(5),
+                "como quedo la persona en esa revision");
+        verify(personClient, atLeastOnce()).revisions(PERSON1, 0, RevisionsDialog.PAGE_SIZE);
+    }
+
+    // --- Recursos: organigrama -------------------------------------------------------------------
+
+    private static final UUID PROJECT_UNIT = UUID.fromString("5e6f7081-0000-4000-8000-000000000009");
+    private static final UUID DEPARTMENT_UNIT = UUID.fromString("5e6f7081-0000-4000-8000-000000000008");
+    private static final UUID SUPERVISION_UNIT = UUID.fromString("5e6f7081-0000-4000-8000-000000000002");
+    private static final UUID TEAM_UNIT = UUID.fromString("5e6f7081-0000-4000-8000-000000000001");
+    private static final PersonSummaryDto LEADER = new PersonSummaryDto(PERSON1, "PER-000003", "Yossi Cohen", "equipo.jefe",
+            PersonCategory.TEAM_LEADER);
+
+    private static PersonSummaryDto lineman(int n) {
+        return new PersonSummaryDto(UUID.fromString("3c4d5e6f-0000-4000-8000-00000000001" + n), "PER-00001" + n, "Lineman " + n, null,
+                PersonCategory.WORKER);
+    }
+
+    private static List<TeamMemberDto> linemen(int count) {
+        List<TeamMemberDto> members = new java.util.ArrayList<>();
+        for (int n = 0; n < count; n++) {
+            members.add(new TeamMemberDto(UUID.fromString("6f708192-0000-4000-8000-00000000000" + n), lineman(n), LocalDate.of(2026, 10, 1), null));
+        }
+        return members;
+    }
+
+    private static OrganizationTreeNodeDto node(UUID id, String code, String name, OrganizationUnitKind kind, WorkDiscipline discipline,
+                                                PersonSummaryDto head, Set<Long> packages, Integer linemen, boolean active,
+                                                OrganizationTreeNodeDto... children) {
+        return new OrganizationTreeNodeDto(id, code, name, kind, discipline, head, packages, linemen, active, List.of(children));
+    }
+
+    private static List<OrganizationTreeNodeDto> organization(boolean teamActive) {
+        return List.of(node(PROJECT_UNIT, "PRJ", "Proyecto", OrganizationUnitKind.PROJECT, null, null, Set.of(), null, true,
+                node(DEPARTMENT_UNIT, "MNT", "Mantenimiento", OrganizationUnitKind.DEPARTMENT, WorkDiscipline.MAINTENANCE, null, Set.of(), null, true,
+                        node(SUPERVISION_UNIT, "SUP-N", "Supervision norte", OrganizationUnitKind.SUPERVISION, WorkDiscipline.MAINTENANCE, null,
+                                Set.of(4L), null, true,
+                                node(TEAM_UNIT, "A", "Equipo A", OrganizationUnitKind.TEAM, WorkDiscipline.MAINTENANCE, LEADER, Set.of(5L, 4L), 4,
+                                        teamActive)))));
+    }
+
+    private static OrganizationUnitDto team(int count, boolean active) {
+        List<TeamMemberDto> members = active ? linemen(count) : List.of();
+        return new OrganizationUnitDto(TEAM_UNIT, "A", "Equipo A", OrganizationUnitKind.TEAM, WorkDiscipline.MAINTENANCE,
+                new UnitSummaryDto(SUPERVISION_UNIT, "SUP-N", "Supervision norte", OrganizationUnitKind.SUPERVISION), LEADER, Set.of(4L, 5L), null,
+                members, members.size(), members.size() >= 2,
+                new PersonSummaryDto(PERSON2, "PER-000020", "Dana Levi", null, PersonCategory.SUPERVISOR), null, active, 7L);
+    }
+
+    private static OrganizationUnitDto supervision(boolean active) {
+        return new OrganizationUnitDto(SUPERVISION_UNIT, "SUP-N", "Supervision norte", OrganizationUnitKind.SUPERVISION, WorkDiscipline.MAINTENANCE,
+                new UnitSummaryDto(DEPARTMENT_UNIT, "MNT", "Mantenimiento", OrganizationUnitKind.DEPARTMENT),
+                new PersonSummaryDto(PERSON2, "PER-000020", "Dana Levi", null, PersonCategory.SUPERVISOR), Set.of(4L), null, List.of(), null, null,
+                null, null, active, 2L);
+    }
+
+    private void stubOrganization(boolean teamActive) {
+        when(organizationClient.tree(anyBoolean())).thenReturn(organization(teamActive));
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(executionPackage(4L, "EP 4"), executionPackage(5L, "EP 5"), executionPackage(6L, "EP 6")), 0, 1000));
+        stubPeople(List.of());
+    }
+
+    /**
+     * El arbol entero y desplegado, con el jefe o «Vacante», los linemen de un equipo frente a la regla
+     * y los EP con su nombre; quien solo lee abre las fichas y nada mas; las inactivas se piden aparte.
+     */
+    @Test
+    void theOrganizationIsAnExpandedTreeWithItsHeadsLinemenAndPackagesAndARowOpensItsUnit() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubOrganization(true);
+        when(organizationClient.findById(TEAM_UNIT)).thenReturn(team(4, true));
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(linemen(4));
+
+        UI.getCurrent().navigate(HomeView.class);
+        assertTrue(menuLabels().contains("Organigrama"), menuLabels().toString());
+        UI.getCurrent().navigate(ResourcesRoutes.ORGANIZATION);
+
+        @SuppressWarnings("unchecked")
+        TreeGrid<OrganizationTreeNodeDto> tree = LocatorJ._get(TreeGrid.class, spec -> spec.withId("organization-tree"));
+        assertEquals(4, GridKt._size(tree), "el arbol llega desplegado");
+        assertEquals(List.of("A · Equipo A", "Equipo", "Mantenimiento", "PER-000003 · Yossi Cohen", "4 de 2 a 6", "EP 4, EP 5", "Activa"),
+                GridKt._getFormattedRow(tree, 3).subList(0, 7));
+        assertEquals("Vacante", GridKt._getFormattedRow(tree, 1).get(3));
+        assertEquals("", GridKt._getFormattedRow(tree, 1).get(4), "solo un equipo cuenta linemen");
+        LocatorJ._get(Span.class, spec -> spec.withText("4 unidades"));
+        verify(organizationClient).tree(false);
+
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("unit-create")).isEmpty(), "sin resources-write no hay alta");
+        assertEquals(List.of("unit-open-" + SUPERVISION_UNIT), LocatorJ._find(GridKt._getCellComponent(tree, 2, OrganizationView.ACTIONS_COLUMN),
+                Button.class).stream().map(button -> button.getId().orElse("")).toList());
+
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("organization-include-inactive")), true);
+        verify(organizationClient).tree(true);
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tree, 3, OrganizationView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("unit-open-" + TEAM_UNIT)));
+        LocatorJ._get(UnitDetailView.class);
+        LocatorJ._get(H2.class, spec -> spec.withText("A · Equipo A"));
+        LocatorJ._get(Div.class, spec -> spec.withId("unit-team-summary").withText("Linemen: 4 de 2 a 6 · Completo: Si · "
+                + "Supervisor: PER-000020 · Dana Levi · Jefe de supervisores: - · Vehiculo: -"));
+        Grid<Object> members = gridWithId("members-grid");
+        assertEquals(4, GridKt._size(members), "la pestana de linemen se pide al abrirse");
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("member-add")).stream().noneMatch(Button::isVisible),
+                "quien solo lee no cambia los linemen");
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("unit-edit")).isEmpty());
+    }
+
+    /** Una ficha que no existe se dice y vuelve al organigrama, como las de mantenimiento; un id que no es un UUID, igual. */
+    @Test
+    void aUnitThatDoesNotExistIsSaidAndGoesBackToTheTree() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubOrganization(true);
+        UUID missing = UUID.fromString("5e6f7081-0000-4000-8000-0000000000ff");
+        when(organizationClient.findById(missing)).thenThrow(maintenanceError(404, "UNI-404", "Organization unit not found"));
+
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(missing));
+        LocatorJ._get(OrganizationView.class);
+        NotificationsKt.expectNotifications("No existe la unidad " + missing);
+
+        NotificationsKt.clearNotifications();
+        UI.getCurrent().navigate(ResourcesRoutes.ORGANIZATION + "/no-es-un-id");
+        LocatorJ._get(OrganizationView.class);
+        NotificationsKt.expectNotifications("No existe la unidad no-es-un-id");
+    }
+
+    /**
+     * Un equipo nace completo: con su jefe (de las categorias del nivel) y de 2 a 6 linemen que no
+     * sean el jefe, comprobados antes de llamar; el padre sale del arbol (de un nivel superior) y la
+     * disciplina es la suya; los EP viajan como ids. Un error del servicio cae en su campo.
+     */
+    @Test
+    void aTeamIsCreatedCompleteUnderItsParentAndTheRuleOfTwoToSixIsCheckedBeforeCalling() {
+        loginAs("recursos.gestor", RESOURCES_MANAGER);
+        stubOrganization(true);
+        when(organizationClient.create(any()))
+                .thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, new ApiProblem(null, "BAD_REQUEST", 400, "Validation failed", null,
+                        "REQ-VALIDATION", null, null, null, false, List.of(new ApiFieldError("code", null, "must match [A-Za-z0-9_-]+")), null),
+                        "corr-r3", null, "POST /api/resources/units"))
+                .thenReturn(team(2, true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.ORGANIZATION);
+        @SuppressWarnings("unchecked")
+        TreeGrid<OrganizationTreeNodeDto> tree = LocatorJ._get(TreeGrid.class, spec -> spec.withId("organization-tree"));
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(tree, 3, OrganizationView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("unit-create-under-" + TEAM_UNIT)).isEmpty(), "de un equipo no cuelga nada");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(tree, 2, OrganizationView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("unit-create-under-" + SUPERVISION_UNIT)));
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("unit-code")), "B");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("unit-name")), " Equipo B ");
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("unit-kind")), OrganizationUnitKind.TEAM);
+        ComboBox<UnitSummaryDto> parent = comboWithId("unit-parent");
+        assertEquals("SUP-N", parent.getValue().code(), "el padre de la fila");
+        assertEquals(List.of("PRJ", "MNT", "SUP-N"), ComboBoxKt.getSuggestionItems(parent).stream().map(UnitSummaryDto::code).toList(),
+                "un equipo cuelga de cualquier nivel superior, nunca de otro equipo");
+        @SuppressWarnings("unchecked")
+        Select<WorkDiscipline> discipline = LocatorJ._get(Select.class, spec -> spec.withId("unit-discipline"));
+        assertEquals(WorkDiscipline.MAINTENANCE, discipline.getValue());
+        assertTrue(discipline.isReadOnly(), "la disciplina es la del padre");
+        ComboBox<PersonSummaryDto> head = comboWithId("unit-head");
+        ComboBoxKt.getSuggestionItems(head);
+        verify(personClient, atLeastOnce()).search(eq(PersonFilter.activeOf("", EnumSet.copyOf(PersonCategory.atLeast(2)))), eq(0), anyInt(),
+                anyList());
+
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<PersonSummaryDto> members = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("unit-members"));
+        LocatorJ._setValue(members, Set.of(lineman(1)));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        verify(organizationClient, never()).create(any());
+        assertTrue(head.isInvalid(), "un equipo trabaja siempre con su jefe");
+        assertTrue(members.isInvalid(), "con un lineman no nace");
+        assertEquals("1 de 2 a 6", members.getHelperText());
+
+        LocatorJ._setValue(head, LEADER);
+        LocatorJ._setValue(members, new java.util.LinkedHashSet<>(List.of(lineman(1), LEADER)));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        verify(organizationClient, never()).create(any());
+        assertTrue(members.isInvalid(), "el jefe no va tambien de lineman");
+
+        LocatorJ._setValue(members, new java.util.LinkedHashSet<>(List.of(lineman(1), lineman(2))));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RefItem> packages = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("unit-packages"));
+        LocatorJ._setValue(packages, Set.of(new RefItem(6L, "EP 6"), new RefItem(4L, "EP 4")));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("unit-code")).isInvalid(), "el error del servicio, en su campo");
+        assertFalse(LocatorJ._find(UnitEditorDialog.class).isEmpty(), "el dialogo sigue abierto con lo escrito");
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        verify(organizationClient, times(2)).create(argThat(request -> request.code().equals("B") && request.name().equals("Equipo B")
+                && request.kind() == OrganizationUnitKind.TEAM && request.discipline() == WorkDiscipline.MAINTENANCE
+                && request.parentId().equals(SUPERVISION_UNIT) && request.headPersonId().equals(PERSON1)
+                && request.executionPackageIds().equals(Set.of(4L, 6L)) && Set.copyOf(request.memberPersonIds()).equals(Set.of(lineman(1).id(),
+                lineman(2).id())) && request.joinedOn() == null && request.defaultVehicleId() == null));
+        assertTrue(LocatorJ._find(UnitEditorDialog.class).isEmpty());
+    }
+
+    /**
+     * Modificar desde la ficha manda lo cambiado (los EP como conjunto, el jefe vaciado) y la version
+     * leida; una version vieja deja el dialogo abierto. Sin config-read los EP se ven como #id y no
+     * viajan. El historial dice como quedo la unidad.
+     */
+    @Test
+    void aUnitIsPatchedWithItsPackagesAsASetAndWithoutConfigReadTheyStayAsTheyAre() {
+        loginAs("recursos.gestor", RESOURCES_MANAGER);
+        stubOrganization(true);
+        when(organizationClient.findById(SUPERVISION_UNIT)).thenReturn(supervision(true));
+        when(organizationClient.children(eq(SUPERVISION_UNIT), anyInt(), anyInt())).thenReturn(page(List.of(team(4, true)), 0, 200));
+        when(organizationClient.update(any(), any()))
+                .thenThrow(maintenanceError(409, "CON-001", "Organization unit SUP-N was changed by someone else"))
+                .thenReturn(supervision(true));
+        when(organizationClient.revisions(SUPERVISION_UNIT, 0, RevisionsDialog.PAGE_SIZE)).thenReturn(page(List.of(new RevisionDto<>(
+                new RevisionMetadataDto(3L, Instant.parse("2026-10-16T06:00:00Z"), RevisionOperation.UPDATED, "recursos.gestor", "HTTP", "c-5"),
+                supervision(true))), 0, RevisionsDialog.PAGE_SIZE));
+
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(SUPERVISION_UNIT));
+        assertEquals(List.of("A · Equipo A", "Equipo", "PER-000003 · Yossi Cohen", "4 de 2 a 6", "EP 4, EP 5", "Activa"),
+                GridKt._getFormattedRow(gridWithId("unit-children-grid"), 0).subList(0, 6), "la pestana de unidades, con sus hijas");
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-edit")));
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("unit-code")).isReadOnly());
+        ComboBox<UnitSummaryDto> parent = comboWithId("unit-parent");
+        assertEquals(List.of("PRJ", "MNT"), ComboBoxKt.getSuggestionItems(parent).stream().map(UnitSummaryDto::code).toList());
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RefItem> packages = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("unit-packages"));
+        assertEquals(Set.of(new RefItem(4L, "EP 4")), packages.getValue());
+        LocatorJ._setValue(packages, Set.of(new RefItem(6L, "EP 6"), new RefItem(4L, "EP 4")));
+        LocatorJ._setValue(comboWithId("unit-head"), null);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        MergePatch<OrganizationUnitUpdateRequest> expected = new MergePatch<>(new OrganizationUnitUpdateRequest(null, null, null,
+                new java.util.TreeSet<>(Set.of(4L, 6L)), null, null, null, null), Set.of("headPersonId"), 2L);
+        verify(organizationClient).update(SUPERVISION_UNIT, expected);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Conflicto con otro cambio: recarga y vuelve a intentarlo."));
+        assertFalse(LocatorJ._find(UnitEditorDialog.class).isEmpty(), "el dialogo sigue abierto con lo escrito");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        verify(organizationClient, times(2)).update(SUPERVISION_UNIT, expected);
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-history")));
+        assertEquals("Supervision norte · Supervision · Mantenimiento · en MNT · jefe per-000020 · dana levi · EP 4 · activa",
+                GridKt._getFormattedRow(gridWithId("revisions-grid"), 0).get(5));
+    }
+
+    /** Sin config-read no se llama a mto-configuration: los EP se ven como #id, de solo lectura, y no viajan. */
+    @Test
+    void withoutConfigReadTheUnitPackagesAreIdsAndDoNotTravel() {
+        loginAs("recursos.gestor", "ROLE_RESOURCES_READ", "ROLE_RESOURCES_WRITE");
+        stubOrganization(true);
+        when(organizationClient.findById(SUPERVISION_UNIT)).thenReturn(supervision(true));
+        when(organizationClient.children(eq(SUPERVISION_UNIT), anyInt(), anyInt())).thenReturn(page(List.of(), 0, 200));
+        when(organizationClient.update(any(), any())).thenReturn(supervision(true));
+
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(SUPERVISION_UNIT));
+        LocatorJ._get(Div.class, spec -> spec.withText("Disciplina: Mantenimiento · Depende de: MNT · Mantenimiento · "
+                + "Jefe: PER-000020 · Dana Levi · EP: #4"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-edit")));
+        assertEquals("#4", LocatorJ._get(TextField.class, spec -> spec.withId("unit-packages-readonly")).getValue());
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("unit-name")), "Supervision del norte");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        verify(organizationClient).update(SUPERVISION_UNIT, new MergePatch<>(new OrganizationUnitUpdateRequest("Supervision del norte", null, null,
+                null, null, null, null, null), Set.of(), 2L));
+        verify(executionPackageClient, never()).filter(anyInt(), anyInt(), anyList(), anyMap());
+    }
+
+    /**
+     * La regla de 2 a 6 en pantalla: con 6 no se ofrece anadir, con 2 no se ofrece que salga nadie, y
+     * cambiar varios es la lista entera de una vez, con su contador y su fecha. Lo que el servicio
+     * rechaza (409 UNI-001) deja el dialogo abierto.
+     */
+    @Test
+    void aTeamAddsLinemenUpToSixLetsThemLeaveDownToTwoAndChangesThemAllAtOnce() {
+        loginAs("recursos.gestor", RESOURCES_MANAGER);
+        stubOrganization(true);
+        when(organizationClient.findById(TEAM_UNIT)).thenReturn(team(6, true));
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(linemen(6));
+
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(TEAM_UNIT));
+        Button add = LocatorJ._get(Button.class, spec -> spec.withId("member-add"));
+        assertFalse(add.isEnabled(), "con 6 no se anade otro");
+        Grid<Object> members = gridWithId("members-grid");
+        assertTrue(LocatorJ._get(GridKt._getCellComponent(members, 0, "actions"), Button.class,
+                spec -> spec.withId("member-leave-" + lineman(0).id())).isEnabled());
+
+        when(organizationClient.findById(TEAM_UNIT)).thenReturn(team(2, true));
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(linemen(2));
+        when(organizationClient.addMember(eq(TEAM_UNIT), any()))
+                .thenThrow(maintenanceError(409, "UNI-001", "Lineman 5 is already a lineman of team B"))
+                .thenReturn(team(3, true));
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(TEAM_UNIT));
+        members = gridWithId("members-grid");
+        assertFalse(LocatorJ._get(GridKt._getCellComponent(members, 0, "actions"), Button.class,
+                spec -> spec.withId("member-leave-" + lineman(0).id())).isEnabled(), "con 2 no sale nadie");
+        add = LocatorJ._get(Button.class, spec -> spec.withId("member-add"));
+        assertTrue(add.isEnabled());
+        LocatorJ._click(add);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("member-add-save")));
+        verify(organizationClient, never()).addMember(any(), any());
+        LocatorJ._setValue(comboWithId("member-person"), lineman(5));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("member-add-save")));
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("El organigrama no admite ese cambio. Lineman 5 is already a lineman of team B"));
+        assertFalse(LocatorJ._find(Button.class, spec -> spec.withId("member-add-save")).isEmpty(), "el dialogo sigue abierto");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("member-add-save")));
+        verify(organizationClient, times(2)).addMember(TEAM_UNIT, new TeamMemberRequest(lineman(5).id(), null));
+        LocatorJ._get(H2.class, spec -> spec.withText("A · Equipo A"));
+        LocatorJ._get(Div.class, spec -> spec.withId("unit-team-summary").withText("Linemen: 3 de 2 a 6 · Completo: Si · "
+                + "Supervisor: PER-000020 · Dana Levi · Jefe de supervisores: - · Vehiculo: -"));
+
+        when(organizationClient.findById(TEAM_UNIT)).thenReturn(team(3, true));
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(linemen(3));
+        when(organizationClient.leave(eq(TEAM_UNIT), any(), any())).thenReturn(team(2, true));
+        when(organizationClient.replaceMembers(eq(TEAM_UNIT), any())).thenReturn(team(2, true));
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(TEAM_UNIT));
+        members = gridWithId("members-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(members, 2, "actions"), Button.class,
+                spec -> spec.withId("member-leave-" + lineman(2).id())));
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("member-left-on")), LocalDate.of(2026, 10, 21));
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(linemen(2));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("member-leave-save")));
+        verify(organizationClient).leave(TEAM_UNIT, lineman(2).id(), new TeamMemberLeaveRequest(LocalDate.of(2026, 10, 21)));
+
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("members-replace")));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<PersonSummaryDto> chosen = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("members-people"));
+        assertEquals(Set.of(lineman(0), lineman(1)), chosen.getValue(), "parte de los linemen de ahora");
+        LocatorJ._get(Span.class, spec -> spec.withId("members-count").withText("2 de 2 a 6"));
+        LocatorJ._setValue(chosen, Set.of(lineman(0)));
+        LocatorJ._get(Span.class, spec -> spec.withId("members-count").withText("1 de 2 a 6"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(TeamMembersDialog.SAVE_ID)));
+        verify(organizationClient, never()).replaceMembers(any(), any());
+        assertTrue(chosen.isInvalid());
+        LocatorJ._setValue(chosen, new java.util.LinkedHashSet<>(List.of(lineman(0), lineman(3), lineman(4))));
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("members-date")), LocalDate.of(2026, 10, 22));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(TeamMembersDialog.SAVE_ID)));
+        verify(organizationClient).replaceMembers(eq(TEAM_UNIT), argThat(request -> Set.copyOf(request.memberPersonIds())
+                .equals(Set.of(lineman(0).id(), lineman(3).id(), lineman(4).id())) && request.effectiveOn().equals(LocalDate.of(2026, 10, 22))));
+    }
+
+    /**
+     * Desactivar pide resources-delete y confirmacion; lo que el servicio no deja (unidades activas
+     * debajo) se dice. Un equipo vuelve completo: reactivarlo pide sus linemen en su dialogo; otra
+     * unidad vuelve con un PATCH active=true.
+     */
+    @Test
+    void aDeactivatedTeamComesBackWithItsLinemenAndAnotherUnitByPatch() {
+        loginAs("recursos.responsable", RESOURCES_ADMIN);
+        stubOrganization(false);
+        when(organizationClient.findById(SUPERVISION_UNIT)).thenReturn(supervision(true));
+        when(organizationClient.children(eq(SUPERVISION_UNIT), anyInt(), anyInt())).thenReturn(page(List.of(team(0, false)), 0, 200));
+        doThrow(maintenanceError(409, "UNI-001", "SUP-N has active units under it")).when(organizationClient).deactivate(SUPERVISION_UNIT);
+
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(SUPERVISION_UNIT));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-deactivate")));
+        verify(organizationClient, never()).deactivate(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(organizationClient).deactivate(SUPERVISION_UNIT);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("El organigrama no admite ese cambio. SUP-N has active units under it"));
+
+        when(organizationClient.findById(TEAM_UNIT)).thenReturn(team(0, false));
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(List.of());
+        when(organizationClient.update(eq(TEAM_UNIT), any())).thenReturn(team(2, true));
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(TEAM_UNIT));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("unit-deactivate")).isEmpty(), "una inactiva no se desactiva otra vez");
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("member-add")).stream().noneMatch(Button::isVisible),
+                "un equipo inactivo no cambia sus linemen: vuelve con ellos");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-reactivate")));
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<PersonSummaryDto> chosen = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("members-people"));
+        assertTrue(chosen.getValue().isEmpty(), "sus linemen salieron al desactivarlo");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(TeamMembersDialog.SAVE_ID)));
+        verify(organizationClient, never()).update(any(), any());
+        LocatorJ._setValue(chosen, new java.util.LinkedHashSet<>(List.of(lineman(1), lineman(2))));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(TeamMembersDialog.SAVE_ID)));
+        verify(organizationClient).update(eq(TEAM_UNIT), argThat(patch -> patch.version() == 7L && Boolean.TRUE.equals(patch.values().active())
+                && Set.copyOf(patch.values().memberPersonIds()).equals(Set.of(lineman(1).id(), lineman(2).id()))));
+        LocatorJ._get(Span.class, spec -> spec.withId("unit-state").withText("Activa"));
+
+        when(organizationClient.findById(SUPERVISION_UNIT)).thenReturn(supervision(false));
+        when(organizationClient.update(eq(SUPERVISION_UNIT), any())).thenReturn(supervision(true));
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(SUPERVISION_UNIT));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-reactivate")));
+        verify(organizationClient).update(SUPERVISION_UNIT, MergePatch.of(OrganizationUnitUpdateRequest.reactivate(), 2L));
+    }
+
+    /** Personal toma la unidad de la URL (lo que abre la ficha de una unidad) y la quita al pedirlo. */
+    @Test
+    void thePeopleOfAUnitComeFromTheUrlAndTheFilterIsRemovedOnRequest() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubOrganization(true);
+        when(organizationClient.findById(SUPERVISION_UNIT)).thenReturn(supervision(true));
+        when(organizationClient.children(eq(SUPERVISION_UNIT), anyInt(), anyInt())).thenReturn(page(List.of(), 0, 200));
+
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(SUPERVISION_UNIT));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-people")));
+        LocatorJ._get(PeopleView.class);
+        LocatorJ._get(Span.class, spec -> spec.withId("people-unit").withText("Unidad: SUP-N · Supervision norte"));
+        GridKt._size(gridWithId("people-grid"));
+        verify(personClient, atLeastOnce()).search(eq(new PersonFilter(null, Set.of(), SUPERVISION_UNIT, null)), eq(0), anyInt(), anyList());
+
+        clearInvocations(personClient);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("people-unit-clear")));
+        assertTrue(LocatorJ._find(Span.class, spec -> spec.withId("people-unit")).isEmpty(), "sin unidad no hay filtro de unidad");
+        GridKt._size(gridWithId("people-grid"));
+        verify(personClient, atLeastOnce()).search(eq(PersonFilter.NONE), eq(0), anyInt(), anyList());
+
+        UI.getCurrent().navigate(ResourcesRoutes.PEOPLE, QueryParameters.of(PeopleView.UNIT_PARAMETER, "no-es-un-id"));
+        assertTrue(LocatorJ._find(Span.class, spec -> spec.withId("people-unit")).isEmpty(), "un id que no es un UUID no filtra");
+    }
+
+    // --- Recursos: modelos de vehiculo y sitios de aparcamiento -------------------------------------
+
+    private static final UUID VEHICLE_TYPE1 = UUID.fromString("7b8c9d0e-0000-4000-8000-000000000001");
+    private static final UUID VEHICLE_TYPE2 = UUID.fromString("7b8c9d0e-0000-4000-8000-000000000002");
+    private static final UUID PARKING_SITE1 = UUID.fromString("8c9d0e1f-0000-4000-8000-000000000001");
+    private static final String[] FLEET_MANAGER = {"ROLE_RESOURCES_READ", "ROLE_RESOURCES_WRITE", "ROLE_RESOURCES_FLEET_WRITE",
+            "ROLE_CONFIG_READ", "ROLE_NOTIFICATION_INBOX"};
+
+    private static VehicleTypeDto unimog(Set<String> capabilities, BigDecimal crane, boolean active) {
+        return new VehicleTypeDto(VEHICLE_TYPE1, "UNIMOG-RR", "Unimog bivial", "Mercedes-Benz", "U423", VehicleMobility.ROAD_RAIL,
+                VehicleCategory.ROAD_RAIL_TRUCK, true, false, new BigDecimal("6.20"), null, null, null, null, null, 2, 3, null, VehiclePower.DIESEL,
+                1435, 20, 40, null, null, null, false, RailGearType.RAIL_WHEEL_DRIVE, 10, null, 90, DrivingLicence.C, capabilities, crane, null,
+                null, null, null, null, null, active, 4L);
+    }
+
+    private static VehicleTypeDto dresina() {
+        return new VehicleTypeDto(VEHICLE_TYPE2, "DIC-30", "Plasser DIC-30", "Plasser", "DIC-30", VehicleMobility.RAIL_ONLY,
+                VehicleCategory.CATENARY_TOWER_CAR, true, false, null, null, null, null, null, null, 4, 6, null, VehiclePower.DIESEL, 1435, 10, 80,
+                null, null, null, true, null, null, null, null, null, Set.of("ELEVATING_PLATFORM", "PANTOGRAPH"), null, null, null, null, null,
+                null, null, true, 2L);
+    }
+
+    private void stubVehicleTypes(List<VehicleTypeDto> all) {
+        doAnswer(call -> page(all, call.getArgument(1), call.getArgument(2)))
+                .when(vehicleTypeClient).search(any(VehicleTypeFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    private void stubConfigurationNames() {
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(executionPackage(4L, "EP 4"), executionPackage(5L, "EP 5")), 0, 1000));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(12L, "VIA 1", true, 4L, List.of()), track(20L, "VIA 9", true, 5L, List.of())), 0, 1000));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(station(7L, "Rishpon", 4L)), 0, 1000));
+    }
+
+    /** Los modelos se piden al servicio con sus filtros; quien solo lee no ve controles y el menu ofrece la flota. */
+    @Test
+    void theVehicleModelsAreFilteredInTheServerAndAReaderHasNoControls() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubVehicleTypes(List.of(unimog(Set.of("CRANE", "LASER_SCANNER"), new BigDecimal("5.00"), true), dresina()));
+
+        UI.getCurrent().navigate(HomeView.class);
+        assertTrue(menuLabels().containsAll(List.of("Modelos de vehiculo", "Sitios de aparcamiento")), menuLabels().toString());
+        UI.getCurrent().navigate(ResourcesRoutes.VEHICLE_TYPES);
+
+        Grid<Object> grid = gridWithId("vehicle-types-grid");
+        assertEquals(List.of("UNIMOG-RR", "Unimog bivial", "Mercedes-Benz · U423", "Bivial", "Camion bivial", "3", "Grua, LASER_SCANNER", "Activo"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 8), "una capacidad que no se conoce se pinta con su codigo");
+        verify(vehicleTypeClient, atLeastOnce()).search(eq(VehicleTypeFilter.NONE), eq(0), anyInt(), eq(List.of("code,asc")));
+
+        @SuppressWarnings("unchecked")
+        Select<VehicleMobility> mobility = LocatorJ._get(Select.class, spec -> spec.withId("vehicle-types-mobility"));
+        LocatorJ._setValue(mobility, VehicleMobility.RAIL_ONLY);
+        ComboBox<VehicleCategory> category = comboWithId("vehicle-types-category");
+        assertEquals(VehicleCategory.of(VehicleMobility.RAIL_ONLY), ComboBoxKt.getSuggestionItems(category), "las categorias de esa movilidad");
+        LocatorJ._setValue(category, VehicleCategory.CATENARY_TOWER_CAR);
+        LocatorJ._setValue(comboWithId("vehicle-types-capability"), "PANTOGRAPH");
+        GridKt._size(grid);
+        verify(vehicleTypeClient, atLeastOnce()).search(eq(new VehicleTypeFilter(null, VehicleMobility.RAIL_ONLY, VehicleCategory.CATENARY_TOWER_CAR,
+                "PANTOGRAPH", null)), eq(0), anyInt(), anyList());
+
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("vehicle-type-create")).isEmpty());
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, VehicleTypesView.ACTIONS_COLUMN), Button.class).isEmpty());
+    }
+
+    /**
+     * El alta va por secciones segun la movilidad: uno de solo carretera no ofrece cifras de via ni de
+     * bivial; una bivial dice su equipo ferroviario; cada capacidad ensena sus cifras; los numeros se
+     * comprueban con su columna antes de llamar.
+     */
+    @Test
+    void aModelIsCreatedBySectionsOfItsMobilityAndItsFiguresAreCheckedBeforeCalling() {
+        loginAs("recursos.gestor", FLEET_MANAGER);
+        stubVehicleTypes(List.of());
+        when(vehicleTypeClient.create(any())).thenReturn(unimog(Set.of("CRANE"), new BigDecimal("5.00"), true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.VEHICLE_TYPES);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("vehicle-type-create")));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-type-code")), "UNIMOG-RR");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-type-name")), "Unimog bivial");
+        @SuppressWarnings("unchecked")
+        Select<VehicleMobility> mobility = LocatorJ._get(Select.class, spec -> spec.withId("vehicle-type-mobility"));
+        LocatorJ._setValue(mobility, VehicleMobility.ROAD_ONLY);
+        assertTrue(LocatorJ._find(VerticalLayout.class, spec -> spec.withId("vehicle-type-section-track")).isEmpty(), "sin cifras de via");
+        assertTrue(LocatorJ._find(VerticalLayout.class, spec -> spec.withId("vehicle-type-section-road-rail")).isEmpty(), "ni de bivial");
+        LocatorJ._get(VerticalLayout.class, spec -> spec.withId("vehicle-type-section-road"));
+        ComboBox<VehicleCategory> category = comboWithId("vehicle-type-category");
+        assertEquals(VehicleCategory.of(VehicleMobility.ROAD_ONLY), ComboBoxKt.getSuggestionItems(category));
+        LocatorJ._setValue(category, VehicleCategory.VAN);
+
+        LocatorJ._setValue(mobility, VehicleMobility.ROAD_RAIL);
+        assertNull(category.getValue(), "una furgoneta no es una bivial");
+        LocatorJ._get(VerticalLayout.class, spec -> spec.withId("vehicle-type-section-track"));
+        LocatorJ._get(VerticalLayout.class, spec -> spec.withId("vehicle-type-section-road-rail"));
+        LocatorJ._setValue(category, VehicleCategory.ROAD_RAIL_TRUCK);
+        assertTrue(LocatorJ._find(BigDecimalField.class, spec -> spec.withId("vehicle-type-craneCapacityT")).isEmpty(), "sin grua no hay cifras de grua");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<String> capabilities = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("vehicle-type-capabilities"));
+        LocatorJ._setValue(capabilities, Set.of("CRANE"));
+        BigDecimalField crane = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("vehicle-type-craneCapacityT"));
+        LocatorJ._setValue(crane, new BigDecimal("5.5"));
+        BigDecimalField length = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("vehicle-type-lengthM"));
+        LocatorJ._setValue(length, new BigDecimal("12345"));
+        LocatorJ._setValue(LocatorJ._get(IntegerField.class, spec -> spec.withId("vehicle-type-trackGaugeMm")), 1435);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleTypeEditorDialog.SAVE_ID)));
+        verify(vehicleTypeClient, never()).create(any());
+        assertEquals("Como mucho 4 cifras enteras", length.getErrorMessage());
+        assertTrue(LocatorJ._get(Select.class, spec -> spec.withId("vehicle-type-rail-gear")).isInvalid(), "una bivial dice su equipo ferroviario");
+
+        LocatorJ._setValue(length, new BigDecimal("6.20"));
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("vehicle-type-rail-gear")), RailGearType.RAIL_WHEEL_DRIVE);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleTypeEditorDialog.SAVE_ID)));
+        verify(vehicleTypeClient).create(argThat(request -> request.code().equals("UNIMOG-RR") && request.mobility() == VehicleMobility.ROAD_RAIL
+                && request.category() == VehicleCategory.ROAD_RAIL_TRUCK && request.railGearType() == RailGearType.RAIL_WHEEL_DRIVE
+                && Boolean.FALSE.equals(request.needsPreparedAccess()) && Boolean.FALSE.equals(request.transportModeAuthorised())
+                && request.trackGaugeMm() == 1435 && new BigDecimal("6.20").equals(request.lengthM())
+                && new BigDecimal("5.5").equals(request.craneCapacityT()) && request.capabilities().equals(Set.of("CRANE"))
+                && Boolean.TRUE.equals(request.selfPropelled())));
+        assertTrue(LocatorJ._find(VehicleTypeEditorDialog.class).isEmpty());
+    }
+
+    /**
+     * Modificar no cambia el codigo ni la movilidad, manda lo cambiado y la version, y quitar una
+     * capacidad vacia sus cifras; una capacidad que no se conoce vuelve tal cual. Lo que el servicio
+     * dice de un modelo incoherente se notifica con el dialogo abierto.
+     */
+    @Test
+    void aModelIsPatchedWithWhatChangedAndRemovingACapabilityEmptiesItsFigures() {
+        loginAs("recursos.gestor", FLEET_MANAGER);
+        VehicleTypeDto existing = unimog(Set.of("CRANE", "LASER_SCANNER"), new BigDecimal("5.00"), true);
+        stubVehicleTypes(List.of(existing));
+        when(vehicleTypeClient.update(any(), any()))
+                .thenThrow(maintenanceError(400, "VAL-001", "Crane figures (craneCapacityT, craneReachM) need the CRANE capability"))
+                .thenReturn(existing);
+
+        UI.getCurrent().navigate(ResourcesRoutes.VEHICLE_TYPES);
+        Grid<Object> grid = gridWithId("vehicle-types-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, VehicleTypesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("vehicle-type-edit-" + VEHICLE_TYPE1)));
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-type-code")).isReadOnly());
+        assertTrue(LocatorJ._get(Select.class, spec -> spec.withId("vehicle-type-mobility")).isReadOnly());
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<String> capabilities = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("vehicle-type-capabilities"));
+        assertEquals(Set.of("CRANE", "LASER_SCANNER"), capabilities.getValue());
+        LocatorJ._setValue(capabilities, Set.of("LASER_SCANNER", "TOWING"));
+        assertTrue(LocatorJ._find(BigDecimalField.class, spec -> spec.withId("vehicle-type-craneCapacityT")).isEmpty());
+        LocatorJ._setValue(LocatorJ._get(IntegerField.class, spec -> spec.withId("vehicle-type-seats")), 5);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleTypeEditorDialog.SAVE_ID)));
+
+        MergePatch<VehicleTypeUpdateRequest> expected = new MergePatch<>(new VehicleTypeUpdateRequest(null, null, null, null, null, null, null,
+                null, null, null, null, null, null, 5, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                Set.of("LASER_SCANNER", "TOWING"), null, null, null, null, null, null, null, null), Set.of("craneCapacityT"), 4L);
+        verify(vehicleTypeClient).update(VEHICLE_TYPE1, expected);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("La peticion no es valida. Crane figures (craneCapacityT, craneReachM) need the CRANE capability"));
+        assertFalse(LocatorJ._find(VehicleTypeEditorDialog.class).isEmpty(), "el dialogo sigue abierto con lo escrito");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleTypeEditorDialog.SAVE_ID)));
+        verify(vehicleTypeClient, times(2)).update(VEHICLE_TYPE1, expected);
+    }
+
+    /** Retirar un modelo pide resources-delete y confirmacion; volver a ofrecerlo es un PATCH active=true. */
+    @Test
+    void aModelIsRetiredWithConfirmationAndOfferedAgainByPatch() {
+        loginAs("recursos.responsable", RESOURCES_ADMIN);
+        VehicleTypeDto retired = unimog(Set.of(), null, false);
+        stubVehicleTypes(List.of(dresina(), retired));
+        when(vehicleTypeClient.update(any(), any())).thenReturn(unimog(Set.of(), null, true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.VEHICLE_TYPES);
+        Grid<Object> grid = gridWithId("vehicle-types-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, VehicleTypesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("vehicle-type-retire-" + VEHICLE_TYPE2)));
+        verify(vehicleTypeClient, never()).deactivate(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(vehicleTypeClient).deactivate(VEHICLE_TYPE2);
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, VehicleTypesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("vehicle-type-activate-" + VEHICLE_TYPE1)));
+        verify(vehicleTypeClient).update(VEHICLE_TYPE1, MergePatch.of(VehicleTypeUpdateRequest.active(true), 4L));
+    }
+
+    private static ParkingSiteDto siding(boolean active) {
+        return new ParkingSiteDto(PARKING_SITE1, "APT-RSH", "Apartadero de Rishpon", ParkingSiteKind.SIDING, 4L, 7L, 12L, new BigDecimal("12.300"),
+                true, false, null, new BigDecimal("32.200000"), new BigDecimal("34.820000"), null, active, 2L);
+    }
+
+    /**
+     * Un sitio se alcanza por via, por carretera o por las dos; con acceso por via dice su via; las
+     * coordenadas van juntas. Las vias que se ofrecen son las del EP elegido.
+     */
+    @Test
+    void aParkingSiteNeedsAnAccessAndATrackForRailAccessAndItsCoordinatesTogether() {
+        loginAs("recursos.gestor", FLEET_MANAGER);
+        stubConfigurationNames();
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(siding(true)), 0, 50));
+        when(parkingSiteClient.create(any())).thenReturn(siding(true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.PARKING_SITES);
+        assertEquals(List.of("APT-RSH", "Apartadero de Rishpon", "Apartadero", "EP 4", "VIA 1 (EP 4) · kp 12.300", "Via", "Activo"),
+                GridKt._getFormattedRow(gridWithId("parking-sites-grid"), 0).subList(0, 7));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("parking-site-create")));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("parking-site-code")), "APT-RSH");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("parking-site-name")), "Apartadero de Rishpon");
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("parking-site-kind")), ParkingSiteKind.SIDING);
+        Checkbox rail = LocatorJ._get(Checkbox.class, spec -> spec.withId("parking-site-rail-access"));
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("parking-site-road-access")), false);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(ParkingSiteEditorDialog.SAVE_ID)));
+        verify(parkingSiteClient, never()).create(any());
+        assertEquals("Un sitio se alcanza por via, por carretera o por las dos", rail.getErrorMessage());
+
+        LocatorJ._setValue(rail, true);
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("parking-site-latitude")), new BigDecimal("32.2"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(ParkingSiteEditorDialog.SAVE_ID)));
+        verify(parkingSiteClient, never()).create(any());
+        ComboBox<RefItem> track = comboWithId("parking-site-track");
+        assertTrue(track.isInvalid(), "con acceso por via dice su via");
+        assertTrue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("parking-site-latitude")).isInvalid(), "las coordenadas van juntas");
+
+        LocatorJ._setValue(comboWithId("parking-site-package"), new RefItem(4L, "EP 4"));
+        assertEquals(List.of("VIA 1 (EP 4)"), ComboBoxKt.getSuggestionItems(track).stream().map(RefItem::label).toList(), "las vias del EP");
+        LocatorJ._setValue(track, new RefItem(12L, "VIA 1 (EP 4)"));
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("parking-site-latitude")), null);
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("parking-site-kp")), new BigDecimal("12.300"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(ParkingSiteEditorDialog.SAVE_ID)));
+        verify(parkingSiteClient).create(new ParkingSiteRequest("APT-RSH", "Apartadero de Rishpon", ParkingSiteKind.SIDING, 4L, null, 12L,
+                new BigDecimal("12.300"), true, false, null, null, null, null));
+    }
+
+    /** Modificar un sitio manda lo cambiado; sin config-read su EP, estacion y via se ven como #id y no viajan. */
+    @Test
+    void withoutConfigReadAParkingSiteKeepsItsPlacesAndOnlyWhatChangedTravels() {
+        loginAs("recursos.gestor", "ROLE_RESOURCES_READ", "ROLE_RESOURCES_WRITE");
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(siding(true)), 0, 50));
+        when(parkingSiteClient.update(any(), any())).thenReturn(siding(true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.PARKING_SITES);
+        Grid<Object> grid = gridWithId("parking-sites-grid");
+        assertEquals(List.of("#4", "#12 · kp 12.300"), GridKt._getFormattedRow(grid, 0).subList(3, 5));
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, ParkingSitesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("parking-site-edit-" + PARKING_SITE1)));
+        assertEquals("#4 · #7 · #12", LocatorJ._get(TextField.class, spec -> spec.withId("parking-site-where-readonly")).getValue());
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("parking-site-road-access")), true);
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("parking-site-latitude")), null);
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("parking-site-longitude")), null);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(ParkingSiteEditorDialog.SAVE_ID)));
+        verify(parkingSiteClient).update(PARKING_SITE1, new MergePatch<>(new ParkingSiteUpdateRequest(null, null, null, null, null, null, null,
+                true, null, null, null, null, null), Set.of("latitude", "longitude"), 2L));
+        verify(executionPackageClient, never()).filter(anyInt(), anyInt(), anyList(), anyMap());
+    }
+
+    // --- Recursos: vehiculos y ubicaciones ----------------------------------------------------------
+
+    private static final UUID VEHICLE1 = UUID.fromString("9d0e1f20-0000-4000-8000-000000000001");
+    private static final UUID VEHICLE2 = UUID.fromString("9d0e1f20-0000-4000-8000-000000000002");
+    private static final UUID LOCATION_SHIFT = UUID.fromString("a0b1c2d3-0000-4000-8000-000000000001");
+    private static final String[] FLEET_OPERATOR = {"ROLE_RESOURCES_READ", "ROLE_RESOURCES_FLEET_WRITE", "ROLE_RESOURCES_LOCATION_WRITE",
+            "ROLE_RESOURCES_DELETE", "ROLE_CONFIG_READ", "ROLE_MAINTENANCE_READ", "ROLE_NOTIFICATION_INBOX"};
+    private static final VehicleTypeSummaryDto RAIL_MODEL = new VehicleTypeSummaryDto(VEHICLE_TYPE2, "DIC-30", "Plasser DIC-30",
+            VehicleMobility.RAIL_ONLY, VehicleCategory.CATENARY_TOWER_CAR, true, 6, null, true, Set.of("PANTOGRAPH"));
+    private static final VehicleTypeSummaryDto ROAD_RAIL_MODEL = new VehicleTypeSummaryDto(VEHICLE_TYPE1, "UNIMOG-RR", "Unimog bivial",
+            VehicleMobility.ROAD_RAIL, VehicleCategory.ROAD_RAIL_TRUCK, true, 3, RailGearType.RAIL_WHEEL_DRIVE, false, Set.of("TOWING"));
+
+    private static VehicleLocationDto location(VehicleLocationKind kind, Long trackId, String kp, VehicleSummaryDto carrier, String reference) {
+        return new VehicleLocationDto(UUID.randomUUID(), kind, kind == VehicleLocationKind.PARKED
+                ? new ParkingSiteSummaryDto(PARKING_SITE1, "APT-RSH", "Apartadero de Rishpon", ParkingSiteKind.SIDING) : null, 4L, trackId,
+                kp == null ? null : new BigDecimal(kp), null, null, null, null, carrier, carrier == null ? null : VehicleAttachment.TOWED,
+                reference == null ? VehicleLocationSource.MANUAL : VehicleLocationSource.SHIFT, reference, Instant.parse("2026-10-16T03:40:00Z"),
+                Instant.parse("2026-10-16T03:40:02Z"), reference == null ? "recursos.gestor" : "service-account-mto-maintenance-svc");
+    }
+
+    private static VehicleDto vehicle(UUID id, String code, VehicleTypeSummaryDto type, VehicleLocationDto position, boolean active) {
+        return new VehicleDto(id, code, "Vehiculo " + code, type, type.mobility() == VehicleMobility.RAIL_ONLY ? null : "1234-ABC",
+                type.mobility() == VehicleMobility.ROAD_ONLY ? null : "99 80 9427 001-1", null, 2019, VehicleOwner.OWN, null,
+                VehicleOperationalStatus.OPERATIONAL, null, true, null, null, null, position, active, 6L);
+    }
+
+    private void stubVehicles(List<VehicleDto> all) {
+        doAnswer(call -> page(all, call.getArgument(1), call.getArgument(2)))
+                .when(vehicleClient).search(any(VehicleFilter.class), anyInt(), anyInt(), anyList());
+        for (VehicleDto one : all) {
+            when(vehicleClient.findById(one.id())).thenReturn(one);
+        }
+    }
+
+    /** La lista dice donde esta cada vehiculo y se filtra en el servicio; quien solo lee solo abre las fichas. */
+    @Test
+    void theVehiclesSayWhereEachIsAndAReaderOnlyOpensThem() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubConfigurationNames();
+        stubVehicles(List.of(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, location(VehicleLocationKind.PARKED, 12L, "12.300", null, LOCATION_SHIFT.toString()), true),
+                vehicle(VEHICLE2, "UN-01", ROAD_RAIL_MODEL, null, false)));
+
+        UI.getCurrent().navigate(HomeView.class);
+        assertTrue(menuLabels().contains("Vehiculos"), menuLabels().toString());
+        UI.getCurrent().navigate(ResourcesRoutes.FLEET);
+        Grid<Object> grid = gridWithId("vehicles-grid");
+        assertEquals(List.of("DR-01", "Vehiculo DR-01", "DIC-30", "Solo via", "", "99 80 9427 001-1", "Operativo",
+                "Aparcado · APT-RSH · VIA 1 (EP 4) · kp 12.300", "Activo"), GridKt._getFormattedRow(grid, 0).subList(0, 9));
+        assertEquals(List.of("Sin ubicacion", "Retirado"), GridKt._getFormattedRow(grid, 1).subList(7, 9));
+        verify(vehicleClient, atLeastOnce()).search(eq(VehicleFilter.NONE), eq(0), anyInt(), eq(List.of("code,asc")));
+
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("vehicles-mobility")), VehicleMobility.RAIL_ONLY);
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("vehicles-available")), EnabledFilter.ENABLED);
+        GridKt._size(grid);
+        verify(vehicleClient, atLeastOnce()).search(eq(new VehicleFilter(null, null, VehicleMobility.RAIL_ONLY, null, null, true, null)), eq(0),
+                anyInt(), anyList());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("vehicle-create")).isEmpty());
+        assertEquals(List.of("vehicle-open-" + VEHICLE1), LocatorJ._find(GridKt._getCellComponent(grid, 0, VehiclesView.ACTIONS_COLUMN),
+                Button.class).stream().map(button -> button.getId().orElse("")).toList());
+    }
+
+    /**
+     * El editor exige lo que pide su modelo: matricula si va por carretera (ninguna en uno de solo via),
+     * numero ferroviario si su modelo va por via abierta, la empresa de uno que no es propio y el motivo
+     * de uno que no esta operativo.
+     */
+    @Test
+    void aVehicleAsksForWhatItsModelNeedsBeforeCalling() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        stubVehicles(List.of());
+        when(vehicleClient.create(any())).thenReturn(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.FLEET);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("vehicle-create")));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-code")), "DR-01");
+        LocatorJ._setValue(comboWithId("vehicle-type"), RAIL_MODEL);
+        assertTrue(LocatorJ._find(TextField.class, spec -> spec.withId("vehicle-plate")).isEmpty(), "uno de solo via no lleva matricula");
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("vehicle-owner")), VehicleOwner.SUBCONTRACTOR);
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("vehicle-status")), VehicleOperationalStatus.UNDER_REPAIR);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleEditorDialog.SAVE_ID)));
+        verify(vehicleClient, never()).create(any());
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-rail-number")).isInvalid(), "su modelo va por via abierta");
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-owner-company")).isInvalid());
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-status-reason")).isInvalid());
+
+        LocatorJ._setValue(comboWithId("vehicle-type"), ROAD_RAIL_MODEL);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleEditorDialog.SAVE_ID)));
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-plate")).isInvalid(), "una bivial va por carretera");
+        assertFalse(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-rail-number")).isInvalid(), "su modelo no va por via abierta");
+
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-plate")), "1234-ABC");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-owner-company")), "Alquileres del Norte");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-status-reason")), "Gato hidraulico");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleEditorDialog.SAVE_ID)));
+        verify(vehicleClient).create(new VehicleRequest("DR-01", null, VEHICLE_TYPE1, "1234-ABC", null, null, null, VehicleOwner.SUBCONTRACTOR,
+                "Alquileres del Norte", VehicleOperationalStatus.UNDER_REPAIR, "Gato hidraulico", null, null, null));
+    }
+
+    /**
+     * La ficha dice donde esta: uno que va remolcado dice con quien y donde esta su portador. Sus
+     * ubicaciones se filtran por dias (el fin viaja como el principio del dia siguiente) y la que dejo
+     * un turno enlaza con el turno.
+     */
+    @Test
+    void theVehicleDetailSaysWhereItIsAndATowedOneWhereItsCarrierIs() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        VehicleDto carrier = vehicle(VEHICLE2, "DR-02", RAIL_MODEL, location(VehicleLocationKind.ON_TRACK, 12L, "10.5", null, null), true);
+        VehicleDto towed = vehicle(VEHICLE1, "PL-01", RAIL_MODEL, location(VehicleLocationKind.ATTACHED, null, null, carrier.summary(), null), true);
+        stubVehicles(List.of(towed, carrier));
+        when(vehicleClient.locations(eq(VEHICLE1), any(), any(), anyInt(), anyInt())).thenReturn(page(List.of(
+                location(VehicleLocationKind.PARKED, 12L, "12.300", null, VehicleLocationDto.SHIFT_REFERENCE + LOCATION_SHIFT)), 0, 20));
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        LocatorJ._get(Div.class, spec -> spec.withId("vehicle-position-place").withText("Remolcado por DR-02"));
+        LocatorJ._get(Div.class, spec -> spec.withId("vehicle-carrier-position").withText("DR-02 esta: En via · VIA 1 (EP 4) · kp 10.5"));
+        Grid<Object> locations = gridWithId("locations-grid");
+        assertEquals(List.of("Aparcado · APT-RSH · VIA 1 (EP 4) · kp 12.300", "", "Turno", "service-account-mto-maintenance-svc"),
+                GridKt._getFormattedRow(locations, 0).subList(1, 5));
+        verify(vehicleClient, atLeastOnce()).locations(VEHICLE1, null, null, 0, 20);
+        LocatorJ._get(GridKt._getCellComponent(locations, 0, "actions"), Button.class, spec -> spec.withId("location-shift-" + ((VehicleLocationDto) GridKt._get(locations, 0)).id()));
+
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("locations-from")), LocalDate.of(2026, 10, 1));
+        LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("locations-to")), LocalDate.of(2026, 10, 16));
+        GridKt._size(locations);
+        verify(vehicleClient, atLeastOnce()).locations(VEHICLE1, Formats.startOfDay(LocalDate.of(2026, 10, 1)),
+                Formats.startOfDay(LocalDate.of(2026, 10, 17)), 0, 20);
+    }
+
+    /** Una ficha que no existe se dice y vuelve a la flota. */
+    @Test
+    void aVehicleThatDoesNotExistGoesBackToTheFleet() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubConfigurationNames();
+        stubVehicles(List.of());
+        UUID missing = UUID.fromString("9d0e1f20-0000-4000-8000-0000000000ff");
+        when(vehicleClient.findById(missing)).thenThrow(maintenanceError(404, "VEH-404", "Vehicle not found"));
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(missing));
+        LocatorJ._get(VehiclesView.class);
+        NotificationsKt.expectNotifications("No existe el vehiculo " + missing);
+    }
+
+    /**
+     * Registrar donde esta: solo los tipos que admite su movilidad y los campos de cada uno; en uno de
+     * solo via, los sitios con acceso por via. Lo evidente se comprueba antes de llamar y lo que el
+     * servicio rechaza (409 VEH-001) deja el dialogo abierto.
+     */
+    @Test
+    void aLocationOffersOnlyWhatItsMobilityAdmitsAndTheServiceSaysTheRest() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        VehicleDto dresina = vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true);
+        stubVehicles(List.of(dresina));
+        when(vehicleClient.locations(eq(VEHICLE1), any(), any(), anyInt(), anyInt())).thenReturn(page(List.of(), 0, 20));
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(siding(true)), 0, 200));
+        when(vehicleClient.recordLocation(eq(VEHICLE1), any()))
+                .thenThrow(maintenanceError(409, "VEH-001", "Vehicle DR-01 is a rail-only vehicle: it is parked on a track"))
+                .thenReturn(location(VehicleLocationKind.ON_TRACK, 12L, "10.5", null, null));
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("vehicle-locate")));
+        verify(parkingSiteClient).search(eq(new ParkingSiteFilter(null, null, null, null, true, null, true)), eq(0), eq(200),
+                eq(List.of("code,asc")));
+        @SuppressWarnings("unchecked")
+        Select<VehicleLocationKind> kind = LocatorJ._get(Select.class, spec -> spec.withId("location-kind"));
+        assertEquals(VehicleLocationKind.recordable(VehicleMobility.RAIL_ONLY), ComboBoxKt.getSuggestionItems(kind), "uno de solo via no va por carretera");
+        assertTrue(LocatorJ._find(BigDecimalField.class, spec -> spec.withId("location-latitude")).size() == 1);
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("location-description")), "En la playa de vias");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        verify(vehicleClient, never()).recordLocation(any(), any());
+        assertTrue(comboWithId("location-site").isInvalid(), "uno de solo via se aparca sobre una via");
+
+        LocatorJ._setValue(kind, VehicleLocationKind.ON_TRACK);
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("location-site")).isEmpty(), "en via no hay sitio");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        assertTrue(comboWithId("location-track").isInvalid(), "en via dice su via");
+
+        LocatorJ._setValue(comboWithId("location-track"), new RefItem(12L, "VIA 1 (EP 4)"));
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("location-kp")), new BigDecimal("10.5"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("La flota no admite ese cambio. Vehicle DR-01 is a rail-only vehicle: it is parked on a track"));
+        assertFalse(LocatorJ._find(VehicleLocationDialog.class).isEmpty(), "el dialogo sigue abierto");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        verify(vehicleClient, times(2)).recordLocation(VEHICLE1, new VehicleLocationRequest(VehicleLocationKind.ON_TRACK, null, null, 12L,
+                new BigDecimal("10.5"), null, null, null, "En la playa de vias", null, null, null));
+        assertTrue(LocatorJ._find(VehicleLocationDialog.class).isEmpty());
+    }
+
+    /** Retirar pide confirmacion, y lo que el servicio no deja (el vehiculo por defecto de un equipo) se dice; reactivar es un PATCH. */
+    @Test
+    void aVehicleIsRetiredWithConfirmationAndTheDefaultVehicleOfATeamIsSaid() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        stubVehicles(List.of(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true), vehicle(VEHICLE2, "DR-02", RAIL_MODEL, null, false)));
+        doThrow(maintenanceError(409, "VEH-001", "Vehicle DR-01 is the default vehicle of team A")).when(vehicleClient).deactivate(VEHICLE1);
+        when(vehicleClient.update(any(), any())).thenReturn(vehicle(VEHICLE2, "DR-02", RAIL_MODEL, null, true));
+
+        UI.getCurrent().navigate(ResourcesRoutes.FLEET);
+        Grid<Object> grid = gridWithId("vehicles-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, VehiclesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("vehicle-retire-" + VEHICLE1)));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(vehicleClient).deactivate(VEHICLE1);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("La flota no admite ese cambio. Vehicle DR-01 is the default vehicle of team A"));
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, VehiclesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("vehicle-activate-" + VEHICLE2)));
+        verify(vehicleClient).update(VEHICLE2, MergePatch.of(VehicleUpdateRequest.active(true), 6L));
+    }
+
+    // --- Recursos: tablero de la flota y vehiculo por defecto ------------------------------------------
+
+    /**
+     * El tablero va por via y kp, con el vehiculo para desempatar; la via y el kp de uno remolcado son
+     * los de su portador y la fila dice con quien va. Filtra por EP y via en el servicio, «Actualizar»
+     * vuelve a pedirlo, y registrar donde esta lee antes el vehiculo.
+     */
+    @Test
+    void theFleetBoardGoesByTrackAndKpAndATowedVehicleIsWhereItsCarrierIs() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        VehicleDto carrier = vehicle(VEHICLE2, "DR-02", RAIL_MODEL, location(VehicleLocationKind.ON_TRACK, 12L, "10.5", null, null), true);
+        VehicleLocationDto towedAt = location(VehicleLocationKind.ATTACHED, null, null, carrier.summary(), null);
+        stubVehicles(List.of(vehicle(VEHICLE1, "PL-01", RAIL_MODEL, towedAt, true), carrier));
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(), 0, 200));
+        when(vehicleClient.positions(any(), any(), any(), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(
+                new FleetPositionDto(carrier.summary(), VehicleOperationalStatus.OPERATIONAL, true, carrier.position(), null),
+                new FleetPositionDto(new VehicleSummaryDto(VEHICLE1, "PL-01", "Vehiculo PL-01", VehicleMobility.RAIL_ONLY, VehicleCategory.RAIL_WAGON),
+                        VehicleOperationalStatus.OPERATIONAL, true, towedAt, carrier.position())), 0, 50));
+
+        UI.getCurrent().navigate(HomeView.class);
+        assertTrue(menuLabels().contains("Tablero de la flota"), menuLabels().toString());
+        UI.getCurrent().navigate(ResourcesRoutes.BOARD);
+        Grid<Object> grid = gridWithId("board-grid");
+        assertEquals(List.of("VIA 1 (EP 4)", "10.5", "DR-02 · Vehiculo DR-02", "Solo via", "En via", "", "Operativo"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 7));
+        assertEquals(List.of("VIA 1 (EP 4)", "10.5", "PL-01 · Vehiculo PL-01", "Solo via", "Remolcado por DR-02"),
+                GridKt._getFormattedRow(grid, 1).subList(0, 5), "uno remolcado esta donde su portador");
+        verify(vehicleClient, atLeastOnce()).positions(null, null, null, 0, 50, VehicleClient.BY_TRACK_AND_KP);
+
+        LocatorJ._setValue(comboWithId("board-package"), new RefItem(4L, "EP 4"));
+        ComboBox<RefItem> track = comboWithId("board-track");
+        assertEquals(List.of("VIA 1 (EP 4)"), ComboBoxKt.getSuggestionItems(track).stream().map(RefItem::label).toList(), "las vias del EP");
+        LocatorJ._setValue(track, new RefItem(12L, "VIA 1 (EP 4)"));
+        GridKt._size(grid);
+        verify(vehicleClient, atLeastOnce()).positions(4L, 12L, null, 0, 50, VehicleClient.BY_TRACK_AND_KP);
+        clearInvocations(vehicleClient);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("board-refresh")));
+        GridKt._size(grid);
+        verify(vehicleClient, atLeastOnce()).positions(4L, 12L, null, 0, 50, VehicleClient.BY_TRACK_AND_KP);
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, FleetBoardView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("board-locate-" + VEHICLE1)));
+        verify(vehicleClient).findById(VEHICLE1);
+        LocatorJ._get(VehicleLocationDialog.class);
+    }
+
+    /** El vehiculo por defecto de un equipo se elige en su editor y viaja en el merge-patch; vaciarlo viaja a null. */
+    @Test
+    void aTeamCarriesItsDefaultVehicleAndItIsEmptiedByPatch() {
+        loginAs("recursos.gestor", RESOURCES_MANAGER);
+        stubOrganization(true);
+        OrganizationUnitDto withVehicle = new OrganizationUnitDto(TEAM_UNIT, "A", "Equipo A", OrganizationUnitKind.TEAM, WorkDiscipline.MAINTENANCE,
+                new UnitSummaryDto(SUPERVISION_UNIT, "SUP-N", "Supervision norte", OrganizationUnitKind.SUPERVISION), LEADER, Set.of(4L, 5L),
+                new VehicleSummaryDto(VEHICLE1, "DR-01", "Dresina 1", VehicleMobility.RAIL_ONLY, VehicleCategory.CATENARY_TOWER_CAR), linemen(2), 2,
+                true, null, null, true, 7L);
+        when(organizationClient.findById(TEAM_UNIT)).thenReturn(withVehicle);
+        when(organizationClient.members(TEAM_UNIT, false)).thenReturn(linemen(2));
+        when(organizationClient.update(any(), any())).thenReturn(withVehicle);
+        stubVehicles(List.of(vehicle(VEHICLE2, "DR-02", RAIL_MODEL, null, true)));
+
+        UI.getCurrent().navigate(UnitDetailView.class, UnitDetailView.parametersOf(TEAM_UNIT));
+        LocatorJ._get(Div.class, spec -> spec.withId("unit-team-summary").withText("Linemen: 2 de 2 a 6 · Completo: Si · Supervisor: - · "
+                + "Jefe de supervisores: - · Vehiculo: DR-01 · Dresina 1"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("unit-edit")));
+        ComboBox<VehicleSummaryDto> vehicle = comboWithId("unit-default-vehicle");
+        assertEquals("DR-01", vehicle.getValue().code());
+        assertEquals(List.of("DR-02"), ComboBoxKt.getSuggestionItems(vehicle).stream().map(VehicleSummaryDto::code).toList());
+        verify(vehicleClient, atLeastOnce()).search(eq(VehicleFilter.availableMatching("")), eq(0), anyInt(), anyList());
+        LocatorJ._setValue(vehicle, null);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
+        verify(organizationClient).update(TEAM_UNIT, new MergePatch<>(new OrganizationUnitUpdateRequest(null, null, null, null, null, null, null,
+                null), Set.of("defaultVehicleId"), 7L));
     }
 }

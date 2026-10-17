@@ -6,6 +6,7 @@ import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.grid.Grid;
@@ -59,10 +60,10 @@ public class TaskTypesView extends VerticalLayout {
         grid.addColumn(type -> Formats.quantity(type.standardMinutesPerUnit())).setHeader("Min/unidad").setKey("minutesPerUnit")
                 .setAutoWidth(true);
         grid.addColumn(type -> Formats.quantity(type.fixedMinutes())).setHeader("Min fijos").setKey("fixedMinutes").setAutoWidth(true);
-        grid.addColumn(type -> MaintenanceUi.yesNo(type.requiresFullPossession())).setHeader("Posesion total").setKey("fullPossession")
+        grid.addColumn(type -> Screens.yesNo(type.requiresFullPossession())).setHeader("Posesion total").setKey("fullPossession")
                 .setAutoWidth(true);
-        grid.addColumn(type -> MaintenanceUi.yesNo(type.diagnostic())).setHeader("Diagnostico").setKey("diagnostic").setAutoWidth(true);
-        grid.addColumn(type -> MaintenanceUi.yesNo(type.active())).setHeader("Activo").setKey("active").setAutoWidth(true);
+        grid.addColumn(type -> Screens.yesNo(type.diagnostic())).setHeader("Diagnostico").setKey("diagnostic").setAutoWidth(true);
+        grid.addColumn(type -> Screens.yesNo(type.active())).setHeader("Activo").setKey("active").setAutoWidth(true);
         grid.setSizeFull();
 
         add(new H2("Tipos de tarea"), toolbar, grid);

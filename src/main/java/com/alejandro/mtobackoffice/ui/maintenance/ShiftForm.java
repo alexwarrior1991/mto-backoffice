@@ -1,13 +1,17 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.PossessionType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftVehicleDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleSummaryDto;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
+import com.alejandro.mtobackoffice.ui.support.Changes;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 
 import java.math.BigDecimal;
@@ -24,7 +28,10 @@ import java.util.stream.Collectors;
 /**
  * Modelo mutable del editor de un turno, con las propiedades llamadas como los campos de la
  * peticion ({@code trackIds} guarda las vias elegidas, {@code blockingDisconnectorIds} los
- * seccionadores) para que los errores del servicio caigan en su campo.
+ * seccionadores, {@code linemanPersonIds} los linemen y {@code vehicleIds} los vehiculos) para que los
+ * errores del servicio caigan en su campo. La dotacion y los vehiculos son de mto-resources: sin
+ * {@code resources-read} no se eligen y no viajan ({@code readsResources}), para no mandar a vaciar lo
+ * que la pantalla no ha podido leer como opcion.
  */
 public class ShiftForm {
 
@@ -45,6 +52,10 @@ public class ShiftForm {
     private String personnel = "";
     private String measurementEquipment = "";
     private String observations = "";
+    private PersonSummaryDto teamLeaderPersonId;
+    private PersonSummaryDto supervisorPersonId;
+    private Set<PersonSummaryDto> linemanPersonIds = new LinkedHashSet<>();
+    private Set<VehicleSummaryDto> vehicleIds = new LinkedHashSet<>();
 
     public static ShiftForm of(ShiftDto dto, MaintenanceNames names) {
         ShiftForm form = new ShiftForm();
@@ -66,23 +77,37 @@ public class ShiftForm {
             form.setPersonnel(orEmpty(dto.personnel()));
             form.setMeasurementEquipment(orEmpty(dto.measurementEquipment()));
             form.setObservations(orEmpty(dto.observations()));
+            form.setTeamLeaderPersonId(dto.teamLeader());
+            form.setSupervisorPersonId(dto.supervisor());
+            form.setLinemanPersonIds(new LinkedHashSet<>(dto.linemen()));
+            form.setVehicleIds(dto.vehicles().stream().map(ShiftVehicleDto::summary).collect(Collectors.toCollection(LinkedHashSet::new)));
         }
         return form;
     }
 
-    public ShiftRequest toRequest() {
+    /**
+     * El alta. Lo que no se diga de la dotacion y los vehiculos no viaja, y con un equipo de mto-resources
+     * lo copia el servicio del equipo; sin {@code resources-read} no viaja nada de eso.
+     */
+    public ShiftRequest toRequest(boolean readsResources) {
         return new ShiftRequest(shiftDate, teamId == null ? null : teamId.id(), nullIfBlank(baseName), nullIfBlank(vehicle), possessionType,
                 Formats.toInstant(plannedStart), Formats.toInstant(plannedEnd),
                 blockingDisconnectorIds.isEmpty() ? null : disconnectorIds(), nullIfBlank(earthingPoints), nullIfBlank(parkingPlace),
                 executionPackageId == null ? null : executionPackageId.id(), trackIdSet(), startKp, endKp, nullIfBlank(personnel),
-                nullIfBlank(measurementEquipment), nullIfBlank(observations));
+                nullIfBlank(measurementEquipment), nullIfBlank(observations),
+                readsResources && !vehicleIds.isEmpty() ? vehicleIdSet() : null,
+                readsResources && teamLeaderPersonId != null ? teamLeaderPersonId.id() : null,
+                readsResources && supervisorPersonId != null ? supervisorPersonId.id() : null,
+                readsResources && !linemanPersonIds.isEmpty() ? linemanIdSet() : null);
     }
 
     /**
-     * Lo que cambio, lo vaciado y la version leida; vias y seccionadores, si cambiaron, van enteros.
-     * Quitar todos los seccionadores los vacia ({@code null} en el merge-patch), como en mto-frontend.
+     * Lo que cambio, lo vaciado y la version leida; vias, seccionadores, vehiculos y linemen, si
+     * cambiaron, van enteros. Quitar todos los seccionadores, los vehiculos o los linemen los vacia
+     * ({@code null} en el merge-patch), como en mto-frontend. Sin {@code resources-read} la dotacion y los
+     * vehiculos no viajan.
      */
-    public MergePatch<ShiftUpdateRequest> toPatch(ShiftDto original) {
+    public MergePatch<ShiftUpdateRequest> toPatch(ShiftDto original, boolean readsResources) {
         Changes changes = new Changes();
         Set<UUID> disconnectors = disconnectorIds();
         Set<UUID> originalDisconnectors = original.blockingDisconnectors().stream().map(AssetSummaryDto::id).collect(Collectors.toSet());
@@ -105,8 +130,26 @@ public class ShiftForm {
                 changes.number("endKp", endKp, original.endKp()),
                 changes.text("personnel", personnel, original.personnel()),
                 changes.text("measurementEquipment", measurementEquipment, original.measurementEquipment()),
-                changes.text("observations", observations, original.observations()));
+                changes.text("observations", observations, original.observations()),
+                readsResources ? changes.set("vehicleIds", vehicleIdSet(), original.vehicles().stream().map(ShiftVehicleDto::vehicleId)
+                        .collect(Collectors.toSet())) : null,
+                readsResources ? changes.value("teamLeaderPersonId", idOf(teamLeaderPersonId), idOf(original.teamLeader())) : null,
+                readsResources ? changes.value("supervisorPersonId", idOf(supervisorPersonId), idOf(original.supervisor())) : null,
+                readsResources ? changes.set("linemanPersonIds", linemanIdSet(), original.linemen().stream().map(PersonSummaryDto::id)
+                        .collect(Collectors.toSet())) : null);
         return changes.patch(values, original.version());
+    }
+
+    private Set<UUID> vehicleIdSet() {
+        return vehicleIds.stream().map(VehicleSummaryDto::id).collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private Set<UUID> linemanIdSet() {
+        return linemanPersonIds.stream().map(PersonSummaryDto::id).collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private static UUID idOf(PersonSummaryDto person) {
+        return person == null ? null : person.id();
     }
 
     private Set<UUID> disconnectorIds() {
@@ -259,6 +302,38 @@ public class ShiftForm {
 
     public void setObservations(String observations) {
         this.observations = observations;
+    }
+
+    public PersonSummaryDto getTeamLeaderPersonId() {
+        return teamLeaderPersonId;
+    }
+
+    public void setTeamLeaderPersonId(PersonSummaryDto teamLeaderPersonId) {
+        this.teamLeaderPersonId = teamLeaderPersonId;
+    }
+
+    public PersonSummaryDto getSupervisorPersonId() {
+        return supervisorPersonId;
+    }
+
+    public void setSupervisorPersonId(PersonSummaryDto supervisorPersonId) {
+        this.supervisorPersonId = supervisorPersonId;
+    }
+
+    public Set<PersonSummaryDto> getLinemanPersonIds() {
+        return linemanPersonIds;
+    }
+
+    public void setLinemanPersonIds(Set<PersonSummaryDto> linemanPersonIds) {
+        this.linemanPersonIds = copy(linemanPersonIds);
+    }
+
+    public Set<VehicleSummaryDto> getVehicleIds() {
+        return vehicleIds;
+    }
+
+    public void setVehicleIds(Set<VehicleSummaryDto> vehicleIds) {
+        this.vehicleIds = copy(vehicleIds);
     }
 
     private static <T> Set<T> copy(Collection<T> values) {

@@ -9,7 +9,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.DefectRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectSeverity;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectUpdateRequest;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ReasonRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ResolveDefectRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.StatusHistoryDto;

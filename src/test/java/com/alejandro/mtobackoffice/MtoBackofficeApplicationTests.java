@@ -5,10 +5,16 @@ import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
 import com.alejandro.mtobackoffice.client.maintenance.DefectClient;
 import com.alejandro.mtobackoffice.client.maintenance.InspectionClient;
 import com.alejandro.mtobackoffice.client.maintenance.MaintenanceCatalogClient;
+import com.alejandro.mtobackoffice.client.maintenance.OperationClient;
 import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import com.alejandro.mtobackoffice.client.maintenance.ReportClient;
 import com.alejandro.mtobackoffice.client.maintenance.ShiftClient;
 import com.alejandro.mtobackoffice.client.notification.NotificationClient;
+import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
+import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
+import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.VehicleClient;
+import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
 import com.alejandro.mtobackoffice.client.stock.MaterialClient;
 import com.alejandro.mtobackoffice.client.stock.MovementClient;
@@ -19,6 +25,8 @@ import com.alejandro.mtobackoffice.client.stock.WarehouseClient;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.configuration.security.KeycloakProperties;
 import com.alejandro.mtobackoffice.ui.maintenance.MaintenanceClients;
+import com.alejandro.mtobackoffice.ui.maintenance.TaskGeneration;
+import com.alejandro.mtobackoffice.ui.resources.ResourcesClients;
 import com.vaadin.flow.component.dependency.StyleSheet;
 import com.vaadin.flow.theme.lumo.Lumo;
 import org.junit.jupiter.api.Test;
@@ -79,12 +87,17 @@ class MtoBackofficeApplicationTests {
             assertNotNull(context.getBean(stockClient), stockClient.getSimpleName());
         }
         for (Class<?> maintenanceClient : List.of(OrderClient.class, AssetClient.class, MaintenanceCatalogClient.class, ShiftClient.class,
-                InspectionClient.class, DefectClient.class, ReportClient.class, MaintenanceClients.class)) {
+                InspectionClient.class, DefectClient.class, ReportClient.class, OperationClient.class, TaskGeneration.class, MaintenanceClients.class)) {
             assertNotNull(context.getBean(maintenanceClient), maintenanceClient.getSimpleName());
         }
         assertNotNull(context.getBean(NotificationClient.class));
-        assertEquals(List.of("mto-configuration-api", "mto-users-api", "mto-stock-api", "mto-maintenance-api", "mto-notification-api"),
-                context.getBean(KeycloakProperties.class).rolesClientIds(), "los cinco clientes cuyos roles son permisos");
+        for (Class<?> resourcesClient : List.of(PersonClient.class, OrganizationClient.class, VehicleTypeClient.class,
+                ParkingSiteClient.class, VehicleClient.class, ResourcesClients.class)) {
+            assertNotNull(context.getBean(resourcesClient), resourcesClient.getSimpleName());
+        }
+        assertEquals(List.of("mto-configuration-api", "mto-users-api", "mto-stock-api", "mto-maintenance-api", "mto-notification-api",
+                        "mto-resources-api"),
+                context.getBean(KeycloakProperties.class).rolesClientIds(), "los seis clientes cuyos roles son permisos");
         ClientRegistration keycloak = context.getBean(ClientRegistrationRepository.class).findByRegistrationId("keycloak");
         assertNotNull(keycloak);
         assertEquals("http://localhost:8082/realms/mto/protocol/openid-connect/token", keycloak.getProviderDetails().getTokenUri());

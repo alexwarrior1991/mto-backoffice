@@ -5,12 +5,13 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionKind;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionResult;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionUpdateRequest;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -156,10 +157,10 @@ public class InspectionEditorDialog extends Dialog {
                 result = clients.inspections().update(existing.id(), patch);
             }
             close();
-            MaintenanceUi.success("Guardada " + result.code());
+            Screens.success("Guardada " + result.code());
             saved.accept(result);
         } catch (ValidationApiException validation) {
-            MaintenanceUi.showValidation(binder, validation);
+            Screens.showValidation(binder, validation);
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }

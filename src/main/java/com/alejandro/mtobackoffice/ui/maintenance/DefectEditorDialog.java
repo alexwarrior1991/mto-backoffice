@@ -4,11 +4,12 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectSeverity;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DefectUpdateRequest;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -132,10 +133,10 @@ public class DefectEditorDialog extends Dialog {
                 result = clients.defects().update(existing.id(), patch);
             }
             close();
-            MaintenanceUi.success("Guardado " + result.code());
+            Screens.success("Guardado " + result.code());
             saved.accept(result);
         } catch (ValidationApiException validation) {
-            MaintenanceUi.showValidation(binder, validation);
+            Screens.showValidation(binder, validation);
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }

@@ -10,6 +10,7 @@ import com.alejandro.mtobackoffice.configuration.security.StockRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPanel;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -121,7 +122,7 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
             toList.accept(OrdersView.class);
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
-            MaintenanceUi.showLoadFailure(this, "la orden", failure, () -> UI.getCurrent().navigate(OrdersView.class),
+            Screens.showLoadFailure(this, "la orden", failure, () -> UI.getCurrent().navigate(OrdersView.class),
                     () -> load(id, target -> UI.getCurrent().navigate(target)));
         }
     }
@@ -136,7 +137,7 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
     }
 
     private void show(OrderDto loaded) {
-        MaintenanceUi.clearLoadFailure(this);
+        Screens.clearLoadFailure(this);
         paint(loaded);
         TabSheet tabs = new TabSheet();
         tabs.setWidthFull();
@@ -259,7 +260,7 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
     private boolean cancel(String reason) {
         try {
             OrderDto cancelled = clients.orders().cancel(order.id(), new ReasonRequest(reason));
-            MaintenanceUi.success(cancelled.code() + " cancelada");
+            Screens.success(cancelled.code() + " cancelada");
             changed(cancelled);
             return true;
         } catch (BackofficeApiException failure) {

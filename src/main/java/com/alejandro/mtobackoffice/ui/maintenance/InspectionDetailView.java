@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -107,7 +108,7 @@ public class InspectionDetailView extends VerticalLayout implements BeforeEnterO
             toList.accept(InspectionsView.class);
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
-            MaintenanceUi.showLoadFailure(this, "la inspeccion", failure, () -> UI.getCurrent().navigate(InspectionsView.class),
+            Screens.showLoadFailure(this, "la inspeccion", failure, () -> UI.getCurrent().navigate(InspectionsView.class),
                     () -> load(id, target -> UI.getCurrent().navigate(target)));
         }
     }
@@ -126,7 +127,7 @@ public class InspectionDetailView extends VerticalLayout implements BeforeEnterO
     }
 
     private void paint(InspectionDto loaded) {
-        MaintenanceUi.clearLoadFailure(this);
+        Screens.clearLoadFailure(this);
         inspection = loaded;
         title.setText(loaded.code() + " · " + MaintenanceFormats.date(loaded.inspectionDate()));
         InspectionResult result = loaded.result();

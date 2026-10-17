@@ -10,6 +10,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -65,7 +66,7 @@ final class InspectionOutcomeDialogs {
                         TransitionForm.nullIfBlank(description.getValue()), TransitionForm.nullIfBlank(technicalNotes.getValue()),
                         force.getValue() ? Boolean.TRUE : null));
                 dialog.close();
-                MaintenanceUi.success("Defecto " + defect.code() + " creado");
+                Screens.success("Defecto " + defect.code() + " creado");
                 created.accept(defect);
             } catch (BackofficeApiException failure) {
                 UiErrors.show(failure);
@@ -107,7 +108,7 @@ final class InspectionOutcomeDialogs {
                         TransitionForm.nullIfBlank(title.getValue()), TransitionForm.nullIfBlank(description.getValue()), priority.getValue(),
                         plannedDate.getValue(), team.getValue() == null ? null : team.getValue().id()));
                 dialog.close();
-                MaintenanceUi.success("Orden " + order.code() + " creada");
+                Screens.success("Orden " + order.code() + " creada");
                 created.accept(order);
             } catch (BackofficeApiException failure) {
                 UiErrors.show(failure);

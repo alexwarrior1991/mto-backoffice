@@ -2,16 +2,23 @@ package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CatenaryAssetType;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.PossessionType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftVehicleDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitKind;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleSummaryDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
+import com.alejandro.mtobackoffice.ui.resources.ResourcesPickers;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -21,6 +28,7 @@ import com.vaadin.flow.component.datepicker.DatePicker;
 import com.vaadin.flow.component.datetimepicker.DateTimePicker;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.formlayout.FormLayout;
+import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.textfield.BigDecimalField;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
@@ -28,7 +36,9 @@ import com.vaadin.flow.data.binder.Binder;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 /**
  * Alta y modificacion de un turno planificado o en curso: fecha, posesion y vias (al menos una) son
@@ -36,19 +46,31 @@ import java.util.function.Consumer;
  * lo que cambio, con vias y seccionadores enteros si cambiaron; lo que tenia valor y el
  * {@code PUT} parcial no sabe vaciar no se deja vaciar. Que una via desviada pida posesion total lo
  * dice el servicio al trabajar sus tareas.
+ *
+ * <p>La dotacion y los vehiculos son de mto-resources y se buscan alli con {@code resources-read}: el
+ * jefe, cualquiera menos un operario; el supervisor, de supervisor para arriba; los linemen, operarios o
+ * jefes de equipo; los vehiculos, activos y disponibles. En el alta, lo que se deje vacio lo copia el
+ * servicio del equipo si es de mto-resources. Las demas reglas (de 2 a 6 linemen para iniciar, las plazas,
+ * el remolque, una persona o un vehiculo en otro turno del dia) las dice el servicio con 409
+ * {@code SHF-001}, con el dialogo abierto. Sin {@code resources-read} la dotacion se lee y no viaja.</p>
  */
 public class ShiftEditorDialog extends Dialog {
 
     public static final String SAVE_ID = "shift-save";
+    /** El jefe de un turno es cualquiera menos un operario. */
+    static final List<PersonCategory> LEADER_CATEGORIES = PersonCategory.atLeast(PersonCategory.TEAM_LEADER.rank());
+    static final List<PersonCategory> SUPERVISOR_CATEGORIES = PersonCategory.atLeast(PersonCategory.SUPERVISOR.rank());
     static final int TEXT_LENGTH = 120;
 
     private final Binder<ShiftForm> binder = new Binder<>(ShiftForm.class);
     private final ShiftForm form;
+    private final boolean readsResources;
 
     public ShiftEditorDialog(ShiftDto existing, MaintenanceClients clients, MaintenanceNames names, MaintenanceCatalogs catalogs,
                              Consumer<ShiftDto> saved) {
         boolean creating = existing == null;
         this.form = ShiftForm.of(existing, names);
+        this.readsResources = names.readsResources();
         setHeaderTitle(creating ? "Nuevo turno" : "Modificar " + existing.code());
         setCloseOnOutsideClick(false);
         setWidth("min(95vw, 820px)");
@@ -124,20 +146,58 @@ public class ShiftEditorDialog extends Dialog {
         binder.forField(personnel).bind("personnel");
         binder.forField(measurementEquipment).bind("measurementEquipment");
         binder.forField(observations).bind("observations");
-        binder.readBean(form);
 
         FormLayout layout = new FormLayout(shiftDate, possession, tracks, team, executionPackage, startKp, endKp, plannedStart, plannedEnd,
-                disconnectors, baseName, vehicle, earthingPoints, parkingPlace, measurementEquipment, personnel, observations);
+                disconnectors);
         layout.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1), new FormLayout.ResponsiveStep("520px", 2));
         layout.setColspan(tracks, 2);
         layout.setColspan(disconnectors, 2);
+        if (readsResources) {
+            String fromTeam = creating ? "Vacio: el del equipo, si es de mto-resources" : null;
+            ComboBox<PersonSummaryDto> leader = ResourcesPickers.person("Jefe del turno", clients.people(), () -> LEADER_CATEGORIES);
+            leader.setId("shift-leader");
+            leader.setHelperText(fromTeam);
+            ComboBox<PersonSummaryDto> supervisor = ResourcesPickers.person("Supervisor", clients.people(), () -> SUPERVISOR_CATEGORIES);
+            supervisor.setId("shift-supervisor");
+            supervisor.setHelperText(fromTeam);
+            MultiSelectComboBox<PersonSummaryDto> linemen = ResourcesPickers.people("Linemen", clients.people(),
+                    () -> OrganizationUnitKind.LINEMAN_CATEGORIES);
+            linemen.setId("shift-linemen");
+            linemen.setHelperText(creating ? "Vacio: los del equipo, si es de mto-resources. Para iniciar, de 2 a 6" : "Para iniciar, de 2 a 6");
+            MultiSelectComboBox<VehicleSummaryDto> vehicles = ResourcesPickers.vehicles("Vehiculos", clients.vehicles());
+            vehicles.setId("shift-vehicles");
+            vehicles.setHelperText(creating ? "Vacio: el del equipo, si es de mto-resources" : null);
+            binder.forField(leader).bind("teamLeaderPersonId");
+            binder.forField(supervisor).bind("supervisorPersonId");
+            binder.forField(linemen).bind("linemanPersonIds");
+            binder.forField(vehicles).bind("vehicleIds");
+            layout.add(leader, supervisor, linemen, vehicles);
+            layout.setColspan(linemen, 2);
+            layout.setColspan(vehicles, 2);
+        } else if (existing != null) {
+            // Sin resources-read la dotacion no se puede elegir: se lee como esta y no viaja.
+            Div crew = new Div(crewText(existing));
+            crew.setId("shift-crew-readonly");
+            layout.add(crew);
+            layout.setColspan(crew, 2);
+        }
+        layout.add(baseName, vehicle, earthingPoints, parkingPlace, measurementEquipment, personnel, observations);
         layout.setColspan(observations, 2);
+        binder.readBean(form);
         add(layout);
 
         Button save = new Button("Guardar", click -> save(existing, clients, saved));
         save.setId(SAVE_ID);
         save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         getFooter().add(new Button("Cancelar", click -> close()), save);
+    }
+
+    /** La dotacion y los vehiculos de un turno, para quien no puede elegirlos. */
+    static String crewText(ShiftDto shift) {
+        return "Jefe: " + (shift.teamLeader() == null ? "-" : shift.teamLeader().label())
+                + " · Supervisor: " + (shift.supervisor() == null ? "-" : shift.supervisor().label())
+                + " · Linemen: " + (shift.linemen().isEmpty() ? "-" : shift.linemen().stream().map(PersonSummaryDto::label).collect(Collectors.joining(", ")))
+                + " · Vehiculos: " + (shift.vehicles().isEmpty() ? "-" : shift.vehicles().stream().map(ShiftVehicleDto::label).collect(Collectors.joining(", ")));
     }
 
     /** Un valor que habia no se deja vaciar; {@code wasEmpty} dice si se puede. */
@@ -148,9 +208,9 @@ public class ShiftEditorDialog extends Dialog {
         try {
             ShiftDto result;
             if (existing == null) {
-                result = clients.shifts().create(form.toRequest());
+                result = clients.shifts().create(form.toRequest(readsResources));
             } else {
-                MergePatch<ShiftUpdateRequest> patch = form.toPatch(existing);
+                MergePatch<ShiftUpdateRequest> patch = form.toPatch(existing, readsResources);
                 if (patch.changesNothing()) {
                     close();
                     return;
@@ -158,10 +218,10 @@ public class ShiftEditorDialog extends Dialog {
                 result = clients.shifts().update(existing.id(), patch);
             }
             close();
-            MaintenanceUi.success("Guardado " + result.code());
+            Screens.success("Guardado " + result.code());
             saved.accept(result);
         } catch (ValidationApiException validation) {
-            MaintenanceUi.showValidation(binder, validation);
+            Screens.showValidation(binder, validation);
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }

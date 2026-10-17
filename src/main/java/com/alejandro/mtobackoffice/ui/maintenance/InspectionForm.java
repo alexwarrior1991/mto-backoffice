@@ -6,8 +6,9 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionKind;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionResult;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionUpdateRequest;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
+import com.alejandro.mtobackoffice.ui.support.Changes;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;

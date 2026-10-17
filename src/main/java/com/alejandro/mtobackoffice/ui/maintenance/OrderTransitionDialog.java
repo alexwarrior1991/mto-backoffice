@@ -9,6 +9,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ConflictApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -140,10 +141,10 @@ public class OrderTransitionDialog extends Dialog {
                         TransitionForm.nullIfBlank(form.getClosingNotes()), form.isForce() ? Boolean.TRUE : null, comment));
             };
             close();
-            MaintenanceUi.success(result.code() + ": " + result.status().label().toLowerCase());
+            Screens.success(result.code() + ": " + result.status().label().toLowerCase());
             done.accept(result);
         } catch (ValidationApiException validation) {
-            MaintenanceUi.showValidation(binder, validation);
+            Screens.showValidation(binder, validation);
         } catch (ConflictApiException conflict) {
             Notification notification = UiErrors.show(conflict);
             if (kind == Kind.COMPLETE && "MAT-001".equals(conflict.getProblem().code())) {

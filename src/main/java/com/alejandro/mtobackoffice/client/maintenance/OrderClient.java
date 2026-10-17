@@ -17,7 +17,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MaintenancePriority;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageUpdateRequest;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderFilter;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderRequest;
@@ -30,14 +30,17 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskUpdateRequest;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.service.annotation.DeleteExchange;
 import org.springframework.web.service.annotation.GetExchange;
 import org.springframework.web.service.annotation.HttpExchange;
 import org.springframework.web.service.annotation.PatchExchange;
 import org.springframework.web.service.annotation.PostExchange;
+import tools.jackson.databind.JsonNode;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -136,6 +139,16 @@ public interface OrderClient {
      */
     @PostExchange("/{id}/tasks/generate")
     GenerateTasksResultDto generateTasks(@PathVariable("id") UUID id, @RequestBody GenerateTasksRequest request);
+
+    /**
+     * Generar de verdad, con {@code Prefer: respond-async, wait=N}: si termina en su espera, 200 con el
+     * mismo cuerpo que {@link #generateTasks}; si no, 202 con la operacion, que sigue en el servicio
+     * ({@link OperationClient}). Por eso el cuerpo se lee despues, segun el estado ({@code TaskGeneration});
+     * 429 {@code OPS-429} si el despliegue ya tiene todas las operaciones que admite.
+     */
+    @PostExchange("/{id}/tasks/generate")
+    ResponseEntity<JsonNode> generateTasksAsync(@PathVariable("id") UUID id, @RequestBody GenerateTasksRequest request,
+                                                @RequestHeader("Prefer") String prefer);
 
     @PatchExchange(value = "/{id}/tasks/{taskId}", contentType = MergePatch.MEDIA_TYPE)
     TaskDto updateTask(@PathVariable("id") UUID id, @PathVariable("taskId") UUID taskId, @RequestBody MergePatch<TaskUpdateRequest> patch);

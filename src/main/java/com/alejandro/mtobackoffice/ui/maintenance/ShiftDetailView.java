@@ -4,6 +4,8 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.AssetSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ReasonRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftStatus;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftVehicleDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
@@ -11,6 +13,7 @@ import com.alejandro.mtobackoffice.configuration.security.StockRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPanel;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -113,7 +116,7 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
             toList.accept(ShiftsView.class);
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
-            MaintenanceUi.showLoadFailure(this, "el turno", failure, () -> UI.getCurrent().navigate(ShiftsView.class),
+            Screens.showLoadFailure(this, "el turno", failure, () -> UI.getCurrent().navigate(ShiftsView.class),
                     () -> load(id, target -> UI.getCurrent().navigate(target)));
         }
     }
@@ -128,7 +131,7 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
     }
 
     private void show(ShiftDto loaded) {
-        MaintenanceUi.clearLoadFailure(this);
+        Screens.clearLoadFailure(this);
         paint(loaded);
         TabSheet tabs = new TabSheet();
         tabs.setWidthFull();
@@ -188,6 +191,19 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
         summary.add(line("Seccionadores abiertos: " + orDash(loaded.blockingDisconnectors().stream().map(AssetSummaryDto::label)
                         .collect(Collectors.joining(", "))),
                 "Puesta a tierra: " + orDash(loaded.earthingPoints()), "Estacionamiento: " + orDash(loaded.parkingPlace())));
+        if (loaded.teamLeader() != null || loaded.supervisor() != null || !loaded.linemen().isEmpty()) {
+            Div crew = line("Jefe: " + (loaded.teamLeader() == null ? "-" : loaded.teamLeader().label()),
+                    "Supervisor: " + (loaded.supervisor() == null ? "-" : loaded.supervisor().label()),
+                    "Linemen (" + loaded.linemen().size() + "): " + orDash(loaded.linemen().stream().map(PersonSummaryDto::label)
+                            .collect(Collectors.joining(", "))));
+            crew.setId("shift-crew");
+            summary.add(crew);
+        }
+        if (!loaded.vehicles().isEmpty()) {
+            Div vehicles = line("Vehiculos: " + loaded.vehicles().stream().map(this::vehicleText).collect(Collectors.joining(", ")));
+            vehicles.setId("shift-vehicles-summary");
+            summary.add(vehicles);
+        }
         if (loaded.personnel() != null && !loaded.personnel().isBlank()) {
             summary.add(line("Personal: " + loaded.personnel()));
         }
@@ -214,11 +230,11 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
         }
         if (status.canStart()) {
             buttons.add(button("shift-start", "Iniciar", VaadinIcon.PLAY,
-                    () -> new ShiftTransitionDialog(ShiftTransitionDialog.Kind.START, loaded, clients, this::changed).open()));
+                    () -> new ShiftTransitionDialog(ShiftTransitionDialog.Kind.START, loaded, clients, names, this::changed).open()));
         }
         if (status.canClose()) {
             buttons.add(button("shift-close", "Cerrar", VaadinIcon.FLAG_CHECKERED,
-                    () -> new ShiftTransitionDialog(ShiftTransitionDialog.Kind.CLOSE, loaded, clients, this::changed).open()));
+                    () -> new ShiftTransitionDialog(ShiftTransitionDialog.Kind.CLOSE, loaded, clients, names, this::changed).open()));
         }
         if (status.isOpen()) {
             Button cancel = button("shift-cancel", "Cancelar", VaadinIcon.CLOSE_CIRCLE, () -> new ReasonDialog("Cancelar " + loaded.code(),
@@ -231,7 +247,7 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
     private boolean cancel(String reason) {
         try {
             ShiftDto cancelled = clients.shifts().cancel(shift.id(), new ReasonRequest(reason));
-            MaintenanceUi.success(cancelled.code() + " cancelado");
+            Screens.success(cancelled.code() + " cancelado");
             changed(cancelled);
             return true;
         } catch (BackofficeApiException failure) {
@@ -244,6 +260,25 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
         Button button = new Button(text, icon.create(), click -> action.run());
         button.setId(id);
         return button;
+    }
+
+    /** Un vehiculo y, una vez cerrado el turno, donde quedo: el sitio de mto-resources, la via y su kp, o el texto. */
+    private String vehicleText(ShiftVehicleDto vehicle) {
+        ShiftVehicleDto.Parking parking = vehicle.parking();
+        if (parking == null) {
+            return vehicle.label();
+        }
+        List<String> where = new ArrayList<>();
+        if (parking.siteId() != null) {
+            where.add(names.parkingSiteName(parking.siteId()));
+        }
+        if (parking.trackId() != null) {
+            where.add(names.trackName(parking.trackId()) + (parking.kp() == null ? "" : " kp " + parking.kp().stripTrailingZeros().toPlainString()));
+        }
+        if (parking.description() != null && !parking.description().isBlank()) {
+            where.add(parking.description());
+        }
+        return vehicle.label() + " (aparcado: " + String.join(" · ", where) + ")";
     }
 
     private static Div line(String... parts) {

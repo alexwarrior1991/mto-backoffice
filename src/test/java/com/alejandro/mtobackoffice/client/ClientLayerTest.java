@@ -19,6 +19,10 @@ import com.alejandro.mtobackoffice.client.dto.jobs.JobFamily;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobStatus;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobType;
 import com.alejandro.mtobackoffice.client.dto.jobs.UploadedFile;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OperationDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OperationStatus;
+import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftVehicleDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.VehicleParkingRequest;
 import com.alejandro.mtobackoffice.client.dto.master.BusinessEntityDto;
 import com.alejandro.mtobackoffice.client.dto.master.LovRef;
 import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
@@ -26,6 +30,50 @@ import com.alejandro.mtobackoffice.client.dto.master.StationDto;
 import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
 import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.provider.SortDirection;
+import com.alejandro.mtobackoffice.client.dto.resources.DrivingLicence;
+import com.alejandro.mtobackoffice.client.dto.resources.FleetPositionDto;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationTreeNodeDto;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitDto;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitKind;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteDto;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteKind;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.ParkingSiteUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonEmployer;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.RailGearType;
+import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberDto;
+import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberLeaveRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.TeamMembersRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleAttachment;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleCapability;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleCategory;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationKind;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationSource;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleMobility;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleOperationalStatus;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleOwner;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.WorkDiscipline;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
@@ -33,6 +81,12 @@ import com.alejandro.mtobackoffice.client.error.ServiceUnavailableApiException;
 import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
 import com.alejandro.mtobackoffice.client.error.TooManyRequestsApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
+import com.alejandro.mtobackoffice.client.maintenance.OperationClient;
+import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
+import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
+import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.VehicleClient;
+import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import com.alejandro.mtobackoffice.configuration.client.GatewayClientConfiguration;
 import com.alejandro.mtobackoffice.configuration.client.UserTokenProvider;
 import com.alejandro.mtobackoffice.configuration.security.CurrentPrincipal;
@@ -159,7 +213,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.ResolveDefectRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.MaterialUsageUpdateRequest;
-import com.alejandro.mtobackoffice.client.dto.maintenance.MergePatch;
+import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.StockRequestType;
 import com.alejandro.mtobackoffice.client.dto.maintenance.StockSyncStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.CheckItemUpdateRequest;
@@ -213,6 +267,7 @@ import static org.hamcrest.Matchers.matchesRegex;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -224,6 +279,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import com.alejandro.mtobackoffice.client.dto.master.TrackSchematicDto;
+import com.alejandro.mtobackoffice.ui.maintenance.TaskGeneration;
 
 /**
  * Las interfaces {@code @HttpExchange} y el RestClient reales contra un servidor simulado: sin
@@ -260,6 +316,12 @@ class ClientLayerTest {
     private DefectClient defectClient;
     private ReportClient reportClient;
     private NotificationClient notificationClient;
+    private PersonClient personClient;
+    private OrganizationClient organizationClient;
+    private VehicleTypeClient vehicleTypeClient;
+    private ParkingSiteClient parkingSiteClient;
+    private VehicleClient vehicleClient;
+    private OperationClient operationClient;
 
     @BeforeEach
     void setUp() {
@@ -295,6 +357,12 @@ class ClientLayerTest {
         defectClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(DefectClient.class);
         reportClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ReportClient.class);
         notificationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(NotificationClient.class);
+        personClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(PersonClient.class);
+        organizationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(OrganizationClient.class);
+        vehicleTypeClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(VehicleTypeClient.class);
+        parkingSiteClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ParkingSiteClient.class);
+        vehicleClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(VehicleClient.class);
+        operationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(OperationClient.class);
     }
 
     @AfterEach
@@ -1973,8 +2041,16 @@ class ClientLayerTest {
     void maintenanceCataloguesAreReadAndTeamsAreWrittenWhole() {
         String team = "{\"id\":\"" + TEAM_ID + "\",\"code\":\"EQ-01\",\"name\":\"Brigada norte\",\"baseName\":\"Base Norte\","
                 + "\"vehicle\":\"DR-2\",\"active\":true,\"executionPackageIds\":[3,5],\"audit\":null}";
+        // Uno sincronizado desde mto-resources: su unidad alli, su dotacion y su vehiculo; sin base.
+        String synced = "{\"id\":\"2b3c4d5e-0000-4000-8000-000000000040\",\"code\":\"A\",\"name\":\"Equipo A\",\"baseName\":null,"
+                + "\"vehicle\":\"DR-01\",\"active\":true,\"executionPackageIds\":[4],\"synchronizedFromResources\":true,"
+                + "\"sourceEntityId\":\"5e6f7081-0000-4000-8000-000000000001\",\"leader\":{\"id\":\"3c4d5e6f-0000-4000-8000-000000000001\","
+                + "\"code\":\"PER-000003\",\"fullName\":\"Yossi Cohen\",\"username\":\"equipo.jefe\",\"category\":\"TEAM_LEADER\"},"
+                + "\"supervisor\":null,\"members\":[{\"id\":\"3c4d5e6f-0000-4000-8000-000000000011\",\"code\":\"PER-000011\","
+                + "\"fullName\":\"Lineman 1\",\"username\":null,\"category\":\"FOREMAN_TRAINEE\"}],"
+                + "\"defaultVehicleId\":\"9d0e1f20-0000-4000-8000-000000000001\",\"audit\":null}";
         server.expect(requestTo(MAINTENANCE + "/teams")).andExpect(method(HttpMethod.GET))
-                .andRespond(withSuccess("[" + team + "]", MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("[" + team + "," + synced + "]", MediaType.APPLICATION_JSON));
         server.expect(requestTo(MAINTENANCE + "/teams")).andExpect(method(HttpMethod.POST))
                 .andExpect(jsonPath("$.code").value("EQ-02"))
                 .andExpect(jsonPath("$.executionPackageIds[0]").value(3))
@@ -2004,6 +2080,13 @@ class ClientLayerTest {
 
         assertEquals(Set.of(3L, 5L), teams.getFirst().executionPackageIds());
         assertEquals("EQ-01 - Brigada norte", teams.getFirst().label());
+        assertFalse(teams.getFirst().fromResources(), "uno de antes, sin las claves nuevas, es local");
+        TeamDto fromResources = teams.get(1);
+        assertTrue(fromResources.fromResources());
+        assertEquals(UUID.fromString("5e6f7081-0000-4000-8000-000000000001"), fromResources.sourceEntityId());
+        assertEquals("PER-000003 · Yossi Cohen", fromResources.leader().label());
+        assertEquals(PersonCategory.UNKNOWN, fromResources.members().getFirst().category(), "una categoria nueva no rompe la lista");
+        assertEquals(UUID.fromString("9d0e1f20-0000-4000-8000-000000000001"), fromResources.defaultVehicleId());
         assertEquals("EQ-02", created.code());
         assertEquals(TaskUnit.SPAN, types.getFirst().unit());
         assertTrue(types.getFirst().requiresFullPossession());
@@ -2321,6 +2404,109 @@ class ClientLayerTest {
         assertEquals("12-2.27", profiles.getFirst().name());
         assertEquals(UUID.fromString(TASK_ID), assigned.id());
         assertEquals(MaintenanceTaskStatus.PENDING, unassigned.status());
+        server.verify();
+    }
+
+    /**
+     * La dotacion y los vehiculos de un turno, de mto-resources: se leen con su forma (la movilidad
+     * desconocida como UNKNOWN, el aparcamiento null hasta cerrarlo), el alta y el merge-patch mandan sus
+     * ids (los linemen quitados a null) y el cierre dice donde quedo cada vehiculo, sin lo que no se dijo.
+     */
+    @Test
+    void aShiftCarriesItsCrewAndVehiclesAndClosingSaysWhereEachIsLeft() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String shifts = MAINTENANCE + "/shifts";
+        String leader = "3c4d5e6f-0000-4000-8000-0000000000a1";
+        String lineman = "3c4d5e6f-0000-4000-8000-0000000000a2";
+        String vehicle = "9d0e1f20-0000-4000-8000-0000000000a1";
+        String site = "8c9d0e1f-0000-4000-8000-0000000000a1";
+        String withCrew = shiftJson("CLOSED").replace("\"audit\":null}", "\"audit\":null,\"version\":4,"
+                + "\"teamLeader\":{\"id\":\"" + leader + "\",\"code\":\"PER-000003\",\"fullName\":\"Yossi Cohen\",\"username\":\"equipo.jefe\","
+                + "\"category\":\"TEAM_LEADER\"},\"supervisor\":null,\"linemen\":[{\"id\":\"" + lineman + "\",\"code\":\"PER-000011\","
+                + "\"fullName\":\"Lineman Uno\",\"username\":null,\"category\":\"WORKER\"}],\"vehicles\":[{\"vehicleId\":\"" + vehicle + "\","
+                + "\"code\":\"DR-01\",\"name\":\"Dresina 1\",\"mobility\":\"RAIL_ONLY\",\"category\":\"CATENARY_TOWER_CAR\",\"available\":true,"
+                + "\"parking\":{\"siteId\":\"" + site + "\",\"trackId\":12,\"kp\":4.250,\"description\":null}},{\"vehicleId\":\"" + VEHICLE_ID
+                + "\",\"code\":\"HV-01\",\"name\":null,\"mobility\":\"HOVER\",\"category\":\"HOVERCRAFT\",\"available\":false,\"parking\":null}]}");
+        server.expect(requestTo(shifts)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"shiftDate\":\"2026-10-05\",\"possessionType\":\"PARTIAL\",\"trackIds\":[12],"
+                        + "\"vehicleIds\":[\"" + vehicle + "\"],\"teamLeaderPersonId\":\"" + leader + "\",\"linemanPersonIds\":[\"" + lineman + "\"]}", strict))
+                .andRespond(withSuccess(withCrew, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(shifts + "/" + SHIFT_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"vehicleIds\":[\"" + vehicle + "\"],\"linemanPersonIds\":null,\"version\":4}", strict))
+                .andRespond(withSuccess(withCrew, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(shifts + "/" + SHIFT_ID + "/close")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"parkings\":[{\"vehicleId\":\"" + vehicle + "\",\"parkingSiteId\":\"" + site + "\",\"trackId\":12,"
+                        + "\"kp\":4.250},{\"vehicleId\":\"" + VEHICLE_ID + "\",\"description\":\"Puerta 3\"}]}", strict))
+                .andRespond(withSuccess(withCrew, MediaType.APPLICATION_JSON));
+
+        UUID id = UUID.fromString(SHIFT_ID);
+        ShiftDto created = asUser(() -> shiftClient.create(new ShiftRequest(LocalDate.of(2026, 10, 5), null, null, null, PossessionType.PARTIAL,
+                null, null, null, null, null, null, Set.of(12L), null, null, null, null, null, Set.of(UUID.fromString(vehicle)), UUID.fromString(leader),
+                null, Set.of(UUID.fromString(lineman)))));
+        asUser(() -> shiftClient.update(id, new MergePatch<>(new ShiftUpdateRequest(null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, Set.of(UUID.fromString(vehicle)), null, null, null), Set.of("linemanPersonIds"), 4L)));
+        asUser(() -> shiftClient.close(id, new CloseShiftRequest(null, null, null, null, List.of(
+                new VehicleParkingRequest(UUID.fromString(vehicle), UUID.fromString(site), 12L, new BigDecimal("4.250"), null),
+                new VehicleParkingRequest(UUID.fromString(VEHICLE_ID), null, null, null, "Puerta 3")))));
+
+        assertEquals("PER-000003 · Yossi Cohen", created.teamLeader().label());
+        assertNull(created.supervisor());
+        assertEquals(List.of("PER-000011"), created.linemen().stream().map(PersonSummaryDto::code).toList());
+        ShiftVehicleDto dresina = created.vehicles().getFirst();
+        assertEquals(new ShiftVehicleDto.Parking(UUID.fromString(site), 12L, new BigDecimal("4.250"), null), dresina.parking());
+        assertEquals(new VehicleSummaryDto(UUID.fromString(vehicle), "DR-01", "Dresina 1", VehicleMobility.RAIL_ONLY, VehicleCategory.CATENARY_TOWER_CAR),
+                dresina.summary());
+        ShiftVehicleDto unknown = created.vehicles().get(1);
+        assertEquals(VehicleMobility.UNKNOWN, unknown.mobility(), "una movilidad nueva no rompe el turno");
+        assertEquals(VehicleCategory.UNKNOWN, unknown.category());
+        assertNull(unknown.parking());
+        assertEquals("HV-01", unknown.label());
+        server.verify();
+    }
+
+    /**
+     * Generar de verdad va con Prefer: respond-async. Si no termina en su espera, el 202 trae la operacion
+     * (su Location es la ruta interna del servicio y no se sigue), que se pregunta por su id y al terminar
+     * trae el mismo cuerpo que la llamada sincrona; si termina, el 200 de siempre. Un estado nuevo se lee
+     * como UNKNOWN y se da por terminado.
+     */
+    @Test
+    void aLongGenerationAnswersItsOperationWhichIsAskedByItsId() {
+        String generate = MAINTENANCE + "/orders/" + ORDER_ID + "/tasks/generate";
+        String operation = "2b3c4d5e-0000-4000-8000-0000000000c1";
+        String result = "{\"createdTasks\":412,\"skippedProfiles\":0,\"totalTasks\":412,\"estimatedMinutes\":6000.0,\"estimatedShifts\":12,"
+                + "\"skippedAssets\":0,\"dryRun\":false}";
+        server.expect(requestTo(generate)).andExpect(method(HttpMethod.POST)).andExpect(header("Prefer", TaskGeneration.PREFER))
+                .andRespond(withStatus(HttpStatus.ACCEPTED).contentType(MediaType.APPLICATION_JSON)
+                        .header(HttpHeaders.LOCATION, "/api/v1/maintenance/operations/" + operation).header("Preference-Applied", "respond-async")
+                        .body("{\"id\":\"" + operation + "\",\"kind\":\"GENERATE_TASKS\",\"scope\":\"EP-3\",\"status\":\"QUEUED\","
+                                + "\"requestedBy\":\"mantenimiento.tecnico\",\"createdAt\":\"2026-10-16T21:00:00Z\"}"));
+        server.expect(requestTo(MAINTENANCE + "/operations/" + operation)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"id\":\"" + operation + "\",\"kind\":\"GENERATE_TASKS\",\"status\":\"SUCCEEDED\",\"resultStatus\":200,"
+                        + "\"result\":" + result + "}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(generate)).andExpect(method(HttpMethod.POST)).andExpect(header("Prefer", TaskGeneration.PREFER))
+                .andRespond(withSuccess(result.replace("412", "14"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/operations/" + operation)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"id\":\"" + operation + "\",\"status\":\"PAUSED\",\"error\":{\"status\":500,\"errorCode\":\"OPS-410\","
+                        + "\"message\":\"Abandoned\"}}", MediaType.APPLICATION_JSON));
+
+        TaskGeneration generation = new TaskGeneration(orderClient, operationClient, new JsonMapper(), null);
+        UUID orderId = UUID.fromString(ORDER_ID);
+        TaskGeneration.Started slow = asUser(() -> generation.start(orderId, GenerateTasksRequest.ofSection(null, null, null, null)));
+        OperationDto<GenerateTasksResultDto> queued = assertInstanceOf(TaskGeneration.Following.class, slow).operation();
+        assertEquals(UUID.fromString(operation), queued.id());
+        assertEquals(OperationStatus.QUEUED, queued.status());
+        assertFalse(queued.status().isFinished());
+        OperationDto<GenerateTasksResultDto> done = asUser(() -> generation.status(UUID.fromString(operation)));
+        assertEquals(OperationStatus.SUCCEEDED, done.status());
+        assertEquals(412, done.result().createdTasks());
+        TaskGeneration.Started quick = asUser(() -> generation.start(orderId, GenerateTasksRequest.ofSection(null, null, null, null)));
+        assertEquals(14, assertInstanceOf(TaskGeneration.Done.class, quick).result().createdTasks());
+        OperationDto<GenerateTasksResultDto> unknown = asUser(() -> generation.status(UUID.fromString(operation)));
+        assertEquals(OperationStatus.UNKNOWN, unknown.status());
+        assertTrue(unknown.status().isFinished(), "un estado desconocido no se pregunta sin fin");
+        assertEquals("OPS-410", TaskGeneration.failureOf(unknown).getProblem().code());
+        assertEquals(500, TaskGeneration.failureOf(unknown).getStatus().value());
         server.verify();
     }
 
@@ -2929,6 +3115,447 @@ class ClientLayerTest {
         assertEquals("Unknown sort property 'payload'", invalid.getProblem().detail());
         assertFalse(invalid.getProblem().hasFieldErrors());
         assertEquals("corr-n2", invalid.getReference());
+        server.verify();
+    }
+
+    // --- Recursos (mto-resources) -----------------------------------------------------------------
+
+    private static final String RESOURCES = GATEWAY + "/api/resources";
+    private static final String PERSON_ID = "3c4d5e6f-0000-4000-8000-000000000001";
+
+    private static String personJson(String id, String code, String category, boolean active) {
+        return "{\"id\":\"" + id + "\",\"code\":\"" + code + "\",\"employeeNumber\":\"E-1042\",\"firstName\":\"Yossi\","
+                + "\"lastName\":\"Cohen\",\"fullName\":\"Yossi Cohen\",\"username\":\"equipo.jefe\",\"keycloakUserId\":null,"
+                + "\"category\":\"" + category + "\",\"employer\":\"SUBCONTRACTOR\",\"company\":\"Catenarias del Norte\","
+                + "\"phone\":\"+972 50 000 0000\",\"active\":" + active + ",\"version\":3,\"audit\":null}";
+    }
+
+    /**
+     * Personas: la busqueda con la categoria repetida (cualquiera de ellas, en el orden del enumerado),
+     * la unidad y el estado, con el id para desempatar; el alta sin lo vacio; la modificacion con lo
+     * cambiado, lo vaciado a {@code null} y la version; la reactivacion; la baja con un {@code DELETE};
+     * el historial. Una categoria nueva se lee como {@code UNKNOWN}.
+     */
+    @Test
+    void peopleAreSearchedByRepeatedCategoryCreatedPatchedDeactivatedAndReactivated() {
+        UUID unitId = UUID.fromString("4d5e6f70-0000-4000-8000-000000000002");
+        server.expect(requestTo(RESOURCES + "/people?search=cohen&category=WORKER&category=TEAM_LEADER&unitId=" + unitId
+                        + "&active=true&page=0&size=50&sort=lastName%2Casc&sort=firstName%2Casc&sort=id%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(personJson(PERSON_ID, "PER-000003", "TEAM_LEADER", true) + ","
+                        + personJson("3c4d5e6f-0000-4000-8000-000000000002", "PER-000004", "SAFETY_OFFICER", false), 0, 50, 2),
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/people")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"firstName\":\"Yossi\",\"lastName\":\"Cohen\",\"category\":\"WORKER\",\"employer\":\"OWN\"}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(personJson(PERSON_ID, "PER-000003", "WORKER", true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/people/" + PERSON_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"category\":\"SUPERVISOR\",\"phone\":null,\"version\":3}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(personJson(PERSON_ID, "PER-000003", "SUPERVISOR", true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/people/" + PERSON_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(RESOURCES + "/people/" + PERSON_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"active\":true,\"version\":4}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(personJson(PERSON_ID, "PER-000003", "SUPERVISOR", true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/people/" + PERSON_ID + "/revisions?page=0&size=20")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(maintenanceRevision(2, "UPDATED", "HTTP", personJson(PERSON_ID, "PER-000003", "SUPERVISOR", true)),
+                        0, 20, 1), MediaType.APPLICATION_JSON));
+
+        PageResponse<PersonDto> page = asUser(() -> personClient.search(new PersonFilter(" cohen ",
+                Set.of(PersonCategory.TEAM_LEADER, PersonCategory.WORKER), unitId, true), 0, 50, List.of("lastName,asc", "firstName,asc")));
+        PersonDto created = asUser(() -> personClient.create(new PersonRequest("Yossi", "Cohen", PersonCategory.WORKER, null, null,
+                PersonEmployer.OWN, null, null)));
+        asUser(() -> personClient.update(UUID.fromString(PERSON_ID), new MergePatch<>(
+                new PersonUpdateRequest(null, null, PersonCategory.SUPERVISOR, null, null, null, null, null, null), Set.of("phone"), 3L)));
+        asUser(() -> {
+            personClient.deactivate(UUID.fromString(PERSON_ID));
+            return null;
+        });
+        asUser(() -> personClient.update(UUID.fromString(PERSON_ID), MergePatch.of(PersonUpdateRequest.active(true), 4L)));
+        PageResponse<RevisionDto<PersonDto>> revisions = asUser(() -> personClient.revisions(UUID.fromString(PERSON_ID), 0, 20));
+
+        PersonDto leader = page.content().getFirst();
+        assertEquals("PER-000003 · Yossi Cohen", leader.label());
+        assertEquals(PersonCategory.TEAM_LEADER, leader.category());
+        assertEquals(PersonEmployer.SUBCONTRACTOR, leader.employer());
+        assertEquals("Catenarias del Norte", leader.company());
+        assertEquals(3L, leader.version());
+        assertEquals(PersonCategory.UNKNOWN, page.content().get(1).category(), "una categoria nueva se lee como desconocida");
+        assertFalse(page.content().get(1).isActive());
+        assertEquals(PersonCategory.WORKER, created.category());
+        assertEquals(PersonCategory.SUPERVISOR, revisions.content().getFirst().entity().category());
+        assertEquals(List.of(PersonCategory.TEAM_LEADER, PersonCategory.SUPERVISOR, PersonCategory.CHIEF_SUPERVISOR,
+                PersonCategory.CHIEF_MAINTENANCE, PersonCategory.CHIEF_CONSTRUCTION, PersonCategory.PROJECT_MANAGER), PersonCategory.atLeast(2));
+        server.verify();
+    }
+
+    /** El 409 de un usuario repetido de mto-resources llega con la misma forma que los de mantenimiento. */
+    @Test
+    void aRepeatedUsernameIsAConflictOfTheResourcesServiceReadByAlias() {
+        server.expect(requestTo(RESOURCES + "/people")).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON).header("X-Correlation-Id", "corr-r1")
+                        .body("{\"timestamp\":\"2026-10-16T06:07:00Z\",\"status\":409,\"error\":\"CONFLICT\","
+                                + "\"message\":\"Username equipo.jefe is already in use\",\"path\":\"/api/v1/resources/people\",\"method\":\"POST\","
+                                + "\"errorCode\":\"PER-409\",\"correlationId\":\"corr-r1\",\"validationErrors\":[]}"));
+
+        ConflictApiException conflict = assertThrows(ConflictApiException.class, () -> asUser(() -> personClient.create(
+                new PersonRequest("Otra", "Persona", PersonCategory.WORKER, null, "equipo.jefe", PersonEmployer.OWN, null, null))));
+
+        assertEquals("PER-409", conflict.getProblem().code());
+        assertEquals("Username equipo.jefe is already in use", conflict.getProblem().detail());
+        assertEquals("corr-r1", conflict.getReference());
+        server.verify();
+    }
+
+    private static final String UNIT_TEAM_ID = "5e6f7081-0000-4000-8000-000000000001";
+    private static final String SUPERVISION_ID = "5e6f7081-0000-4000-8000-000000000002";
+    private static final String LINEMAN_A = "3c4d5e6f-0000-4000-8000-00000000000a";
+    private static final String LINEMAN_B = "3c4d5e6f-0000-4000-8000-00000000000b";
+
+    private static String personSummary(String id, String code, String name, String category) {
+        return "{\"id\":\"" + id + "\",\"code\":\"" + code + "\",\"fullName\":\"" + name + "\",\"username\":null,\"category\":\"" + category + "\"}";
+    }
+
+    private static String teamJson(int linemen, boolean active) {
+        StringBuilder members = new StringBuilder();
+        for (int i = 0; i < linemen; i++) {
+            members.append(i == 0 ? "" : ",").append("{\"id\":\"6f708192-0000-4000-8000-00000000000").append(i)
+                    .append("\",\"person\":").append(personSummary("3c4d5e6f-0000-4000-8000-00000000001" + i, "PER-00001" + i,
+                            "Lineman " + i, "WORKER")).append(",\"joinedOn\":\"2026-10-01\",\"leftOn\":null}");
+        }
+        return "{\"id\":\"" + UNIT_TEAM_ID + "\",\"code\":\"A\",\"name\":\"Equipo A\",\"kind\":\"TEAM\",\"discipline\":\"MAINTENANCE\","
+                + "\"parent\":{\"id\":\"" + SUPERVISION_ID + "\",\"code\":\"SUP-N\",\"name\":\"Supervision norte\",\"kind\":\"SUPERVISION\"},"
+                + "\"head\":" + personSummary(PERSON_ID, "PER-000003", "Yossi Cohen", "TEAM_LEADER") + ",\"executionPackageIds\":[6,4,5],"
+                + "\"defaultVehicle\":{\"id\":\"7a8b9c0d-0000-4000-8000-000000000001\",\"code\":\"DR-01\",\"name\":\"Dresina 1\","
+                + "\"mobility\":\"RAIL_ONLY\",\"category\":\"CATENARY_TOWER_CAR\"},\"members\":[" + members + "],\"linemen\":" + linemen
+                + ",\"complete\":" + (linemen >= 2) + ",\"supervisor\":" + personSummary("3c4d5e6f-0000-4000-8000-000000000020", "PER-000020",
+                "Dana Levi", "SUPERVISOR") + ",\"chiefSupervisor\":null,\"active\":" + active + ",\"version\":7,\"audit\":null}";
+    }
+
+    /**
+     * El organigrama: el arbol con las inactivas, una unidad nivel desconocido leido como {@code UNKNOWN},
+     * un equipo con sus linemen, su supervisor y su vehiculo; el alta de un equipo completo sin lo vacio;
+     * la modificacion con los EP como conjunto y el jefe vaciado; las hijas por codigo con el id para
+     * desempatar; la baja; los linemen enteros, uno que entra y uno que sale, cada uno con su fecha; la
+     * reactivacion de un equipo con sus linemen.
+     */
+    @Test
+    void theOrganizationIsReadAsATreeAndATeamChangesItsLinemenWithoutLeavingTheRule() {
+        server.expect(requestTo(RESOURCES + "/units/tree?includeInactive=true")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[{\"id\":\"5e6f7081-0000-4000-8000-000000000009\",\"code\":\"PRJ\",\"name\":\"Proyecto\",\"kind\":\"PROJECT\","
+                        + "\"discipline\":null,\"head\":null,\"executionPackageIds\":[],\"linemen\":null,\"active\":true,\"children\":["
+                        + "{\"id\":\"" + SUPERVISION_ID + "\",\"code\":\"SUP-N\",\"name\":\"Supervision norte\",\"kind\":\"SUPERVISION\","
+                        + "\"discipline\":\"MAINTENANCE\",\"head\":null,\"executionPackageIds\":[4],\"linemen\":null,\"active\":true,\"children\":["
+                        + "{\"id\":\"" + UNIT_TEAM_ID + "\",\"code\":\"A\",\"name\":\"Equipo A\",\"kind\":\"TEAM\",\"discipline\":\"MAINTENANCE\","
+                        + "\"head\":" + personSummary(PERSON_ID, "PER-000003", "Yossi Cohen", "TEAM_LEADER") + ",\"executionPackageIds\":[4,5],"
+                        + "\"linemen\":4,\"active\":false,\"children\":[]}]},"
+                        + "{\"id\":\"5e6f7081-0000-4000-8000-000000000008\",\"code\":\"ZONA\",\"name\":\"Zona\",\"kind\":\"ZONE\",\"discipline\":null,"
+                        + "\"head\":null,\"executionPackageIds\":null,\"linemen\":null,\"active\":true,\"children\":null}]}]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units/" + UNIT_TEAM_ID)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(teamJson(2, true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"B\",\"name\":\"Equipo B\",\"kind\":\"TEAM\",\"discipline\":\"MAINTENANCE\","
+                        + "\"parentId\":\"" + SUPERVISION_ID + "\",\"headPersonId\":\"" + PERSON_ID + "\",\"executionPackageIds\":[9,11],"
+                        + "\"memberPersonIds\":[\"" + LINEMAN_A + "\",\"" + LINEMAN_B + "\"],\"joinedOn\":\"2026-10-16\"}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(teamJson(2, true)));
+        server.expect(requestTo(RESOURCES + "/units")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"SUP-S\",\"name\":\"Supervision sur\",\"kind\":\"SUPERVISION\",\"discipline\":\"MAINTENANCE\","
+                        + "\"parentId\":\"" + SUPERVISION_ID + "\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(teamJson(2, true)));
+        server.expect(requestTo(RESOURCES + "/units/" + SUPERVISION_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"executionPackageIds\":[4,6],\"headPersonId\":null,\"version\":2}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(teamJson(2, true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units?parentId=" + SUPERVISION_ID + "&page=0&size=200&sort=code%2Casc&sort=id%2Casc"))
+                .andExpect(method(HttpMethod.GET)).andRespond(withSuccess(stockPage(teamJson(4, true), 0, 200, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units/" + UNIT_TEAM_ID + "/members")).andExpect(method(HttpMethod.PUT))
+                .andExpect(content().json("{\"memberPersonIds\":[\"" + LINEMAN_A + "\",\"" + LINEMAN_B + "\"],\"effectiveOn\":\"2026-10-20\"}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(teamJson(2, true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units/" + UNIT_TEAM_ID + "/members")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"personId\":\"" + LINEMAN_A + "\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(teamJson(3, true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units/" + UNIT_TEAM_ID + "/members/" + LINEMAN_A + "/leave")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"leftOn\":\"2026-10-21\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(teamJson(2, true), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units/" + UNIT_TEAM_ID + "/members?includeFormer=true")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[{\"id\":\"6f708192-0000-4000-8000-0000000000aa\",\"person\":"
+                        + personSummary(LINEMAN_A, "PER-00000A", "Avi Mizrahi", "WORKER") + ",\"joinedOn\":\"2026-10-01\",\"leftOn\":\"2026-10-21\"}]",
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/units/" + UNIT_TEAM_ID)).andExpect(method(HttpMethod.DELETE)).andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(RESOURCES + "/units/" + UNIT_TEAM_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"active\":true,\"memberPersonIds\":[\"" + LINEMAN_A + "\",\"" + LINEMAN_B + "\"],\"version\":8}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(teamJson(2, true), MediaType.APPLICATION_JSON));
+
+        List<OrganizationTreeNodeDto> tree = asUser(() -> organizationClient.tree(true));
+        OrganizationUnitDto team = asUser(() -> organizationClient.findById(UUID.fromString(UNIT_TEAM_ID)));
+        UUID supervision = UUID.fromString(SUPERVISION_ID);
+        List<UUID> linemen = List.of(UUID.fromString(LINEMAN_A), UUID.fromString(LINEMAN_B));
+        asUser(() -> organizationClient.create(new OrganizationUnitRequest("B", "Equipo B", OrganizationUnitKind.TEAM, WorkDiscipline.MAINTENANCE,
+                supervision, UUID.fromString(PERSON_ID), new java.util.TreeSet<>(Set.of(9L, 11L)), null, linemen, java.time.LocalDate.of(2026, 10, 16))));
+        asUser(() -> organizationClient.create(new OrganizationUnitRequest("SUP-S", "Supervision sur", OrganizationUnitKind.SUPERVISION,
+                WorkDiscipline.MAINTENANCE, supervision, null, Set.of(), null, List.of(), null)));
+        asUser(() -> organizationClient.update(supervision, new MergePatch<>(new OrganizationUnitUpdateRequest(null, null, null,
+                new java.util.TreeSet<>(Set.of(6L, 4L)), null, null, null, null), Set.of("headPersonId"), 2L)));
+        PageResponse<OrganizationUnitDto> children = asUser(() -> organizationClient.children(supervision, 0, 200));
+        asUser(() -> organizationClient.replaceMembers(team.id(), new TeamMembersRequest(linemen, java.time.LocalDate.of(2026, 10, 20))));
+        asUser(() -> organizationClient.addMember(team.id(), new TeamMemberRequest(linemen.getFirst(), null)));
+        asUser(() -> organizationClient.leave(team.id(), linemen.getFirst(), new TeamMemberLeaveRequest(java.time.LocalDate.of(2026, 10, 21))));
+        List<TeamMemberDto> former = asUser(() -> organizationClient.members(team.id(), true));
+        asUser(() -> {
+            organizationClient.deactivate(team.id());
+            return null;
+        });
+        asUser(() -> organizationClient.update(team.id(), MergePatch.of(OrganizationUnitUpdateRequest.reactivateTeam(linemen, null), 8L)));
+
+        OrganizationTreeNodeDto project = tree.getFirst();
+        assertEquals(OrganizationUnitKind.PROJECT, project.kind());
+        assertEquals(List.of("SUP-N", "ZONA"), project.children().stream().map(OrganizationTreeNodeDto::code).toList());
+        assertEquals(OrganizationUnitKind.UNKNOWN, project.children().get(1).kind(), "un nivel nuevo se lee como desconocido");
+        assertTrue(project.children().get(1).children().isEmpty());
+        OrganizationTreeNodeDto teamNode = project.children().getFirst().children().getFirst();
+        assertEquals(4, teamNode.linemen());
+        assertFalse(teamNode.isActive());
+        assertEquals(Set.of(4L, 5L), teamNode.executionPackageIds());
+        assertTrue(team.isTeam());
+        assertEquals("A · Equipo A", team.label());
+        assertEquals("SUP-N", team.parent().code());
+        assertEquals("PER-000003 · Yossi Cohen", team.head().label());
+        assertEquals("Dana Levi", team.supervisor().fullName());
+        assertEquals("DR-01", team.defaultVehicle().code());
+        assertEquals(2, team.currentMembers().size());
+        assertEquals(7L, team.version());
+        assertEquals(4, children.content().getFirst().linemen());
+        assertFalse(former.getFirst().isCurrent());
+        assertEquals(java.time.LocalDate.of(2026, 10, 21), former.getFirst().leftOn());
+        server.verify();
+    }
+
+    /** Las reglas copiadas del servicio para no ofrecer lo que va a fallar: de quien cuelga cada nivel y quien lo dirige. */
+    @Test
+    void eachLevelHangsFromAHigherOneAndIsLedByItsCategories() {
+        assertTrue(OrganizationUnitKind.TEAM.canHangFrom(OrganizationUnitKind.SUPERVISION));
+        assertTrue(OrganizationUnitKind.TEAM.canHangFrom(OrganizationUnitKind.DEPARTMENT), "se admite saltar niveles");
+        assertFalse(OrganizationUnitKind.TEAM.canHangFrom(OrganizationUnitKind.TEAM));
+        assertFalse(OrganizationUnitKind.SUPERVISION.canHangFrom(OrganizationUnitKind.SUPERVISION));
+        assertFalse(OrganizationUnitKind.PROJECT.canHangFrom(OrganizationUnitKind.PROJECT), "un proyecto no cuelga de nada");
+        assertFalse(OrganizationUnitKind.TEAM.canHangFrom(OrganizationUnitKind.UNKNOWN));
+        assertEquals(List.of(PersonCategory.CHIEF_MAINTENANCE, PersonCategory.PROJECT_MANAGER),
+                OrganizationUnitKind.DEPARTMENT.headCategories(WorkDiscipline.MAINTENANCE));
+        assertEquals(List.of(PersonCategory.CHIEF_CONSTRUCTION, PersonCategory.PROJECT_MANAGER),
+                OrganizationUnitKind.DEPARTMENT.headCategories(WorkDiscipline.CONSTRUCTION));
+        assertEquals(PersonCategory.atLeast(2), OrganizationUnitKind.TEAM.headCategories(WorkDiscipline.MAINTENANCE));
+        assertEquals(List.of(PersonCategory.PROJECT_MANAGER), OrganizationUnitKind.PROJECT.headCategories(null));
+        assertEquals(List.of(), OrganizationUnitKind.UNKNOWN.headCategories(null));
+        assertEquals(List.of(PersonCategory.WORKER, PersonCategory.TEAM_LEADER), OrganizationUnitKind.LINEMAN_CATEGORIES);
+    }
+
+    private static final String VEHICLE_TYPE_ID = "7b8c9d0e-0000-4000-8000-000000000001";
+    private static final String PARKING_SITE_ID = "8c9d0e1f-0000-4000-8000-000000000001";
+
+    private static String vehicleTypeJson(String category, String capabilities) {
+        return "{\"id\":\"" + VEHICLE_TYPE_ID + "\",\"code\":\"UNIMOG-RR\",\"name\":\"Unimog bivial\",\"manufacturer\":\"Mercedes-Benz\","
+                + "\"model\":\"U423\",\"mobility\":\"ROAD_RAIL\",\"category\":\"" + category + "\",\"selfPropelled\":true,\"portable\":false,"
+                + "\"lengthM\":6.20,\"seats\":3,\"trackGaugeMm\":1435,\"railGearType\":\"RAIL_WHEEL_DRIVE\",\"onTrackingMinutes\":10,"
+                + "\"needsPreparedAccess\":false,\"maxSpeedRoadKmh\":90,\"requiredLicence\":\"C\",\"capabilities\":" + capabilities + ","
+                + "\"craneCapacityT\":5.00,\"towingCapacityT\":40.00,\"active\":true,\"version\":4,\"audit\":null}";
+    }
+
+    /**
+     * Los modelos: la busqueda con sus filtros y el id para desempatar; el alta sin lo vacio (las
+     * capacidades en orden); la modificacion con lo cambiado, lo vaciado y la version; retirar. Una
+     * categoria nueva se lee como UNKNOWN y una capacidad nueva vuelve tal cual, como texto.
+     */
+    @Test
+    void vehicleModelsAreSearchedCreatedPatchedAndRetiredAndAnUnknownCapabilitySurvives() {
+        server.expect(requestTo(RESOURCES + "/vehicle-types?search=unimog&mobility=ROAD_RAIL&category=ROAD_RAIL_TRUCK&capability=CRANE&active=true"
+                        + "&page=0&size=50&sort=code%2Casc&sort=id%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(vehicleTypeJson("ROAD_RAIL_TRUCK", "[\"TOWING\",\"CRANE\",\"LASER_SCANNER\"]") + ","
+                        + vehicleTypeJson("HOVERCRAFT", "[]"), 0, 50, 2), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/vehicle-types")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"VAN-1\",\"name\":\"Furgoneta\",\"mobility\":\"ROAD_ONLY\",\"category\":\"VAN\","
+                        + "\"selfPropelled\":true,\"portable\":false,\"seats\":3,\"capabilities\":[\"CREW_CABIN\",\"EARTHING\"]}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(vehicleTypeJson("ROAD_RAIL_TRUCK", "[]")));
+        server.expect(requestTo(RESOURCES + "/vehicle-types/" + VEHICLE_TYPE_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"capabilities\":[\"LASER_SCANNER\",\"TOWING\"],\"craneCapacityT\":null,\"version\":4}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(vehicleTypeJson("ROAD_RAIL_TRUCK", "[]"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/vehicle-types/" + VEHICLE_TYPE_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        PageResponse<VehicleTypeDto> page = asUser(() -> vehicleTypeClient.search(new VehicleTypeFilter(" unimog ", VehicleMobility.ROAD_RAIL,
+                VehicleCategory.ROAD_RAIL_TRUCK, "CRANE", true), 0, 50, List.of("code,asc")));
+        asUser(() -> vehicleTypeClient.create(new VehicleTypeRequest("VAN-1", "Furgoneta", null, null, VehicleMobility.ROAD_ONLY,
+                VehicleCategory.VAN, true, false, null, null, null, null, null, null, null, 3, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, new java.util.TreeSet<>(Set.of("EARTHING", "CREW_CABIN")), null, null, null, null, null,
+                null, null)));
+        VehicleTypeDto unimog = page.content().getFirst();
+        asUser(() -> vehicleTypeClient.update(unimog.id(), new MergePatch<>(new VehicleTypeUpdateRequest(null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, new java.util.TreeSet<>(Set.of("TOWING", "LASER_SCANNER")), null, null, null, null, null, null, null, null),
+                Set.of("craneCapacityT"), 4L)));
+        asUser(() -> {
+            vehicleTypeClient.deactivate(unimog.id());
+            return null;
+        });
+
+        assertEquals("UNIMOG-RR · Unimog bivial", unimog.label());
+        assertEquals(VehicleMobility.ROAD_RAIL, unimog.mobility());
+        assertEquals(RailGearType.RAIL_WHEEL_DRIVE, unimog.railGearType());
+        assertEquals(DrivingLicence.C, unimog.requiredLicence());
+        assertEquals(new java.math.BigDecimal("5.00"), unimog.craneCapacityT());
+        assertEquals(Set.of("CRANE", "LASER_SCANNER", "TOWING"), unimog.capabilities(), "una capacidad nueva se queda como texto");
+        assertEquals("LASER_SCANNER", VehicleCapability.labelOf("LASER_SCANNER"));
+        assertEquals("Grua", VehicleCapability.labelOf("CRANE"));
+        assertEquals(VehicleCategory.UNKNOWN, page.content().get(1).category(), "una categoria nueva se lee como desconocida");
+        assertTrue(VehicleMobility.ROAD_RAIL.runsOnTrack() && VehicleMobility.ROAD_RAIL.runsOnRoad());
+        assertFalse(VehicleMobility.RAIL_ONLY.runsOnRoad());
+        assertFalse(VehicleMobility.ROAD_ONLY.runsOnTrack());
+        assertEquals(List.of(VehicleCategory.VAN, VehicleCategory.PICKUP, VehicleCategory.CREW_BUS, VehicleCategory.CRANE_TRUCK,
+                VehicleCategory.TRUCK, VehicleCategory.LOW_LOADER, VehicleCategory.CAR), VehicleCategory.of(VehicleMobility.ROAD_ONLY));
+        server.verify();
+    }
+
+    /** Los sitios de aparcamiento: la busqueda con sus filtros, el alta sin lo vacio, la modificacion y retirar. */
+    @Test
+    void parkingSitesAreSearchedCreatedPatchedAndRetired() {
+        String site = "{\"id\":\"" + PARKING_SITE_ID + "\",\"code\":\"APT-RSH\",\"name\":\"Apartadero de Rishpon\",\"kind\":\"SIDING\","
+                + "\"executionPackageId\":4,\"stationId\":null,\"trackId\":12,\"kp\":12.300,\"railAccess\":true,\"roadAccess\":false,"
+                + "\"address\":null,\"latitude\":32.200000,\"longitude\":34.820000,\"notes\":null,\"active\":true,\"version\":2,\"audit\":null}";
+        server.expect(requestTo(RESOURCES + "/parking-sites?kind=SIDING&executionPackageId=4&active=true&page=0&size=50&sort=code%2Casc&sort=id%2Casc"))
+                .andExpect(method(HttpMethod.GET)).andRespond(withSuccess(stockPage(site, 0, 50, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/parking-sites")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"APT-RSH\",\"name\":\"Apartadero de Rishpon\",\"kind\":\"SIDING\",\"trackId\":12,"
+                        + "\"kp\":12.300,\"railAccess\":true,\"roadAccess\":false}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(site));
+        server.expect(requestTo(RESOURCES + "/parking-sites/" + PARKING_SITE_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"roadAccess\":true,\"latitude\":null,\"longitude\":null,\"version\":2}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(site, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/parking-sites/" + PARKING_SITE_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        PageResponse<ParkingSiteDto> page = asUser(() -> parkingSiteClient.search(new ParkingSiteFilter(" ", ParkingSiteKind.SIDING, 4L, null, null,
+                null, true), 0, 50, List.of("code,asc")));
+        asUser(() -> parkingSiteClient.create(new ParkingSiteRequest("APT-RSH", "Apartadero de Rishpon", ParkingSiteKind.SIDING, null, null, 12L,
+                new java.math.BigDecimal("12.300"), true, false, null, null, null, null)));
+        asUser(() -> parkingSiteClient.update(UUID.fromString(PARKING_SITE_ID), new MergePatch<>(new ParkingSiteUpdateRequest(null, null, null,
+                null, null, null, null, true, null, null, null, null, null), Set.of("latitude", "longitude"), 2L)));
+        asUser(() -> {
+            parkingSiteClient.deactivate(UUID.fromString(PARKING_SITE_ID));
+            return null;
+        });
+
+        ParkingSiteDto rishpon = page.content().getFirst();
+        assertEquals("APT-RSH · Apartadero de Rishpon", rishpon.label());
+        assertEquals(ParkingSiteKind.SIDING, rishpon.kind());
+        assertEquals(12L, rishpon.trackId());
+        assertEquals(new java.math.BigDecimal("12.300"), rishpon.kp());
+        server.verify();
+    }
+
+    private static final String VEHICLE_ID = "9d0e1f20-0000-4000-8000-000000000001";
+    private static final String CARRIER_ID = "9d0e1f20-0000-4000-8000-000000000002";
+    private static final String LOCATION_SHIFT_ID = "a0b1c2d3-0000-4000-8000-000000000001";
+
+    private static String locationJson(String kind, String extra) {
+        return "{\"id\":\"b1c2d3e4-0000-4000-8000-000000000001\",\"kind\":\"" + kind + "\",\"parkingSite\":{\"id\":\"" + PARKING_SITE_ID
+                + "\",\"code\":\"APT-RSH\",\"name\":\"Apartadero\",\"kind\":\"SIDING\"},\"executionPackageId\":4,\"trackId\":12,\"kp\":12.300,"
+                + "\"latitude\":null,\"longitude\":null,\"accessPoint\":null,\"description\":null,\"carrier\":null,\"attachment\":null,"
+                + "\"source\":\"SHIFT\",\"sourceReference\":\"mto-maintenance:shift:" + LOCATION_SHIFT_ID + "\",\"observedAt\":\"2026-10-16T03:40:00Z\","
+                + "\"recordedAt\":\"2026-10-16T03:40:02Z\",\"recordedBy\":\"service-account-mto-maintenance-svc\"" + extra + "}";
+    }
+
+    private static String vehicleJson(String position) {
+        return "{\"id\":\"" + VEHICLE_ID + "\",\"code\":\"DR-01\",\"name\":\"Dresina 1\",\"type\":{\"id\":\"" + VEHICLE_TYPE_ID + "\","
+                + "\"code\":\"DIC-30\",\"name\":\"Plasser DIC-30\",\"mobility\":\"RAIL_ONLY\",\"category\":\"CATENARY_TOWER_CAR\","
+                + "\"selfPropelled\":true,\"seats\":6,\"railGearType\":null,\"transportModeAuthorised\":true,\"capabilities\":[\"PANTOGRAPH\"]},"
+                + "\"registrationPlate\":null,\"railVehicleNumber\":\"99 80 9427 001-1\",\"serialNumber\":null,\"manufactureYear\":2019,"
+                + "\"owner\":\"OWN\",\"ownerCompany\":null,\"operationalStatus\":\"LIMITED\",\"statusReason\":\"Plataforma en revision\","
+                + "\"available\":true,\"odometerKm\":null,\"engineHours\":1234.5,\"notes\":null,\"position\":" + position + ",\"active\":true,"
+                + "\"version\":6,\"audit\":null}";
+    }
+
+    /**
+     * Los vehiculos: la busqueda con sus filtros, el alta sin lo vacio, la modificacion, retirar, el
+     * historial, registrar donde esta (sin lo vacio y con la hora en ISO), sus ubicaciones entre dos
+     * instantes y el tablero por via y kp. Un turno firma su ubicacion con su id; un tipo de ubicacion
+     * nuevo se lee como desconocido.
+     */
+    @Test
+    void vehiclesAreSearchedWrittenLocatedAndShownOnTheBoard() {
+        server.expect(requestTo(RESOURCES + "/vehicles?search=dr&mobility=RAIL_ONLY&status=LIMITED&available=true&active=true"
+                        + "&page=0&size=50&sort=code%2Casc&sort=id%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(vehicleJson(locationJson("PARKED", "")), 0, 50, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/vehicles")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"DR-02\",\"typeId\":\"" + VEHICLE_TYPE_ID + "\",\"railVehicleNumber\":\"99 80 9427 002-9\","
+                        + "\"owner\":\"OWN\",\"operationalStatus\":\"OPERATIONAL\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(vehicleJson("null")));
+        server.expect(requestTo(RESOURCES + "/vehicles/" + VEHICLE_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"operationalStatus\":\"OPERATIONAL\",\"statusReason\":null,\"version\":6}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(vehicleJson("null"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/vehicles/" + VEHICLE_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(RESOURCES + "/vehicles/" + VEHICLE_ID + "/locations")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"kind\":\"ATTACHED\",\"carrierVehicleId\":\"" + CARRIER_ID + "\",\"attachment\":\"TOWED\","
+                        + "\"observedAt\":\"2026-10-16T03:40:00Z\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(locationJson("ATTACHED",
+                        ",\"extra\":1").replace("\"carrier\":null", "\"carrier\":{\"id\":\"" + CARRIER_ID + "\",\"code\":\"DR-02\",\"name\":null,"
+                        + "\"mobility\":\"RAIL_ONLY\",\"category\":\"TRACK_MAINTENANCE_CAR\"}").replace("\"attachment\":null", "\"attachment\":\"TOWED\"")));
+        server.expect(requestTo(RESOURCES + "/vehicles/" + VEHICLE_ID + "/locations?from=2026-10-01T00%3A00%3A00Z&to=2026-10-17T00%3A00%3A00Z"
+                        + "&page=0&size=20"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(locationJson("TELEPORTED", ""), 0, 20, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/vehicles/positions?trackId=12&page=0&size=50&sort=trackId%2Casc&sort=kp%2Casc&sort=vehicleId%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("{\"vehicle\":{\"id\":\"" + VEHICLE_ID + "\",\"code\":\"DR-01\",\"name\":\"Dresina 1\","
+                        + "\"mobility\":\"RAIL_ONLY\",\"category\":\"CATENARY_TOWER_CAR\"},\"operationalStatus\":\"OPERATIONAL\",\"available\":true,"
+                        + "\"position\":" + locationJson("ATTACHED", "") + ",\"effective\":" + locationJson("ON_TRACK", "") + "}", 0, 50, 1),
+                        MediaType.APPLICATION_JSON));
+
+        PageResponse<VehicleDto> page = asUser(() -> vehicleClient.search(new VehicleFilter(" dr ", null, VehicleMobility.RAIL_ONLY, null,
+                VehicleOperationalStatus.LIMITED, true, true), 0, 50, List.of("code,asc")));
+        asUser(() -> vehicleClient.create(new VehicleRequest("DR-02", null, UUID.fromString(VEHICLE_TYPE_ID), null, "99 80 9427 002-9", null, null,
+                VehicleOwner.OWN, null, VehicleOperationalStatus.OPERATIONAL, null, null, null, null)));
+        asUser(() -> vehicleClient.update(UUID.fromString(VEHICLE_ID), new MergePatch<>(new VehicleUpdateRequest(null, null, null, null, null, null,
+                null, null, VehicleOperationalStatus.OPERATIONAL, null, null, null, null, null), Set.of("statusReason"), 6L)));
+        asUser(() -> {
+            vehicleClient.deactivate(UUID.fromString(VEHICLE_ID));
+            return null;
+        });
+        VehicleLocationDto towed = asUser(() -> vehicleClient.recordLocation(UUID.fromString(VEHICLE_ID), new VehicleLocationRequest(
+                VehicleLocationKind.ATTACHED, null, null, null, null, null, null, null, null, UUID.fromString(CARRIER_ID), VehicleAttachment.TOWED,
+                java.time.Instant.parse("2026-10-16T03:40:00Z"))));
+        PageResponse<VehicleLocationDto> history = asUser(() -> vehicleClient.locations(UUID.fromString(VEHICLE_ID),
+                java.time.Instant.parse("2026-10-01T00:00:00Z"), java.time.Instant.parse("2026-10-17T00:00:00Z"), 0, 20));
+        PageResponse<FleetPositionDto> board = asUser(() -> vehicleClient.positions(null, 12L, null, 0, 50, VehicleClient.BY_TRACK_AND_KP));
+
+        VehicleDto dresina = page.content().getFirst();
+        assertEquals("DR-01 · Dresina 1", dresina.label());
+        assertEquals(VehicleMobility.RAIL_ONLY, dresina.mobility());
+        assertTrue(dresina.type().transportModeAuthorised());
+        assertEquals(VehicleOperationalStatus.LIMITED, dresina.operationalStatus());
+        assertEquals(new java.math.BigDecimal("1234.5"), dresina.engineHours());
+        assertEquals("APT-RSH", dresina.position().parkingSite().code());
+        assertEquals(UUID.fromString(LOCATION_SHIFT_ID), dresina.position().shiftId(), "la ubicacion que deja un turno lo nombra");
+        assertEquals(VehicleLocationSource.SHIFT, dresina.position().source());
+        assertEquals("DR-02", towed.carrier().code());
+        assertEquals(VehicleAttachment.TOWED, towed.attachment());
+        assertEquals(VehicleLocationKind.UNKNOWN, history.content().getFirst().kind(), "un tipo nuevo se lee como desconocido");
+        assertEquals(VehicleLocationKind.ON_TRACK, board.content().getFirst().where().kind(), "uno remolcado esta donde su portador");
+        assertEquals(List.of(VehicleLocationKind.PARKED, VehicleLocationKind.ON_TRACK, VehicleLocationKind.IN_WORKSHOP, VehicleLocationKind.ATTACHED,
+                VehicleLocationKind.UNKNOWN), VehicleLocationKind.recordable(VehicleMobility.RAIL_ONLY));
+        assertFalse(VehicleLocationKind.recordable(VehicleMobility.ROAD_ONLY).contains(VehicleLocationKind.ON_TRACK));
         server.verify();
     }
 }

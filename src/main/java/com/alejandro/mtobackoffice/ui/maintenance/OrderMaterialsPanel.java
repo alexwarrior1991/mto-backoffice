@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPanel;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.button.Button;
@@ -99,7 +100,7 @@ class OrderMaterialsPanel extends LazyPanel {
         StockSyncStatus status = line.stockSyncStatus();
         boolean changeable = status != null && status.isChangeable();
         if (canWrite && orderOpen && changeable) {
-            actions.add(MaintenanceUi.rowButton("material-edit-" + line.id(), VaadinIcon.EDIT, "Modificar",
+            actions.add(Screens.rowButton("material-edit-" + line.id(), VaadinIcon.EDIT, "Modificar",
                     click -> new MaterialUsageDialog(current, line, openTasks(), clients, this::reload).open()));
         }
         boolean retryable = (status != null && status.isSyncFailed())
@@ -107,11 +108,11 @@ class OrderMaterialsPanel extends LazyPanel {
                 && orderStatus != MaintenanceOrderStatus.DRAFT);
         boolean checkable = status == StockSyncStatus.RESERVED && orderOpen;
         if (canWrite && (retryable || checkable)) {
-            actions.add(MaintenanceUi.rowButton("material-sync-" + line.id(), VaadinIcon.REFRESH,
+            actions.add(Screens.rowButton("material-sync-" + line.id(), VaadinIcon.REFRESH,
                     checkable ? "Comprobar la reserva en el almacen" : "Sincronizar con el almacen", click -> sync(line)));
         }
         if (canDelete && orderOpen && changeable && line.isRemovable()) {
-            Button remove = MaintenanceUi.rowButton("material-remove-" + line.id(), VaadinIcon.TRASH, "Quitar", click -> MaintenanceUi.confirm(
+            Button remove = Screens.rowButton("material-remove-" + line.id(), VaadinIcon.TRASH, "Quitar", click -> Screens.confirm(
                     "Quitar " + line.materialLabel(), removal(line), "Quitar", () -> remove(line)));
             remove.addThemeVariants(ButtonVariant.LUMO_ERROR);
             actions.add(remove);
@@ -134,7 +135,7 @@ class OrderMaterialsPanel extends LazyPanel {
     private void sync(MaterialUsageDto line) {
         try {
             MaterialUsageDto synced = clients.orders().syncMaterial(order.get().id(), line.id());
-            MaintenanceUi.success(line.materialCode() + ": " + (synced.stockSyncStatus() == null ? "" : synced.stockSyncStatus().label().toLowerCase()));
+            Screens.success(line.materialCode() + ": " + (synced.stockSyncStatus() == null ? "" : synced.stockSyncStatus().label().toLowerCase()));
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }
@@ -144,7 +145,7 @@ class OrderMaterialsPanel extends LazyPanel {
     private void remove(MaterialUsageDto line) {
         try {
             clients.orders().removeMaterial(order.get().id(), line.id());
-            MaintenanceUi.success("Quitado " + line.materialCode());
+            Screens.success("Quitado " + line.materialCode());
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }

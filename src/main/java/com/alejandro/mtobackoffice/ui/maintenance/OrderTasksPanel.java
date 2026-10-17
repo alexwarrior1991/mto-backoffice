@@ -10,6 +10,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.TaskDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPanel;
+import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.button.Button;
@@ -82,21 +83,21 @@ class OrderTasksPanel extends LazyPanel {
         actions.setSpacing(false);
         if (canWrite && task.isOpen()) {
             OrderDto current = order.get();
-            actions.add(MaintenanceUi.rowButton("task-edit-" + task.id(), VaadinIcon.EDIT, "Modificar",
+            actions.add(Screens.rowButton("task-edit-" + task.id(), VaadinIcon.EDIT, "Modificar",
                     click -> new TaskEditorDialog(current, task, clients, catalogs, this::changed).open()));
             if (!task.checkItems().isEmpty()) {
-                actions.add(MaintenanceUi.rowButton("task-checklist-" + task.id(), VaadinIcon.CHECK_SQUARE_O, "Checklist",
+                actions.add(Screens.rowButton("task-checklist-" + task.id(), VaadinIcon.CHECK_SQUARE_O, "Checklist",
                         click -> CheckItemsDialog.ofTask(current.id(), task, clients, this::changed).open()));
             }
             if (current.status() != null && current.status().canComplete()) {
                 // Desde la orden no hay turno: se elige entre los en curso de la via de la tarea, y de la
                 // conectada si su activo une dos.
                 List<Long> trackIds = AssetSummaryDto.tracksOf(task.asset(), current.trackId());
-                actions.add(MaintenanceUi.rowButton("task-complete-" + task.id(), VaadinIcon.CHECK, "Completar",
+                actions.add(Screens.rowButton("task-complete-" + task.id(), VaadinIcon.CHECK, "Completar",
                         click -> new CompleteTaskDialog(current.id(), trackIds, task, null, clients, catalogs, canPickMaterials,
                                 this::changed).open()));
             }
-            Button cancel = MaintenanceUi.rowButton("task-cancel-" + task.id(), VaadinIcon.CLOSE_CIRCLE, "Cancelar",
+            Button cancel = Screens.rowButton("task-cancel-" + task.id(), VaadinIcon.CLOSE_CIRCLE, "Cancelar",
                     click -> new ReasonDialog("Cancelar la tarea " + task.sequence(),
                             "La tarea queda cancelada con su motivo en las notas; no se puede reabrir.", "Cancelar la tarea",
                             reason -> cancel(task, reason)).open());
@@ -109,7 +110,7 @@ class OrderTasksPanel extends LazyPanel {
     private boolean cancel(TaskDto task, String reason) {
         try {
             clients.orders().cancelTask(order.get().id(), task.id(), new ReasonRequest(reason));
-            MaintenanceUi.success("Tarea " + task.sequence() + " cancelada");
+            Screens.success("Tarea " + task.sequence() + " cancelada");
             changed();
             return true;
         } catch (BackofficeApiException failure) {
