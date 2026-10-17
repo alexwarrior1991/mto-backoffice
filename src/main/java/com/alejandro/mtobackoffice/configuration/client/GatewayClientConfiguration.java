@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.configuration.LovClient;
 import com.alejandro.mtobackoffice.client.configuration.ProfileClient;
 import com.alejandro.mtobackoffice.client.configuration.SectionInsulatorClient;
 import com.alejandro.mtobackoffice.client.configuration.StationClient;
+import com.alejandro.mtobackoffice.client.configuration.TrackAccessPointClient;
 import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
 import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
@@ -19,9 +20,12 @@ import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import com.alejandro.mtobackoffice.client.maintenance.ReportClient;
 import com.alejandro.mtobackoffice.client.maintenance.ShiftClient;
 import com.alejandro.mtobackoffice.client.notification.NotificationClient;
+import com.alejandro.mtobackoffice.client.resources.AccessPointClient;
+import com.alejandro.mtobackoffice.client.resources.InstrumentClient;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.QualificationTypeClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
@@ -175,6 +179,11 @@ public class GatewayClientConfiguration {
     }
 
     @Bean
+    public TrackAccessPointClient trackAccessPointClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(TrackAccessPointClient.class);
+    }
+
+    @Bean
     public BusinessEntityClient businessEntityClient(RestClient gatewayRestClient) {
         return proxyFactory(gatewayRestClient).createClient(BusinessEntityClient.class);
     }
@@ -222,6 +231,21 @@ public class GatewayClientConfiguration {
     @Bean
     public VehicleClient vehicleClient(RestClient gatewayRestClient) {
         return proxyFactory(gatewayRestClient).createClient(VehicleClient.class);
+    }
+
+    @Bean
+    public QualificationTypeClient qualificationTypeClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(QualificationTypeClient.class);
+    }
+
+    @Bean
+    public InstrumentClient instrumentClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(InstrumentClient.class);
+    }
+
+    @Bean
+    public AccessPointClient accessPointClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(AccessPointClient.class);
     }
 
     @Bean

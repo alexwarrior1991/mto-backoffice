@@ -1,5 +1,8 @@
 package com.alejandro.mtobackoffice.ui.resources;
 
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentDto;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonFilter;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
@@ -7,6 +10,7 @@ import com.alejandro.mtobackoffice.client.dto.resources.VehicleDto;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleFilter;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleSummaryDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.client.resources.InstrumentClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleClient;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
@@ -21,12 +25,13 @@ import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /**
- * Los desplegables de personas y vehiculos de mto-resources, buscados en el servidor mientras se
- * escribe: solo las personas activas y de las categorias que admite lo que se elige (el jefe de una
- * unidad segun su nivel, los linemen operarios o jefes de equipo, el jefe de un turno cualquiera menos un
- * operario), y solo los vehiculos activos y disponibles, para no ofrecer lo que el servicio va a
- * rechazar. Quien decide sigue siendo el servicio (409 {@code UNI-001}, o {@code SHF-001} en un turno).
- * Los usan el organigrama y los turnos de mantenimiento.
+ * Los desplegables de personas, vehiculos e instrumentos de mto-resources, buscados en el servidor
+ * mientras se escribe: solo las personas activas y de las categorias que admite lo que se elige (el jefe
+ * de una unidad segun su nivel, los linemen operarios o jefes de equipo, el jefe de un turno cualquiera
+ * menos un operario), solo los vehiculos activos y disponibles y solo los instrumentos activos, para no
+ * ofrecer lo que el servicio va a rechazar. Un instrumento dice hasta cuando esta calibrado: si vale a la
+ * fecha del turno lo decide mto-maintenance. Quien decide sigue siendo el servicio (409 {@code UNI-001},
+ * o {@code SHF-001} en un turno). Los usan el organigrama y los turnos de mantenimiento.
  */
 public final class ResourcesPickers {
 
@@ -71,6 +76,30 @@ public final class ResourcesPickers {
             }
         });
         return combo;
+    }
+
+    /** Los instrumentos activos, para los de un turno, con la fecha de su calibracion en la etiqueta. */
+    public static MultiSelectComboBox<InstrumentSummaryDto> instruments(String label, InstrumentClient instruments) {
+        MultiSelectComboBox<InstrumentSummaryDto> combo = new MultiSelectComboBox<>(label);
+        combo.setItemLabelGenerator(ResourcesPickers::instrumentLabel);
+        combo.setClearButtonVisible(true);
+        combo.setPlaceholder("Escribe su codigo");
+        combo.setItems(query -> {
+            try {
+                return instruments.search(InstrumentFilter.activeMatching(query.getFilter().orElse("")), query.getPage(), query.getPageSize(),
+                        BY_CODE).content().stream().map(InstrumentDto::summary);
+            } catch (BackofficeApiException failure) {
+                UiErrors.show(failure);
+                return Stream.empty();
+            }
+        });
+        return combo;
+    }
+
+    /** {@code PT-01 · Pertiga 1 (calibrado hasta 31/03/2027)}, o «sin calibracion». */
+    public static String instrumentLabel(InstrumentSummaryDto instrument) {
+        return instrument.label() + (instrument.calibrationExpiresOn() == null ? " (sin calibracion)"
+                : " (calibrado hasta " + ResourcesFormats.date(instrument.calibrationExpiresOn()) + ")");
     }
 
     private static CallbackDataProvider.FetchCallback<PersonSummaryDto, String> provider(PersonClient people,

@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.ui.resources;
 
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleDto;
@@ -43,6 +44,15 @@ final class ResourcesHistory {
         return join(vehicle.name(), vehicle.type() == null ? null : vehicle.type().code(), vehicle.registrationPlate(), vehicle.railVehicleNumber(),
                 ResourcesFormats.operational(vehicle.operationalStatus(), vehicle.statusReason()), ResourcesFormats.owner(vehicle),
                 ResourcesFormats.vehicleState(vehicle.active()).toLowerCase());
+    }
+
+    /** El instrumento como quedo: su calibracion, su numero de serie y si estaba retirado. */
+    static String instrument(InstrumentDto instrument) {
+        return join(instrument.name(), instrument.kind() == null ? null : instrument.kind().label(),
+                instrument.serialNumber() == null ? null : "N. serie " + instrument.serialNumber(),
+                instrument.calibrationExpiresOn() == null ? "sin calibracion"
+                        : "calibrado hasta el " + ResourcesFormats.date(instrument.calibrationExpiresOn()),
+                ResourcesFormats.vehicleState(instrument.active()).toLowerCase());
     }
 
     /** Las partes que hay, separadas por {@code ·}; lo vacio no deja separadores sueltos. */

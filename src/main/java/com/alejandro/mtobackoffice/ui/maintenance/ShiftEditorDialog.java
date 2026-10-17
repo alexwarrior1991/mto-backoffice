@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftVehicleDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitKind;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
@@ -53,6 +54,13 @@ import java.util.stream.Collectors;
  * servicio del equipo si es de mto-resources. Las demas reglas (de 2 a 6 linemen para iniciar, las plazas,
  * el remolque, una persona o un vehiculo en otro turno del dia) las dice el servicio con 409
  * {@code SHF-001}, con el dialogo abierto. Sin {@code resources-read} la dotacion se lee y no viaja.</p>
+ *
+ * <p>Los instrumentos (pertigas, detectores, equipos de medida) tambien son de mto-resources: se eligen
+ * los activos, con hasta cuando estan calibrados, y como los linemen y los vehiculos son un conjunto que,
+ * vaciado, viaja a {@code null}. Lo caducado a la fecha del turno (una cualificacion de la dotacion, un
+ * documento de un vehiculo, la calibracion de un instrumento) no entra: lo dice el servicio con 409
+ * {@code SHF-001}, y un instrumento que todavia no ha llegado a mantenimiento, con 404
+ * {@code MSI-404}.</p>
  */
 public class ShiftEditorDialog extends Dialog {
 
@@ -171,9 +179,14 @@ public class ShiftEditorDialog extends Dialog {
             binder.forField(supervisor).bind("supervisorPersonId");
             binder.forField(linemen).bind("linemanPersonIds");
             binder.forField(vehicles).bind("vehicleIds");
-            layout.add(leader, supervisor, linemen, vehicles);
+            MultiSelectComboBox<InstrumentSummaryDto> instruments = ResourcesPickers.instruments("Instrumentos", clients.instruments());
+            instruments.setId("shift-instruments");
+            instruments.setHelperText("Los activos; la calibracion tiene que valer en la fecha del turno");
+            binder.forField(instruments).bind("instrumentIds");
+            layout.add(leader, supervisor, linemen, vehicles, instruments);
             layout.setColspan(linemen, 2);
             layout.setColspan(vehicles, 2);
+            layout.setColspan(instruments, 2);
         } else if (existing != null) {
             // Sin resources-read la dotacion no se puede elegir: se lee como esta y no viaja.
             Div crew = new Div(crewText(existing));
@@ -192,12 +205,14 @@ public class ShiftEditorDialog extends Dialog {
         getFooter().add(new Button("Cancelar", click -> close()), save);
     }
 
-    /** La dotacion y los vehiculos de un turno, para quien no puede elegirlos. */
+    /** La dotacion, los vehiculos y, si los lleva, los instrumentos de un turno, para quien no puede elegirlos. */
     static String crewText(ShiftDto shift) {
         return "Jefe: " + (shift.teamLeader() == null ? "-" : shift.teamLeader().label())
                 + " · Supervisor: " + (shift.supervisor() == null ? "-" : shift.supervisor().label())
                 + " · Linemen: " + (shift.linemen().isEmpty() ? "-" : shift.linemen().stream().map(PersonSummaryDto::label).collect(Collectors.joining(", ")))
-                + " · Vehiculos: " + (shift.vehicles().isEmpty() ? "-" : shift.vehicles().stream().map(ShiftVehicleDto::label).collect(Collectors.joining(", ")));
+                + " · Vehiculos: " + (shift.vehicles().isEmpty() ? "-" : shift.vehicles().stream().map(ShiftVehicleDto::label).collect(Collectors.joining(", ")))
+                + (shift.instruments().isEmpty() ? "" : " · Instrumentos: " + shift.instruments().stream().map(InstrumentSummaryDto::label)
+                        .collect(Collectors.joining(", ")));
     }
 
     /** Un valor que habia no se deja vaciar; {@code wasEmpty} dice si se puede. */

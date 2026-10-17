@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftVehicleDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleSummaryDto;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
@@ -28,10 +29,11 @@ import java.util.stream.Collectors;
 /**
  * Modelo mutable del editor de un turno, con las propiedades llamadas como los campos de la
  * peticion ({@code trackIds} guarda las vias elegidas, {@code blockingDisconnectorIds} los
- * seccionadores, {@code linemanPersonIds} los linemen y {@code vehicleIds} los vehiculos) para que los
- * errores del servicio caigan en su campo. La dotacion y los vehiculos son de mto-resources: sin
- * {@code resources-read} no se eligen y no viajan ({@code readsResources}), para no mandar a vaciar lo
- * que la pantalla no ha podido leer como opcion.
+ * seccionadores, {@code linemanPersonIds} los linemen, {@code vehicleIds} los vehiculos e
+ * {@code instrumentIds} los instrumentos) para que los errores del servicio caigan en su campo. La
+ * dotacion, los vehiculos y los instrumentos son de mto-resources: sin {@code resources-read} no se eligen
+ * y no viajan ({@code readsResources}), para no mandar a vaciar lo que la pantalla no ha podido leer como
+ * opcion.
  */
 public class ShiftForm {
 
@@ -56,6 +58,7 @@ public class ShiftForm {
     private PersonSummaryDto supervisorPersonId;
     private Set<PersonSummaryDto> linemanPersonIds = new LinkedHashSet<>();
     private Set<VehicleSummaryDto> vehicleIds = new LinkedHashSet<>();
+    private Set<InstrumentSummaryDto> instrumentIds = new LinkedHashSet<>();
 
     public static ShiftForm of(ShiftDto dto, MaintenanceNames names) {
         ShiftForm form = new ShiftForm();
@@ -81,13 +84,15 @@ public class ShiftForm {
             form.setSupervisorPersonId(dto.supervisor());
             form.setLinemanPersonIds(new LinkedHashSet<>(dto.linemen()));
             form.setVehicleIds(dto.vehicles().stream().map(ShiftVehicleDto::summary).collect(Collectors.toCollection(LinkedHashSet::new)));
+            form.setInstrumentIds(new LinkedHashSet<>(dto.instruments()));
         }
         return form;
     }
 
     /**
      * El alta. Lo que no se diga de la dotacion y los vehiculos no viaja, y con un equipo de mto-resources
-     * lo copia el servicio del equipo; sin {@code resources-read} no viaja nada de eso.
+     * lo copia el servicio del equipo; los instrumentos no se copian de nadie. Sin {@code resources-read}
+     * no viaja nada de eso.
      */
     public ShiftRequest toRequest(boolean readsResources) {
         return new ShiftRequest(shiftDate, teamId == null ? null : teamId.id(), nullIfBlank(baseName), nullIfBlank(vehicle), possessionType,
@@ -98,14 +103,15 @@ public class ShiftForm {
                 readsResources && !vehicleIds.isEmpty() ? vehicleIdSet() : null,
                 readsResources && teamLeaderPersonId != null ? teamLeaderPersonId.id() : null,
                 readsResources && supervisorPersonId != null ? supervisorPersonId.id() : null,
-                readsResources && !linemanPersonIds.isEmpty() ? linemanIdSet() : null);
+                readsResources && !linemanPersonIds.isEmpty() ? linemanIdSet() : null,
+                readsResources && !instrumentIds.isEmpty() ? instrumentIdSet() : null);
     }
 
     /**
-     * Lo que cambio, lo vaciado y la version leida; vias, seccionadores, vehiculos y linemen, si
-     * cambiaron, van enteros. Quitar todos los seccionadores, los vehiculos o los linemen los vacia
-     * ({@code null} en el merge-patch), como en mto-frontend. Sin {@code resources-read} la dotacion y los
-     * vehiculos no viajan.
+     * Lo que cambio, lo vaciado y la version leida; vias, seccionadores, vehiculos, linemen e
+     * instrumentos, si cambiaron, van enteros. Quitar todos los seccionadores, los vehiculos, los linemen o
+     * los instrumentos los vacia ({@code null} en el merge-patch), como en mto-frontend. Sin
+     * {@code resources-read} la dotacion, los vehiculos y los instrumentos no viajan.
      */
     public MergePatch<ShiftUpdateRequest> toPatch(ShiftDto original, boolean readsResources) {
         Changes changes = new Changes();
@@ -136,8 +142,14 @@ public class ShiftForm {
                 readsResources ? changes.value("teamLeaderPersonId", idOf(teamLeaderPersonId), idOf(original.teamLeader())) : null,
                 readsResources ? changes.value("supervisorPersonId", idOf(supervisorPersonId), idOf(original.supervisor())) : null,
                 readsResources ? changes.set("linemanPersonIds", linemanIdSet(), original.linemen().stream().map(PersonSummaryDto::id)
+                        .collect(Collectors.toSet())) : null,
+                readsResources ? changes.set("instrumentIds", instrumentIdSet(), original.instruments().stream().map(InstrumentSummaryDto::id)
                         .collect(Collectors.toSet())) : null);
         return changes.patch(values, original.version());
+    }
+
+    private Set<UUID> instrumentIdSet() {
+        return instrumentIds.stream().map(InstrumentSummaryDto::id).collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     private Set<UUID> vehicleIdSet() {
@@ -334,6 +346,14 @@ public class ShiftForm {
 
     public void setVehicleIds(Set<VehicleSummaryDto> vehicleIds) {
         this.vehicleIds = copy(vehicleIds);
+    }
+
+    public Set<InstrumentSummaryDto> getInstrumentIds() {
+        return instrumentIds;
+    }
+
+    public void setInstrumentIds(Set<InstrumentSummaryDto> instrumentIds) {
+        this.instrumentIds = copy(instrumentIds);
     }
 
     private static <T> Set<T> copy(Collection<T> values) {
