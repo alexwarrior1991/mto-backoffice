@@ -2,6 +2,9 @@ package com.alejandro.mtobackoffice.ui.resources;
 
 import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.resources.DrivingLicence;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationTypeDto;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationTypeFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationTypeSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.RailGearType;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleCapability;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleCategory;
@@ -46,7 +49,9 @@ import java.util.Map;
  * equipo ferroviario (9A, 9B, 9C), los minutos de encarrilado y el acceso preparado, solo en una
  * bivial; la categoria, solo las de su movilidad. Cada capacidad ensena sus cifras y quitarla las vacia.
  * El codigo y la movilidad no cambian despues del alta. Los numeros se comprueban con la columna del
- * servicio; que el modelo sea coherente lo dice el servicio (400 con el motivo).
+ * servicio; que el modelo sea coherente lo dice el servicio (400 con el motivo). «Habilitacion del
+ * conductor» ofrece los tipos de cualificacion activos (y el leido, aunque ya no lo este): vacia en el
+ * alta la pone el servicio segun la movilidad y el permiso, y vaciarla al modificar es no exigir ninguna.
  */
 public class VehicleTypeEditorDialog extends Dialog {
 
@@ -66,6 +71,7 @@ public class VehicleTypeEditorDialog extends Dialog {
     private final Select<VehicleMobility> mobility = new Select<>();
     private final ComboBox<VehicleCategory> category = new ComboBox<>("Categoria");
     private final MultiSelectComboBox<String> capabilities = new MultiSelectComboBox<>("Capacidades");
+    private final ComboBox<QualificationTypeSummaryDto> driver = new ComboBox<>("Habilitacion del conductor");
 
     /**
      * @param existing el modelo a modificar, o {@code null} para dar uno de alta
@@ -132,6 +138,12 @@ public class VehicleTypeEditorDialog extends Dialog {
         TextArea notes = new TextArea("Notas");
         notes.setId("vehicle-type-notes");
         fields.put("notes", notes);
+        driver.setId("vehicle-type-driver-qualification");
+        driver.setItems(driverQualifications(clients, form.getRequiredDriverQualificationTypeId()));
+        driver.setItemLabelGenerator(QualificationTypeSummaryDto::label);
+        driver.setClearButtonVisible(true);
+        driver.setHelperText(creating ? "Vacia: la que corresponde a su movilidad y a su permiso" : "Vacia: no exige ninguna");
+        fields.put("requiredDriverQualificationTypeId", driver);
 
         binder.forField(code).asRequired(Required.text("El codigo es obligatorio")).bind("code");
         binder.forField(name).asRequired(Required.text("El nombre es obligatorio")).bind("name");
@@ -149,10 +161,11 @@ public class VehicleTypeEditorDialog extends Dialog {
                 .bind("railGearType");
         binder.forField(preparedAccess).bind("needsPreparedAccess");
         binder.forField(licence).bind("requiredLicence");
+        binder.forField(driver).bind("requiredDriverQualificationTypeId");
         binder.forField(capabilities).bind("capabilities");
         binder.forField(notes).bind("notes");
 
-        FormLayout general = grid(code, name, manufacturer, model, mobility, category, power, selfPropelled, portable);
+        FormLayout general = grid(code, name, manufacturer, model, mobility, category, power, driver, selfPropelled, portable);
         section(VehicleTypeForm.Section.GENERAL, "Dimensiones y pesos");
         section(VehicleTypeForm.Section.TRACK, "En via").add(transportMode);
         section(VehicleTypeForm.Section.ROAD_RAIL, "Bivial").add(railGear, preparedAccess);
@@ -182,6 +195,24 @@ public class VehicleTypeEditorDialog extends Dialog {
         save.setId(SAVE_ID);
         save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         getFooter().add(new Button("Cancelar", click -> close()), save);
+    }
+
+    /**
+     * Los tipos de cualificacion activos, y el que tiene el modelo aunque ya no lo este, para no leerlo
+     * como vacio; si no se pueden leer, se notifica y queda solo el leido.
+     */
+    private static List<QualificationTypeSummaryDto> driverQualifications(ResourcesClients clients, QualificationTypeSummaryDto current) {
+        List<QualificationTypeSummaryDto> offered = new ArrayList<>();
+        try {
+            clients.qualificationTypes().search(QualificationTypeFilter.ACTIVE, 0, PersonQualificationDialog.ALL_TYPES, List.of("code,asc"))
+                    .content().stream().map(QualificationTypeDto::summary).forEach(offered::add);
+        } catch (BackofficeApiException failure) {
+            UiErrors.show(failure);
+        }
+        if (current != null && !offered.contains(current)) {
+            offered.addFirst(current);
+        }
+        return offered;
     }
 
     private TextField text(String id, String label, int maxLength, String field) {

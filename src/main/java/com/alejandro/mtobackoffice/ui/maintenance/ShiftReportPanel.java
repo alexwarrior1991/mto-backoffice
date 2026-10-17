@@ -4,6 +4,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.ReportFormat;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftReportDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftReportInspectionDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftReportRowDto;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentSummaryDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.ui.support.Downloads;
 import com.alejandro.mtobackoffice.ui.support.LazyPanel;
@@ -15,6 +16,7 @@ import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H4;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 
+import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -23,12 +25,14 @@ import java.util.stream.Stream;
 /**
  * El parte diario del turno, como lo compone el servicio: sus recuentos, una fila por tarea trabajada
  * (un perfil o un aislador), las inspecciones registradas en el turno, cada una con su boton para
- * abrirla, y los enlaces Excel y PDF del mismo parte. Aqui no se cuenta nada: el numero de
+ * abrirla, los instrumentos de mto-resources que se llevaron (los del turno del parte, con hasta cuando
+ * estaban calibrados) y los enlaces Excel y PDF del mismo parte. Aqui no se cuenta nada: el numero de
  * inspecciones tambien es del servicio.
  */
 class ShiftReportPanel extends LazyPanel {
 
     static final String INSPECTIONS_GRID_ID = "shift-report-inspections";
+    static final String INSTRUMENTS_GRID_ID = "shift-report-instruments";
 
     private final Supplier<UUID> shiftId;
     private final MaintenanceClients clients;
@@ -36,6 +40,7 @@ class ShiftReportPanel extends LazyPanel {
     private final HorizontalLayout downloads = new HorizontalLayout();
     private final Grid<ShiftReportRowDto> grid = new Grid<>();
     private final Grid<ShiftReportInspectionDto> inspections = new Grid<>();
+    private final Grid<InstrumentSummaryDto> instruments = new Grid<>();
 
     ShiftReportPanel(Supplier<UUID> shiftId, MaintenanceClients clients) {
         this.shiftId = shiftId;
@@ -69,7 +74,14 @@ class ShiftReportPanel extends LazyPanel {
         inspections.setEmptyStateText("No se registro ninguna inspeccion en el turno.");
         RowActions.openButton(inspections, ShiftReportInspectionDto::inspectionId, row -> "Abrir " + row.code(),
                 row -> UI.getCurrent().navigate(InspectionDetailView.class, InspectionDetailView.parametersOf(row.inspectionId())));
-        add(summary, downloads, grid, new H4("Inspecciones"), inspections);
+        instruments.setId(INSTRUMENTS_GRID_ID);
+        instruments.addColumn(InstrumentSummaryDto::code).setHeader("Codigo").setAutoWidth(true);
+        instruments.addColumn(InstrumentSummaryDto::name).setHeader("Nombre").setAutoWidth(true);
+        instruments.addColumn(row -> row.kind() == null ? "" : row.kind().label()).setHeader("Tipo").setAutoWidth(true);
+        instruments.addColumn(row -> MaintenanceFormats.date(row.calibrationExpiresOn())).setHeader("Calibracion hasta").setAutoWidth(true);
+        instruments.setAllRowsVisible(true);
+        instruments.setEmptyStateText("No se llevo ningun instrumento de mto-resources al turno.");
+        add(summary, downloads, grid, new H4("Inspecciones"), inspections, new H4("Instrumentos"), instruments);
     }
 
     @Override
@@ -82,6 +94,7 @@ class ShiftReportPanel extends LazyPanel {
                     + " resueltos" + (report.inspectionsRecorded() == null ? "" : " · Inspecciones: " + report.inspectionsRecorded()));
             grid.setItems(report.rows());
             inspections.setItems(report.inspections());
+            instruments.setItems(report.shift() == null ? List.of() : report.shift().instruments());
             downloads.removeAll();
             String code = report.shift() == null ? "turno" : report.shift().code();
             for (ReportFormat format : ReportFormat.values()) {

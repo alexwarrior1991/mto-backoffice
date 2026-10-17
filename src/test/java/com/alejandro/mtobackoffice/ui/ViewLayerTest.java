@@ -34,6 +34,12 @@ import com.alejandro.mtobackoffice.client.dto.master.StationDto;
 import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
 import com.alejandro.mtobackoffice.client.dto.resources.DrivingLicence;
 import com.alejandro.mtobackoffice.client.dto.resources.FleetPositionDto;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentDto;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentKind;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationTreeNodeDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitKind;
@@ -48,9 +54,18 @@ import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonEmployer;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonQualificationDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonQualificationRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonQualificationUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationKind;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationTypeDto;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationTypeFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationTypeRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationTypeSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationTypeUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.RailGearType;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberDto;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberLeaveRequest;
@@ -58,6 +73,10 @@ import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.UnitSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleAttachment;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleCategory;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDocumentDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDocumentKind;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDocumentRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDocumentUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleDto;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleFilter;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationDto;
@@ -88,23 +107,33 @@ import com.alejandro.mtobackoffice.client.dto.users.UserCredentialDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserRolesDto;
 import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
 import com.alejandro.mtobackoffice.client.maintenance.OperationClient;
+import com.alejandro.mtobackoffice.client.resources.InstrumentClient;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.QualificationTypeClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import com.alejandro.mtobackoffice.ui.maintenance.TaskGeneration;
+import com.alejandro.mtobackoffice.ui.resources.Expiry;
 import com.alejandro.mtobackoffice.ui.resources.FleetBoardView;
+import com.alejandro.mtobackoffice.ui.resources.InstrumentEditorDialog;
+import com.alejandro.mtobackoffice.ui.resources.InstrumentsView;
 import com.alejandro.mtobackoffice.ui.resources.OrganizationView;
 import com.alejandro.mtobackoffice.ui.resources.ParkingSiteEditorDialog;
 import com.alejandro.mtobackoffice.ui.resources.ParkingSitesView;
 import com.alejandro.mtobackoffice.ui.resources.PeopleView;
+import com.alejandro.mtobackoffice.ui.resources.PersonDetailView;
 import com.alejandro.mtobackoffice.ui.resources.PersonEditorDialog;
+import com.alejandro.mtobackoffice.ui.resources.PersonQualificationDialog;
+import com.alejandro.mtobackoffice.ui.resources.QualificationTypeEditorDialog;
+import com.alejandro.mtobackoffice.ui.resources.QualificationTypesView;
 import com.alejandro.mtobackoffice.ui.resources.ResourcesRoutes;
 import com.alejandro.mtobackoffice.ui.resources.TeamMembersDialog;
 import com.alejandro.mtobackoffice.ui.resources.UnitDetailView;
 import com.alejandro.mtobackoffice.ui.resources.UnitEditorDialog;
 import com.alejandro.mtobackoffice.ui.resources.VehicleDetailView;
+import com.alejandro.mtobackoffice.ui.resources.VehicleDocumentDialog;
 import com.alejandro.mtobackoffice.ui.resources.VehicleEditorDialog;
 import com.alejandro.mtobackoffice.ui.resources.VehicleLocationDialog;
 import com.alejandro.mtobackoffice.ui.resources.VehicleTypeEditorDialog;
@@ -546,6 +575,10 @@ class ViewLayerTest {
     private VehicleClient vehicleClient;
     @MockitoBean
     private OperationClient operationClient;
+    @MockitoBean
+    private QualificationTypeClient qualificationTypeClient;
+    @MockitoBean
+    private InstrumentClient instrumentClient;
 
     @BeforeEach
     void setUp() {
@@ -1155,6 +1188,9 @@ class ViewLayerTest {
         when(shiftClient.search(any(ShiftFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<ShiftDto>of(), 0, 50));
         when(inspectionClient.search(any(InspectionFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<InspectionDto>of(), 0, 50));
         when(defectClient.search(any(DefectFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<DefectDto>of(), 0, 50));
+        when(qualificationTypeClient.search(any(QualificationTypeFilter.class), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.<QualificationTypeDto>of(), 0, 50));
+        when(instrumentClient.search(any(InstrumentFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<InstrumentDto>of(), 0, 50));
     }
 
     /** Un catalogo de almacen simulado: busca en codigo o nombre, filtra por estado y pagina por page/size como el servicio. */
@@ -5898,7 +5934,7 @@ class ViewLayerTest {
                 crew(CREW_LEADER, "PER-000003", "Yossi Cohen", PersonCategory.TEAM_LEADER), null,
                 List.of(crew(CREW_A, "PER-000011", "Lineman Uno", PersonCategory.WORKER), crew(CREW_B, "PER-000012", "Lineman Dos", PersonCategory.WORKER)),
                 List.of(new ShiftVehicleDto(VEHICLE1, "DR-01", "Dresina 1", VehicleMobility.RAIL_ONLY, VehicleCategory.CATENARY_TOWER_CAR, true, parking),
-                        new ShiftVehicleDto(VAN, "VAN-01", "Furgoneta", VehicleMobility.ROAD_ONLY, VehicleCategory.VAN, true, null)));
+                        new ShiftVehicleDto(VAN, "VAN-01", "Furgoneta", VehicleMobility.ROAD_ONLY, VehicleCategory.VAN, true, null)), List.of());
     }
 
     /**
@@ -5944,7 +5980,7 @@ class ViewLayerTest {
         click(ShiftEditorDialog.SAVE_ID);
 
         verify(shiftClient).create(new ShiftRequest(LocalDate.of(2026, 10, 5), null, null, null, PossessionType.FULL, null, null, null,
-                null, null, null, Set.of(12L), null, null, null, null, null, Set.of(VEHICLE1), CREW_LEADER, null, Set.of(CREW_A)));
+                null, null, null, Set.of(12L), null, null, null, null, null, Set.of(VEHICLE1), CREW_LEADER, null, Set.of(CREW_A), null));
         LocatorJ._get(ShiftDetailView.class);
         assertEquals("Jefe: PER-000003 · Yossi Cohen · Supervisor: - · Linemen (2): PER-000011 · Lineman Uno, PER-000012 · Lineman Dos",
                 LocatorJ._get(Div.class, spec -> spec.withId("shift-crew")).getText());
@@ -8088,7 +8124,8 @@ class ViewLayerTest {
      * Las rutas de recursos son las de mto-frontend, que tiene la misma lista copiada en
      * src/test/fixtures/backoffice-routes.json: una ruta nueva o renombrada aqui se lleva alli en el mismo
      * cambio, y la SPA lo comprueba contra ese fichero. Las literales (tablero, modelos, aparcamientos)
-     * ganan a las de parametro en los dos routers.
+     * ganan a las de parametro en los dos routers. La ficha de una persona, la flota y los instrumentos son
+     * ademas los enlaces de los avisos de caducidad de mto-notification.
      */
     @Test
     void theResourcesRoutesAreTheOnesOfTheSpa() {
@@ -8099,8 +8136,9 @@ class ViewLayerTest {
                 .filter(route -> route.startsWith(ResourcesRoutes.PREFIX + "/"))
                 .sorted()
                 .toList();
-        assertEquals(List.of("recursos/flota", "recursos/flota/:vehicleId", "recursos/flota/aparcamientos", "recursos/flota/modelos",
-                "recursos/flota/tablero", "recursos/organigrama", "recursos/organigrama/:unitId", "recursos/personal"), routes);
+        assertEquals(List.of("recursos/cualificaciones", "recursos/flota", "recursos/flota/:vehicleId", "recursos/flota/aparcamientos",
+                "recursos/flota/modelos", "recursos/flota/tablero", "recursos/instrumentos", "recursos/organigrama", "recursos/organigrama/:unitId",
+                "recursos/personal", "recursos/personal/:personId"), routes);
     }
 
     private void stubPeople(List<PersonDto> all) {
@@ -8153,8 +8191,9 @@ class ViewLayerTest {
                 null, true)), eq(0), anyInt(), anyList());
 
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("person-create")).isEmpty(), "sin resources-write no hay alta");
-        assertEquals(List.of("person-history-" + PERSON1), LocatorJ._find(GridKt._getCellComponent(grid, 0, PeopleView.ACTIONS_COLUMN),
-                Button.class).stream().map(button -> button.getId().orElse("")).toList(), "quien solo lee ve el historial y nada mas");
+        assertEquals(List.of("person-open-" + PERSON1, "person-history-" + PERSON1), LocatorJ._find(GridKt._getCellComponent(grid, 0,
+                PeopleView.ACTIONS_COLUMN), Button.class).stream().map(button -> button.getId().orElse("")).toList(),
+                "quien solo lee abre la ficha y ve el historial, y nada mas");
     }
 
     /**
@@ -8691,17 +8730,22 @@ class ViewLayerTest {
             "ROLE_CONFIG_READ", "ROLE_NOTIFICATION_INBOX"};
 
     private static VehicleTypeDto unimog(Set<String> capabilities, BigDecimal crane, boolean active) {
+        return unimog(capabilities, crane, active, null);
+    }
+
+    /** La bivial con la habilitacion que exige a su conductor ({@code null}: ninguna). */
+    private static VehicleTypeDto unimog(Set<String> capabilities, BigDecimal crane, boolean active, QualificationTypeSummaryDto driver) {
         return new VehicleTypeDto(VEHICLE_TYPE1, "UNIMOG-RR", "Unimog bivial", "Mercedes-Benz", "U423", VehicleMobility.ROAD_RAIL,
                 VehicleCategory.ROAD_RAIL_TRUCK, true, false, new BigDecimal("6.20"), null, null, null, null, null, 2, 3, null, VehiclePower.DIESEL,
                 1435, 20, 40, null, null, null, false, RailGearType.RAIL_WHEEL_DRIVE, 10, null, 90, DrivingLicence.C, capabilities, crane, null,
-                null, null, null, null, null, active, 4L);
+                null, null, null, null, null, active, 4L, driver);
     }
 
     private static VehicleTypeDto dresina() {
         return new VehicleTypeDto(VEHICLE_TYPE2, "DIC-30", "Plasser DIC-30", "Plasser", "DIC-30", VehicleMobility.RAIL_ONLY,
                 VehicleCategory.CATENARY_TOWER_CAR, true, false, null, null, null, null, null, null, 4, 6, null, VehiclePower.DIESEL, 1435, 10, 80,
                 null, null, null, true, null, null, null, null, null, Set.of("ELEVATING_PLATFORM", "PANTOGRAPH"), null, null, null, null, null,
-                null, null, true, 2L);
+                null, null, true, 2L, null);
     }
 
     private void stubVehicleTypes(List<VehicleTypeDto> all) {
@@ -8728,8 +8772,8 @@ class ViewLayerTest {
         UI.getCurrent().navigate(ResourcesRoutes.VEHICLE_TYPES);
 
         Grid<Object> grid = gridWithId("vehicle-types-grid");
-        assertEquals(List.of("UNIMOG-RR", "Unimog bivial", "Mercedes-Benz · U423", "Bivial", "Camion bivial", "3", "Grua, LASER_SCANNER", "Activo"),
-                GridKt._getFormattedRow(grid, 0).subList(0, 8), "una capacidad que no se conoce se pinta con su codigo");
+        assertEquals(List.of("UNIMOG-RR", "Unimog bivial", "Mercedes-Benz · U423", "Bivial", "Camion bivial", "3", "Grua, LASER_SCANNER", "",
+                "Activo"), GridKt._getFormattedRow(grid, 0).subList(0, 9), "una capacidad que no se conoce se pinta con su codigo");
         verify(vehicleTypeClient, atLeastOnce()).search(eq(VehicleTypeFilter.NONE), eq(0), anyInt(), eq(List.of("code,asc")));
 
         @SuppressWarnings("unchecked")
@@ -8833,7 +8877,7 @@ class ViewLayerTest {
 
         MergePatch<VehicleTypeUpdateRequest> expected = new MergePatch<>(new VehicleTypeUpdateRequest(null, null, null, null, null, null, null,
                 null, null, null, null, null, null, 5, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                Set.of("LASER_SCANNER", "TOWING"), null, null, null, null, null, null, null, null), Set.of("craneCapacityT"), 4L);
+                Set.of("LASER_SCANNER", "TOWING"), null, null, null, null, null, null, null, null, null), Set.of("craneCapacityT"), 4L);
         verify(vehicleTypeClient).update(VEHICLE_TYPE1, expected);
         LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
                 spec -> spec.withText("La peticion no es valida. Crane figures (craneCapacityT, craneReachM) need the CRANE capability"));
@@ -9218,5 +9262,642 @@ class ViewLayerTest {
         LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(UnitEditorDialog.SAVE_ID)));
         verify(organizationClient).update(TEAM_UNIT, new MergePatch<>(new OrganizationUnitUpdateRequest(null, null, null, null, null, null, null,
                 null), Set.of("defaultVehicleId"), 7L));
+    }
+
+    // --- Recursos: cualificaciones, documentos e instrumentos (fase 4, bloque C) -------------------------
+
+    private static final UUID QTYPE_RAIL = UUID.fromString("6a7b8c9d-0000-4000-8000-000000000001");
+    private static final UUID QTYPE_LIC_C = UUID.fromString("6a7b8c9d-0000-4000-8000-000000000002");
+    private static final UUID QTYPE_RR = UUID.fromString("6a7b8c9d-0000-4000-8000-000000000003");
+    private static final UUID QTYPE_SAFETY = UUID.fromString("6a7b8c9d-0000-4000-8000-000000000004");
+    private static final UUID QUAL_RAIL = UUID.fromString("6a7b8c9d-0000-4000-8000-0000000000a1");
+    private static final UUID QUAL_LIC = UUID.fromString("6a7b8c9d-0000-4000-8000-0000000000a2");
+    private static final UUID QUAL_SAFETY = UUID.fromString("6a7b8c9d-0000-4000-8000-0000000000a3");
+    private static final UUID DOC_ITV = UUID.fromString("6a7b8c9d-0000-4000-8000-0000000000d1");
+    private static final UUID DOC_INSURANCE = UUID.fromString("6a7b8c9d-0000-4000-8000-0000000000d2");
+    private static final UUID INSTRUMENT1 = UUID.fromString("6a7b8c9d-0000-4000-8000-0000000000e1");
+    private static final UUID INSTRUMENT2 = UUID.fromString("6a7b8c9d-0000-4000-8000-0000000000e2");
+    private static final UUID INSTRUMENT3 = UUID.fromString("6a7b8c9d-0000-4000-8000-0000000000e3");
+    private static final QualificationTypeDto RAIL_DRIVER = new QualificationTypeDto(QTYPE_RAIL, "RAIL-DRIVER", "Rail auxiliary vehicle driver",
+            QualificationKind.VEHICLE_OPERATION, null, 60, null, true, 1L);
+    private static final QualificationTypeDto LICENCE_C = new QualificationTypeDto(QTYPE_LIC_C, "LIC-C", "Driving licence C",
+            QualificationKind.DRIVING_LICENCE, DrivingLicence.C, 120, null, true, 2L);
+    private static final QualificationTypeDto RR_OPERATOR = new QualificationTypeDto(QTYPE_RR, "RR-OPERATOR", "Road-rail machine operator",
+            QualificationKind.VEHICLE_OPERATION, null, null, null, true, 1L);
+
+    private static PersonQualificationDto qualification(UUID id, QualificationTypeDto type, LocalDate expiresOn, Boolean expired) {
+        return new PersonQualificationDto(id, PERSON1, type.summary(), "RD-118", LocalDate.of(2026, 4, 1), expiresOn, null, expired, 3L);
+    }
+
+    private static VehicleDocumentDto document(UUID id, VehicleDocumentKind kind, String reference, LocalDate expiresOn, boolean expired) {
+        return new VehicleDocumentDto(id, VEHICLE1, kind, reference, LocalDate.of(2026, 2, 28), expiresOn, null, expired, 1L);
+    }
+
+    private static InstrumentDto instrument(UUID id, String code, InstrumentKind kind, LocalDate expiresOn, Boolean expired, boolean active) {
+        return new InstrumentDto(id, code, "Instrumento " + code, kind, "SN-" + code, LocalDate.of(2026, 3, 31), expiresOn, expired, null, active, 5L);
+    }
+
+    private void stubQualificationTypes(List<QualificationTypeDto> all) {
+        doAnswer(call -> page(all, call.getArgument(1), call.getArgument(2)))
+                .when(qualificationTypeClient).search(any(QualificationTypeFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    private void stubInstruments(List<InstrumentDto> all) {
+        doAnswer(call -> page(all, call.getArgument(1), call.getArgument(2)))
+                .when(instrumentClient).search(any(InstrumentFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    private static DatePicker datePicker(String id) {
+        return LocatorJ._get(DatePicker.class, spec -> spec.withId(id));
+    }
+
+    /** El estado de una caducidad lo dice el servicio ({@code expired}); los dias que faltan, hasta 30, son solo presentacion. */
+    @Test
+    void theExpiryStateIsTheServicesAndOnlyTheDaysLeftAreCounted() {
+        LocalDate today = LocalDate.of(2026, 10, 17);
+        assertEquals("Caducada", Expiry.state(today.minusDays(1), true, today, "Caducada", "No caduca"));
+        assertEquals("Caducada", Expiry.state(today.plusDays(2), true, today, "Caducada", "No caduca"), "manda el servicio, con su fecha y su zona");
+        assertEquals("Caducada", Expiry.state(today.minusDays(1), null, today, "Caducada", "No caduca"), "un servicio anterior se lee por la fecha");
+        assertEquals("Caduca hoy", Expiry.state(today, false, today, "Caducada", "No caduca"));
+        assertEquals("Caduca hoy", Expiry.state(today.minusDays(1), false, today, "Caducada", "No caduca"), "si el servicio dice que no, aun no");
+        assertEquals("Caduca en 1 dia", Expiry.state(today.plusDays(1), false, today, "Caducada", "No caduca"));
+        assertEquals("Caduca en 30 dias", Expiry.state(today.plusDays(30), false, today, "Caducada", "No caduca"));
+        assertEquals("Vigente", Expiry.state(today.plusDays(31), false, today, "Caducada", "No caduca"));
+        assertEquals("No caduca", Expiry.state(null, false, today, "Caducada", "No caduca"));
+        assertEquals("Sin calibracion", Expiry.state(null, null, today, "Caducada", "Sin calibracion"));
+    }
+
+    /** Los codigos nuevos de mto-resources y de mantenimiento dicen que pasa; los 409 no piden recargar. */
+    @Test
+    void qualificationsDocumentsAndInstrumentsErrorsSayWhatBlocksTheChange() {
+        assertEquals("Ya existe otro tipo de cualificacion con ese codigo.",
+                UiErrors.message(maintenanceError(409, "QTY-409", "Qualification type LIC-C already exists")));
+        assertEquals("La persona ya tiene esa cualificacion, o su tipo esta retirado: para renovarla, cambia su caducidad. "
+                + "Person PER-000003 already has LIC-C", UiErrors.message(maintenanceError(409, "QUA-001", "Person PER-000003 already has LIC-C")));
+        assertEquals("El vehiculo ya tiene un documento de ese tipo: para renovarlo, cambia su caducidad.",
+                UiErrors.message(maintenanceError(409, "VDO-409", "Vehicle DR-01 already has INSURANCE")));
+        assertEquals("Ya existe otro instrumento con ese codigo.", UiErrors.message(maintenanceError(409, "INT-409", "Instrument PT-01 already exists")));
+        assertEquals("Esa cualificacion ya no existe.", UiErrors.message(maintenanceError(404, "QUA-404", "Qualification not found")));
+        assertEquals("Ese documento del vehiculo ya no existe.", UiErrors.message(maintenanceError(404, "VDO-404", "Document not found")));
+        assertEquals("Ese instrumento no existe.", UiErrors.message(maintenanceError(404, "INT-404", "Instrument not found")));
+        assertEquals("Ese tipo de cualificacion no existe.", UiErrors.message(maintenanceError(404, "QTY-404", "Qualification type not found")));
+        assertEquals("Ese instrumento aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.",
+                UiErrors.message(maintenanceError(404, "MSI-404", "Maintenance instrument not found")));
+        assertEquals("No se ha encontrado lo que se pedia. Something", UiErrors.message(maintenanceError(404, null, "Something")),
+                "un 404 sin codigo sigue siendo el de siempre");
+    }
+
+    /** Cualificaciones e Instrumentos estan en el grupo Recursos con resources-read. */
+    @Test
+    void theQualificationsAndTheInstrumentsAreInTheResourcesMenu() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        UI.getCurrent().navigate(HomeView.class);
+        assertTrue(menuLabels().containsAll(List.of("Recursos", "Cualificaciones", "Instrumentos")), menuLabels().toString());
+    }
+
+    /** Sin resources-read no estan en el menu, y un rol de realm que se llama como el permiso no abre ni ellas ni la ficha de una persona. */
+    @Test
+    void withoutResourcesReadNeitherTheQualificationsNorTheInstrumentsOpen() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        UI.getCurrent().navigate(HomeView.class);
+        assertFalse(menuLabels().contains("Cualificaciones"), menuLabels().toString());
+        assertFalse(menuLabels().contains("Instrumentos"), menuLabels().toString());
+
+        loginAs("recursos.impostor", "ROLE_REALM_RESOURCES_READ");
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(ResourcesRoutes.QUALIFICATION_TYPES));
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(ResourcesRoutes.INSTRUMENTS));
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(PersonDetailView.class, PersonDetailView.parametersOf(PERSON1)));
+        verify(qualificationTypeClient, never()).search(any(QualificationTypeFilter.class), anyInt(), anyInt(), anyList());
+        verify(instrumentClient, never()).search(any(InstrumentFilter.class), anyInt(), anyInt(), anyList());
+        verify(personClient, never()).findById(any());
+    }
+
+    /**
+     * Una fila de Personal abre la ficha de la persona, con doble clic o con su boton: su cabecera y la
+     * pestana Cualificaciones con el estado de cada una. Quien solo lee no ve nada que escribir, y una
+     * persona que no existe se dice y vuelve a la lista.
+     */
+    @Test
+    void aRowOfThePeopleOpensTheDetailWithItsQualificationsAndAReaderOnlyReadsThem() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        PersonDto yossi = person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.TEAM_LEADER, true);
+        stubPeople(List.of(yossi));
+        when(personClient.findById(PERSON1)).thenReturn(yossi);
+        LocalDate soon = LocalDate.now().plusDays(10);
+        LocalDate later = LocalDate.now().plusYears(2);
+        when(personClient.qualifications(PERSON1)).thenReturn(List.of(qualification(QUAL_RAIL, RAIL_DRIVER, soon, false),
+                qualification(QUAL_LIC, LICENCE_C, LocalDate.now().minusDays(1), true),
+                new PersonQualificationDto(QUAL_SAFETY, PERSON1, new QualificationTypeSummaryDto(QTYPE_SAFETY, "SAFE-1", "Trabajos en altura",
+                        QualificationKind.UNKNOWN), null, null, null, null, false, 1L),
+                qualification(UUID.randomUUID(), RR_OPERATOR, later, false)));
+
+        UI.getCurrent().navigate(ResourcesRoutes.PEOPLE);
+        GridKt._doubleClickItem(gridWithId("people-grid"), 0, 1, false, false, false, false);
+
+        LocatorJ._get(PersonDetailView.class);
+        LocatorJ._get(H2.class, spec -> spec.withText("PER-000003 · Yossi Cohen"));
+        assertEquals("Jefe de equipo", spanText("person-category-badge"));
+        assertEquals("Activa", spanText("person-state"));
+        assertTrue(textOf("person-summary").contains("Codigo: PER-000003 · Empresa: Propio · Usuario: -"), textOf("person-summary"));
+        Grid<Object> qualifications = gridWithId("qualifications-grid");
+        assertEquals(List.of("RAIL-DRIVER · Rail auxiliary vehicle driver", "Manejo de vehiculos", "RD-118", "01/04/2026", Formats.date(soon),
+                "Caduca en 10 dias"), GridKt._getFormattedRow(qualifications, 0).subList(0, 6));
+        assertEquals("Caducada", GridKt._getFormattedRow(qualifications, 1).get(5), "si ha caducado lo dice el servicio");
+        assertEquals(List.of("SAFE-1 · Trabajos en altura", "Desconocido", "", "", "", "No caduca"),
+                GridKt._getFormattedRow(qualifications, 2).subList(0, 6), "una clase nueva se lee como desconocida");
+        assertEquals("Vigente", GridKt._getFormattedRow(qualifications, 3).get(5));
+        assertEquals("4 cualificaciones", spanText("qualifications-count"));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("qualification-add")).isEmpty(), "sin resources-write no se anade");
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(qualifications, 0, "actions"), Button.class).isEmpty());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("person-edit")).isEmpty());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("person-deactivate")).isEmpty());
+        LocatorJ._get(Button.class, spec -> spec.withId("person-history"));
+
+        UI.getCurrent().navigate(ResourcesRoutes.PEOPLE);
+        Button open = LocatorJ._get(GridKt._getCellComponent(gridWithId("people-grid"), 0, PeopleView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("person-open-" + PERSON1));
+        assertEquals("Abrir PER-000003", open.getTooltip().getText());
+        LocatorJ._click(open);
+        LocatorJ._get(PersonDetailView.class);
+
+        UUID missing = UUID.fromString("3c4d5e6f-0000-4000-8000-0000000000ff");
+        when(personClient.findById(missing)).thenThrow(maintenanceError(404, "PER-404", "Person not found"));
+        UI.getCurrent().navigate(PersonDetailView.class, PersonDetailView.parametersOf(missing));
+        LocatorJ._get(PeopleView.class);
+    }
+
+    /**
+     * El alta de una cualificacion ofrece los tipos activos que la persona no tiene, dice la vigencia
+     * habitual del tipo, comprueba lo evidente antes de llamar y deja el dialogo abierto con el error del
+     * servicio en su campo o con su QUA-001. Sin resources-delete no se quita.
+     */
+    @Test
+    void aQualificationIsAddedWithItsTypeAndTheServiceSaysWhatItRejects() {
+        loginAs("recursos.gestor", RESOURCES_MANAGER);
+        PersonDto yossi = person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.TEAM_LEADER, true);
+        when(personClient.findById(PERSON1)).thenReturn(yossi);
+        when(personClient.qualifications(PERSON1)).thenReturn(List.of(qualification(QUAL_RAIL, RAIL_DRIVER, LocalDate.now().plusYears(1), false)));
+        stubQualificationTypes(List.of(LICENCE_C, RAIL_DRIVER));
+        PersonQualificationRequest expected = new PersonQualificationRequest(QTYPE_LIC_C, "C-12345", LocalDate.of(2026, 4, 1),
+                LocalDate.of(2036, 4, 1), null);
+        ApiProblem invalid = new ApiProblem(null, "Bad Request", 400, "Validation failed", null, "VAL-001", null, null, null, false,
+                List.of(new ApiFieldError("expiresOn", null, "must be within 20 years")), null);
+        when(personClient.addQualification(eq(PERSON1), any()))
+                .thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, invalid, "corr-q2", null, "POST /api/resources/people/x/qualifications"))
+                .thenThrow(maintenanceError(409, "QUA-001", "Person PER-000003 already has LIC-C"))
+                .thenReturn(qualification(QUAL_LIC, LICENCE_C, LocalDate.of(2036, 4, 1), false));
+
+        UI.getCurrent().navigate(PersonDetailView.class, PersonDetailView.parametersOf(PERSON1));
+        Grid<Object> grid = gridWithId("qualifications-grid");
+        LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("qualification-edit-" + QUAL_RAIL));
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, "actions"), Button.class,
+                spec -> spec.withId("qualification-remove-" + QUAL_RAIL)).isEmpty(), "quitar pide resources-delete");
+
+        click("qualification-add");
+        ComboBox<QualificationTypeDto> type = comboWithId("qualification-type");
+        assertEquals(List.of("LIC-C · Driving licence C"), ComboBoxKt.getSuggestions(type), "los activos que aun no tiene");
+        verify(qualificationTypeClient).search(QualificationTypeFilter.ACTIVE, 0, 200, List.of("code,asc"));
+        click(PersonQualificationDialog.SAVE_ID);
+        verify(personClient, never()).addQualification(any(), any());
+        assertTrue(type.isInvalid(), "el tipo es obligatorio");
+
+        LocatorJ._setValue(type, LICENCE_C);
+        assertEquals("Vacia: no caduca. Vigencia habitual: 120 meses", datePicker("qualification-expires-on").getHelperText());
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("qualification-reference")), " C-12345 ");
+        LocatorJ._setValue(datePicker("qualification-issued-on"), LocalDate.of(2026, 4, 1));
+        LocatorJ._setValue(datePicker("qualification-expires-on"), LocalDate.of(2026, 3, 1));
+        click(PersonQualificationDialog.SAVE_ID);
+        verify(personClient, never()).addQualification(any(), any());
+        assertEquals("No puede caducar antes de expedirse", datePicker("qualification-expires-on").getErrorMessage());
+
+        LocatorJ._setValue(datePicker("qualification-expires-on"), LocalDate.of(2036, 4, 1));
+        click(PersonQualificationDialog.SAVE_ID);
+        assertTrue(datePicker("qualification-expires-on").isInvalid(), "el error del servicio, en su campo");
+        assertEquals("must be within 20 years", datePicker("qualification-expires-on").getErrorMessage());
+        LocatorJ._get(PersonQualificationDialog.class);
+
+        click(PersonQualificationDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText(
+                "La persona ya tiene esa cualificacion, o su tipo esta retirado: para renovarla, cambia su caducidad. Person PER-000003 already has LIC-C"));
+        LocatorJ._get(PersonQualificationDialog.class);
+
+        click(PersonQualificationDialog.SAVE_ID);
+        verify(personClient, times(3)).addQualification(PERSON1, expected);
+        assertTrue(LocatorJ._find(PersonQualificationDialog.class).isEmpty());
+        verify(personClient, times(2)).qualifications(PERSON1);
+    }
+
+    /**
+     * Renovar una cualificacion manda lo cambiado, lo vaciado y la version leida; sin cambios no se
+     * llama. Quitarla pide resources-delete y confirmacion.
+     */
+    @Test
+    void aQualificationIsRenewedWithWhatChangedAndRemovedWithConfirmation() {
+        loginAs("recursos.responsable", RESOURCES_ADMIN);
+        PersonDto yossi = person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.TEAM_LEADER, true);
+        when(personClient.findById(PERSON1)).thenReturn(yossi);
+        PersonQualificationDto rail = qualification(QUAL_RAIL, RAIL_DRIVER, LocalDate.of(2027, 3, 31), false);
+        when(personClient.qualifications(PERSON1)).thenReturn(List.of(rail));
+        when(personClient.updateQualification(eq(PERSON1), eq(QUAL_RAIL), any())).thenReturn(rail);
+
+        UI.getCurrent().navigate(PersonDetailView.class, PersonDetailView.parametersOf(PERSON1));
+        Grid<Object> grid = gridWithId("qualifications-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("qualification-edit-" + QUAL_RAIL)));
+        TextField type = LocatorJ._get(TextField.class, spec -> spec.withId("qualification-type-readonly"));
+        assertTrue(type.isReadOnly());
+        assertEquals("RAIL-DRIVER · Rail auxiliary vehicle driver", type.getValue());
+        LocatorJ._setValue(datePicker("qualification-expires-on"), LocalDate.of(2028, 3, 31));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("qualification-reference")), "");
+        click(PersonQualificationDialog.SAVE_ID);
+        verify(personClient).updateQualification(PERSON1, QUAL_RAIL, new MergePatch<>(new PersonQualificationUpdateRequest(null, null,
+                LocalDate.of(2028, 3, 31), null), Set.of("reference"), 3L));
+        assertTrue(LocatorJ._find(PersonQualificationDialog.class).isEmpty());
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("qualification-edit-" + QUAL_RAIL)));
+        click(PersonQualificationDialog.SAVE_ID);
+        verify(personClient, times(1)).updateQualification(any(), any(), any());
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("qualification-remove-" + QUAL_RAIL)));
+        verify(personClient, never()).removeQualification(any(), any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(personClient).removeQualification(PERSON1, QUAL_RAIL);
+        NotificationsKt.expectNotifications("Guardada RAIL-DRIVER · Rail auxiliary vehicle driver", "Quitada RAIL-DRIVER · Rail auxiliary vehicle driver");
+    }
+
+    /** El catalogo se pide al servicio con sus filtros; quien solo lee no ve controles. */
+    @Test
+    void theQualificationTypesAreFilteredInTheServerAndAReaderHasNoControls() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubQualificationTypes(List.of(LICENCE_C, RAIL_DRIVER));
+
+        UI.getCurrent().navigate(ResourcesRoutes.QUALIFICATION_TYPES);
+        Grid<Object> grid = gridWithId("qualification-types-grid");
+        assertEquals(List.of("LIC-C", "Driving licence C", "Permiso de conducir", "C", "120 meses", "Activo"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 6));
+        assertEquals(List.of("RAIL-DRIVER", "Manejo de vehiculos", ""), List.of(GridKt._getFormattedRow(grid, 1).get(0),
+                GridKt._getFormattedRow(grid, 1).get(2), GridKt._getFormattedRow(grid, 1).get(3)));
+        verify(qualificationTypeClient, atLeastOnce()).search(eq(QualificationTypeFilter.NONE), eq(0), anyInt(), eq(List.of("code,asc")));
+
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("qualification-types-kind")), QualificationKind.VEHICLE_OPERATION);
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("qualification-types-state")), EnabledFilter.ENABLED);
+        GridKt._size(grid);
+        verify(qualificationTypeClient, atLeastOnce()).search(eq(new QualificationTypeFilter(null, QualificationKind.VEHICLE_OPERATION, true)),
+                eq(0), anyInt(), anyList());
+        @SuppressWarnings("unchecked")
+        Select<QualificationKind> kind = LocatorJ._get(Select.class, spec -> spec.withId("qualification-types-kind"));
+        assertFalse(kind.getListDataView().getItems().toList().contains(QualificationKind.UNKNOWN));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("qualification-type-create")).isEmpty());
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, QualificationTypesView.ACTIONS_COLUMN), Button.class).isEmpty());
+    }
+
+    /**
+     * Un tipo se da de alta con el permiso solo si es un permiso de conducir (y entonces es obligatorio),
+     * un codigo repetido se dice sin pedir recargar, modificar manda lo cambiado (pasar a otra clase vacia
+     * el permiso) y retirar pide confirmacion.
+     */
+    @Test
+    void aQualificationTypeIsCreatedPatchedAndRetiredAndTheLicenceOnlyGoesWithADrivingLicence() {
+        loginAs("recursos.responsable", RESOURCES_ADMIN);
+        stubQualificationTypes(List.of(LICENCE_C));
+        when(qualificationTypeClient.create(any())).thenThrow(maintenanceError(409, "QTY-409", "Qualification type LIC-CE already exists"))
+                .thenReturn(LICENCE_C);
+        when(qualificationTypeClient.update(any(), any())).thenReturn(LICENCE_C);
+
+        UI.getCurrent().navigate(ResourcesRoutes.QUALIFICATION_TYPES);
+        click("qualification-type-create");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("qualification-type-code")), " lic-ce ");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("qualification-type-name")), "Driving licence C+E");
+        assertTrue(LocatorJ._find(Select.class, spec -> spec.withId("qualification-type-licence")).isEmpty(), "sin clase no se pide permiso");
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("qualification-type-kind")), QualificationKind.DRIVING_LICENCE);
+        click(QualificationTypeEditorDialog.SAVE_ID);
+        verify(qualificationTypeClient, never()).create(any());
+        assertTrue(LocatorJ._get(Select.class, spec -> spec.withId("qualification-type-licence")).isInvalid(), "un permiso de conducir dice cual");
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("qualification-type-licence")), DrivingLicence.C_E);
+        click(QualificationTypeEditorDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText("Ya existe otro tipo de cualificacion con ese codigo."));
+        LocatorJ._get(QualificationTypeEditorDialog.class);
+        click(QualificationTypeEditorDialog.SAVE_ID);
+        verify(qualificationTypeClient, times(2)).create(new QualificationTypeRequest("LIC-CE", "Driving licence C+E", QualificationKind.DRIVING_LICENCE,
+                DrivingLicence.C_E, null, null));
+        assertTrue(LocatorJ._find(QualificationTypeEditorDialog.class).isEmpty());
+
+        Grid<Object> grid = gridWithId("qualification-types-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, QualificationTypesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("qualification-type-edit-" + QTYPE_LIC_C)));
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("qualification-type-code")).isReadOnly());
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("qualification-type-kind")), QualificationKind.SAFETY);
+        assertTrue(LocatorJ._find(Select.class, spec -> spec.withId("qualification-type-licence")).isEmpty());
+        click(QualificationTypeEditorDialog.SAVE_ID);
+        verify(qualificationTypeClient).update(QTYPE_LIC_C, new MergePatch<>(new QualificationTypeUpdateRequest(null, QualificationKind.SAFETY, null,
+                null, null, null), Set.of("drivingLicence"), 2L));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, QualificationTypesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("qualification-type-retire-" + QTYPE_LIC_C)));
+        verify(qualificationTypeClient, never()).deactivate(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(qualificationTypeClient).deactivate(QTYPE_LIC_C);
+    }
+
+    /**
+     * Los instrumentos se piden al servicio con sus filtros, tambien «calibracion caduca antes de», y dicen
+     * como esta su calibracion; quien solo lee ve el historial y nada mas.
+     */
+    @Test
+    void theInstrumentsAreFilteredByCalibrationAndSayHowTheirCalibrationIs() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        LocalDate soon = LocalDate.now().plusDays(10);
+        stubInstruments(List.of(instrument(INSTRUMENT1, "PT-01", InstrumentKind.EARTHING_POLE, soon, false, true),
+                instrument(INSTRUMENT2, "DT-01", InstrumentKind.VOLTAGE_DETECTOR, LocalDate.now().minusDays(3), true, true),
+                instrument(INSTRUMENT3, "TC-01", InstrumentKind.UNKNOWN, null, null, false)));
+        when(instrumentClient.revisions(INSTRUMENT1, 0, RevisionsDialog.PAGE_SIZE)).thenReturn(page(List.of(new RevisionDto<>(
+                new RevisionMetadataDto(3L, Instant.parse("2026-10-16T06:00:00Z"), RevisionOperation.UPDATED, "recursos.gestor", "HTTP", "c-3"),
+                instrument(INSTRUMENT1, "PT-01", InstrumentKind.EARTHING_POLE, LocalDate.of(2027, 3, 31), false, true))), 0, RevisionsDialog.PAGE_SIZE));
+
+        UI.getCurrent().navigate(ResourcesRoutes.INSTRUMENTS);
+        Grid<Object> grid = gridWithId("instruments-grid");
+        assertEquals(List.of("PT-01", "Instrumento PT-01", "Pertiga de puesta a tierra", "SN-PT-01", "31/03/2026", Formats.date(soon),
+                "Caduca en 10 dias", "Activo"), GridKt._getFormattedRow(grid, 0).subList(0, 8));
+        assertEquals("Caducada", GridKt._getFormattedRow(grid, 1).get(6), "si la calibracion caduco lo dice el servicio");
+        assertEquals(List.of("Desconocido", "Sin calibracion", "Retirado"), List.of(GridKt._getFormattedRow(grid, 2).get(2),
+                GridKt._getFormattedRow(grid, 2).get(6), GridKt._getFormattedRow(grid, 2).get(7)));
+        verify(instrumentClient, atLeastOnce()).search(eq(InstrumentFilter.NONE), eq(0), anyInt(), eq(List.of("code,asc")));
+
+        LocatorJ._setValue(datePicker("instruments-expires-before"), LocalDate.of(2026, 11, 30));
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("instruments-kind")), InstrumentKind.EARTHING_POLE);
+        GridKt._size(grid);
+        verify(instrumentClient, atLeastOnce()).search(eq(new InstrumentFilter(null, InstrumentKind.EARTHING_POLE, null, LocalDate.of(2026, 11, 30))),
+                eq(0), anyInt(), anyList());
+
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("instrument-create")).isEmpty());
+        assertEquals(List.of("instrument-history-" + INSTRUMENT1), LocatorJ._find(GridKt._getCellComponent(grid, 0, InstrumentsView.ACTIONS_COLUMN),
+                Button.class).stream().map(button -> button.getId().orElse("")).toList());
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, InstrumentsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("instrument-history-" + INSTRUMENT1)));
+        assertEquals("Instrumento PT-01 · Pertiga de puesta a tierra · N. serie SN-PT-01 · calibrado hasta el 31/03/2027 · activo",
+                GridKt._getFormattedRow(gridWithId("revisions-grid"), 0).get(5), "como quedo el instrumento en esa revision");
+    }
+
+    /**
+     * Un instrumento se da de alta con su calibracion (que no caduca antes de hacerse), un codigo repetido
+     * se dice con el dialogo abierto, renovar la calibracion manda lo cambiado y la version, y retirar pide
+     * resources-delete y confirmacion.
+     */
+    @Test
+    void anInstrumentIsCreatedRenewedAndRetiredAndARepeatedCodeIsSaid() {
+        loginAs("recursos.flota", FLEET_OPERATOR);
+        InstrumentDto pole = instrument(INSTRUMENT1, "PT-01", InstrumentKind.EARTHING_POLE, LocalDate.of(2027, 3, 31), false, true);
+        stubInstruments(List.of(pole));
+        when(instrumentClient.create(any())).thenThrow(maintenanceError(409, "INT-409", "Instrument PT-02 already exists")).thenReturn(pole);
+        when(instrumentClient.update(any(), any())).thenReturn(pole);
+
+        UI.getCurrent().navigate(ResourcesRoutes.INSTRUMENTS);
+        click("instrument-create");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("instrument-code")), "pt-02");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("instrument-name")), "Pertiga 2");
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("instrument-kind")), InstrumentKind.EARTHING_POLE);
+        LocatorJ._setValue(datePicker("instrument-calibrated-on"), LocalDate.of(2026, 10, 1));
+        LocatorJ._setValue(datePicker("instrument-calibration-expires-on"), LocalDate.of(2026, 9, 1));
+        click(InstrumentEditorDialog.SAVE_ID);
+        verify(instrumentClient, never()).create(any());
+        assertEquals("La calibracion no caduca antes de hacerse", datePicker("instrument-calibration-expires-on").getErrorMessage());
+        LocatorJ._setValue(datePicker("instrument-calibration-expires-on"), LocalDate.of(2027, 10, 1));
+        click(InstrumentEditorDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText("Ya existe otro instrumento con ese codigo."));
+        LocatorJ._get(InstrumentEditorDialog.class);
+        click(InstrumentEditorDialog.SAVE_ID);
+        verify(instrumentClient, times(2)).create(new InstrumentRequest("PT-02", "Pertiga 2", InstrumentKind.EARTHING_POLE, null,
+                LocalDate.of(2026, 10, 1), LocalDate.of(2027, 10, 1), null));
+
+        Grid<Object> grid = gridWithId("instruments-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, InstrumentsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("instrument-edit-" + INSTRUMENT1)));
+        assertTrue(LocatorJ._get(TextField.class, spec -> spec.withId("instrument-code")).isReadOnly());
+        LocatorJ._setValue(datePicker("instrument-calibration-expires-on"), LocalDate.of(2028, 3, 31));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("instrument-serial")), "");
+        click(InstrumentEditorDialog.SAVE_ID);
+        verify(instrumentClient).update(INSTRUMENT1, new MergePatch<>(new InstrumentUpdateRequest(null, null, null, null, LocalDate.of(2028, 3, 31),
+                null, null), Set.of("serialNumber"), 5L));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, InstrumentsView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("instrument-retire-" + INSTRUMENT1)));
+        verify(instrumentClient, never()).deactivate(any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(instrumentClient).deactivate(INSTRUMENT1);
+    }
+
+    /**
+     * La pestana Documentos de un vehiculo pide sus datos al abrirse; el alta ofrece los tipos que aun no
+     * tiene y exige la caducidad, un VDO-409 deja el dialogo abierto, renovar manda lo cambiado y quitar
+     * pide confirmacion.
+     */
+    @Test
+    void theVehicleDocumentsTabAddsRenewsAndRemovesOneOfEachKind() {
+        loginAs("recursos.flota", FLEET_OPERATOR);
+        stubConfigurationNames();
+        stubVehicles(List.of(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true)));
+        when(vehicleClient.locations(eq(VEHICLE1), any(), any(), anyInt(), anyInt())).thenReturn(page(List.<VehicleLocationDto>of(), 0, 20));
+        LocalDate later = LocalDate.now().plusYears(1);
+        VehicleDocumentDto itv = document(DOC_ITV, VehicleDocumentKind.ROAD_INSPECTION, "ITV-2026-118", later, false);
+        VehicleDocumentDto insurance = document(DOC_INSURANCE, VehicleDocumentKind.INSURANCE, "POL-77", LocalDate.now().minusDays(1), true);
+        when(vehicleClient.documents(VEHICLE1)).thenReturn(List.of(itv, insurance));
+        VehicleDocumentRequest rail = new VehicleDocumentRequest(VehicleDocumentKind.RAIL_INSPECTION, "RIV-9", null, LocalDate.of(2027, 6, 30), null);
+        when(vehicleClient.addDocument(eq(VEHICLE1), any())).thenThrow(maintenanceError(409, "VDO-409", "Vehicle DR-01 already has RAIL_INSPECTION"))
+                .thenReturn(document(UUID.randomUUID(), VehicleDocumentKind.RAIL_INSPECTION, "RIV-9", LocalDate.of(2027, 6, 30), false));
+        when(vehicleClient.updateDocument(eq(VEHICLE1), eq(DOC_ITV), any())).thenReturn(itv);
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        verify(vehicleClient, never()).documents(any());
+        selectTab(1);
+        Grid<Object> grid = gridWithId("documents-grid");
+        assertEquals(List.of("Inspeccion de carretera (ITV)", "ITV-2026-118", "28/02/2026", Formats.date(later), "Vigente"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 5));
+        assertEquals("Caducado", GridKt._getFormattedRow(grid, 1).get(4));
+
+        click("document-add");
+        @SuppressWarnings("unchecked")
+        Select<VehicleDocumentKind> kind = LocatorJ._get(Select.class, spec -> spec.withId("document-kind"));
+        assertEquals(List.of(VehicleDocumentKind.RAIL_INSPECTION, VehicleDocumentKind.CRANE_CERTIFICATE, VehicleDocumentKind.PLATFORM_CERTIFICATE,
+                VehicleDocumentKind.OTHER), kind.getListDataView().getItems().toList(), "los tipos que aun no tiene");
+        LocatorJ._setValue(kind, VehicleDocumentKind.RAIL_INSPECTION);
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("document-reference")), "RIV-9");
+        click(VehicleDocumentDialog.SAVE_ID);
+        verify(vehicleClient, never()).addDocument(any(), any());
+        assertTrue(datePicker("document-expires-on").isInvalid(), "la caducidad es obligatoria");
+        LocatorJ._setValue(datePicker("document-expires-on"), LocalDate.of(2027, 6, 30));
+        click(VehicleDocumentDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("El vehiculo ya tiene un documento de ese tipo: para renovarlo, cambia su caducidad."));
+        LocatorJ._get(VehicleDocumentDialog.class);
+        click(VehicleDocumentDialog.SAVE_ID);
+        verify(vehicleClient, times(2)).addDocument(VEHICLE1, rail);
+        assertTrue(LocatorJ._find(VehicleDocumentDialog.class).isEmpty());
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("document-edit-" + DOC_ITV)));
+        assertTrue(LocatorJ._get(Select.class, spec -> spec.withId("document-kind")).isReadOnly(), "el tipo no cambia");
+        LocatorJ._setValue(datePicker("document-expires-on"), LocalDate.of(2028, 2, 29));
+        click(VehicleDocumentDialog.SAVE_ID);
+        verify(vehicleClient).updateDocument(VEHICLE1, DOC_ITV, new MergePatch<>(new VehicleDocumentUpdateRequest(null, null, LocalDate.of(2028, 2, 29),
+                null), Set.of(), 1L));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, "actions"), Button.class, spec -> spec.withId("document-remove-" + DOC_INSURANCE)));
+        verify(vehicleClient, never()).removeDocument(any(), any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(vehicleClient).removeDocument(VEHICLE1, DOC_INSURANCE);
+    }
+
+    /** Quien solo lee ve los documentos sin controles, y uno de un tipo que no se conoce no abre nada. */
+    @Test
+    void aReaderOnlyReadsTheDocumentsOfAVehicleAndAnUnknownKindOpensNothing() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubConfigurationNames();
+        stubVehicles(List.of(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true)));
+        when(vehicleClient.locations(eq(VEHICLE1), any(), any(), anyInt(), anyInt())).thenReturn(page(List.<VehicleLocationDto>of(), 0, 20));
+        when(vehicleClient.documents(VEHICLE1)).thenReturn(List.of(document(DOC_ITV, VehicleDocumentKind.UNKNOWN, "TC-9", LocalDate.now().plusDays(5),
+                false)));
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        selectTab(1);
+        Grid<Object> grid = gridWithId("documents-grid");
+        assertEquals(List.of("Desconocido", "TC-9"), GridKt._getFormattedRow(grid, 0).subList(0, 2));
+        assertEquals("Caduca en 5 dias", GridKt._getFormattedRow(grid, 0).get(4));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("document-add")).isEmpty());
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, "actions"), Button.class).isEmpty());
+
+        loginAs("recursos.flota", FLEET_OPERATOR);
+        UI.getCurrent().navigate(HomeView.class);
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        selectTab(1);
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(gridWithId("documents-grid"), 0, "actions"), Button.class).isEmpty(),
+                "un tipo desconocido no se modifica ni se quita");
+        LocatorJ._get(Button.class, spec -> spec.withId("document-add"));
+    }
+
+    /**
+     * El editor de modelos ofrece los tipos de cualificacion activos para el conductor (y el leido aunque
+     * este retirado); vacia en el alta no viaja, y vaciarla al modificar viaja a null. La lista dice cual
+     * exige cada modelo.
+     */
+    @Test
+    void theModelEditorPicksTheQualificationOfItsDriverAndEmptyingItClearsIt() {
+        loginAs("recursos.gestor", FLEET_MANAGER);
+        QualificationTypeSummaryDto retired = new QualificationTypeSummaryDto(UUID.fromString("6a7b8c9d-0000-4000-8000-0000000000ff"), "OLD-RR",
+                "Old road-rail operator", QualificationKind.VEHICLE_OPERATION);
+        VehicleTypeDto existing = unimog(Set.of(), null, true, retired);
+        stubVehicleTypes(List.of(existing));
+        stubQualificationTypes(List.of(LICENCE_C, RR_OPERATOR));
+        when(vehicleTypeClient.update(any(), any())).thenReturn(existing);
+        when(vehicleTypeClient.create(any())).thenReturn(existing);
+
+        UI.getCurrent().navigate(ResourcesRoutes.VEHICLE_TYPES);
+        Grid<Object> grid = gridWithId("vehicle-types-grid");
+        assertEquals("OLD-RR", GridKt._getFormattedRow(grid, 0).get(7));
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, VehicleTypesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId("vehicle-type-edit-" + VEHICLE_TYPE1)));
+        ComboBox<QualificationTypeSummaryDto> driver = comboWithId("vehicle-type-driver-qualification");
+        assertEquals(retired, driver.getValue());
+        assertEquals(List.of("OLD-RR · Old road-rail operator", "LIC-C · Driving licence C", "RR-OPERATOR · Road-rail machine operator"),
+                ComboBoxKt.getSuggestions(driver), "los activos, y el leido aunque ya no lo este");
+        assertEquals("Vacia: no exige ninguna", driver.getHelperText());
+        LocatorJ._setValue(driver, null);
+        click(VehicleTypeEditorDialog.SAVE_ID);
+        verify(vehicleTypeClient).update(eq(VEHICLE_TYPE1), argThat(patch -> patch.cleared().equals(Set.of("requiredDriverQualificationTypeId"))
+                && patch.body().keySet().equals(Set.of("requiredDriverQualificationTypeId", "version")) && patch.version() == 4L));
+
+        click("vehicle-type-create");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-type-code")), "RR-2");
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-type-name")), "Bivial 2");
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("vehicle-type-mobility")), VehicleMobility.ROAD_RAIL);
+        LocatorJ._setValue(comboWithId("vehicle-type-category"), VehicleCategory.ROAD_RAIL_TRUCK);
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("vehicle-type-rail-gear")), RailGearType.RAIL_WHEEL_DRIVE);
+        ComboBox<QualificationTypeSummaryDto> newDriver = comboWithId("vehicle-type-driver-qualification");
+        assertEquals("Vacia: la que corresponde a su movilidad y a su permiso", newDriver.getHelperText());
+        LocatorJ._setValue(newDriver, RR_OPERATOR.summary());
+        click(VehicleTypeEditorDialog.SAVE_ID);
+        verify(vehicleTypeClient).create(argThat(request -> QTYPE_RR.equals(request.requiredDriverQualificationTypeId())
+                && "RR-2".equals(request.code())));
+    }
+
+    /** Un turno con sus instrumentos de mto-resources; {@code instruments}, en el orden del servicio. */
+    private static ShiftDto withInstruments(ShiftDto base, List<InstrumentSummaryDto> instruments) {
+        return new ShiftDto(base.id(), base.code(), base.shiftDate(), base.team(), base.baseName(), base.vehicle(), base.possessionType(),
+                base.plannedStart(), base.plannedEnd(), base.actualStart(), base.actualEnd(), base.voltageCutoffAt(), base.netWorkMinutes(),
+                base.blockingDisconnectors(), base.earthingPoints(), base.parkingPlace(), base.executionPackageId(), base.trackIds(),
+                base.startKp(), base.endKp(), base.personnel(), base.measurementEquipment(), base.status(), base.observations(), base.audit(),
+                base.version(), base.teamLeader(), base.supervisor(), base.linemen(), base.vehicles(), instruments);
+    }
+
+    /**
+     * Los instrumentos de un turno: la ficha y el parte los ensenan con su calibracion, el editor los elige
+     * entre los activos de mto-resources como un conjunto, uno que aun no ha llegado a mantenimiento
+     * (MSI-404) se dice con el dialogo abierto, y quitarlos todos viaja a null.
+     */
+    @Test
+    void aShiftPicksItsInstrumentsAsASetAndTheDetailAndTheReportShowThem() {
+        loginAs("mantenimiento.tecnico", SHIFT_CREW_WRITER);
+        stubReferencesForMaintenance();
+        stubPeople(List.of());
+        stubVehicles(List.of());
+        InstrumentDto pole = instrument(INSTRUMENT1, "PT-01", InstrumentKind.EARTHING_POLE, LocalDate.of(2027, 3, 31), false, true);
+        InstrumentDto detector = instrument(INSTRUMENT2, "DT-01", InstrumentKind.VOLTAGE_DETECTOR, null, null, true);
+        InstrumentDto gauge = instrument(INSTRUMENT3, "MG-01", InstrumentKind.MEASURING, LocalDate.of(2026, 12, 31), false, true);
+        stubInstruments(List.of(pole, detector, gauge));
+        ShiftDto shift = withInstruments(shiftWithCrew(ShiftStatus.PLANNED, null), List.of(pole.summary(), detector.summary()));
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        when(reportClient.shiftReport(SHIFT1)).thenReturn(new ShiftReportDto(shift, 0, 0, 0, 0, 0, List.of(), 0, List.of()));
+        when(shiftClient.update(eq(SHIFT1), any())).thenThrow(maintenanceError(404, "MSI-404", "Maintenance instrument " + INSTRUMENT3 + " not found"))
+                .thenReturn(shiftWithCrew(ShiftStatus.PLANNED, null));
+
+        openShift(shift);
+        assertEquals("Instrumentos: PT-01 · Instrumento PT-01 (calibrado hasta 31/03/2027), DT-01 · Instrumento DT-01 (sin calibracion)",
+                textOf("shift-instruments-summary"));
+        selectTab(2);
+        assertEquals(List.of("PT-01", "Instrumento PT-01", "Pertiga de puesta a tierra", "31/03/2027"),
+                GridKt._getFormattedRow(gridWithId("shift-report-instruments"), 0));
+        assertEquals(2, GridKt._size(gridWithId("shift-report-instruments")));
+
+        click("shift-edit");
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<InstrumentSummaryDto> instruments = LocatorJ._get(MultiSelectComboBox.class, spec -> spec.withId("shift-instruments"));
+        assertEquals(Set.of(pole.summary(), detector.summary()), instruments.getValue());
+        @SuppressWarnings("unchecked")
+        DataProvider<InstrumentSummaryDto, String> offered = (DataProvider<InstrumentSummaryDto, String>) instruments.getDataProvider();
+        assertEquals(List.of("PT-01", "DT-01", "MG-01"), offered.fetch(new Query<>(0, 50, List.of(), null, "")).map(InstrumentSummaryDto::code).toList());
+        verify(instrumentClient, atLeastOnce()).search(eq(InstrumentFilter.activeMatching("")), anyInt(), anyInt(), eq(List.of("code,asc")));
+        assertEquals("MG-01 · Instrumento MG-01 (calibrado hasta 31/12/2026)", instruments.getItemLabelGenerator().apply(gauge.summary()));
+
+        LocatorJ._setValue(instruments, Set.of(pole.summary(), gauge.summary()));
+        click(ShiftEditorDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Ese instrumento aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento."));
+        LocatorJ._get(ShiftEditorDialog.class);
+        verify(shiftClient).update(eq(SHIFT1), argThat(patch -> Set.of(INSTRUMENT1, INSTRUMENT3).equals(patch.values().instrumentIds())
+                && patch.cleared().isEmpty() && patch.version() == 4L));
+
+        LocatorJ._setValue(instruments, Set.of());
+        click(ShiftEditorDialog.SAVE_ID);
+        verify(shiftClient).update(eq(SHIFT1), argThat(patch -> patch.cleared().equals(Set.of("instrumentIds"))
+                && patch.values().instrumentIds() == null && patch.version() == 4L));
+        assertTrue(LocatorJ._find(ShiftEditorDialog.class).isEmpty());
+    }
+
+    /** Sin resources-read los instrumentos de un turno se leen como estan, no se pide nada a mto-resources y no viajan. */
+    @Test
+    void withoutResourcesReadTheInstrumentsOfAShiftAreOnlyReadAndDoNotTravel() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        stubReferencesForMaintenance();
+        InstrumentSummaryDto pole = new InstrumentSummaryDto(INSTRUMENT1, "PT-01", "Pertiga 1", InstrumentKind.EARTHING_POLE, LocalDate.of(2027, 3, 31));
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        when(shiftClient.update(eq(SHIFT1), any())).thenReturn(shiftWithCrew(ShiftStatus.PLANNED, null));
+        openShift(withInstruments(shiftWithCrew(ShiftStatus.PLANNED, null), List.of(pole)));
+
+        click("shift-edit");
+        assertTrue(LocatorJ._find(MultiSelectComboBox.class, spec -> spec.withId("shift-instruments")).isEmpty());
+        assertTrue(LocatorJ._get(Div.class, spec -> spec.withId("shift-crew-readonly")).getText().endsWith(" · Instrumentos: PT-01 · Pertiga 1"),
+                LocatorJ._get(Div.class, spec -> spec.withId("shift-crew-readonly")).getText());
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("shift-observations")), "Con lluvia");
+        click(ShiftEditorDialog.SAVE_ID);
+        verify(shiftClient).update(eq(SHIFT1), argThat(patch -> patch.cleared().isEmpty() && patch.values().instrumentIds() == null
+                && "Con lluvia".equals(patch.values().observations())));
+        verify(instrumentClient, never()).search(any(InstrumentFilter.class), anyInt(), anyInt(), anyList());
     }
 }

@@ -2,6 +2,7 @@ package com.alejandro.mtobackoffice.ui.resources;
 
 import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.resources.DrivingLicence;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationTypeSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.RailGearType;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleCapability;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleCategory;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 
 /**
  * Modelo mutable del editor de un modelo de vehiculo. Son muchas cifras, asi que se guardan por el
@@ -27,6 +29,10 @@ import java.util.TreeSet;
  * <p>Lo que la movilidad no admite no viaja: las cifras de via en uno de solo carretera, las de bivial
  * fuera de una bivial, las de carretera en uno de solo via; y las cifras de una capacidad, sin ella. Al
  * modificar, quitar una capacidad vacia sus cifras.</p>
+ *
+ * <p>La habilitacion del conductor ({@code requiredDriverQualificationTypeId}, que guarda el tipo
+ * elegido) vale para cualquier movilidad: vacia en el alta no viaja y la pone el servicio segun la
+ * movilidad y el permiso; vaciarla al modificar es que no exige ninguna.</p>
  */
 public class VehicleTypeForm {
 
@@ -84,6 +90,7 @@ public class VehicleTypeForm {
     private RailGearType railGearType;
     private boolean needsPreparedAccess;
     private DrivingLicence requiredLicence;
+    private QualificationTypeSummaryDto requiredDriverQualificationTypeId;
     private Set<String> capabilities = new LinkedHashSet<>();
     private String notes = "";
     private final Map<String, Object> figures = new HashMap<>();
@@ -106,6 +113,7 @@ public class VehicleTypeForm {
         form.railGearType = dto.railGearType();
         form.needsPreparedAccess = Boolean.TRUE.equals(dto.needsPreparedAccess());
         form.requiredLicence = dto.requiredLicence();
+        form.requiredDriverQualificationTypeId = dto.requiredDriverQualification();
         form.capabilities = new LinkedHashSet<>(dto.capabilities());
         form.notes = orEmpty(dto.notes());
         for (Figure figure : FIGURES) {
@@ -152,7 +160,7 @@ public class VehicleTypeForm {
                 roadRail ? railGearType : null, integer("onTrackingMinutes"), roadRail ? needsPreparedAccess : null, integer("maxSpeedRoadKmh"),
                 road ? requiredLicence : null, new TreeSet<>(capabilities), decimal("craneCapacityT"), decimal("craneReachM"),
                 decimal("platformHeightM"), integer("platformLoadKg"), decimal("platformInsulationKv"), decimal("towingCapacityT"),
-                blankToNull(notes));
+                blankToNull(notes), driverQualificationId(requiredDriverQualificationTypeId));
     }
 
     /**
@@ -202,8 +210,14 @@ public class VehicleTypeForm {
                 changes.number("platformInsulationKv", decimal("platformInsulationKv"), original.platformInsulationKv()),
                 changes.number("towingCapacityT", decimal("towingCapacityT"), original.towingCapacityT()),
                 changes.text("notes", notes, original.notes()),
-                null);
+                null,
+                changes.value("requiredDriverQualificationTypeId", driverQualificationId(requiredDriverQualificationTypeId),
+                        driverQualificationId(original.requiredDriverQualification())));
         return changes.patch(values, original.version());
+    }
+
+    private static UUID driverQualificationId(QualificationTypeSummaryDto type) {
+        return type == null ? null : type.id();
     }
 
     /** Una casilla: igual a lo leido (o a lo que el servicio entiende sin dato) no viaja; nunca vacia. */
@@ -336,6 +350,14 @@ public class VehicleTypeForm {
 
     public void setNeedsPreparedAccess(boolean needsPreparedAccess) {
         this.needsPreparedAccess = needsPreparedAccess;
+    }
+
+    public QualificationTypeSummaryDto getRequiredDriverQualificationTypeId() {
+        return requiredDriverQualificationTypeId;
+    }
+
+    public void setRequiredDriverQualificationTypeId(QualificationTypeSummaryDto requiredDriverQualificationTypeId) {
+        this.requiredDriverQualificationTypeId = requiredDriverQualificationTypeId;
     }
 
     public DrivingLicence getRequiredLicence() {

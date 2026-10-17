@@ -137,6 +137,8 @@ public class VehicleTypesView extends VerticalLayout {
         grid.addColumn(type -> type.seats() == null ? "" : String.valueOf(type.seats())).setHeader("Plazas").setKey("seats").setAutoWidth(true);
         grid.addColumn(type -> type.capabilities().stream().map(VehicleCapability::labelOf).collect(Collectors.joining(", ")))
                 .setHeader("Capacidades").setKey("capabilities").setAutoWidth(true);
+        grid.addColumn(type -> type.requiredDriverQualification() == null ? "" : type.requiredDriverQualification().code())
+                .setHeader("Habilitacion del conductor").setKey("driverQualification").setAutoWidth(true);
         grid.addColumn(type -> type.isActive() ? "Activo" : "Retirado").setHeader("Estado").setKey("active").setSortProperty("active")
                 .setSortable(true).setAutoWidth(true);
         grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey(ACTIONS_COLUMN).setAutoWidth(true).setFlexGrow(0);

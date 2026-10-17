@@ -322,6 +322,22 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   202 con la operación, y el diálogo la sigue cada 2 s hasta su resultado (cerrarlo deja de seguirla y
   avisa de que continúa en el servicio).
 
+- **Cualificaciones y caducidades** de `mto-resources`, a la par con mto-frontend. La lista de
+  **Personal** abre la **ficha de una persona** (`recursos/personal/:personId`, con doble clic o con
+  «Abrir»), con su cabecera y la pestaña **Cualificaciones**: una de cada tipo, con su referencia, cuándo
+  se expidió, cuándo caduca y su estado («Caducada» si el servicio lo dice, «Caduca en N días» cuando
+  faltan 30 o menos, «Vigente»); el alta ofrece los tipos activos que no tiene, renovar es cambiar la
+  caducidad y quitar pide confirmación. El **catálogo de tipos de cualificación**
+  (`recursos/cualificaciones`) pide el permiso de conducir solo en uno de esa clase. Los
+  **instrumentos** (`recursos/instrumentos`: pértigas, detectores de tensión, equipos de medida) se
+  filtran también por «calibración caduca antes de», con el estado de su calibración y su historial. La
+  ficha de un vehículo gana la pestaña **Documentos** (la ITV, el seguro, los certificados de la grúa y
+  de la plataforma), uno de cada tipo, y el editor de modelos, la **habilitación del conductor**. En
+  **mantenimiento**, el turno elige sus **instrumentos** de `mto-resources` (los activos, con hasta cuándo
+  están calibrados), y su ficha y su parte los enseñan. Lo caducado a la fecha del turno no entra en él:
+  lo dice `mto-maintenance` (409 `SHF-001`), no esta pantalla. Esas fichas son también los enlaces de
+  los avisos de caducidad de `mto-notification`.
+
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|
 | Exportar perfiles, consultar, descargar | `config-read` |
@@ -383,19 +399,19 @@ Las pantallas de mantenimiento (fase 8) siguen los permisos de `mto-maintenance-
 
 Los tres perfiles de mantenimiento del realm llevan `config-read`, `stock-read` y `resources-read`,
 así que quien los tiene ve también Infraestructura, Catálogos, Trabajos, Almacén y Recursos, en
-lectura; con `resources-read` elige además la dotación y los vehículos de un turno y nombra los sitios
-donde se dejaron.
+lectura; con `resources-read` elige además la dotación, los vehículos y los instrumentos de un turno y
+nombra los sitios donde se dejaron.
 
 Las pantallas de recursos (fase 10) siguen los permisos de `mto-resources-api`, y ninguno implica otro:
 
 | Acción en recursos | Roles de cliente de `mto-resources-api` |
 |---|---|
-| Ver personal, organigrama, flota, tablero, fichas e historial | `resources-read` |
+| Ver personal, organigrama, flota, tablero, cualificaciones, documentos, instrumentos, fichas e historial | `resources-read` |
 | Nombres y desplegables de vías, estaciones y paquetes | además, `config-read` de `mto-configuration-api` |
-| Personas, unidades, linemen y sitios de aparcamiento: alta, modificación y reactivar | `resources-write` |
-| Modelos y vehículos: alta, modificación y reactivar | `resources-fleet-write` |
+| Personas, unidades, linemen, sitios de aparcamiento, cualificaciones de una persona y tipos de cualificación: alta, modificación y reactivar | `resources-write` |
+| Modelos, vehículos, sus documentos e instrumentos: alta, modificación y reactivar | `resources-fleet-write` |
 | Registrar dónde está un vehículo | `resources-location-write` |
-| Desactivar una persona o una unidad, retirar un modelo, un sitio o un vehículo | `resources-delete` |
+| Desactivar una persona o una unidad, retirar un modelo, un sitio, un vehículo, un tipo de cualificación o un instrumento; quitar una cualificación o un documento | `resources-delete` |
 
 Las pantallas de notificaciones (fase 9) siguen los permisos de `mto-notification-api`, donde el
 permiso lo decide el recurso y ninguno implica otro:
@@ -443,8 +459,8 @@ El módulo de mantenimiento necesita `mto-maintenance` y `mto-stock` levantados 
 | `mantenimiento.lector` | `mto-maintenance-viewer` | Mantenimiento en solo lectura (con los informes y sus ficheros); configuración, almacén y recursos en lectura |
 | `mantenimiento.tecnico` | `mto-maintenance-technician` | Mantenimiento: órdenes, tareas, turnos, inspecciones, defectos y material, sin cancelar, `force`, quitar ni resolver |
 | `mantenimiento.responsable` | `mto-maintenance-manager` | el módulo Mantenimiento entero (fase 8) |
-| `recursos.lector` | `mto-resources-viewer` | Recursos en solo lectura: personal, organigrama, flota y tablero |
-| `recursos.gestor` | `mto-resources-manager` | Recursos: personas, unidades, linemen, sitios, modelos, vehículos y ubicaciones, sin desactivar ni retirar |
+| `recursos.lector` | `mto-resources-viewer` | Recursos en solo lectura: personal, organigrama, flota, tablero, cualificaciones e instrumentos |
+| `recursos.gestor` | `mto-resources-manager` | Recursos: personas y sus cualificaciones, unidades, linemen, sitios, modelos, vehículos y sus documentos, instrumentos y ubicaciones, sin desactivar, retirar ni quitar |
 | `recursos.responsable` | `mto-resources-admin` | el módulo Recursos entero (fase 10) |
 | `notificacion.lector` | `mto-notification-viewer` | la bandeja y el registro de actividad; nada más |
 | `notificacion.auditor` | `mto-notification-auditor` | además, los accesos |

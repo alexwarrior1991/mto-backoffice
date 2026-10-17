@@ -4,7 +4,8 @@ package com.alejandro.mtobackoffice.ui.resources;
  * Las rutas del modulo de recursos (personal, organigrama y flota de mto-resources), las mismas que
  * en mto-frontend. El prefijo es el grupo del menu y no tiene pantalla propia, asi que el nodo del
  * grupo es solo una etiqueta, como Infraestructura. Los segmentos literales de la flota
- * ({@code tablero}, {@code modelos}, {@code aparcamientos}) ganan a {@code :vehicleId}.
+ * ({@code tablero}, {@code modelos}, {@code aparcamientos}) ganan a {@code :vehicleId}. La ficha de una
+ * persona ({@code personal/:personId}) es el enlace de los avisos de caducidad de mto-notification.
  */
 public final class ResourcesRoutes {
 
@@ -15,6 +16,8 @@ public final class ResourcesRoutes {
     public static final String BOARD = FLEET + "/tablero";
     public static final String VEHICLE_TYPES = FLEET + "/modelos";
     public static final String PARKING_SITES = FLEET + "/aparcamientos";
+    public static final String QUALIFICATION_TYPES = PREFIX + "/cualificaciones";
+    public static final String INSTRUMENTS = PREFIX + "/instrumentos";
 
     private ResourcesRoutes() {
     }

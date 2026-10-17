@@ -18,6 +18,7 @@ import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -35,6 +36,12 @@ public final class UiErrors {
      * empleado (personas), una matricula o un numero ferroviario (vehiculos). El detalle dice cual.
      */
     private static final Set<String> RESOURCES_DUPLICATED = Set.of("PER-409", "UNI-409", "VEH-409", "VTY-409", "PRK-409");
+    /** Los 404 de mto-resources de lo que cuelga de una ficha o de un catalogo, cada uno dicho por lo que es. */
+    private static final Map<String, String> RESOURCES_MISSING = Map.of(
+            "QUA-404", "Esa cualificacion ya no existe.",
+            "VDO-404", "Ese documento del vehiculo ya no existe.",
+            "INT-404", "Ese instrumento no existe.",
+            "QTY-404", "Ese tipo de cualificacion no existe.");
 
     private UiErrors() {
     }
@@ -90,6 +97,12 @@ public final class UiErrors {
                     "Esa persona aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.";
             case NotFoundApiException fleet when "FLT-404".equals(fleet.getProblem().code()) ->
                     "Ese vehiculo aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.";
+            case NotFoundApiException instrument when "MSI-404".equals(instrument.getProblem().code()) ->
+                    "Ese instrumento aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.";
+            // mto-resources: lo que ya no existe (otra persona lo quito entre medias) de las cualificaciones,
+            // los documentos y los instrumentos. Se dice que es, sin el detalle del servicio, que nombra ids.
+            case NotFoundApiException missing when missing.getProblem().code() != null
+                    && RESOURCES_MISSING.containsKey(missing.getProblem().code()) -> RESOURCES_MISSING.get(missing.getProblem().code());
             case NotFoundApiException ignored -> "No se ha encontrado lo que se pedia."
                     + detail(exception);
             // mto-maintenance: la inspeccion no casa con su checklist (un OK con items defectuosos, un
@@ -144,6 +157,16 @@ public final class UiErrors {
                     "El organigrama no admite ese cambio." + detail(exception);
             case ConflictApiException fleet when "VEH-001".equals(fleet.getProblem().code()) ->
                     "La flota no admite ese cambio." + detail(exception);
+            // mto-resources: una persona tiene una cualificacion de cada tipo y un vehiculo un documento de cada
+            // tipo; renovar es cambiar la caducidad. Tampoco se apunta un tipo retirado. Recargar no lo arregla.
+            case ConflictApiException qualification when "QUA-001".equals(qualification.getProblem().code()) ->
+                    "La persona ya tiene esa cualificacion, o su tipo esta retirado: para renovarla, cambia su caducidad." + detail(exception);
+            case ConflictApiException document when "VDO-409".equals(document.getProblem().code()) ->
+                    "El vehiculo ya tiene un documento de ese tipo: para renovarlo, cambia su caducidad.";
+            case ConflictApiException duplicated when "QTY-409".equals(duplicated.getProblem().code()) ->
+                    "Ya existe otro tipo de cualificacion con ese codigo.";
+            case ConflictApiException duplicated when "INT-409".equals(duplicated.getProblem().code()) ->
+                    "Ya existe otro instrumento con ese codigo.";
             // mto-users: un nombre de usuario o un email repetido. Recargar tampoco lo arregla.
             case ConflictApiException duplicated when "USR-409".equals(duplicated.getProblem().code()) ->
                     "Ya existe un usuario con ese nombre de usuario o ese email." + detail(exception);

@@ -50,7 +50,8 @@ import java.util.UUID;
  * ({@code resources-write}). Quien dirige una unidad no se desactiva hasta que tenga otro jefe, y un
  * lineman sale de su equipo hoy salvo que lo dejara con menos de 2: lo dice el servicio (409
  * {@code UNI-001}). El historial es lectura y lo ofrece toda fila. Con {@code ?unitId=} (desde la ficha
- * de una unidad) ensena solo quien la dirige y sus linemen de ahora.
+ * de una unidad) ensena solo quien la dirige y sus linemen de ahora. Una fila abre la ficha de la persona
+ * ({@link PersonDetailView}, con sus cualificaciones) con doble clic o con su boton, como en mto-frontend.
  */
 @Route(value = ResourcesRoutes.PEOPLE, layout = MainLayout.class)
 @PageTitle("Personal")
@@ -63,6 +64,8 @@ public class PeopleView extends VerticalLayout implements BeforeEnterObserver {
     /** {@code ?unitId=}: quien dirige esa unidad o es uno de sus linemen ahora; lo pone la ficha de la unidad. */
     public static final String UNIT_PARAMETER = "unitId";
     private static final List<String> DEFAULT_SORT = List.of("lastName,asc", "firstName,asc");
+    static final String DEACTIVATE_TEXT = "No se borra: deja de poder entrar en equipos y turnos nuevos. Si es lineman de un equipo, sale de el hoy, "
+            + "salvo que lo dejara con menos de 2. Quien dirige una unidad necesita antes otro jefe. Se puede reactivar.";
 
     private final ResourcesClients clients;
     private final boolean canWrite;
@@ -136,10 +139,8 @@ public class PeopleView extends VerticalLayout implements BeforeEnterObserver {
         grid.addColumn(person -> ResourcesFormats.state(person.active())).setHeader("Estado").setKey("active")
                 .setSortProperty("active").setSortable(true).setAutoWidth(true);
         grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey(ACTIONS_COLUMN).setAutoWidth(true).setFlexGrow(0);
-        // Como en mto-frontend: el doble clic abre el editor si se puede modificar; un clic no abre nada.
-        if (canWrite) {
-            grid.addItemDoubleClickListener(event -> new PersonEditorDialog(event.getItem(), clients, this::refresh).open());
-        }
+        // Como en mto-frontend: el doble clic abre la ficha, igual que su boton; un clic no abre nada.
+        grid.addItemDoubleClickListener(event -> open(event.getItem()));
         grid.setPageSize(PAGE_SIZE);
         grid.setMultiSort(false);
         grid.setSizeFull();
@@ -147,10 +148,15 @@ public class PeopleView extends VerticalLayout implements BeforeEnterObserver {
         return grid;
     }
 
-    /** La columna existe siempre: el historial es lectura. */
+    private static void open(PersonDto person) {
+        UI.getCurrent().navigate(PersonDetailView.class, PersonDetailView.parametersOf(person.id()));
+    }
+
+    /** La columna existe siempre: abrir la ficha y el historial son lectura. */
     private Component rowActions(PersonDto person) {
         HorizontalLayout actions = new HorizontalLayout();
         actions.setSpacing(false);
+        actions.add(Screens.rowButton("person-open-" + person.id(), VaadinIcon.ARROW_RIGHT, "Abrir " + person.code(), click -> open(person)));
         actions.add(Screens.rowButton("person-history-" + person.id(), VaadinIcon.CLOCK, "Historial de " + person.code(),
                 click -> ResourcesHistory.dialog(person.code(), (page, size) -> clients.people().revisions(person.id(), page, size),
                         ResourcesHistory::person).open()));
@@ -160,10 +166,7 @@ public class PeopleView extends VerticalLayout implements BeforeEnterObserver {
         }
         if (person.isActive() && canDelete) {
             Button deactivate = Screens.rowButton("person-deactivate-" + person.id(), VaadinIcon.BAN, "Desactivar " + person.code(),
-                    click -> Screens.confirm("Desactivar " + person.label(),
-                            "No se borra: deja de poder entrar en equipos y turnos nuevos. Si es lineman de un equipo, sale de el hoy, "
-                                    + "salvo que lo dejara con menos de 2. Quien dirige una unidad necesita antes otro jefe. Se puede reactivar.",
-                            "Desactivar", () -> deactivate(person)));
+                    click -> Screens.confirm("Desactivar " + person.label(), DEACTIVATE_TEXT, "Desactivar", () -> deactivate(person)));
             deactivate.addThemeVariants(ButtonVariant.LUMO_ERROR);
             actions.add(deactivate);
         } else if (!person.isActive() && canWrite) {

@@ -111,15 +111,20 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   acotado, marcar una o todas, el registro con sus filtros y el detalle de una línea, y los
   accesos; DTO como records en `client/dto/notification`, con `payload` como `Map` y los
   enumerados tolerantes `ActivityCategory`, `ActivitySeverity`, `ActorKind` y `AccessOutcome`);
-  `client/resources` (la API de `mto-resources` bajo `/api/resources`: `PersonClient`,
+  `client/resources` (la API de `mto-resources` bajo `/api/resources`: `PersonClient` —con sus
+  cualificaciones, `/people/{id}/qualifications`, la lista entera, alta, `PATCH` y `DELETE`—,
   `OrganizationClient` —el árbol, las unidades, sus hijas y los linemen de un equipo, con `PUT` de la
   lista entera, `POST` para añadir uno y `leave` para que salga—, `VehicleTypeClient`,
   `ParkingSiteClient` y `VehicleClient` —con sus ubicaciones y el tablero, `positions`, ordenado por vía
-  y kp con el vehículo para desempatar—; DTO como records en `client/dto/resources`, con los resúmenes
-  —`PersonSummaryDto`, `UnitSummaryDto`, `VehicleSummaryDto`...— iguales por id para que un desplegable
-  reconozca lo leído, y las reglas copiadas del servicio en sus enumerados: `OrganizationUnitKind`
+  y kp con el vehículo para desempatar, y sus documentos, `/vehicles/{id}/documents`—,
+  `QualificationTypeClient` —el catálogo de tipos de cualificación— e `InstrumentClient` —los
+  instrumentos con su calibración, filtrables por `calibrationExpiresBefore`, y su historial—; DTO como
+  records en `client/dto/resources`, con los resúmenes —`PersonSummaryDto`, `UnitSummaryDto`,
+  `VehicleSummaryDto`, `QualificationTypeSummaryDto`, `InstrumentSummaryDto`...— iguales por id para que
+  un desplegable reconozca lo leído, y las reglas copiadas del servicio en sus enumerados: `OrganizationUnitKind`
   con sus niveles, a qué puede colgar y qué categorías lo dirigen, `VehicleCategory` con su movilidad,
-  `VehicleLocationKind.recordable` con lo que admite cada movilidad).
+  `VehicleLocationKind.recordable` con lo que admite cada movilidad; `QualificationKind`,
+  `VehicleDocumentKind` e `InstrumentKind`, tolerantes).
   Los DTO
   (`client/dto`): `LovDto` es un record con solo las claves que usa la UI (con `versionNumber`,
   que vuelve como se leyó) y `@JsonInclude(NON_NULL)`; los maestros (`client/dto/master`) son
@@ -212,11 +217,17 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `AccessView`, los accesos con su permiso aparte; `EventDetailDialog`, una línea entera con su
   `payload` clave a clave), `ui/resources` (`ResourcesRoutes`, las rutas bajo `recursos`;
   `ResourcesClients`; `ResourcesNames`, los nombres de `mto-configuration` como en mantenimiento;
-  `ResourcesPickers`, las personas y los vehículos buscados en el servidor, que usan también los turnos
-  de mantenimiento; `PeopleView` con `PersonEditorDialog`; `OrganizationView`, el árbol en un
+  `ResourcesPickers`, las personas, los vehículos y los instrumentos buscados en el servidor, que usan
+  también los turnos de mantenimiento; `PeopleView` con `PersonEditorDialog`, y `PersonDetailView` en
+  `recursos/personal/:personId`, la ficha de una persona con su pestaña `PersonQualificationsPanel`
+  (`PersonQualificationDialog` sobre `PersonQualificationForm`); `QualificationTypesView` en
+  `recursos/cualificaciones`, el catálogo de tipos, con `QualificationTypeEditorDialog`; `InstrumentsView`
+  en `recursos/instrumentos` con `InstrumentEditorDialog`; `Expiry`, cómo se dice una caducidad;
+  `OrganizationView`, el árbol en un
   `TreeGrid`, y `UnitDetailView` con `UnitEditorDialog`, `TeamMembersPanel`, `TeamMembersDialog`,
   `MemberDialogs` y `ChildUnitsPanel`; `VehiclesView`, `VehicleDetailView` con `VehicleLocationsPanel`,
-  `VehicleLocationDialog` y `VehicleEditorDialog`; `FleetBoardView`, el tablero; `VehicleTypesView` y
+  `VehicleLocationDialog`, `VehicleDocumentsPanel` (`VehicleDocumentDialog`) y `VehicleEditorDialog`;
+  `FleetBoardView`, el tablero; `VehicleTypesView` y
   `ParkingSitesView` con sus editores; `ResourcesFormats` y `ResourcesHistory`; en `ui/maintenance`,
   `TaskGeneration`, la generación con `Prefer` y su seguimiento, y `ParkingRows`, dónde queda cada
   vehículo al cerrar un turno), `ui/support` (`UiErrors`: excepción →
@@ -297,7 +308,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   422 de la inspección y su checklist, y el 503 `STK-503`, el almacén caído al sincronizar o quitar
   una línea, que se queda como estaba. Al sincronizar, el almacén también puede decir que no: 409
   `STK-001` sin existencias, que se dice como en almacén, o 422 `STK-422` por otro motivo («el
-  almacén ha rechazado la operación», con el motivo de stock).
+  almacén ha rechazado la operación», con el motivo de stock). Los de las caducidades de
+  `mto-resources` tampoco piden recargar: `QUA-001` (la persona ya tiene ese tipo, o el tipo está
+  retirado: renovar es cambiar la caducidad), `VDO-409` (el vehículo ya tiene un documento de ese tipo) y
+  `QTY-409`/`INT-409` (código repetido); `QUA-404`, `VDO-404`, `INT-404` y `QTY-404` dicen qué ya no existe,
+  y el 404 `MSI-404` de mantenimiento, que el instrumento aún no ha llegado allí desde `mto-resources`.
 - **La paginación es la forma DTO** `{content, page:{size,number,totalElements,totalPages}}`, fijada
   en `mto-configuration` con `spring.data.web.pageable.serialization-mode: via_dto` y pinada allí
   por test. `PageResponse<T>` la lee (y tolera `first`/`last` de stock y maintenance). La API de
@@ -440,16 +455,18 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   que la confirmación avisa de que pasa por el almacén aunque la línea no tenga reserva todavía.
 - **Los enumerados que se leen de un servicio toleran lo desconocido.** Son los de
   mantenimiento, los de almacén (`MovementType`, `ReservationStatus`), el del historial
-  (`RevisionOperation`), los de los trabajos (`JobStatus`, `JobType`) y los de notificaciones
-  (`ActivityCategory`, `ActivitySeverity`, `ActorKind`, `AccessOutcome`). Cada uno lleva `UNKNOWN`
+  (`RevisionOperation`), los de los trabajos (`JobStatus`, `JobType`), los de notificaciones
+  (`ActivityCategory`, `ActivitySeverity`, `ActorKind`, `AccessOutcome`) y los de recursos (también
+  `QualificationKind`, `VehicleDocumentKind` e `InstrumentKind`). Cada uno lleva `UNKNOWN`
   («Desconocido»), un `@JsonCreator(mode = DELEGATING) of(String)` que delega en
   `ClientEnums.parse` y `selectable()` sin `UNKNOWN` para los desplegables: un valor nuevo en el
   servicio se lee como desconocido en vez de romper la página entera, que además fallaría sin
   aviso, porque ese fallo de lectura no es un `BackofficeApiException`. Lo desconocido no abre
   nada: una reserva `UNKNOWN` no es activa; una línea de material `UNKNOWN` no ofrece ni modificar,
   ni sincronizar, ni quitar (`StockSyncStatus.isChangeable`); un trabajo en un estado `UNKNOWN` se da por terminado,
-  para no consultarlo sin fin; y uno de un tipo `UNKNOWN` no tiene familia, así que ni se consulta
-  por separado ni se descarga. No se toca el mapper global. Quedan fuera, a propósito, los que solo
+  para no consultarlo sin fin; uno de un tipo `UNKNOWN` no tiene familia, así que ni se consulta
+  por separado ni se descarga; y un documento de un vehículo de un tipo `UNKNOWN` se ve, pero ni se
+  modifica ni se quita. No se toca el mapper global. Quedan fuera, a propósito, los que solo
   viajan en peticiones (`AdjustmentDirection`, `RequiredAction`, `ReportFormat`) y el de los
   maestros de `mto-configuration` (`SectionInsulatorInstallationType`): el maestro se devuelve
   entero, y un `UNKNOWN` volvería al servicio como un valor que no existe; tolerarlo exigiría
@@ -670,18 +687,44 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   por vía y kp (`effective ?? position`: un remolcado está donde su portador) que se vuelve a pedir con
   «Actualizar», sin sondeo. Las rutas `recursos/*` son las de mto-frontend
   (`theResourcesRoutesAreTheOnesOfTheSpa`).
+- **Las cualificaciones, los documentos y las calibraciones caducan, y si han caducado lo dice el
+  servicio.** El estado (`Expiry`) es «Caducada» (o «Caducado», un documento) cuando el servicio lo dice
+  con `expired` o `calibrationExpired`, «Caduca en N dias» mientras falten 30 o menos, y «Vigente» más
+  allá; sin fecha, «No caduca» o «Sin calibracion». Los días que faltan son solo presentación: la fecha
+  y la zona son del servicio, y lo que no entra en un turno lo decide mantenimiento a la fecha del turno.
+  La lista de Personal abre la **ficha de una persona** (`recursos/personal/:personId`, que es también el
+  enlace de los avisos de caducidad) con doble clic o con «Abrir»: su cabecera con los botones de la
+  lista y la pestaña «Cualificaciones». Una persona tiene una de cada tipo, así que el alta ofrece solo
+  los tipos activos que no tiene (lo demás es el 409 `QUA-001`), dice la vigencia habitual del tipo sin
+  calcular nada, y renovar es cambiar la caducidad (merge-patch con la versión; vaciarla es que no
+  caduca); quitarla es un `DELETE` con confirmación. Escribir pide `resources-write` y quitar
+  `resources-delete`. La ficha de un vehículo lleva la pestaña «Documentos», uno de cada tipo y con la
+  caducidad obligatoria (`VDO-409`), con `resources-fleet-write` y `resources-delete`. El catálogo de
+  tipos (`recursos/cualificaciones`) pide el permiso de conducir solo en uno de `DRIVING_LICENCE`, y al
+  pasar a otra clase lo vacía; se retira con un `DELETE`. Los instrumentos (`recursos/instrumentos`) se
+  piden paginados y filtrados en el servicio, también por «calibración caduca antes de»
+  (`calibrationExpiresBefore`, una fecha ISO), con su historial; escribirlos pide
+  `resources-fleet-write`. El editor de modelos elige la «Habilitacion del conductor» entre los tipos
+  activos (y el leído, aunque esté retirado): vacía en el alta no viaja y la pone el servicio según la
+  movilidad y el permiso; vaciarla al modificar viaja a `null` (no exige ninguna). Un código repetido
+  (`QTY-409`, `INT-409`) y los 409 de una de cada tipo no piden recargar.
 - **Un equipo de mantenimiento que llega de `mto-resources` se lee.** Su origen, su jefe, su supervisor
   y sus linemen salen en la lista, y su fila lleva a su unidad del organigrama y a su vehículo (con
   `resources-read`) en vez de a «Modificar», que el servicio rechazaría con 409 `TEA-001`; si llega, se
   dice que se cambia en Recursos > Organigrama.
-- **La dotación y los vehículos de un turno son de `mto-resources`.** Con `resources-read` el editor
-  elige el jefe (cualquiera menos un operario), el supervisor (de supervisor para arriba), los linemen
-  (operarios o jefes de equipo) y los vehículos disponibles; en el alta, lo que se deja vacío no viaja y
-  lo copia el servicio del equipo; al modificar, linemen y vehículos son conjuntos y quitarlos todos
-  viaja a `null`. Sin `resources-read` se leen y no viajan. Las demás reglas (de 2 a 6 linemen para
-  iniciar, las plazas, el remolque, una persona o un vehículo en otro turno del día) son el 409
-  `SHF-001` del servicio, y una persona o un vehículo que aún no ha llegado por evento, su 404
-  `CRW-404`/`FLT-404`. Cerrar el turno dice dónde queda cada vehículo (`ParkingRows`: un sitio que
+- **La dotación, los vehículos y los instrumentos de un turno son de `mto-resources`.** Con
+  `resources-read` el editor elige el jefe (cualquiera menos un operario), el supervisor (de supervisor
+  para arriba), los linemen (operarios o jefes de equipo), los vehículos disponibles y los instrumentos
+  activos (cada uno con hasta cuándo está calibrado: `ResourcesPickers.instrumentLabel`); en el alta, lo
+  que se deja vacío no viaja y la dotación y los vehículos los copia el servicio del equipo (los
+  instrumentos, nadie); al modificar, linemen, vehículos e instrumentos son conjuntos y quitarlos todos
+  viaja a `null`. Sin `resources-read` se leen y no viajan. La ficha y el parte (`ShiftReportPanel`, con
+  los `instruments` del turno del parte) enseñan los instrumentos con su calibración. Las demás reglas
+  (de 2 a 6 linemen para iniciar, las plazas, el remolque, una persona o un vehículo en otro turno del
+  día, y lo caducado a la fecha del turno: una cualificación de la dotación, un documento de un
+  vehículo, la calibración de un instrumento, o la habilitación de cada conductor al iniciar) son el 409
+  `SHF-001` del servicio, y una persona, un vehículo o un instrumento que aún no ha llegado por evento,
+  su 404 `CRW-404`/`FLT-404`/`MSI-404`. Cerrar el turno dice dónde queda cada vehículo (`ParkingRows`: un sitio que
   alcanza por su movilidad, una vía y su kp, o un texto); solo viaja lo rellenado, lo evidente se dice
   en su fila antes de llamar, y lo que `mto-resources` lee de ahí es lo que lo mueve.
 - **Generar tareas de verdad va con `Prefer: respond-async, wait=5`** (`TaskGeneration`). Si el servicio
@@ -858,6 +901,16 @@ su dotación, sus vehículos y sus aparcamientos, y el 202 de una generación co
 la regla de 2 a 6, los modelos por secciones, los vehículos y dónde están, el tablero, el vehículo por
 defecto de un equipo, el equipo sincronizado de solo lectura, la dotación del turno y su cierre con
 aparcamientos, la generación seguida hasta su resultado, su fallo y su 429, y las rutas de recursos
-iguales a las de la SPA. Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
+iguales a las de la SPA. Las cualificaciones y caducidades de `mto-resources` también: en
+`ClientLayerTest`, el catálogo de tipos (una clase nueva como `UNKNOWN`), las cualificaciones de una
+persona con su `QUA-001`, los documentos de un vehículo con su `VDO-409`, los instrumentos con
+«calibración caduca antes de» y su historial, la habilitación del conductor de un modelo (vaciada a
+`null`) y los instrumentos de un turno y de su parte, con el `MSI-404`; en `ViewLayerTest`, el estado de
+una caducidad, los mensajes de sus códigos, el menú y sus permisos, la ficha de una persona abierta desde
+su fila con sus cualificaciones (el alta con los tipos que no tiene, el error del servicio en su campo, el
+`QUA-001`, renovar, quitar con confirmación, solo lectura sin `resources-write`), el catálogo de tipos, los
+instrumentos, la pestaña de documentos (un tipo desconocido no abre nada), el editor de modelos y los
+instrumentos de un turno (un conjunto que se vacía a `null`, el `MSI-404`, la ficha y el parte, de solo
+lectura sin `resources-read`). Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
 CI: `mto-platform/scripts/e2e.sh` construye la imagen de este commit, usa la publicada de cada
 hermano y corre el e2e de Playwright de mto-frontend, que recorre las dos aplicaciones.
