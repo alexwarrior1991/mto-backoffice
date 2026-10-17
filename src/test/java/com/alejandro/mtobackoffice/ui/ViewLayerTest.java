@@ -5491,6 +5491,12 @@ class ViewLayerTest {
         assertTrue(hasButton("order-start") && hasButton("order-assign"));
         assertFalse(hasButton("order-plan"));
 
+        click("order-assign");
+        assertEquals("Vacia: el jefe del equipo, si es de Recursos",
+                LocatorJ._get(TextField.class, spec -> spec.withId("order-transition-assigned-user")).getHelperText(),
+                "sin persona, el servicio asigna la orden de un equipo de Recursos a su jefe");
+        LocatorJ._get(OrderTransitionDialog.class).close();
+
         click("order-start");
         click(OrderTransitionDialog.CONFIRM_ID);
         LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
@@ -7960,7 +7966,7 @@ class ViewLayerTest {
         List<ActivityCategory> offered = category.getListDataView().getItems().toList();
         assertFalse(offered.contains(ActivityCategory.ACCESS), "los accesos van por su pantalla; aqui el servicio los rechaza: " + offered);
         assertFalse(offered.contains(ActivityCategory.UNKNOWN), offered.toString());
-        assertTrue(offered.containsAll(List.of(ActivityCategory.USERS, ActivityCategory.FIELD, ActivityCategory.SYSTEM)), offered.toString());
+        assertTrue(offered.containsAll(List.of(ActivityCategory.USERS, ActivityCategory.FIELD, ActivityCategory.RESOURCES, ActivityCategory.SYSTEM)), offered.toString());
 
         clearInvocations(notificationClient);
         LocatorJ._setValue(LocatorJ._get(ComboBox.class, spec -> spec.withId("activity-severity")), ActivitySeverity.CRITICAL);

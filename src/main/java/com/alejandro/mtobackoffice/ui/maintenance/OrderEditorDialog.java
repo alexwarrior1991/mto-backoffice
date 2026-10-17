@@ -41,6 +41,11 @@ public class OrderEditorDialog extends Dialog {
     public static final String SAVE_ID = "order-save";
     static final int TITLE_LENGTH = 255;
     static final int USER_LENGTH = 100;
+    /**
+     * Lo que hace el servicio con la persona vacia: una orden de un equipo de mto-resources va al usuario
+     * de su jefe (y la que tenia al jefe del equipo anterior, al del nuevo). Aqui solo se dice.
+     */
+    static final String LEADER_HINT = "Vacia: el jefe del equipo, si es de Recursos";
 
     private final Binder<OrderForm> binder = new Binder<>(OrderForm.class);
     private final OrderForm form;
@@ -81,6 +86,7 @@ public class OrderEditorDialog extends Dialog {
         TextField assignedUser = new TextField("Asignada a");
         assignedUser.setId("order-assigned-user");
         assignedUser.setMaxLength(USER_LENGTH);
+        assignedUser.setHelperText(LEADER_HINT);
         TextArea closingNotes = new TextArea("Notas de cierre");
         closingNotes.setId("order-closing-notes");
 

@@ -376,7 +376,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   diálogo abierto. Cada transición es su llamada, con su cuerpo, y no se funden. `maintenance-supervise`
   va siempre **junto con** `maintenance-write` (`hasAllRoles`): cancelar una orden, completarla con
   `force` y resolver, cerrar o descartar un defecto; `force` ni se ve sin él. Tras guardar, la ficha
-  pinta lo que devuelve el servicio o relee. Una ficha (orden, turno, inspección, defecto) que no se
+  pinta lo que devuelve el servicio o relee. Asignar (y el editor de la orden) sin persona deja que el
+  servicio ponga al jefe de un equipo de Recursos: aquí solo se dice en el campo
+  (`OrderEditorDialog.LEADER_HINT`). Una ficha (orden, turno, inspección, defecto) que no se
   puede leer por algo que no es un 404 se queda con el motivo, «Volver a la lista» y «Reintentar»
   (`Screens.showLoadFailure`); un 404 dice que no existe y vuelve a la lista.
 - **Una modificación de mantenimiento es un `PATCH` merge-patch con la versión leída.** Cada

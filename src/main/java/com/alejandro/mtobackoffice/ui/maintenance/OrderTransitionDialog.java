@@ -90,6 +90,7 @@ public class OrderTransitionDialog extends Dialog {
                 TextField assignedUser = new TextField("Persona");
                 assignedUser.setId("order-transition-assigned-user");
                 assignedUser.setMaxLength(OrderEditorDialog.USER_LENGTH);
+                assignedUser.setHelperText(OrderEditorDialog.LEADER_HINT);
                 binder.forField(team)
                         .withValidator(selected -> selected != null || !assignedUser.getValue().isBlank(), "Hace falta un equipo, una persona o los dos")
                         .bind("teamId");
