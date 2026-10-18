@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice;
 
 import com.alejandro.mtobackoffice.client.configuration.LovClient;
+import com.alejandro.mtobackoffice.client.configuration.TrackAccessPointClient;
 import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
 import com.alejandro.mtobackoffice.client.maintenance.DefectClient;
 import com.alejandro.mtobackoffice.client.maintenance.InspectionClient;
@@ -10,9 +11,12 @@ import com.alejandro.mtobackoffice.client.maintenance.OrderClient;
 import com.alejandro.mtobackoffice.client.maintenance.ReportClient;
 import com.alejandro.mtobackoffice.client.maintenance.ShiftClient;
 import com.alejandro.mtobackoffice.client.notification.NotificationClient;
+import com.alejandro.mtobackoffice.client.resources.AccessPointClient;
+import com.alejandro.mtobackoffice.client.resources.InstrumentClient;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.QualificationTypeClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
@@ -81,6 +85,7 @@ class MtoBackofficeApplicationTests {
     @Test
     void contextLoadsWithoutKeycloakListening() {
         assertNotNull(context.getBean(LovClient.class));
+        assertNotNull(context.getBean(TrackAccessPointClient.class));
         assertNotNull(context.getBean(UsersClient.class));
         for (Class<?> stockClient : List.of(MaterialClient.class, WarehouseClient.class, SupplierClient.class, ProjectClient.class,
                 AssemblyClient.class, MovementClient.class, ReservationClient.class)) {
@@ -92,7 +97,8 @@ class MtoBackofficeApplicationTests {
         }
         assertNotNull(context.getBean(NotificationClient.class));
         for (Class<?> resourcesClient : List.of(PersonClient.class, OrganizationClient.class, VehicleTypeClient.class,
-                ParkingSiteClient.class, VehicleClient.class, ResourcesClients.class)) {
+                ParkingSiteClient.class, VehicleClient.class, QualificationTypeClient.class, InstrumentClient.class, AccessPointClient.class,
+                ResourcesClients.class)) {
             assertNotNull(context.getBean(resourcesClient), resourcesClient.getSimpleName());
         }
         assertEquals(List.of("mto-configuration-api", "mto-users-api", "mto-stock-api", "mto-maintenance-api", "mto-notification-api",

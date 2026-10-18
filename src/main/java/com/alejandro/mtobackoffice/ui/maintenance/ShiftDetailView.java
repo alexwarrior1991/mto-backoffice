@@ -11,6 +11,7 @@ import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
 import com.alejandro.mtobackoffice.configuration.security.StockRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
+import com.alejandro.mtobackoffice.ui.resources.ResourcesPickers;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPanel;
 import com.alejandro.mtobackoffice.ui.support.Screens;
@@ -46,7 +47,8 @@ import java.util.stream.Collectors;
 
 /**
  * La ficha de un turno: su cabecera (equipo, posesion, vias, ventana prevista y real, corte de
- * tension, minutos netos, seccionadores abiertos), los botones que su estado admite (modificar,
+ * tension, minutos netos, seccionadores abiertos; la dotacion, los vehiculos y los instrumentos de
+ * mto-resources, estos con hasta cuando estan calibrados), los botones que su estado admite (modificar,
  * iniciar, asignar tareas, cerrar y cancelar, todos con {@code maintenance-write}) y las pestanas
  * de tareas, perfiles y el parte del turno (con su Excel y su PDF).
  */
@@ -203,6 +205,12 @@ public class ShiftDetailView extends VerticalLayout implements BeforeEnterObserv
             Div vehicles = line("Vehiculos: " + loaded.vehicles().stream().map(this::vehicleText).collect(Collectors.joining(", ")));
             vehicles.setId("shift-vehicles-summary");
             summary.add(vehicles);
+        }
+        if (!loaded.instruments().isEmpty()) {
+            Div instruments = line("Instrumentos: " + loaded.instruments().stream().map(ResourcesPickers::instrumentLabel)
+                    .collect(Collectors.joining(", ")));
+            instruments.setId("shift-instruments-summary");
+            summary.add(instruments);
         }
         if (loaded.personnel() != null && !loaded.personnel().isBlank()) {
             summary.add(line("Personal: " + loaded.personnel()));

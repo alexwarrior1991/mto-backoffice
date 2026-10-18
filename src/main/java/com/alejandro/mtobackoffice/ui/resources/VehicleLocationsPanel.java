@@ -57,7 +57,7 @@ class VehicleLocationsPanel extends LazyPanel {
         grid.addColumn(location -> location.observedAt() == null ? "" : Formats.dateTime(location.observedAt())).setHeader("Cuando").setKey("when")
                 .setAutoWidth(true);
         grid.addColumn(location -> ResourcesFormats.place(location, names)).setHeader("Donde").setKey("where").setAutoWidth(true);
-        grid.addColumn(VehicleLocationDto::accessPoint).setHeader("Acceso").setKey("access").setAutoWidth(true);
+        grid.addColumn(VehicleLocationDto::accessPointLabel).setHeader("Acceso").setKey("access").setAutoWidth(true);
         grid.addColumn(location -> location.source() == null ? "" : location.source().label()).setHeader("Origen").setKey("source").setAutoWidth(true);
         grid.addColumn(VehicleLocationDto::recordedBy).setHeader("Registrada por").setKey("recordedBy").setAutoWidth(true);
         grid.addColumn(new ComponentRenderer<>(this::shiftLink)).setHeader("").setKey("actions").setAutoWidth(true).setFlexGrow(0);

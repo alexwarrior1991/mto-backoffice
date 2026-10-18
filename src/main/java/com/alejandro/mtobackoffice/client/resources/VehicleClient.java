@@ -6,6 +6,9 @@ import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.dto.resources.FleetPositionDto;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleCategory;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDocumentDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDocumentRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDocumentUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleDto;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleFilter;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationDto;
@@ -33,6 +36,7 @@ import java.util.UUID;
  * esta cada uno: su historial de ubicaciones, solo de anadir ({@code resources-location-write} para
  * registrar una a mano), y el tablero de la flota. Un vehiculo no se borra: {@code DELETE} lo retira
  * ({@code resources-delete}; 409 {@code VEH-001} mientras sea el vehiculo por defecto de un equipo).
+ * Sus documentos que caducan (la ITV, el seguro...) cuelgan de el, uno de cada tipo.
  */
 @HttpExchange("/api/resources/vehicles")
 public interface VehicleClient {
@@ -91,4 +95,20 @@ public interface VehicleClient {
                                              @RequestParam(value = "kind", required = false) VehicleLocationKind kind,
                                              @RequestParam("page") int page, @RequestParam("size") int size,
                                              @RequestParam("sort") List<String> sort);
+
+    /** Sus documentos, enteros. */
+    @GetExchange("/{id}/documents")
+    List<VehicleDocumentDto> documents(@PathVariable("id") UUID id);
+
+    /** 201 ({@code resources-fleet-write}); 409 {@code VDO-409} si ya tiene uno de ese tipo. */
+    @PostExchange("/{id}/documents")
+    VehicleDocumentDto addDocument(@PathVariable("id") UUID id, @RequestBody VehicleDocumentRequest request);
+
+    @PatchExchange(value = "/{id}/documents/{documentId}", contentType = MergePatch.MEDIA_TYPE)
+    VehicleDocumentDto updateDocument(@PathVariable("id") UUID id, @PathVariable("documentId") UUID documentId,
+                                      @RequestBody MergePatch<VehicleDocumentUpdateRequest> patch);
+
+    /** Un borrado de verdad ({@code resources-delete}): 204. */
+    @DeleteExchange("/{id}/documents/{documentId}")
+    void removeDocument(@PathVariable("id") UUID id, @PathVariable("documentId") UUID documentId);
 }

@@ -27,6 +27,7 @@ import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.tabs.Tab;
 import com.vaadin.flow.component.tabs.TabSheet;
 import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.BeforeEnterObserver;
@@ -43,10 +44,12 @@ import java.util.function.Consumer;
 
 /**
  * La ficha de un vehiculo: su modelo, sus datos, «Donde esta» (el tipo, el sitio, la via y el kp, el
- * acceso, el origen y la hora; uno que va con otro dice con quien y donde esta su portador) y la
- * pestana «Ubicaciones», el historial. Registrar donde esta pide {@code resources-location-write};
- * modificar, {@code resources-fleet-write}; retirar, {@code resources-delete}. Los segmentos literales
- * de la flota ({@code tablero}, {@code modelos}, {@code aparcamientos}) ganan a {@code :vehicleId}.
+ * acceso, el origen y la hora; uno que va con otro dice con quien y donde esta su portador) y las
+ * pestanas «Ubicaciones», el historial, y «Documentos», los que caducan, que piden sus datos al abrirse.
+ * Registrar donde esta pide {@code resources-location-write}; modificar y escribir sus documentos,
+ * {@code resources-fleet-write}; retirar y quitar un documento, {@code resources-delete}. Los segmentos
+ * literales de la flota ({@code tablero}, {@code modelos}, {@code aparcamientos}) ganan a
+ * {@code :vehicleId}. Es el enlace de los avisos de caducidad de sus documentos.
  */
 @Route(value = ResourcesRoutes.FLEET + "/:" + VehicleDetailView.VEHICLE_ID_PARAMETER, layout = MainLayout.class)
 @RolesAllowed(ResourcesRoles.RESOURCES_READ)
@@ -54,6 +57,7 @@ public class VehicleDetailView extends VerticalLayout implements BeforeEnterObse
 
     public static final String VEHICLE_ID_PARAMETER = "vehicleId";
     public static final String LOCATIONS_TAB = "Ubicaciones";
+    public static final String DOCUMENTS_TAB = "Documentos";
     static final String RETIRE_TEXT = "No se borra: sus ubicaciones y los turnos lo siguen nombrando, y deja de ofrecerse en los turnos nuevos. "
             + "Si es el vehiculo por defecto de un equipo, el servicio no lo deja: cambialo antes en el organigrama. Se puede reactivar.";
 
@@ -134,9 +138,19 @@ public class VehicleDetailView extends VerticalLayout implements BeforeEnterObse
         VehicleLocationsPanel locations = new VehicleLocationsPanel(() -> vehicle.id(), clients, names, readsMaintenance);
         panels.add(locations);
         tabs.add(LOCATIONS_TAB, locations);
+        VehicleDocumentsPanel documents = new VehicleDocumentsPanel(() -> vehicle, clients, canWrite, canDelete);
+        panels.add(documents);
+        tabs.add(DOCUMENTS_TAB, documents);
+        tabs.addSelectedChangeListener(change -> loadTab(tabs, change.getSelectedTab()));
         tabsHolder.removeAll();
         tabsHolder.add(tabs);
-        locations.ensureLoaded();
+        loadTab(tabs, tabs.getSelectedTab());
+    }
+
+    private static void loadTab(TabSheet tabs, Tab tab) {
+        if (tab != null && tabs.getComponent(tab) instanceof LazyPanel panel) {
+            panel.ensureLoaded();
+        }
     }
 
     private void reload() {
@@ -183,7 +197,7 @@ public class VehicleDetailView extends VerticalLayout implements BeforeEnterObse
             return;
         }
         String details = ResourcesHistory.join(location.executionPackageId() == null ? null : "EP " + names.packageName(location.executionPackageId()),
-                location.accessPoint() == null ? null : "Acceso: " + location.accessPoint(),
+                location.accessPointLabel() == null ? null : "Acceso: " + location.accessPointLabel(),
                 location.latitude() == null ? null : location.latitude().toPlainString() + ", " + location.longitude().toPlainString());
         if (!details.isEmpty()) {
             position.add(new Div(details));

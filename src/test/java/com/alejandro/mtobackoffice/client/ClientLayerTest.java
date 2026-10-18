@@ -10,6 +10,7 @@ import com.alejandro.mtobackoffice.client.configuration.LovClient;
 import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
 import com.alejandro.mtobackoffice.client.configuration.ProfileClient;
 import com.alejandro.mtobackoffice.client.configuration.StationClient;
+import com.alejandro.mtobackoffice.client.configuration.TrackAccessPointClient;
 import com.alejandro.mtobackoffice.client.configuration.TrackClient;
 import com.alejandro.mtobackoffice.client.configuration.LovResource;
 import com.alejandro.mtobackoffice.client.dto.LovDto;
@@ -27,11 +28,22 @@ import com.alejandro.mtobackoffice.client.dto.master.BusinessEntityDto;
 import com.alejandro.mtobackoffice.client.dto.master.LovRef;
 import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
 import com.alejandro.mtobackoffice.client.dto.master.StationDto;
+import com.alejandro.mtobackoffice.client.dto.master.TrackAccessPointDto;
+import com.alejandro.mtobackoffice.client.dto.master.TrackAccessPointKind;
+import com.alejandro.mtobackoffice.client.dto.master.TrackAccessPointSide;
 import com.alejandro.mtobackoffice.client.dto.master.TrackDto;
 import com.vaadin.flow.data.provider.QuerySortOrder;
 import com.vaadin.flow.data.provider.SortDirection;
+import com.alejandro.mtobackoffice.client.dto.resources.AccessPointDto;
+import com.alejandro.mtobackoffice.client.dto.resources.AccessPointKind;
 import com.alejandro.mtobackoffice.client.dto.resources.DrivingLicence;
 import com.alejandro.mtobackoffice.client.dto.resources.FleetPositionDto;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentDto;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentKind;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.InstrumentUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationTreeNodeDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitDto;
 import com.alejandro.mtobackoffice.client.dto.resources.OrganizationUnitKind;
@@ -46,9 +58,18 @@ import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonEmployer;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonQualificationDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonQualificationRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonQualificationUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonSummaryDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationKind;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationTypeDto;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationTypeFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationTypeRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationTypeSummaryDto;
+import com.alejandro.mtobackoffice.client.dto.resources.QualificationTypeUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.RailGearType;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberDto;
 import com.alejandro.mtobackoffice.client.dto.resources.TeamMemberLeaveRequest;
@@ -57,6 +78,10 @@ import com.alejandro.mtobackoffice.client.dto.resources.TeamMembersRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleAttachment;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleCapability;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleCategory;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDocumentDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDocumentKind;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDocumentRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleDocumentUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleDto;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleFilter;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationDto;
@@ -82,9 +107,12 @@ import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
 import com.alejandro.mtobackoffice.client.error.TooManyRequestsApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.client.maintenance.OperationClient;
+import com.alejandro.mtobackoffice.client.resources.AccessPointClient;
+import com.alejandro.mtobackoffice.client.resources.InstrumentClient;
 import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
+import com.alejandro.mtobackoffice.client.resources.QualificationTypeClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import com.alejandro.mtobackoffice.configuration.client.GatewayClientConfiguration;
@@ -322,6 +350,8 @@ class ClientLayerTest {
     private ParkingSiteClient parkingSiteClient;
     private VehicleClient vehicleClient;
     private OperationClient operationClient;
+    private QualificationTypeClient qualificationTypeClient;
+    private InstrumentClient instrumentClient;
 
     @BeforeEach
     void setUp() {
@@ -363,6 +393,8 @@ class ClientLayerTest {
         parkingSiteClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ParkingSiteClient.class);
         vehicleClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(VehicleClient.class);
         operationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(OperationClient.class);
+        qualificationTypeClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(QualificationTypeClient.class);
+        instrumentClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(InstrumentClient.class);
     }
 
     @AfterEach
@@ -968,6 +1000,24 @@ class ClientLayerTest {
         server.verify();
     }
 
+    /** Los puntos de acceso a la via se republican como los perfiles: acotados por via, sin estacion. */
+    @Test
+    void republishingTheAccessPointsCanBeNarrowedToATrack() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/master-data/republish?entity=track-access-point&trackId=3"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.ACCEPTED).contentType(MediaType.APPLICATION_JSON).body("""
+                        {"id":"6f1c0000-0000-4000-8000-000000000001","type":"MASTER_DATA_REPUBLISH","status":"PENDING",
+                         "createdAt":"2026-10-17T09:12:03Z","trackId":3,"totalItems":4,"processedItems":0,"successfulItems":0,"failedItems":0}
+                        """));
+
+        JobDto job = asUser(() -> jobsClient.republish("track-access-point", 3L, null));
+
+        assertEquals(JobType.MASTER_DATA_REPUBLISH, job.type());
+        assertEquals(Optional.of(JobFamily.REPUBLISH), job.family());
+        assertEquals(3L, job.trackId());
+        server.verify();
+    }
+
     @Test
     void whatIsDownloadableDependsOnTheTypeAndTheStatus() {
         JobDto export = new JobDto(JOB_ID, JobType.PROFILE_EXPORT, JobStatus.COMPLETED, null, null, null, 3L, "basic", 10, 10, 10, 0, null, null, null);
@@ -1179,6 +1229,109 @@ class ClientLayerTest {
         read.setConnectedTrackId(null);
         read.setVersionNumber(saved.getVersionNumber());
         asUser(() -> disconnectors.update(5L, read));
+        server.verify();
+    }
+
+    /**
+     * mto-configuration V28 (README_API.md §4 quinquies): los puntos de acceso a la via se filtran por la
+     * via, la clase y el estado en el cuerpo del {@code /filter}; sus decimales son numeros JSON (el KP en
+     * metros, las toneladas y las coordenadas), y vuelven enteros, con su version y lo que la UI no conoce.
+     * Quitarle la estacion es mandarla a {@code null}; la clase y el lado vuelven como se leyeron, tambien
+     * uno que esta version no conoce; un nombre repetido en la via es el 409 BUS-002, y borrar es logico (204).
+     */
+    @Test
+    void trackAccessPointsAreFilteredAndTravelWholeWithTheirDecimalsAsNumbers() {
+        TrackAccessPointClient accessPoints = GatewayClientConfiguration.proxyFactory(restClient).createClient(TrackAccessPointClient.class);
+        server.expect(requestTo(matchesRegex("http://gateway/api/configuration/track-access-points/filter\\?page=0&size=50&sort=kp(,|%2C)asc")))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"searchText\":\"km\",\"trackId\":3,\"kind\":\"PREPARED_ACCESS\",\"enabled\":true}",
+                        org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess("""
+                        {"content":[{"id":77,"name":"Acceso km 110+176","trackId":3,"stationId":12,"kp":110176.000,"kind":"PREPARED_ACCESS",
+                                     "side":"LEFT","roadRailAccess":true,"maxAxleLoadT":12.500,"maxGrossWeightT":40.000,
+                                     "latitude":31.669342,"longitude":34.574119,"enabled":true,"versionNumber":4,
+                                     "versionDate":"2026-10-17T07:00:00","brandNewField":"x"}],
+                         "page":{"size":50,"number":0,"totalElements":1,"totalPages":1}}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/track-access-points/77"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.name").value("Acceso km 110+180"))
+                .andExpect(jsonPath("$.trackId").value(3))
+                .andExpect(jsonPath("$.stationId").value(nullValue()))
+                .andExpect(jsonPath("$.kind").value("PREPARED_ACCESS"))
+                .andExpect(jsonPath("$.side").value("BOTH"))
+                .andExpect(jsonPath("$.roadRailAccess").value(true))
+                .andExpect(jsonPath("$.versionNumber").value(4))
+                .andExpect(jsonPath("$.brandNewField").value("x"))
+                .andExpect(content().string(containsString("\"kp\":110176.000")))
+                .andExpect(content().string(containsString("\"maxAxleLoadT\":12.500")))
+                .andExpect(content().string(containsString("\"latitude\":31.669342")))
+                .andExpect(content().string(containsString("\"longitude\":34.574119")))
+                .andRespond(withSuccess("{\"id\":77,\"name\":\"Acceso km 110+180\",\"trackId\":3,\"kind\":\"PREPARED_ACCESS\",\"side\":\"BOTH\","
+                        + "\"roadRailAccess\":true,\"enabled\":true,\"versionNumber\":5}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/track-access-points/78"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"id":78,"name":"Rampa del puerto","trackId":3,"stationId":null,"kp":null,"kind":"FERRY_RAMP","side":"UPSTREAM",
+                         "roadRailAccess":false,"enabled":true,"versionNumber":1}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/track-access-points/78"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.kind").value("FERRY_RAMP"))
+                .andExpect(jsonPath("$.side").value("UPSTREAM"))
+                .andExpect(jsonPath("$.roadRailAccess").value(false))
+                .andRespond(withSuccess("{\"id\":78,\"versionNumber\":2}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/track-access-points"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.id").value(nullValue()))
+                .andExpect(jsonPath("$.roadRailAccess").value(true))
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("""
+                                {"type":"https://api.mto-configuration/errors/bus-002","title":"Regla de negocio incumplida","status":409,
+                                 "detail":"La operación entra en conflicto con un registro existente: valor único repetido o referencia en uso",
+                                 "instance":"/api/v1/configuration/track-access-points","code":"BUS-002","traceId":"t-tap"}
+                                """));
+        server.expect(requestTo(GATEWAY + "/api/configuration/track-access-points/77"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        PageResponse<TrackAccessPointDto> page = asUser(() -> accessPoints.filter(0, 50, List.of("kp,asc"),
+                MasterFilters.of("searchText", " km ", "trackId", 3L, "kind", TrackAccessPointKind.PREPARED_ACCESS.name(), "enabled", true,
+                        "stationName", " ")));
+        TrackAccessPointDto read = page.content().getFirst();
+        assertEquals("Acceso km 110+176", read.getName());
+        assertEquals(new java.math.BigDecimal("110176.000"), read.getKp());
+        assertEquals("PREPARED_ACCESS", read.getKind());
+        assertEquals("Acceso preparado", TrackAccessPointKind.labelOf(read.getKind()));
+        assertEquals("LEFT", read.getSide());
+        assertEquals("Izquierda", TrackAccessPointSide.labelOf(read.getSide()));
+        assertEquals(new java.math.BigDecimal("12.500"), read.getMaxAxleLoadT());
+        assertEquals(new java.math.BigDecimal("31.669342"), read.getLatitude());
+        assertEquals("x", read.extras().get("brandNewField"));
+
+        read.setName("Acceso km 110+180");
+        read.setStationId(null);
+        read.setSide(TrackAccessPointSide.BOTH.name());
+        TrackAccessPointDto saved = asUser(() -> accessPoints.save(read));
+        assertEquals(5, saved.getVersionNumber());
+
+        TrackAccessPointDto unknown = asUser(() -> accessPoints.findById(78L));
+        assertEquals("FERRY_RAMP", TrackAccessPointKind.labelOf(unknown.getKind()), "un valor nuevo se ensena crudo");
+        assertEquals("UPSTREAM", TrackAccessPointSide.labelOf(unknown.getSide()));
+        asUser(() -> accessPoints.save(unknown));
+
+        TrackAccessPointDto repeated = new TrackAccessPointDto();
+        repeated.setName("Acceso km 110+180");
+        repeated.setTrackId(3L);
+        repeated.setKind(TrackAccessPointKind.LEVEL_CROSSING.name());
+        repeated.setSide(TrackAccessPointSide.RIGHT.name());
+        ConflictApiException conflict = assertThrows(ConflictApiException.class, () -> asUser(() -> accessPoints.save(repeated)));
+        assertEquals("BUS-002", conflict.getProblem().code(), "un nombre repetido en la via");
+        asUser(() -> {
+            accessPoints.delete(77L);
+            return null;
+        });
         server.verify();
     }
 
@@ -2442,9 +2595,9 @@ class ClientLayerTest {
         UUID id = UUID.fromString(SHIFT_ID);
         ShiftDto created = asUser(() -> shiftClient.create(new ShiftRequest(LocalDate.of(2026, 10, 5), null, null, null, PossessionType.PARTIAL,
                 null, null, null, null, null, null, Set.of(12L), null, null, null, null, null, Set.of(UUID.fromString(vehicle)), UUID.fromString(leader),
-                null, Set.of(UUID.fromString(lineman)))));
+                null, Set.of(UUID.fromString(lineman)), null)));
         asUser(() -> shiftClient.update(id, new MergePatch<>(new ShiftUpdateRequest(null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, Set.of(UUID.fromString(vehicle)), null, null, null), Set.of("linemanPersonIds"), 4L)));
+                null, null, null, null, null, null, Set.of(UUID.fromString(vehicle)), null, null, null, null), Set.of("linemanPersonIds"), 4L)));
         asUser(() -> shiftClient.close(id, new CloseShiftRequest(null, null, null, null, List.of(
                 new VehicleParkingRequest(UUID.fromString(vehicle), UUID.fromString(site), 12L, new BigDecimal("4.250"), null),
                 new VehicleParkingRequest(UUID.fromString(VEHICLE_ID), null, null, null, "Puerta 3")))));
@@ -3396,11 +3549,11 @@ class ClientLayerTest {
         asUser(() -> vehicleTypeClient.create(new VehicleTypeRequest("VAN-1", "Furgoneta", null, null, VehicleMobility.ROAD_ONLY,
                 VehicleCategory.VAN, true, false, null, null, null, null, null, null, null, 3, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, new java.util.TreeSet<>(Set.of("EARTHING", "CREW_CABIN")), null, null, null, null, null,
-                null, null)));
+                null, null, null)));
         VehicleTypeDto unimog = page.content().getFirst();
         asUser(() -> vehicleTypeClient.update(unimog.id(), new MergePatch<>(new VehicleTypeUpdateRequest(null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                null, new java.util.TreeSet<>(Set.of("TOWING", "LASER_SCANNER")), null, null, null, null, null, null, null, null),
+                null, new java.util.TreeSet<>(Set.of("TOWING", "LASER_SCANNER")), null, null, null, null, null, null, null, null, null),
                 Set.of("craneCapacityT"), 4L)));
         asUser(() -> {
             vehicleTypeClient.deactivate(unimog.id());
@@ -3469,7 +3622,8 @@ class ClientLayerTest {
     private static String locationJson(String kind, String extra) {
         return "{\"id\":\"b1c2d3e4-0000-4000-8000-000000000001\",\"kind\":\"" + kind + "\",\"parkingSite\":{\"id\":\"" + PARKING_SITE_ID
                 + "\",\"code\":\"APT-RSH\",\"name\":\"Apartadero\",\"kind\":\"SIDING\"},\"executionPackageId\":4,\"trackId\":12,\"kp\":12.300,"
-                + "\"latitude\":null,\"longitude\":null,\"accessPoint\":null,\"description\":null,\"carrier\":null,\"attachment\":null,"
+                + "\"latitude\":null,\"longitude\":null,\"accessPoint\":null,\"trackAccessPoint\":null,\"description\":null,\"carrier\":null,"
+                + "\"attachment\":null,"
                 + "\"source\":\"SHIFT\",\"sourceReference\":\"mto-maintenance:shift:" + LOCATION_SHIFT_ID + "\",\"observedAt\":\"2026-10-16T03:40:00Z\","
                 + "\"recordedAt\":\"2026-10-16T03:40:02Z\",\"recordedBy\":\"service-account-mto-maintenance-svc\"" + extra + "}";
     }
@@ -3534,7 +3688,7 @@ class ClientLayerTest {
             return null;
         });
         VehicleLocationDto towed = asUser(() -> vehicleClient.recordLocation(UUID.fromString(VEHICLE_ID), new VehicleLocationRequest(
-                VehicleLocationKind.ATTACHED, null, null, null, null, null, null, null, null, UUID.fromString(CARRIER_ID), VehicleAttachment.TOWED,
+                VehicleLocationKind.ATTACHED, null, null, null, null, null, null, null, null, null, UUID.fromString(CARRIER_ID), VehicleAttachment.TOWED,
                 java.time.Instant.parse("2026-10-16T03:40:00Z"))));
         PageResponse<VehicleLocationDto> history = asUser(() -> vehicleClient.locations(UUID.fromString(VEHICLE_ID),
                 java.time.Instant.parse("2026-10-01T00:00:00Z"), java.time.Instant.parse("2026-10-17T00:00:00Z"), 0, 20));
@@ -3556,6 +3710,417 @@ class ClientLayerTest {
         assertEquals(List.of(VehicleLocationKind.PARKED, VehicleLocationKind.ON_TRACK, VehicleLocationKind.IN_WORKSHOP, VehicleLocationKind.ATTACHED,
                 VehicleLocationKind.UNKNOWN), VehicleLocationKind.recordable(VehicleMobility.RAIL_ONLY));
         assertFalse(VehicleLocationKind.recordable(VehicleMobility.ROAD_ONLY).contains(VehicleLocationKind.ON_TRACK));
+        server.verify();
+    }
+
+    // --- Recursos: los puntos de acceso a la via (fase 4, bloque D) ---------------------------------------
+
+    /**
+     * mto-resources V9: los puntos de acceso de una via son una lista entera, sin paginar, de lo que ha
+     * recibido de mto-configuration (una clase nueva se lee como desconocida y lo que no se usa se ignora; si
+     * llegara una pagina, se lee su {@code content}). Registrar donde esta un vehiculo lleva el elegido como
+     * {@code accessPointId}, y la ubicacion lo dice en {@code trackAccessPoint {id, name, kind}}, con el texto
+     * libre en {@code accessPoint}, como siempre: se ensena el nombre del maestro ({@code #id} sin el) y, sin
+     * el, el texto. Uno que no conoce es el 404 TAP-404.
+     */
+    @Test
+    void theAccessPointsOfATrackComeFromResourcesAndALocationNamesTheOneItUsed() {
+        AccessPointClient accessPoints = GatewayClientConfiguration.proxyFactory(restClient).createClient(AccessPointClient.class);
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String locations = RESOURCES + "/vehicles/" + VEHICLE_ID + "/locations";
+        server.expect(requestTo(RESOURCES + "/track-access-points?trackId=12&enabled=true"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        [{"id":77,"name":"Acceso km 110+176","trackId":12,"executionPackageId":4,"stationId":7,"kp":110176.000,
+                          "kind":"PREPARED_ACCESS","side":"LEFT","roadRailAccess":true,"maxAxleLoadT":12.500,"maxGrossWeightT":40.000,
+                          "latitude":31.669342,"longitude":34.574119,"enabled":true},
+                         {"id":78,"name":"Embarcadero","trackId":12,"kp":null,"kind":"FERRY_RAMP","side":"BOTH","roadRailAccess":false,
+                          "maxAxleLoadT":null,"maxGrossWeightT":null,"enabled":true}]
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/track-access-points?trackId=13&enabled=true"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("{\"id\":80,\"name\":\"Base Lod\",\"trackId\":13,\"kp\":5.000,\"kind\":\"DEPOT\","
+                        + "\"roadRailAccess\":true,\"enabled\":true}", 0, 50, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(locations)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"kind\":\"ON_TRACK\",\"trackId\":12,\"kp\":10.5,\"accessPointId\":77}", strict))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(locationJson("ON_TRACK", "")
+                        .replace("\"trackAccessPoint\":null",
+                                "\"trackAccessPoint\":{\"id\":77,\"name\":\"Acceso km 110+176\",\"kind\":\"PREPARED_ACCESS\"}")));
+        server.expect(requestTo(locations)).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":404,\"error\":\"NOT_FOUND\",\"message\":\"Track access point 99 not found\","
+                                + "\"errorCode\":\"TAP-404\",\"correlationId\":\"corr-tap\",\"validationErrors\":[]}"));
+        server.expect(requestTo(locations + "?page=0&size=20")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(String.join(",",
+                        locationJson("ON_TRACK", "").replace("\"accessPoint\":null", "\"accessPoint\":\"LC-31\""),
+                        locationJson("ON_TRACK", "").replace("\"trackAccessPoint\":null", "\"trackAccessPoint\":{\"id\":77,\"name\":\"Acceso km 110+176\","
+                                + "\"kind\":\"DEPOT\"}").replace("\"accessPoint\":null", "\"accessPoint\":\"Camino de la base\""),
+                        locationJson("PARKED", "").replace("\"trackAccessPoint\":null", "\"trackAccessPoint\":{\"id\":81,\"name\":null,\"kind\":null}"),
+                        locationJson("PARKED", "")), 0, 20, 4), MediaType.APPLICATION_JSON));
+
+        List<AccessPointDto> offered = asUser(() -> accessPoints.enabledOnTrack(12L));
+        List<AccessPointDto> paged = asUser(() -> accessPoints.enabledOnTrack(13L));
+        UUID vehicle = UUID.fromString(VEHICLE_ID);
+        VehicleLocationDto recorded = asUser(() -> vehicleClient.recordLocation(vehicle, new VehicleLocationRequest(VehicleLocationKind.ON_TRACK, null,
+                null, 12L, new java.math.BigDecimal("10.5"), null, null, 77L, null, null, null, null, null)));
+        NotFoundApiException unknown = assertThrows(NotFoundApiException.class, () -> asUser(() -> vehicleClient.recordLocation(vehicle,
+                new VehicleLocationRequest(VehicleLocationKind.ON_TRACK, null, null, 12L, null, null, null, 99L, null, null, null, null, null))));
+        PageResponse<VehicleLocationDto> history = asUser(() -> vehicleClient.locations(vehicle, null, null, 0, 20));
+
+        assertEquals(2, offered.size());
+        assertEquals("Acceso km 110+176 · Acceso preparado · kp 110176.000", offered.getFirst().label());
+        assertEquals(Boolean.TRUE, offered.getFirst().roadRailAccess());
+        assertEquals(new java.math.BigDecimal("40.000"), offered.getFirst().maxGrossWeightT());
+        assertEquals(AccessPointKind.UNKNOWN, offered.get(1).kind(), "una clase nueva se lee como desconocida");
+        assertEquals("Embarcadero · Desconocido · sin biviales", offered.get(1).label());
+        assertEquals(List.of("Base Lod · Base o cochera · kp 5.000"), paged.stream().map(AccessPointDto::label).toList(), "una pagina, por su content");
+        assertEquals("Acceso km 110+176", recorded.accessPointLabel());
+        assertEquals(77L, recorded.trackAccessPoint().id());
+        assertEquals(AccessPointKind.PREPARED_ACCESS, recorded.trackAccessPoint().kind());
+        assertEquals("TAP-404", unknown.getProblem().code());
+        assertEquals("LC-31", history.content().getFirst().accessPointLabel(), "el texto libre");
+        assertNull(history.content().getFirst().trackAccessPoint());
+        assertEquals("Acceso km 110+176", history.content().get(1).accessPointLabel(), "el del maestro manda sobre el texto");
+        assertEquals("Camino de la base", history.content().get(1).accessPoint());
+        assertEquals(AccessPointKind.DEPOT, history.content().get(1).trackAccessPoint().kind());
+        assertEquals("#81", history.content().get(2).accessPointLabel(), "sin nombre, su id");
+        assertNull(history.content().get(3).accessPointLabel(), "sin punto de acceso");
+        server.verify();
+    }
+
+    // --- Recursos: cualificaciones, documentos e instrumentos (fase 4, bloque C) -------------------------
+
+    private static final String QUALIFICATION_TYPE_ID = "6a7b8c9d-0000-4000-8000-000000000001";
+    private static final String QUALIFICATION_ID = "6a7b8c9d-0000-4000-8000-0000000000a1";
+    private static final String DOCUMENT_ID = "6a7b8c9d-0000-4000-8000-0000000000d1";
+    private static final String INSTRUMENT_ID = "6a7b8c9d-0000-4000-8000-0000000000e1";
+
+    private static String qualificationTypeJson(String id, String code, String kind, String licence) {
+        return "{\"id\":\"" + id + "\",\"code\":\"" + code + "\",\"name\":\"Driving licence C\",\"kind\":\"" + kind + "\",\"drivingLicence\":"
+                + (licence == null ? "null" : "\"" + licence + "\"") + ",\"validityMonths\":120,\"description\":null,\"active\":true,"
+                + "\"version\":2,\"audit\":null}";
+    }
+
+    /**
+     * El catalogo de tipos de cualificacion: la busqueda con sus filtros y el id para desempatar, el alta
+     * sin lo vacio, la modificacion con lo cambiado, lo vaciado (el permiso de uno que deja de ser un
+     * permiso) y la version, y retirar con un DELETE. Una clase nueva se lee como UNKNOWN.
+     */
+    @Test
+    void qualificationTypesAreSearchedCreatedPatchedAndRetiredAndAnUnknownKindIsRead() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String types = RESOURCES + "/qualification-types";
+        server.expect(requestTo(types + "?search=lic&kind=DRIVING_LICENCE&active=true&page=0&size=50&sort=code%2Casc&sort=id%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(qualificationTypeJson(QUALIFICATION_TYPE_ID, "LIC-C", "DRIVING_LICENCE", "C") + ","
+                        + qualificationTypeJson("6a7b8c9d-0000-4000-8000-000000000002", "MED-1", "MEDICAL", null), 0, 50, 2), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(types)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"LIC-C\",\"name\":\"Driving licence C\",\"kind\":\"DRIVING_LICENCE\",\"drivingLicence\":\"C\","
+                        + "\"validityMonths\":120}", strict))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                        .body(qualificationTypeJson(QUALIFICATION_TYPE_ID, "LIC-C", "DRIVING_LICENCE", "C")));
+        server.expect(requestTo(types + "/" + QUALIFICATION_TYPE_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"kind\":\"SAFETY\",\"drivingLicence\":null,\"validityMonths\":null,\"version\":2}", strict))
+                .andRespond(withSuccess(qualificationTypeJson(QUALIFICATION_TYPE_ID, "LIC-C", "SAFETY", null), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(types + "/" + QUALIFICATION_TYPE_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(types + "/" + QUALIFICATION_TYPE_ID)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(qualificationTypeJson(QUALIFICATION_TYPE_ID, "LIC-C", "DRIVING_LICENCE", "C"), MediaType.APPLICATION_JSON));
+
+        UUID id = UUID.fromString(QUALIFICATION_TYPE_ID);
+        PageResponse<QualificationTypeDto> page = asUser(() -> qualificationTypeClient.search(new QualificationTypeFilter(" lic ",
+                QualificationKind.DRIVING_LICENCE, true), 0, 50, List.of("code,asc")));
+        asUser(() -> qualificationTypeClient.create(new QualificationTypeRequest("LIC-C", "Driving licence C", QualificationKind.DRIVING_LICENCE,
+                DrivingLicence.C, 120, null)));
+        QualificationTypeDto patched = asUser(() -> qualificationTypeClient.update(id, new MergePatch<>(new QualificationTypeUpdateRequest(null,
+                QualificationKind.SAFETY, null, null, null, null), Set.of("drivingLicence", "validityMonths"), 2L)));
+        asUser(() -> {
+            qualificationTypeClient.deactivate(id);
+            return null;
+        });
+        QualificationTypeDto read = asUser(() -> qualificationTypeClient.findById(id));
+
+        QualificationTypeDto licence = page.content().getFirst();
+        assertEquals("LIC-C · Driving licence C", licence.label());
+        assertEquals(DrivingLicence.C, licence.drivingLicence());
+        assertEquals(120, licence.validityMonths());
+        assertEquals(new QualificationTypeSummaryDto(id, "otro codigo", null, null), licence.summary(), "el resumen es el mismo por su id");
+        assertEquals(QualificationKind.UNKNOWN, page.content().get(1).kind(), "una clase nueva se lee como desconocida");
+        assertFalse(QualificationKind.selectable().contains(QualificationKind.UNKNOWN));
+        assertEquals(QualificationKind.SAFETY, patched.kind());
+        assertNull(patched.drivingLicence());
+        assertTrue(read.isActive());
+        server.verify();
+    }
+
+    private static String qualificationJson(String id, String typeCode, String kind, String expiresOn, boolean expired) {
+        return "{\"id\":\"" + id + "\",\"personId\":\"" + PERSON_ID + "\",\"qualificationType\":{\"id\":\"" + QUALIFICATION_TYPE_ID + "\","
+                + "\"code\":\"" + typeCode + "\",\"name\":\"Rail auxiliary vehicle driver\",\"kind\":\"" + kind + "\"},\"reference\":\"RD-118\","
+                + "\"issuedOn\":\"2026-04-01\",\"expiresOn\":" + (expiresOn == null ? "null" : "\"" + expiresOn + "\"") + ",\"notes\":null,"
+                + "\"expired\":" + expired + ",\"version\":3,\"audit\":null}";
+    }
+
+    /**
+     * Las cualificaciones de una persona: la lista entera, el alta sin lo vacio y con sus fechas en ISO,
+     * la modificacion (renovar es cambiar la caducidad; vaciarla es que no caduca) con la version, y
+     * quitar con un DELETE. Que ya tenga ese tipo es un 409 QUA-001; la clase nueva de un tipo se lee como
+     * UNKNOWN, y {@code expired} es la del servicio.
+     */
+    @Test
+    void aPersonsQualificationsAreListedAddedRenewedAndRemoved() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String qualifications = RESOURCES + "/people/" + PERSON_ID + "/qualifications";
+        server.expect(requestTo(qualifications)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[" + qualificationJson(QUALIFICATION_ID, "RAIL-DRIVER", "VEHICLE_OPERATION", "2027-03-31", false) + ","
+                        + qualificationJson("6a7b8c9d-0000-4000-8000-0000000000a2", "FIRST-AID", "HEALTH", "2026-01-31", true) + "]",
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(qualifications)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"qualificationTypeId\":\"" + QUALIFICATION_TYPE_ID + "\",\"reference\":\"RD-118\","
+                        + "\"issuedOn\":\"2026-04-01\",\"expiresOn\":\"2027-03-31\"}", strict))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                        .body(qualificationJson(QUALIFICATION_ID, "RAIL-DRIVER", "VEHICLE_OPERATION", "2027-03-31", false)));
+        server.expect(requestTo(qualifications)).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":409,\"error\":\"CONFLICT\",\"message\":\"Person PER-000003 already has RAIL-DRIVER\","
+                                + "\"errorCode\":\"QUA-001\",\"correlationId\":\"corr-q1\",\"validationErrors\":[]}"));
+        server.expect(requestTo(qualifications + "/" + QUALIFICATION_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"expiresOn\":\"2028-03-31\",\"reference\":null,\"version\":3}", strict))
+                .andRespond(withSuccess(qualificationJson(QUALIFICATION_ID, "RAIL-DRIVER", "VEHICLE_OPERATION", "2028-03-31", false),
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(qualifications + "/" + QUALIFICATION_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        UUID person = UUID.fromString(PERSON_ID);
+        UUID qualification = UUID.fromString(QUALIFICATION_ID);
+        List<PersonQualificationDto> listed = asUser(() -> personClient.qualifications(person));
+        PersonQualificationRequest request = new PersonQualificationRequest(UUID.fromString(QUALIFICATION_TYPE_ID), "RD-118",
+                LocalDate.of(2026, 4, 1), LocalDate.of(2027, 3, 31), null);
+        asUser(() -> personClient.addQualification(person, request));
+        ConflictApiException repeated = assertThrows(ConflictApiException.class, () -> asUser(() -> personClient.addQualification(person, request)));
+        PersonQualificationDto renewed = asUser(() -> personClient.updateQualification(person, qualification, new MergePatch<>(
+                new PersonQualificationUpdateRequest(null, null, LocalDate.of(2028, 3, 31), null), Set.of("reference"), 3L)));
+        asUser(() -> {
+            personClient.removeQualification(person, qualification);
+            return null;
+        });
+
+        PersonQualificationDto driver = listed.getFirst();
+        assertEquals("RAIL-DRIVER · Rail auxiliary vehicle driver", driver.label());
+        assertEquals(QualificationKind.VEHICLE_OPERATION, driver.qualificationType().kind());
+        assertEquals(LocalDate.of(2027, 3, 31), driver.expiresOn());
+        assertFalse(driver.expired());
+        assertEquals(QualificationKind.UNKNOWN, listed.get(1).qualificationType().kind(), "una clase nueva se lee como desconocida");
+        assertTrue(listed.get(1).expired(), "si ha caducado lo dice el servicio");
+        assertEquals("QUA-001", repeated.getProblem().code());
+        assertEquals(LocalDate.of(2028, 3, 31), renewed.expiresOn());
+        server.verify();
+    }
+
+    private static String documentJson(String id, String kind, String reference, String expiresOn, boolean expired) {
+        return "{\"id\":\"" + id + "\",\"vehicleId\":\"" + VEHICLE_ID + "\",\"kind\":\"" + kind + "\",\"reference\":\"" + reference + "\","
+                + "\"issuedOn\":\"2026-02-28\",\"expiresOn\":\"" + expiresOn + "\",\"notes\":null,\"expired\":" + expired + ",\"version\":1,"
+                + "\"audit\":null}";
+    }
+
+    /**
+     * Los documentos de un vehiculo: la lista entera, el alta sin lo vacio, la modificacion con la version
+     * (renovar es cambiar la caducidad) y quitar. Uno de otro tipo que ya tiene es un 409 VDO-409; un tipo
+     * nuevo se lee como UNKNOWN.
+     */
+    @Test
+    void aVehiclesDocumentsAreListedAddedRenewedAndRemovedAndAnUnknownKindIsRead() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String documents = RESOURCES + "/vehicles/" + VEHICLE_ID + "/documents";
+        server.expect(requestTo(documents)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[" + documentJson(DOCUMENT_ID, "ROAD_INSPECTION", "ITV-2026-118", "2027-02-28", false) + ","
+                        + documentJson("6a7b8c9d-0000-4000-8000-0000000000d2", "TACHOGRAPH", "TC-9", "2026-09-30", true) + "]",
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(documents)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"kind\":\"INSURANCE\",\"reference\":\"POL-77\",\"expiresOn\":\"2027-01-31\"}", strict))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                        .body(documentJson(DOCUMENT_ID, "INSURANCE", "POL-77", "2027-01-31", false)));
+        server.expect(requestTo(documents)).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":409,\"error\":\"CONFLICT\",\"message\":\"Vehicle DR-01 already has INSURANCE\","
+                                + "\"errorCode\":\"VDO-409\",\"correlationId\":\"corr-d1\",\"validationErrors\":[]}"));
+        server.expect(requestTo(documents + "/" + DOCUMENT_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"expiresOn\":\"2028-02-29\",\"notes\":null,\"version\":1}", strict))
+                .andRespond(withSuccess(documentJson(DOCUMENT_ID, "ROAD_INSPECTION", "ITV-2026-118", "2028-02-29", false), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(documents + "/" + DOCUMENT_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        UUID vehicle = UUID.fromString(VEHICLE_ID);
+        UUID document = UUID.fromString(DOCUMENT_ID);
+        List<VehicleDocumentDto> listed = asUser(() -> vehicleClient.documents(vehicle));
+        VehicleDocumentRequest insurance = new VehicleDocumentRequest(VehicleDocumentKind.INSURANCE, "POL-77", null, LocalDate.of(2027, 1, 31), null);
+        asUser(() -> vehicleClient.addDocument(vehicle, insurance));
+        ConflictApiException repeated = assertThrows(ConflictApiException.class, () -> asUser(() -> vehicleClient.addDocument(vehicle, insurance)));
+        VehicleDocumentDto renewed = asUser(() -> vehicleClient.updateDocument(vehicle, document, new MergePatch<>(
+                new VehicleDocumentUpdateRequest(null, null, LocalDate.of(2028, 2, 29), null), Set.of("notes"), 1L)));
+        asUser(() -> {
+            vehicleClient.removeDocument(vehicle, document);
+            return null;
+        });
+
+        assertEquals(VehicleDocumentKind.ROAD_INSPECTION, listed.getFirst().kind());
+        assertEquals("ITV-2026-118", listed.getFirst().reference());
+        assertEquals(VehicleDocumentKind.UNKNOWN, listed.get(1).kind(), "un tipo nuevo se lee como desconocido");
+        assertTrue(listed.get(1).expired());
+        assertEquals("VDO-409", repeated.getProblem().code());
+        assertEquals(LocalDate.of(2028, 2, 29), renewed.expiresOn());
+        assertFalse(VehicleDocumentKind.selectable().contains(VehicleDocumentKind.UNKNOWN));
+        server.verify();
+    }
+
+    private static String instrumentJson(String kind, String expiresOn, boolean expired) {
+        return "{\"id\":\"" + INSTRUMENT_ID + "\",\"code\":\"PT-01\",\"name\":\"Pertiga 1\",\"kind\":\"" + kind + "\",\"serialNumber\":\"SN-5\","
+                + "\"calibratedOn\":\"2026-03-31\",\"calibrationExpiresOn\":\"" + expiresOn + "\",\"calibrationExpired\":" + expired + ","
+                + "\"notes\":null,\"active\":true,\"version\":5,\"audit\":null}";
+    }
+
+    /**
+     * Los instrumentos: la busqueda con «calibracion caduca antes de» como fecha ISO y el id para
+     * desempatar, el alta sin lo vacio, la modificacion con lo cambiado, lo vaciado y la version, retirar
+     * y el historial. Un tipo nuevo se lee como UNKNOWN.
+     */
+    @Test
+    void instrumentsAreSearchedByCalibrationDateCreatedPatchedRetiredAndHaveHistory() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String instruments = RESOURCES + "/instruments";
+        server.expect(requestTo(instruments + "?search=pt&kind=EARTHING_POLE&active=true&calibrationExpiresBefore=2026-11-30"
+                        + "&page=0&size=50&sort=code%2Casc&sort=id%2Casc"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(instrumentJson("EARTHING_POLE", "2026-11-15", false) + "," + instrumentJson("THERMAL_CAMERA",
+                        "2026-01-31", true), 0, 50, 2), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(instruments)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"PT-01\",\"name\":\"Pertiga 1\",\"kind\":\"EARTHING_POLE\",\"calibratedOn\":\"2026-03-31\","
+                        + "\"calibrationExpiresOn\":\"2027-03-31\"}", strict))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(instrumentJson("EARTHING_POLE", "2027-03-31", false)));
+        server.expect(requestTo(instruments + "/" + INSTRUMENT_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"calibrationExpiresOn\":\"2027-11-15\",\"serialNumber\":null,\"version\":5}", strict))
+                .andRespond(withSuccess(instrumentJson("EARTHING_POLE", "2027-11-15", false), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(instruments + "/" + INSTRUMENT_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(instruments + "/" + INSTRUMENT_ID + "/revisions?page=0&size=20")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage(maintenanceRevision(3, "UPDATED", "HTTP", instrumentJson("EARTHING_POLE", "2027-11-15", false)),
+                        0, 20, 1), MediaType.APPLICATION_JSON));
+
+        UUID id = UUID.fromString(INSTRUMENT_ID);
+        PageResponse<InstrumentDto> page = asUser(() -> instrumentClient.search(new InstrumentFilter(" pt ", InstrumentKind.EARTHING_POLE, true,
+                LocalDate.of(2026, 11, 30)), 0, 50, List.of("code,asc")));
+        asUser(() -> instrumentClient.create(new InstrumentRequest("PT-01", "Pertiga 1", InstrumentKind.EARTHING_POLE, null, LocalDate.of(2026, 3, 31),
+                LocalDate.of(2027, 3, 31), null)));
+        asUser(() -> instrumentClient.update(id, new MergePatch<>(new InstrumentUpdateRequest(null, null, null, null, LocalDate.of(2027, 11, 15),
+                null, null), Set.of("serialNumber"), 5L)));
+        asUser(() -> {
+            instrumentClient.deactivate(id);
+            return null;
+        });
+        PageResponse<RevisionDto<InstrumentDto>> revisions = asUser(() -> instrumentClient.revisions(id, 0, 20));
+
+        InstrumentDto pole = page.content().getFirst();
+        assertEquals("PT-01 · Pertiga 1", pole.label());
+        assertEquals(LocalDate.of(2026, 11, 15), pole.calibrationExpiresOn());
+        assertFalse(pole.calibrationExpired());
+        assertEquals(new InstrumentSummaryDto(id, "PT-01", "Pertiga 1", InstrumentKind.EARTHING_POLE, LocalDate.of(2026, 11, 15)), pole.summary());
+        assertEquals(InstrumentKind.UNKNOWN, page.content().get(1).kind(), "un tipo nuevo se lee como desconocido");
+        assertTrue(page.content().get(1).calibrationExpired(), "si la calibracion caduco lo dice el servicio");
+        assertEquals(LocalDate.of(2027, 11, 15), revisions.content().getFirst().entity().calibrationExpiresOn());
+        server.verify();
+    }
+
+    /**
+     * Un modelo dice que habilitacion exige a su conductor: se lee como un resumen del tipo, viaja como su
+     * id en el alta y se vacia con null en la modificacion (no exige ninguna).
+     */
+    @Test
+    void aVehicleModelCarriesTheQualificationItsDriverNeeds() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String withDriver = vehicleTypeJson("ROAD_RAIL_TRUCK", "[]").replace("\"audit\":null}", "\"audit\":null,"
+                + "\"requiredDriverQualification\":{\"id\":\"" + QUALIFICATION_TYPE_ID + "\",\"code\":\"RR-OPERATOR\","
+                + "\"name\":\"Road-rail machine operator\",\"kind\":\"VEHICLE_OPERATION\"}}");
+        server.expect(requestTo(RESOURCES + "/vehicle-types/" + VEHICLE_TYPE_ID)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(withDriver, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/vehicle-types")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"code\":\"DR-9\",\"name\":\"Dresina\",\"mobility\":\"RAIL_ONLY\",\"category\":\"CATENARY_TOWER_CAR\","
+                        + "\"selfPropelled\":true,\"portable\":false,\"requiredDriverQualificationTypeId\":\"" + QUALIFICATION_TYPE_ID + "\"}", strict))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON).body(withDriver));
+        server.expect(requestTo(RESOURCES + "/vehicle-types/" + VEHICLE_TYPE_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"requiredDriverQualificationTypeId\":null,\"version\":4}", strict))
+                .andRespond(withSuccess(vehicleTypeJson("ROAD_RAIL_TRUCK", "[]"), MediaType.APPLICATION_JSON));
+
+        VehicleTypeDto read = asUser(() -> vehicleTypeClient.findById(UUID.fromString(VEHICLE_TYPE_ID)));
+        asUser(() -> vehicleTypeClient.create(new VehicleTypeRequest("DR-9", "Dresina", null, null, VehicleMobility.RAIL_ONLY,
+                VehicleCategory.CATENARY_TOWER_CAR, true, false, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, Set.of(), null, null, null, null, null, null, null,
+                UUID.fromString(QUALIFICATION_TYPE_ID))));
+        VehicleTypeDto cleared = asUser(() -> vehicleTypeClient.update(UUID.fromString(VEHICLE_TYPE_ID), new MergePatch<>(
+                new VehicleTypeUpdateRequest(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                        null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null),
+                Set.of("requiredDriverQualificationTypeId"), 4L)));
+
+        assertEquals("RR-OPERATOR · Road-rail machine operator", read.requiredDriverQualification().label());
+        assertEquals(QualificationKind.VEHICLE_OPERATION, read.requiredDriverQualification().kind());
+        assertNull(cleared.requiredDriverQualification(), "un modelo de antes, o que no exige ninguna, la lee nula");
+        server.verify();
+    }
+
+    /**
+     * Un turno lleva sus instrumentos de mto-resources: viajan sus ids en el alta, quitarlos todos viaja a
+     * null en el merge-patch, y la respuesta (tambien la del parte) los trae por codigo con su calibracion;
+     * un tipo nuevo se lee como UNKNOWN. Un instrumento que aun no ha llegado a mantenimiento es un 404
+     * MSI-404.
+     */
+    @Test
+    void aShiftCarriesItsInstrumentsAndOneNotYetInMaintenanceIsANotFound() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String shifts = MAINTENANCE + "/shifts";
+        String other = "6a7b8c9d-0000-4000-8000-0000000000e2";
+        String withInstruments = shiftJson("PLANNED").replace("\"audit\":null}", "\"audit\":null,\"version\":2,\"instruments\":["
+                + "{\"id\":\"" + INSTRUMENT_ID + "\",\"code\":\"PT-01\",\"name\":\"Pertiga 1\",\"kind\":\"EARTHING_POLE\","
+                + "\"calibrationExpiresOn\":\"2027-03-31\"},{\"id\":\"" + other + "\",\"code\":\"TC-01\",\"name\":null,\"kind\":\"THERMAL_CAMERA\","
+                + "\"calibrationExpiresOn\":null}]}");
+        server.expect(requestTo(shifts)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"shiftDate\":\"2026-10-05\",\"possessionType\":\"PARTIAL\",\"trackIds\":[12],"
+                        + "\"instrumentIds\":[\"" + INSTRUMENT_ID + "\"]}", strict))
+                .andRespond(withSuccess(withInstruments, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(shifts + "/" + SHIFT_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"instrumentIds\":null,\"version\":2}", strict))
+                .andRespond(withSuccess(shiftJson("PLANNED"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(shifts + "/" + SHIFT_ID)).andExpect(method(HttpMethod.PATCH))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":404,\"error\":\"NOT_FOUND\",\"message\":\"Maintenance instrument " + other + " not found\","
+                                + "\"errorCode\":\"MSI-404\",\"correlationId\":\"corr-i1\",\"validationErrors\":[]}"));
+        server.expect(requestTo(shifts + "/" + SHIFT_ID + "/report")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"shift\":" + withInstruments + ",\"tasksCompleted\":0,\"tasksPending\":0,\"profilesReviewed\":0,"
+                        + "\"defectsFound\":0,\"defectsResolved\":0,\"rows\":[],\"inspectionsRecorded\":0,\"inspections\":[]}", MediaType.APPLICATION_JSON));
+
+        UUID id = UUID.fromString(SHIFT_ID);
+        ShiftDto created = asUser(() -> shiftClient.create(new ShiftRequest(LocalDate.of(2026, 10, 5), null, null, null, PossessionType.PARTIAL,
+                null, null, null, null, null, null, Set.of(12L), null, null, null, null, null, null, null, null, null,
+                Set.of(UUID.fromString(INSTRUMENT_ID)))));
+        ShiftUpdateRequest nothingElse = new ShiftUpdateRequest(null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null);
+        ShiftDto emptied = asUser(() -> shiftClient.update(id, new MergePatch<>(nothingElse, Set.of("instrumentIds"), 2L)));
+        NotFoundApiException missing = assertThrows(NotFoundApiException.class, () -> asUser(() -> shiftClient.update(id,
+                new MergePatch<>(new ShiftUpdateRequest(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                        null, null, null, null, null, Set.of(UUID.fromString(other))), Set.of(), 2L))));
+        ShiftReportDto report = asUser(() -> reportClient.shiftReport(id));
+
+        assertEquals(List.of("PT-01", "TC-01"), created.instruments().stream().map(InstrumentSummaryDto::code).toList());
+        assertEquals(new InstrumentSummaryDto(UUID.fromString(INSTRUMENT_ID), "PT-01", "Pertiga 1", InstrumentKind.EARTHING_POLE,
+                LocalDate.of(2027, 3, 31)), created.instruments().getFirst());
+        assertEquals(LocalDate.of(2027, 3, 31), created.instruments().getFirst().calibrationExpiresOn());
+        assertEquals(InstrumentKind.UNKNOWN, created.instruments().get(1).kind(), "un tipo nuevo no rompe el turno");
+        assertEquals("TC-01", created.instruments().get(1).label());
+        assertTrue(emptied.instruments().isEmpty(), "un turno sin instrumentos, o de un servicio anterior, trae la lista vacia");
+        assertEquals("MSI-404", missing.getProblem().code());
+        assertEquals(2, report.shift().instruments().size(), "el parte los lleva con su turno");
         server.verify();
     }
 }

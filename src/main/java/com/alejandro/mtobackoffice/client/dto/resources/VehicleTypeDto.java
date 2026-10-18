@@ -9,7 +9,9 @@ import java.util.UUID;
 /**
  * Un modelo de vehiculo de mto-resources: lo que comparten todas sus unidades. {@code mobility} decide
  * el resto (las cifras de via, de bivial y de carretera que lleva). Las capacidades van como texto
- * ({@link VehicleCapability}). No tiene historial: es un catalogo.
+ * ({@link VehicleCapability}). {@code requiredDriverQualification} es la habilitacion que exige a quien
+ * lo conduce ({@code null}: ninguna); un turno que lo lleva necesita una persona distinta con ella por
+ * cada vehiculo autopropulsado. No tiene historial: es un catalogo.
  */
 public record VehicleTypeDto(UUID id, String code, String name, String manufacturer, String model, VehicleMobility mobility,
                              VehicleCategory category, Boolean selfPropelled, Boolean portable, BigDecimal lengthM, BigDecimal widthM,
@@ -19,7 +21,8 @@ public record VehicleTypeDto(UUID id, String code, String name, String manufactu
                              Boolean transportModeAuthorised, RailGearType railGearType, Integer onTrackingMinutes, Boolean needsPreparedAccess,
                              Integer maxSpeedRoadKmh, DrivingLicence requiredLicence, Set<String> capabilities, BigDecimal craneCapacityT,
                              BigDecimal craneReachM, BigDecimal platformHeightM, Integer platformLoadKg, BigDecimal platformInsulationKv,
-                             BigDecimal towingCapacityT, String notes, Boolean active, Long version) {
+                             BigDecimal towingCapacityT, String notes, Boolean active, Long version,
+                             QualificationTypeSummaryDto requiredDriverQualification) {
 
     public VehicleTypeDto {
         capabilities = capabilities == null ? Set.of() : Collections.unmodifiableSet(new TreeSet<>(capabilities));

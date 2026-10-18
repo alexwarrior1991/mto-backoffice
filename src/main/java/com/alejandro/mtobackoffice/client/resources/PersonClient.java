@@ -7,6 +7,9 @@ import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonFilter;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonQualificationDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonQualificationRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonQualificationUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonUpdateRequest;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,6 +28,7 @@ import java.util.UUID;
  * Las personas de mto-resources. No se borran nunca: {@code DELETE} desactiva
  * ({@code resources-delete}; 409 {@code UNI-001} si dirige una unidad o un equipo se quedaria con
  * menos de 2 linemen), y se reactiva con un {@code PATCH active=true} ({@code resources-write}).
+ * Sus cualificaciones cuelgan de ella: una de cada tipo, que se renueva cambiando su caducidad.
  */
 @HttpExchange("/api/resources/people")
 public interface PersonClient {
@@ -60,4 +64,20 @@ public interface PersonClient {
     /** Desactiva: 204. */
     @DeleteExchange("/{id}")
     void deactivate(@PathVariable("id") UUID id);
+
+    /** Sus cualificaciones, enteras y por el codigo del tipo. */
+    @GetExchange("/{id}/qualifications")
+    List<PersonQualificationDto> qualifications(@PathVariable("id") UUID id);
+
+    /** 201; 409 {@code QUA-001} si ya tiene ese tipo o el tipo esta retirado. */
+    @PostExchange("/{id}/qualifications")
+    PersonQualificationDto addQualification(@PathVariable("id") UUID id, @RequestBody PersonQualificationRequest request);
+
+    @PatchExchange(value = "/{id}/qualifications/{qualificationId}", contentType = MergePatch.MEDIA_TYPE)
+    PersonQualificationDto updateQualification(@PathVariable("id") UUID id, @PathVariable("qualificationId") UUID qualificationId,
+                                               @RequestBody MergePatch<PersonQualificationUpdateRequest> patch);
+
+    /** Un borrado de verdad ({@code resources-delete}): 204; su historial lo conserva el servicio. */
+    @DeleteExchange("/{id}/qualifications/{qualificationId}")
+    void removeQualification(@PathVariable("id") UUID id, @PathVariable("qualificationId") UUID qualificationId);
 }
