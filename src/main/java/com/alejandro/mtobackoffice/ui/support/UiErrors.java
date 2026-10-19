@@ -45,7 +45,9 @@ public final class UiErrors {
             "VDO-404", "Ese documento del vehiculo ya no existe.",
             "INT-404", "Ese instrumento no existe.",
             "QTY-404", "Ese tipo de cualificacion no existe.",
-            "TAP-404", "Ese punto de acceso ya no existe o aun no ha llegado a Recursos.");
+            "TAP-404", "Ese punto de acceso ya no existe o aun no ha llegado a Recursos.",
+            "ABS-404", "Esa ausencia ya no existe.",
+            "REP-404", "Esa reparacion ya no existe.");
 
     private UiErrors() {
     }
@@ -88,6 +90,10 @@ public final class UiErrors {
     public static String message(BackofficeApiException exception) {
         return switch (exception) {
             case SessionExpiredApiException ignored -> "La sesion ha caducado. Hay que volver a entrar.";
+            // mto-maintenance: el permiso esta, pero lo que se escribe es de un EP fuera del ambito de la
+            // persona. No es «no tienes permiso»: el detalle del servicio dice que EP es y cuales son los suyos.
+            case ForbiddenApiException scope when "SCP-403".equals(scope.getProblem().code()) ->
+                    "Queda fuera de tu ambito." + detail(exception);
             case ForbiddenApiException ignored -> "No tienes permiso para esta operacion.";
             // mto-notification: lo que ya no es de la persona o ya no existe. Se dice asi, como en
             // mto-frontend, sin el detalle del servicio (que nombra ids y usuarios en ingles).
@@ -167,6 +173,12 @@ public final class UiErrors {
                     "La persona ya tiene esa cualificacion, o su tipo esta retirado: para renovarla, cambia su caducidad." + detail(exception);
             case ConflictApiException document when "VDO-409".equals(document.getProblem().code()) ->
                     "El vehiculo ya tiene un documento de ese tipo: para renovarlo, cambia su caducidad.";
+            // mto-resources: dos ausencias de una persona no se solapan, y una reparacion solo admite lo que
+            // su estado deja (abrir una planificada, cerrar una abierta...). Recargar no lo arregla.
+            case ConflictApiException absence when "ABS-001".equals(absence.getProblem().code()) ->
+                    "La persona ya esta ausente en esas fechas: cambia esa ausencia en vez de anadir otra." + detail(exception);
+            case ConflictApiException repair when "REP-001".equals(repair.getProblem().code()) ->
+                    "La reparacion no admite ese cambio en su estado." + detail(exception);
             case ConflictApiException duplicated when "QTY-409".equals(duplicated.getProblem().code()) ->
                     "Ya existe otro tipo de cualificacion con ese codigo.";
             case ConflictApiException duplicated when "INT-409".equals(duplicated.getProblem().code()) ->
@@ -180,6 +192,9 @@ public final class UiErrors {
             // servicio de mantenimiento si responde, y la linea se queda como estaba.
             case ServiceUnavailableApiException stock when "STK-503".equals(stock.getProblem().code()) ->
                     "El almacen no responde: la linea de material se queda como estaba. Intentalo mas tarde." + detail(exception);
+            // mto-resources no ha podido leer Keycloak para el informe de puestos y perfiles: es transitorio.
+            case ServiceUnavailableApiException keycloak when "KCK-503".equals(keycloak.getProblem().code()) ->
+                    "Keycloak no responde ahora: el informe no se puede calcular. Intentalo mas tarde.";
             // Un 502 no es transitorio (mto-users sin SMTP, por ejemplo): su detalle es lo unico que lo explica.
             case ServiceUnavailableApiException unavailable when unavailable.getStatus().value() == 502 ->
                     "El servicio no ha podido completar la operacion." + detail(exception);

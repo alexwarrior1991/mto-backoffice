@@ -383,6 +383,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.FunctionalGroup;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateItemDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskUnit;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TeamRequest;
@@ -492,8 +493,23 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import com.alejandro.mtobackoffice.client.dto.master.TrackSchematicDto;
+import com.alejandro.mtobackoffice.client.dto.resources.AbsenceKind;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonAbsenceDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonAbsenceRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonAbsenceUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PositionDiscrepancyDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PositionDiscrepancyReportDto;
+import com.alejandro.mtobackoffice.client.dto.resources.RepairKind;
+import com.alejandro.mtobackoffice.client.dto.resources.RepairStatus;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleRepairDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleRepairRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleRepairUpdateRequest;
+import com.alejandro.mtobackoffice.client.resources.ResourcesReportClient;
+import com.alejandro.mtobackoffice.ui.maintenance.TaskTypeEquipmentDialog;
 import com.alejandro.mtobackoffice.ui.master.SchematicDrawing;
 import com.alejandro.mtobackoffice.ui.master.TrackSchematicDialog;
+import com.alejandro.mtobackoffice.ui.resources.PersonAbsenceDialog;
+import com.alejandro.mtobackoffice.ui.resources.VehicleRepairDialog;
 import java.util.Objects;
 import com.vaadin.flow.router.Route;
 import tools.jackson.databind.ObjectMapper;
@@ -503,6 +519,7 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import java.util.EnumSet;
 import com.vaadin.flow.component.treegrid.TreeGrid;
 import com.vaadin.flow.component.Svg;
+import com.vaadin.flow.component.radiobutton.RadioButtonGroup;
 
 /**
  * Las vistas en la JVM, sin navegador (Karibu-Testing sobre el contexto de Spring real, con el
@@ -592,6 +609,8 @@ class ViewLayerTest {
     private QualificationTypeClient qualificationTypeClient;
     @MockitoBean
     private InstrumentClient instrumentClient;
+    @MockitoBean
+    private ResourcesReportClient resourcesReportClient;
 
     @BeforeEach
     void setUp() {
@@ -5484,7 +5503,7 @@ class ViewLayerTest {
         when(maintenanceCatalogClient.updateTeam(any(), any())).thenReturn(team);
         when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(List.of(new TaskTypeDto(UUID.randomUUID(), "RG-04",
                 "Revision del hilo de contacto", FunctionalGroup.OVERHEAD_CONDUCTORS, new BigDecimal("12.50"), TaskUnit.SPAN, null, true, false,
-                true, 4)));
+                true, 4, Set.of(), 1L)));
         when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(List.of(
                 new InspectionTemplateDto(UUID.randomUUID(), CatenaryAssetType.PROFILE, 1, "Perfil", false, List.of()),
                 new InspectionTemplateDto(UUID.randomUUID(), CatenaryAssetType.PROFILE, 2, "Perfil", true, List.of(
@@ -5502,8 +5521,8 @@ class ViewLayerTest {
                 new java.util.TreeSet<>(Set.of(3L, 5L))));
 
         UI.getCurrent().navigate(MaintenanceRoutes.TASK_TYPES);
-        assertEquals(List.of("RG-04", "Revision del hilo de contacto", "Conductores aereos", "Vano", "12.5", "", "Si", "No", "Si"),
-                GridKt._getFormattedRow(gridWithId("task-types-grid"), 0));
+        assertEquals(List.of("RG-04", "Revision del hilo de contacto", "Conductores aereos", "Vano", "12.5", "", "Si", "No", "—", "Si"),
+                GridKt._getFormattedRow(gridWithId("task-types-grid"), 0).subList(0, 10));
         LocatorJ._setValue(comboWithId("task-types-group"), FunctionalGroup.OVERHEAD_CONDUCTORS);
         verify(maintenanceCatalogClient).taskTypes(FunctionalGroup.OVERHEAD_CONDUCTORS, null, null);
 
@@ -5587,9 +5606,9 @@ class ViewLayerTest {
     private static List<TaskTypeDto> twoTaskTypes() {
         return List.of(
                 new TaskTypeDto(UUID.randomUUID(), "RG-01", "Revision visual", FunctionalGroup.STRUCTURAL_SUPPORTS, BigDecimal.TEN, TaskUnit.PROFILE,
-                        null, false, false, true, 1),
+                        null, false, false, true, 1, Set.of(), 1L),
                 new TaskTypeDto(UUID.randomUUID(), "RG-04", "Revision del hilo de contacto", FunctionalGroup.OVERHEAD_CONDUCTORS,
-                        new BigDecimal("12.5"), TaskUnit.SPAN, null, true, false, true, 4));
+                        new BigDecimal("12.5"), TaskUnit.SPAN, null, true, false, true, 4, Set.of("INSULATED_PLATFORM"), 3L));
     }
 
     /** Las ordenes simuladas, paginadas como el servicio. */
@@ -8338,7 +8357,7 @@ class ViewLayerTest {
                 .filter(route -> route.startsWith(ResourcesRoutes.PREFIX + "/"))
                 .sorted()
                 .toList();
-        assertEquals(List.of("recursos/cualificaciones", "recursos/flota", "recursos/flota/:vehicleId", "recursos/flota/aparcamientos",
+        assertEquals(List.of("recursos/cualificaciones", "recursos/discrepancias", "recursos/flota", "recursos/flota/:vehicleId", "recursos/flota/aparcamientos",
                 "recursos/flota/modelos", "recursos/flota/tablero", "recursos/instrumentos", "recursos/organigrama", "recursos/organigrama/:unitId",
                 "recursos/personal", "recursos/personal/:personId"), routes);
     }
@@ -9201,7 +9220,7 @@ class ViewLayerTest {
     private static VehicleDto vehicle(UUID id, String code, VehicleTypeSummaryDto type, VehicleLocationDto position, boolean active) {
         return new VehicleDto(id, code, "Vehiculo " + code, type, type.mobility() == VehicleMobility.RAIL_ONLY ? null : "1234-ABC",
                 type.mobility() == VehicleMobility.ROAD_ONLY ? null : "99 80 9427 001-1", null, 2019, VehicleOwner.OWN, null,
-                VehicleOperationalStatus.OPERATIONAL, null, true, null, null, null, position, active, 6L);
+                VehicleOperationalStatus.OPERATIONAL, null, true, null, null, null, position, active, 6L, null);
     }
 
     private void stubVehicles(List<VehicleDto> all) {
@@ -9274,7 +9293,7 @@ class ViewLayerTest {
         LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-status-reason")), "Gato hidraulico");
         LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleEditorDialog.SAVE_ID)));
         verify(vehicleClient).create(new VehicleRequest("DR-01", null, VEHICLE_TYPE1, "1234-ABC", null, null, null, VehicleOwner.SUBCONTRACTOR,
-                "Alquileres del Norte", VehicleOperationalStatus.UNDER_REPAIR, "Gato hidraulico", null, null, null));
+                "Alquileres del Norte", VehicleOperationalStatus.UNDER_REPAIR, "Gato hidraulico", null, null, null, null));
     }
 
     /**
@@ -10187,5 +10206,506 @@ class ViewLayerTest {
         verify(shiftClient).update(eq(SHIFT1), argThat(patch -> patch.cleared().isEmpty() && patch.values().instrumentIds() == null
                 && "Con lluvia".equals(patch.values().observations())));
         verify(instrumentClient, never()).search(any(InstrumentFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    // --- Fase 5: ausencias, taller, GPS, equipo de las tareas y puestos y perfiles -----------------
+
+    private static final UUID ABSENCE1 = UUID.fromString("7b8c9d0e-0000-4000-8000-0000000000a1");
+    private static final UUID ABSENCE2 = UUID.fromString("7b8c9d0e-0000-4000-8000-0000000000a2");
+    private static final UUID REPAIR1 = UUID.fromString("7b8c9d0e-0000-4000-8000-0000000000b1");
+    private static final UUID REPAIR2 = UUID.fromString("7b8c9d0e-0000-4000-8000-0000000000b2");
+    private static final UUID REPAIR3 = UUID.fromString("7b8c9d0e-0000-4000-8000-0000000000b3");
+    private static final UUID REPAIR4 = UUID.fromString("7b8c9d0e-0000-4000-8000-0000000000b4");
+
+    /** Los codigos de la fase 5: lo que bloquea se dice, el ambito no es «no tienes permiso» y Keycloak caido es transitorio. */
+    @Test
+    void phaseFiveErrorsSayWhatBlocksTheChange() {
+        assertEquals("La persona ya esta ausente en esas fechas: cambia esa ausencia en vez de anadir otra. PER-000003 is already absent",
+                UiErrors.message(maintenanceError(409, "ABS-001", "PER-000003 is already absent")));
+        assertEquals("La reparacion no admite ese cambio en su estado. Repair REP-000004 is not OPEN",
+                UiErrors.message(maintenanceError(409, "REP-001", "Repair REP-000004 is not OPEN")));
+        assertEquals("Esa ausencia ya no existe.", UiErrors.message(maintenanceError(404, "ABS-404", "Absence not found")));
+        assertEquals("Esa reparacion ya no existe.", UiErrors.message(maintenanceError(404, "REP-404", "Repair not found")));
+        assertEquals("Queda fuera de tu ambito. Execution package 7 is outside your scope (3, 5)",
+                UiErrors.message(maintenanceError(403, "SCP-403", "Execution package 7 is outside your scope (3, 5)")));
+        assertEquals("No tienes permiso para esta operacion.", UiErrors.message(maintenanceError(403, null, "Forbidden")),
+                "un 403 sin codigo sigue siendo el de siempre");
+        assertEquals("Keycloak no responde ahora: el informe no se puede calcular. Intentalo mas tarde.",
+                UiErrors.message(maintenanceError(503, "KCK-503", "Keycloak cannot be read now")));
+    }
+
+    private static PersonAbsenceDto absence(UUID id, AbsenceKind kind, LocalDate from, LocalDate to, String notes) {
+        return new PersonAbsenceDto(id, PERSON1, kind, from, to, notes, 2L);
+    }
+
+    /**
+     * La pestana Ausencias pide sus datos al abrirse: los dias cuentan los dos extremos, una clase nueva
+     * se ve pero no abre nada, el alta comprueba lo evidente antes de llamar y un ABS-001 deja el dialogo
+     * abierto; modificar manda lo cambiado y las notas vaciadas a null, y quitar pide confirmacion.
+     */
+    @Test
+    void theAbsencesTabAddsPatchesAndRemovesAndAnOverlapKeepsTheDialogOpen() {
+        loginAs("recursos.responsable", RESOURCES_ADMIN);
+        PersonDto yossi = person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.TEAM_LEADER, true);
+        when(personClient.findById(PERSON1)).thenReturn(yossi);
+        when(personClient.qualifications(PERSON1)).thenReturn(List.of());
+        PersonAbsenceDto vacation = absence(ABSENCE1, AbsenceKind.VACATION, LocalDate.of(2026, 11, 2), LocalDate.of(2026, 11, 6), "Verano");
+        when(personClient.absences(PERSON1)).thenReturn(List.of(vacation,
+                absence(ABSENCE2, AbsenceKind.UNKNOWN, LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 1), null)));
+        PersonAbsenceRequest training = new PersonAbsenceRequest(AbsenceKind.TRAINING, LocalDate.of(2026, 11, 16), LocalDate.of(2026, 11, 18), null);
+        when(personClient.addAbsence(eq(PERSON1), any())).thenThrow(maintenanceError(409, "ABS-001", "PER-000003 is already absent"))
+                .thenReturn(absence(UUID.randomUUID(), AbsenceKind.TRAINING, LocalDate.of(2026, 11, 16), LocalDate.of(2026, 11, 18), null));
+        when(personClient.updateAbsence(eq(PERSON1), eq(ABSENCE1), any())).thenReturn(vacation);
+
+        UI.getCurrent().navigate(PersonDetailView.class, PersonDetailView.parametersOf(PERSON1));
+        verify(personClient, never()).absences(any());
+        selectTab(1);
+        Grid<Object> grid = gridWithId("absences-grid");
+        assertEquals(List.of("Vacaciones", "02/11/2026", "06/11/2026", "5", "Verano"), GridKt._getFormattedRow(grid, 0).subList(0, 5));
+        assertEquals(List.of("Desconocido", "01/12/2026", "01/12/2026", "1"), GridKt._getFormattedRow(grid, 1).subList(0, 4));
+        assertEquals("2 ausencias", spanText("absences-count"));
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 1, "actions"), Button.class).isEmpty(), "una clase desconocida no abre nada");
+
+        click("absence-add");
+        click(PersonAbsenceDialog.SAVE_ID);
+        verify(personClient, never()).addAbsence(any(), any());
+        assertTrue(LocatorJ._get(Select.class, spec -> spec.withId("absence-kind")).isInvalid(), "la clase es obligatoria");
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("absence-kind")), AbsenceKind.TRAINING);
+        LocatorJ._setValue(datePicker("absence-starts-on"), LocalDate.of(2026, 11, 18));
+        LocatorJ._setValue(datePicker("absence-ends-on"), LocalDate.of(2026, 11, 16));
+        click(PersonAbsenceDialog.SAVE_ID);
+        verify(personClient, never()).addAbsence(any(), any());
+        assertEquals("El fin no puede ser anterior al inicio", datePicker("absence-ends-on").getErrorMessage());
+        LocatorJ._setValue(datePicker("absence-starts-on"), LocalDate.of(2026, 11, 16));
+        LocatorJ._setValue(datePicker("absence-ends-on"), LocalDate.of(2026, 11, 18));
+        click(PersonAbsenceDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText(
+                "La persona ya esta ausente en esas fechas: cambia esa ausencia en vez de anadir otra. PER-000003 is already absent"));
+        LocatorJ._get(PersonAbsenceDialog.class);
+        click(PersonAbsenceDialog.SAVE_ID);
+        verify(personClient, times(2)).addAbsence(PERSON1, training);
+        assertTrue(LocatorJ._find(PersonAbsenceDialog.class).isEmpty());
+        verify(personClient, times(2)).absences(PERSON1);
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("absence-edit-" + ABSENCE1)));
+        click(PersonAbsenceDialog.SAVE_ID);
+        verify(personClient, never()).updateAbsence(any(), any(), any());
+        assertTrue(LocatorJ._find(PersonAbsenceDialog.class).isEmpty(), "sin cambios no se llama");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("absence-edit-" + ABSENCE1)));
+        LocatorJ._setValue(datePicker("absence-ends-on"), LocalDate.of(2026, 11, 9));
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("absence-notes")), "");
+        click(PersonAbsenceDialog.SAVE_ID);
+        verify(personClient).updateAbsence(PERSON1, ABSENCE1, new MergePatch<>(new PersonAbsenceUpdateRequest(null, null, LocalDate.of(2026, 11, 9),
+                null), Set.of("notes"), 2L));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("absence-remove-" + ABSENCE1)));
+        verify(personClient, never()).removeAbsence(any(), any());
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        verify(personClient).removeAbsence(PERSON1, ABSENCE1);
+    }
+
+    /** Sin resources-write no se anade ni se modifica una ausencia, y sin resources-delete no se quita. */
+    @Test
+    void aReaderOnlyReadsTheAbsencesAndRemovingNeedsResourcesDelete() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        when(personClient.findById(PERSON1)).thenReturn(person(PERSON1, "PER-000003", "Yossi", "Cohen", PersonCategory.TEAM_LEADER, true));
+        when(personClient.qualifications(PERSON1)).thenReturn(List.of());
+        when(personClient.absences(PERSON1)).thenReturn(List.of(absence(ABSENCE1, AbsenceKind.SICK_LEAVE, LocalDate.of(2026, 11, 2),
+                LocalDate.of(2026, 11, 3), null)));
+
+        UI.getCurrent().navigate(PersonDetailView.class, PersonDetailView.parametersOf(PERSON1));
+        selectTab(1);
+        assertEquals(List.of("Baja", "02/11/2026", "03/11/2026", "2"), GridKt._getFormattedRow(gridWithId("absences-grid"), 0).subList(0, 4));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("absence-add")).isEmpty());
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(gridWithId("absences-grid"), 0, "actions"), Button.class).isEmpty());
+
+        loginAs("recursos.gestor", RESOURCES_MANAGER);
+        UI.getCurrent().navigate(HomeView.class);
+        UI.getCurrent().navigate(PersonDetailView.class, PersonDetailView.parametersOf(PERSON1));
+        selectTab(1);
+        Component actions = GridKt._getCellComponent(gridWithId("absences-grid"), 0, "actions");
+        LocatorJ._get(actions, Button.class, spec -> spec.withId("absence-edit-" + ABSENCE1));
+        assertTrue(LocatorJ._find(actions, Button.class, spec -> spec.withId("absence-remove-" + ABSENCE1)).isEmpty(), "quitar pide resources-delete");
+    }
+
+    private static VehicleRepairDto repair(UUID id, String code, RepairStatus status, boolean immobilises, String workshop, BigDecimal cost) {
+        return new VehicleRepairDto(id, code, VEHICLE1, status == RepairStatus.UNKNOWN ? RepairKind.UNKNOWN : RepairKind.BREAKDOWN, status,
+                immobilises, "Fuga en el circuito hidraulico", workshop, LocalDate.of(2026, 11, 3), LocalDate.of(2026, 11, 5),
+                status == RepairStatus.PLANNED ? null : Instant.parse("2026-11-03T06:00:00Z"),
+                status == RepairStatus.CLOSED ? Instant.parse("2026-11-05T14:00:00Z") : null, 12000, new BigDecimal("3500.5"), cost, null, 1L);
+    }
+
+    private void stubWorkshop(List<VehicleRepairDto> repairs) {
+        stubConfigurationNames();
+        stubVehicles(List.of(vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true)));
+        when(vehicleClient.locations(eq(VEHICLE1), any(), any(), anyInt(), anyInt())).thenReturn(page(List.<VehicleLocationDto>of(), 0, 20));
+        when(vehicleClient.repairs(VEHICLE1)).thenReturn(repairs);
+    }
+
+    private static List<String> repairButtons(Grid<Object> grid, int row) {
+        return LocatorJ._find(GridKt._getCellComponent(grid, row, "actions"), Button.class).stream()
+                .map(button -> button.getId().orElse("").replaceFirst("-[0-9a-f-]{36}$", "")).toList();
+    }
+
+    /**
+     * La pestana Taller pide sus datos al abrirse y ofrece en cada fila lo que su estado admite:
+     * planificada, abrir, modificar y cancelar; abierta, cerrar, modificar y cancelar; cerrada o cancelada,
+     * modificar; desconocida, nada. Abrir, cerrar y cancelar se confirman diciendo su efecto, y tras cada
+     * una se relee la ficha del vehiculo; un REP-001 se dice sin pedir recargar.
+     */
+    @Test
+    void theWorkshopTabOffersWhatEachStatusAdmitsAndRereadsTheVehicle() {
+        loginAs("recursos.flota", FLEET_OPERATOR);
+        VehicleRepairDto planned = repair(REPAIR1, "REP-000001", RepairStatus.PLANNED, true, "Taller de Lod", null);
+        VehicleRepairDto open = repair(REPAIR2, "REP-000002", RepairStatus.OPEN, true, null, null);
+        stubWorkshop(List.of(planned, open, repair(REPAIR3, "REP-000003", RepairStatus.CLOSED, false, null, new BigDecimal("980.25")),
+                repair(REPAIR4, "REP-000004", RepairStatus.UNKNOWN, true, null, null)));
+        when(vehicleClient.openRepair(VEHICLE1, REPAIR1)).thenReturn(repair(REPAIR1, "REP-000001", RepairStatus.OPEN, true, null, null));
+        when(vehicleClient.closeRepair(VEHICLE1, REPAIR2)).thenThrow(maintenanceError(409, "REP-001", "Repair REP-000002 is not OPEN"));
+        when(vehicleClient.cancelRepair(VEHICLE1, REPAIR1)).thenReturn(repair(REPAIR1, "REP-000001", RepairStatus.CANCELLED, true, null, null));
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        verify(vehicleClient, never()).repairs(any());
+        selectTab(2);
+        Grid<Object> grid = gridWithId("repairs-grid");
+        assertEquals(List.of("REP-000001", "Averia", "Planificada", "Si", "03/11/2026 – 05/11/2026", "", "", "Taller de Lod", ""),
+                GridKt._getFormattedRow(grid, 0).subList(0, 9));
+        assertEquals(List.of("REP-000003", "Averia", "Cerrada", "No"), GridKt._getFormattedRow(grid, 2).subList(0, 4));
+        assertEquals("980.25", GridKt._getFormattedRow(grid, 2).get(8));
+        assertEquals(List.of("Desconocido", "Desconocido"), GridKt._getFormattedRow(grid, 3).subList(1, 3));
+        assertEquals("4 reparaciones", spanText("repairs-count"));
+        assertEquals(List.of("repair-open", "repair-edit", "repair-cancel"), repairButtons(grid, 0));
+        assertEquals(List.of("repair-close", "repair-edit", "repair-cancel"), repairButtons(grid, 1));
+        assertEquals(List.of("repair-edit"), repairButtons(grid, 2));
+        assertEquals(List.of(), repairButtons(grid, 3), "un estado desconocido no admite nada");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("repair-open-" + REPAIR1)));
+        ConfirmDialog confirm = LocatorJ._get(ConfirmDialog.class);
+        assertTrue(confirm.getElement().getProperty("message", "").contains("pasa a En reparacion"), confirm.getElement().getProperty("message", ""));
+        verify(vehicleClient, never()).openRepair(any(), any());
+        ConfirmDialogKt._fireConfirm(confirm);
+        verify(vehicleClient).openRepair(VEHICLE1, REPAIR1);
+        verify(vehicleClient, times(2)).findById(VEHICLE1);
+        verify(vehicleClient, times(2)).repairs(VEHICLE1);
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, "actions"), Button.class, spec -> spec.withId("repair-close-" + REPAIR2)));
+        confirm = LocatorJ._get(ConfirmDialog.class);
+        assertTrue(confirm.getElement().getProperty("message", "").contains("vuelve a Operativo"), confirm.getElement().getProperty("message", ""));
+        ConfirmDialogKt._fireConfirm(confirm);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("La reparacion no admite ese cambio en su estado. Repair REP-000002 is not OPEN"));
+        verify(vehicleClient, times(3)).findById(VEHICLE1);
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("repair-cancel-" + REPAIR1)));
+        confirm = LocatorJ._get(ConfirmDialog.class);
+        assertTrue(confirm.getElement().getProperty("message", "").contains("vuelve a entrar en los turnos de esas fechas"),
+                confirm.getElement().getProperty("message", ""));
+        ConfirmDialogKt._fireConfirm(confirm);
+        verify(vehicleClient).cancelRepair(VEHICLE1, REPAIR1);
+    }
+
+    /**
+     * El alta de una reparacion nace abierta ahora o planificada (con su inicio, obligatorio) y marcada como
+     * que inmoviliza; lo evidente se comprueba antes de llamar (la clase, la descripcion, el fin previsto, el
+     * coste con su columna) y un VEH-001 deja el dialogo abierto. Guardar relee la ficha del vehiculo.
+     */
+    @Test
+    void aRepairIsCreatedPlannedOrOpenWithWhatIsCheckedBeforeCalling() {
+        loginAs("recursos.flota", FLEET_OPERATOR);
+        stubWorkshop(List.of());
+        when(vehicleClient.addRepair(eq(VEHICLE1), any())).thenThrow(maintenanceError(409, "VEH-001", "DR-01 is retired"))
+                .thenReturn(repair(REPAIR1, "REP-000001", RepairStatus.PLANNED, true, null, new BigDecimal("1200.5")));
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        selectTab(2);
+        assertEquals("0 reparaciones", spanText("repairs-count"));
+        click("repair-add");
+        @SuppressWarnings("unchecked")
+        RadioButtonGroup<RepairStatus> status = LocatorJ._get(RadioButtonGroup.class, spec -> spec.withId("repair-status"));
+        assertEquals(RepairStatus.OPEN, status.getValue(), "por defecto se abre ahora");
+        assertEquals(List.of(RepairStatus.PLANNED, RepairStatus.OPEN), status.getListDataView().getItems().toList());
+        assertTrue(LocatorJ._get(Checkbox.class, spec -> spec.withId("repair-immobilises")).getValue(), "por defecto inmoviliza");
+        click(VehicleRepairDialog.SAVE_ID);
+        verify(vehicleClient, never()).addRepair(any(), any());
+        assertTrue(LocatorJ._get(Select.class, spec -> spec.withId("repair-kind")).isInvalid(), "la clase es obligatoria");
+        assertTrue(LocatorJ._get(TextArea.class, spec -> spec.withId("repair-description")).isInvalid(), "la descripcion tambien");
+
+        LocatorJ._setValue(status, RepairStatus.PLANNED);
+        LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("repair-kind")), RepairKind.BREAKDOWN);
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("repair-description")), " Fuga en el circuito hidraulico ");
+        click(VehicleRepairDialog.SAVE_ID);
+        verify(vehicleClient, never()).addRepair(any(), any());
+        assertEquals("Una planificada dice desde cuando", datePicker("repair-planned-from").getErrorMessage());
+
+        LocatorJ._setValue(datePicker("repair-planned-from"), LocalDate.of(2026, 11, 5));
+        LocatorJ._setValue(datePicker("repair-planned-to"), LocalDate.of(2026, 11, 3));
+        click(VehicleRepairDialog.SAVE_ID);
+        verify(vehicleClient, never()).addRepair(any(), any());
+        assertEquals("El fin previsto no puede ser anterior al inicio", datePicker("repair-planned-to").getErrorMessage());
+
+        LocatorJ._setValue(datePicker("repair-planned-to"), LocalDate.of(2026, 11, 7));
+        BigDecimalField cost = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("repair-cost"));
+        LocatorJ._setValue(cost, new BigDecimal("-5"));
+        click(VehicleRepairDialog.SAVE_ID);
+        assertTrue(cost.isInvalid(), "el coste no es negativo");
+        LocatorJ._setValue(cost, new BigDecimal("1200.555"));
+        click(VehicleRepairDialog.SAVE_ID);
+        assertTrue(cost.isInvalid(), "dos decimales como mucho");
+        verify(vehicleClient, never()).addRepair(any(), any());
+
+        LocatorJ._setValue(cost, new BigDecimal("1200.5"));
+        click(VehicleRepairDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText("La flota no admite ese cambio. DR-01 is retired"));
+        LocatorJ._get(VehicleRepairDialog.class);
+        click(VehicleRepairDialog.SAVE_ID);
+        verify(vehicleClient, times(2)).addRepair(VEHICLE1, new VehicleRepairRequest(RepairKind.BREAKDOWN, RepairStatus.PLANNED, true,
+                "Fuga en el circuito hidraulico", null, LocalDate.of(2026, 11, 5), LocalDate.of(2026, 11, 7), null, null, new BigDecimal("1200.5"), null));
+        assertTrue(LocatorJ._find(VehicleRepairDialog.class).isEmpty());
+        verify(vehicleClient, times(2)).findById(VEHICLE1);
+        verify(vehicleClient, times(2)).repairs(VEHICLE1);
+    }
+
+    /**
+     * Modificar una reparacion manda lo cambiado, lo vaciado y la version leida; el estado no se elige. Las
+     * fechas previstas cambian planificada o abierta, y si inmoviliza, solo planificada.
+     */
+    @Test
+    void aRepairIsModifiedWithWhatChangedAndItsDatesOnlyWhilePlannedOrOpen() {
+        loginAs("recursos.flota", FLEET_OPERATOR);
+        VehicleRepairDto planned = repair(REPAIR1, "REP-000001", RepairStatus.PLANNED, true, "Taller de Lod", null);
+        stubWorkshop(List.of(planned, repair(REPAIR2, "REP-000002", RepairStatus.OPEN, true, null, null),
+                repair(REPAIR3, "REP-000003", RepairStatus.CLOSED, false, null, new BigDecimal("980.25"))));
+        when(vehicleClient.updateRepair(eq(VEHICLE1), any(), any())).thenReturn(planned);
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        selectTab(2);
+        Grid<Object> grid = gridWithId("repairs-grid");
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("repair-edit-" + REPAIR1)));
+        assertTrue(LocatorJ._find(RadioButtonGroup.class, spec -> spec.withId("repair-status")).isEmpty(), "el estado tiene sus transiciones");
+        assertFalse(LocatorJ._get(Checkbox.class, spec -> spec.withId("repair-immobilises")).isReadOnly());
+        assertFalse(datePicker("repair-planned-from").isReadOnly());
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("repair-workshop")), "");
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("repair-cost")), new BigDecimal("980.25"));
+        click(VehicleRepairDialog.SAVE_ID);
+        verify(vehicleClient).updateRepair(VEHICLE1, REPAIR1, new MergePatch<>(new VehicleRepairUpdateRequest(null, null, null, null, null, null, null,
+                null, new BigDecimal("980.25"), null), Set.of("workshop"), 1L));
+        assertTrue(LocatorJ._find(VehicleRepairDialog.class).isEmpty());
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, "actions"), Button.class, spec -> spec.withId("repair-edit-" + REPAIR2)));
+        assertTrue(LocatorJ._get(Checkbox.class, spec -> spec.withId("repair-immobilises")).isReadOnly(), "si inmoviliza, solo planificada");
+        assertFalse(datePicker("repair-planned-to").isReadOnly(), "abierta, sus fechas aun cambian");
+        click(VehicleRepairDialog.SAVE_ID);
+        assertTrue(LocatorJ._find(VehicleRepairDialog.class).isEmpty(), "sin cambios no se llama");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 2, "actions"), Button.class, spec -> spec.withId("repair-edit-" + REPAIR3)));
+        assertTrue(datePicker("repair-planned-from").isReadOnly(), "cerrada, sus fechas ya no cambian");
+        assertTrue(datePicker("repair-planned-to").isReadOnly());
+        assertTrue(LocatorJ._get(Checkbox.class, spec -> spec.withId("repair-immobilises")).isReadOnly());
+        LocatorJ._setValue(LocatorJ._get(TextArea.class, spec -> spec.withId("repair-notes")), "Factura 2026/118");
+        click(VehicleRepairDialog.SAVE_ID);
+        verify(vehicleClient).updateRepair(eq(VEHICLE1), eq(REPAIR3), argThat(patch -> "Factura 2026/118".equals(patch.values().notes())
+                && patch.cleared().isEmpty() && patch.values().plannedFrom() == null && patch.version() == 1L));
+        verify(vehicleClient, times(2)).updateRepair(any(), any(), any());
+    }
+
+    /** Quien solo lee ve el taller sin controles. */
+    @Test
+    void aReaderOnlyReadsTheWorkshopOfAVehicle() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        stubWorkshop(List.of(repair(REPAIR1, "REP-000001", RepairStatus.PLANNED, true, null, null)));
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        selectTab(2);
+        assertEquals("REP-000001", GridKt._getFormattedRow(gridWithId("repairs-grid"), 0).getFirst());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("repair-add")).isEmpty());
+        assertEquals(List.of(), repairButtons(gridWithId("repairs-grid"), 0));
+    }
+
+    private static VehicleDto withGps(VehicleDto vehicle, VehicleLocationDto position, String device) {
+        return new VehicleDto(vehicle.id(), vehicle.code(), vehicle.name(), vehicle.type(), vehicle.registrationPlate(), vehicle.railVehicleNumber(),
+                vehicle.serialNumber(), vehicle.manufactureYear(), vehicle.owner(), vehicle.ownerCompany(), vehicle.operationalStatus(),
+                vehicle.statusReason(), vehicle.available(), vehicle.odometerKm(), vehicle.engineHours(), vehicle.notes(), position, vehicle.active(),
+                vehicle.version(), device);
+    }
+
+    /**
+     * El dispositivo GPS de un vehiculo: la ficha lo dice («GPS: …») y una posicion que llego por el dice
+     * su origen como «GPS»; el editor comprueba su forma antes de llamar y vaciarlo viaja a null.
+     */
+    @Test
+    void theGpsDeviceIsCheckedBeforeCallingEmptiedToNullAndShownInTheDetail() {
+        loginAs("recursos.flota", FLEET_OPERATOR);
+        VehicleLocationDto byGps = new VehicleLocationDto(UUID.randomUUID(), VehicleLocationKind.ON_TRACK, null, 4L, 12L, new BigDecimal("12.300"),
+                null, null, null, null, null, null, null, VehicleLocationSource.TELEMATICS, null, Instant.parse("2026-10-16T03:40:00Z"),
+                Instant.parse("2026-10-16T03:40:02Z"), "service-account-mto-telematics");
+        VehicleDto gps = withGps(vehicle(VEHICLE1, "UN-01", ROAD_RAIL_MODEL, null, true), byGps, "GPS-118");
+        stubConfigurationNames();
+        stubVehicles(List.of(gps));
+        when(vehicleClient.locations(eq(VEHICLE1), any(), any(), anyInt(), anyInt())).thenReturn(page(List.of(byGps), 0, 20));
+        when(vehicleClient.update(eq(VEHICLE1), any())).thenReturn(gps);
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        assertTrue(textOf("vehicle-summary").contains("GPS: GPS-118"), textOf("vehicle-summary"));
+        assertTrue(textOf("vehicle-position").contains("GPS · "), textOf("vehicle-position"));
+        assertEquals("GPS", GridKt._getFormattedRow(gridWithId("locations-grid"), 0).stream().filter("GPS"::equals).findFirst().orElse(""),
+                "el origen de una posicion del GPS");
+
+        click("vehicle-edit");
+        TextField device = LocatorJ._get(TextField.class, spec -> spec.withId("vehicle-telematics-device"));
+        assertEquals("GPS-118", device.getValue());
+        assertEquals(64, device.getMaxLength());
+        LocatorJ._setValue(device, "GPS 118/b");
+        click(VehicleEditorDialog.SAVE_ID);
+        verify(vehicleClient, never()).update(any(), any());
+        assertEquals("Solo letras sin tildes, cifras, '.', ':', '-' y '_'", device.getErrorMessage());
+        LocatorJ._setValue(device, "");
+        click(VehicleEditorDialog.SAVE_ID);
+        verify(vehicleClient).update(eq(VEHICLE1), argThat(patch -> patch.cleared().equals(Set.of("telematicsDeviceId"))
+                && patch.values().telematicsDeviceId() == null && patch.version() == 6L));
+    }
+
+    private static TaskTypeDto taskType(String code, Set<String> equipment, long version) {
+        return new TaskTypeDto(UUID.randomUUID(), code, "Revision del hilo de contacto", FunctionalGroup.OVERHEAD_CONDUCTORS, new BigDecimal("12.5"),
+                TaskUnit.SPAN, null, true, false, true, 4, equipment, version);
+    }
+
+    /**
+     * El equipo que exige un tipo de tarea se ve en su columna (uno desconocido, tal cual) y solo lo cambia
+     * quien tiene maintenance-supervise y maintenance-write: el conjunto como merge-patch con la version, lo
+     * desconocido conservado, quitarlos todos a null y un CON-001 con el dialogo abierto.
+     */
+    @Test
+    void theEquipmentOfATaskTypeIsChangedOnlyWithSuperviseAndWriteAndKeepsTheUnknown() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        TaskTypeDto platform = taskType("RG-04", Set.of("INSULATED_PLATFORM", "SAFETY_HARNESS"), 3L);
+        TaskTypeDto earthing = taskType("RG-05", Set.of("EARTHING"), 1L);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(List.of(platform, earthing, taskType("RG-06", Set.of(), 0L)));
+        when(maintenanceCatalogClient.updateTaskType(eq("RG-04"), any())).thenThrow(maintenanceError(409, "CON-001", "Stale version of RG-04"))
+                .thenReturn(platform);
+        when(maintenanceCatalogClient.updateTaskType(eq("RG-05"), any())).thenReturn(earthing);
+
+        UI.getCurrent().navigate(MaintenanceRoutes.TASK_TYPES);
+        Grid<Object> grid = gridWithId("task-types-grid");
+        assertEquals("Plataforma aislada, SAFETY_HARNESS", GridKt._getFormattedRow(grid, 0).get(8));
+        assertEquals("Puesta a tierra", GridKt._getFormattedRow(grid, 1).get(8));
+        assertEquals("—", GridKt._getFormattedRow(grid, 2).get(8));
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(grid, 0, "actions"), Button.class).isEmpty(), "sin maintenance-supervise no se cambia");
+
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        UI.getCurrent().navigate(HomeView.class);
+        UI.getCurrent().navigate(MaintenanceRoutes.TASK_TYPES);
+        grid = gridWithId("task-types-grid");
+        Button equipment = LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("task-type-equipment-RG-04"));
+        assertEquals("Equipo de RG-04", equipment.getTooltip().getText());
+        LocatorJ._click(equipment);
+        Checkbox insulated = LocatorJ._get(Checkbox.class, spec -> spec.withId("task-equipment-INSULATED_PLATFORM"));
+        Checkbox earth = LocatorJ._get(Checkbox.class, spec -> spec.withId("task-equipment-EARTHING"));
+        assertTrue(insulated.getValue());
+        assertFalse(earth.getValue());
+        assertEquals("Exige tambien, y se conserva: SAFETY_HARNESS", LocatorJ._get(Paragraph.class, spec -> spec.withId("task-equipment-unknown")).getText());
+        click(TaskTypeEquipmentDialog.SAVE_ID);
+        verify(maintenanceCatalogClient, never()).updateTaskType(any(), any());
+        assertTrue(LocatorJ._find(TaskTypeEquipmentDialog.class).isEmpty(), "sin cambios no se llama");
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 0, "actions"), Button.class, spec -> spec.withId("task-type-equipment-RG-04")));
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("task-equipment-INSULATED_PLATFORM")), false);
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("task-equipment-EARTHING")), true);
+        click(TaskTypeEquipmentDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Conflicto con otro cambio: recarga y vuelve a intentarlo."));
+        LocatorJ._get(TaskTypeEquipmentDialog.class);
+        click(TaskTypeEquipmentDialog.SAVE_ID);
+        verify(maintenanceCatalogClient, times(2)).updateTaskType("RG-04", new MergePatch<>(new TaskTypeUpdateRequest(
+                Set.of("EARTHING", "SAFETY_HARNESS")), Set.of(), 3L));
+        assertTrue(LocatorJ._find(TaskTypeEquipmentDialog.class).isEmpty());
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(grid, 1, "actions"), Button.class, spec -> spec.withId("task-type-equipment-RG-05")));
+        LocatorJ._setValue(LocatorJ._get(Checkbox.class, spec -> spec.withId("task-equipment-EARTHING")), false);
+        click(TaskTypeEquipmentDialog.SAVE_ID);
+        verify(maintenanceCatalogClient).updateTaskType(eq("RG-05"), argThat(patch -> patch.values().requiredEquipment() == null
+                && patch.cleared().equals(Set.of("requiredEquipment")) && patch.version() == 1L));
+    }
+
+    private static PositionDiscrepancyReportDto discrepancies() {
+        PositionDiscrepancyDto yossi = new PositionDiscrepancyDto(PERSON1, "PER-000003", "Yossi Cohen", "y.cohen", PersonCategory.TEAM_LEADER, true,
+                "mto-position-team-leader", List.of("mto-position-worker"));
+        PositionDiscrepancyDto david = new PositionDiscrepancyDto(PERSON2, "PER-000004", "David Levi", "d.levi", PersonCategory.WORKER, true,
+                "mto-position-worker", List.of());
+        PositionDiscrepancyDto external = new PositionDiscrepancyDto(null, null, null, "ext.contractor", null, null, null,
+                List.of("mto-position-supervisor"));
+        return new PositionDiscrepancyReportDto(Instant.parse("2026-10-19T08:00:00Z"), 42, 37, List.of(yossi), List.of(), List.of(david),
+                List.of(external));
+    }
+
+    /**
+     * Puestos y perfiles: las cifras del informe y sus cuatro secciones, cada persona como enlace a su ficha
+     * (la que no tiene ficha, no), una seccion vacia dice «Nada», y «Actualizar» lo vuelve a pedir.
+     */
+    @Test
+    void thePositionDiscrepanciesShowTheirFourSectionsAndLinkToThePerson() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        when(resourcesReportClient.positionDiscrepancies()).thenReturn(discrepancies());
+
+        UI.getCurrent().navigate(ResourcesRoutes.DISCREPANCIES);
+        assertEquals("Calculado el " + Formats.dateTime(Instant.parse("2026-10-19T08:00:00Z")) + " · 42 personas revisadas · "
+                + "37 usuarios con perfil de puesto", textOf("discrepancies-figures"));
+        LocatorJ._get(H4.class, spec -> spec.withText("Con otro perfil (1)"));
+        LocatorJ._get(H4.class, spec -> spec.withText("Con varios perfiles (0)"));
+        LocatorJ._get(H4.class, spec -> spec.withText("Sin perfil de puesto (1)"));
+        LocatorJ._get(H4.class, spec -> spec.withText("Con perfil y sin ficha (1)"));
+        assertEquals(List.of("y.cohen", "Jefe de equipo", "mto-position-team-leader", "mto-position-worker"),
+                GridKt._getFormattedRow(gridWithId("discrepancies-wrong-profile-grid"), 0).subList(1, 5));
+        assertEquals("Nada", spanText("discrepancies-several-profiles-empty"));
+        assertEquals(List.of("d.levi", "Operario", "mto-position-worker", ""),
+                GridKt._getFormattedRow(gridWithId("discrepancies-without-profile-grid"), 0).subList(1, 5));
+        assertEquals(List.of("ext.contractor", "", "", "mto-position-supervisor"),
+                GridKt._getFormattedRow(gridWithId("discrepancies-without-record-grid"), 0).subList(1, 5));
+        RouterLink yossi = (RouterLink) GridKt._getCellComponent(gridWithId("discrepancies-wrong-profile-grid"), 0, "person");
+        assertEquals("discrepancies-wrong-profile-person-" + PERSON1, yossi.getId().orElseThrow());
+        assertEquals("PER-000003 · Yossi Cohen", yossi.getText());
+        assertEquals(ResourcesRoutes.PEOPLE + "/" + PERSON1, yossi.getHref());
+        assertTrue(LocatorJ._find(GridKt._getCellComponent(gridWithId("discrepancies-without-record-grid"), 0, "person"), RouterLink.class).isEmpty(),
+                "sin ficha no hay nada que abrir");
+
+        click("discrepancies-refresh");
+        verify(resourcesReportClient, times(2)).positionDiscrepancies();
+    }
+
+    /** Con Keycloak caido el informe dice por que en su sitio, con «Reintentar» y sin notificacion. */
+    @Test
+    void keycloakDownIsSaidInPlaceWithARetryAndNoNotification() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        when(resourcesReportClient.positionDiscrepancies()).thenThrow(maintenanceError(503, "KCK-503", "Keycloak cannot be read now"))
+                .thenReturn(discrepancies());
+
+        UI.getCurrent().navigate(ResourcesRoutes.DISCREPANCIES);
+        assertEquals("Keycloak no responde ahora: el informe no se puede calcular. Intentalo mas tarde.", textOf("discrepancies-unavailable"));
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), NotificationsKt.getNotifications().toString());
+        assertTrue(LocatorJ._find(Grid.class, spec -> spec.withId("discrepancies-wrong-profile-grid")).isEmpty());
+
+        click("discrepancies-retry");
+        assertTrue(LocatorJ._find(Div.class, spec -> spec.withId("discrepancies-unavailable")).isEmpty());
+        LocatorJ._get(Grid.class, spec -> spec.withId("discrepancies-wrong-profile-grid"));
+        verify(resourcesReportClient, times(2)).positionDiscrepancies();
+    }
+
+    /** Puestos y perfiles esta en el grupo Recursos con resources-read. */
+    @Test
+    void thePositionDiscrepanciesAreInTheResourcesMenu() {
+        loginAs("recursos.lector", RESOURCES_READER);
+        UI.getCurrent().navigate(HomeView.class);
+        assertTrue(menuLabels().containsAll(List.of("Recursos", "Puestos y perfiles")), menuLabels().toString());
+    }
+
+    /** Sin resources-read no esta en el menu, y un rol de realm que se llama como el permiso no lo abre. */
+    @Test
+    void withoutResourcesReadThePositionDiscrepanciesDoNotOpen() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        UI.getCurrent().navigate(HomeView.class);
+        assertFalse(menuLabels().contains("Puestos y perfiles"), menuLabels().toString());
+
+        loginAs("recursos.impostor", "ROLE_REALM_RESOURCES_READ");
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(ResourcesRoutes.DISCREPANCIES));
+        verify(resourcesReportClient, never()).positionDiscrepancies();
     }
 }

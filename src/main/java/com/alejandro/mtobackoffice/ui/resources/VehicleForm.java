@@ -34,6 +34,7 @@ public class VehicleForm {
     private Integer odometerKm;
     private BigDecimal engineHours;
     private String notes = "";
+    private String telematicsDeviceId = "";
 
     public static VehicleForm of(VehicleDto dto) {
         VehicleForm form = new VehicleForm();
@@ -54,6 +55,7 @@ public class VehicleForm {
         form.odometerKm = dto.odometerKm();
         form.engineHours = dto.engineHours();
         form.notes = orEmpty(dto.notes());
+        form.telematicsDeviceId = orEmpty(dto.telematicsDeviceId());
         return form;
     }
 
@@ -87,7 +89,7 @@ public class VehicleForm {
     public VehicleRequest toRequest() {
         return new VehicleRequest(code.trim(), blankToNull(name), typeId == null ? null : typeId.id(), blankToNull(plate()),
                 blankToNull(railNumber()), blankToNull(serialNumber), manufactureYear, owner, blankToNull(company()), operationalStatus,
-                blankToNull(reason()), odometerKm, engineHours, blankToNull(notes));
+                blankToNull(reason()), odometerKm, engineHours, blankToNull(notes), blankToNull(telematicsDeviceId));
     }
 
     /** Lo que cambio respecto a lo leido, lo vaciado y la version. */
@@ -107,7 +109,8 @@ public class VehicleForm {
                 changes.value("odometerKm", odometerKm, original.odometerKm()),
                 changes.number("engineHours", engineHours, original.engineHours()),
                 changes.text("notes", notes, original.notes()),
-                null);
+                null,
+                changes.text("telematicsDeviceId", telematicsDeviceId, original.telematicsDeviceId()));
         return changes.patch(values, original.version());
     }
 
@@ -229,5 +232,13 @@ public class VehicleForm {
 
     public void setNotes(String notes) {
         this.notes = notes;
+    }
+
+    public String getTelematicsDeviceId() {
+        return telematicsDeviceId;
+    }
+
+    public void setTelematicsDeviceId(String telematicsDeviceId) {
+        this.telematicsDeviceId = telematicsDeviceId;
     }
 }

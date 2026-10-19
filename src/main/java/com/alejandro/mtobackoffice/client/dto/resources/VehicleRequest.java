@@ -9,5 +9,5 @@ import java.util.UUID;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record VehicleRequest(String code, String name, UUID typeId, String registrationPlate, String railVehicleNumber, String serialNumber,
                              Integer manufactureYear, VehicleOwner owner, String ownerCompany, VehicleOperationalStatus operationalStatus,
-                             String statusReason, Integer odometerKm, BigDecimal engineHours, String notes) {
+                             String statusReason, Integer odometerKm, BigDecimal engineHours, String notes, String telematicsDeviceId) {
 }

@@ -45,8 +45,10 @@ import java.util.function.Consumer;
 /**
  * La ficha de un vehiculo: su modelo, sus datos, «Donde esta» (el tipo, el sitio, la via y el kp, el
  * acceso, el origen y la hora; uno que va con otro dice con quien y donde esta su portador) y las
- * pestanas «Ubicaciones», el historial, y «Documentos», los que caducan, que piden sus datos al abrirse.
- * Registrar donde esta pide {@code resources-location-write}; modificar y escribir sus documentos,
+ * pestanas «Ubicaciones», el historial, «Documentos», los que caducan, y «Taller», sus reparaciones, que
+ * piden sus datos al abrirse; una escritura en el taller relee la ficha, porque el estado del vehiculo puede
+ * cambiar con ella. Su dispositivo GPS sale en el resumen. Registrar donde esta pide
+ * {@code resources-location-write}; modificar y escribir sus documentos y su taller,
  * {@code resources-fleet-write}; retirar y quitar un documento, {@code resources-delete}. Los segmentos
  * literales de la flota ({@code tablero}, {@code modelos}, {@code aparcamientos}) ganan a
  * {@code :vehicleId}. Es el enlace de los avisos de caducidad de sus documentos.
@@ -58,6 +60,7 @@ public class VehicleDetailView extends VerticalLayout implements BeforeEnterObse
     public static final String VEHICLE_ID_PARAMETER = "vehicleId";
     public static final String LOCATIONS_TAB = "Ubicaciones";
     public static final String DOCUMENTS_TAB = "Documentos";
+    public static final String REPAIRS_TAB = "Taller";
     static final String RETIRE_TEXT = "No se borra: sus ubicaciones y los turnos lo siguen nombrando, y deja de ofrecerse en los turnos nuevos. "
             + "Si es el vehiculo por defecto de un equipo, el servicio no lo deja: cambialo antes en el organigrama. Se puede reactivar.";
 
@@ -141,6 +144,9 @@ public class VehicleDetailView extends VerticalLayout implements BeforeEnterObse
         VehicleDocumentsPanel documents = new VehicleDocumentsPanel(() -> vehicle, clients, canWrite, canDelete);
         panels.add(documents);
         tabs.add(DOCUMENTS_TAB, documents);
+        VehicleRepairsPanel repairs = new VehicleRepairsPanel(() -> vehicle, clients, canWrite, this::reload);
+        panels.add(repairs);
+        tabs.add(REPAIRS_TAB, repairs);
         tabs.addSelectedChangeListener(change -> loadTab(tabs, change.getSelectedTab()));
         tabsHolder.removeAll();
         tabsHolder.add(tabs);
@@ -182,7 +188,8 @@ public class VehicleDetailView extends VerticalLayout implements BeforeEnterObse
                 loaded.serialNumber() == null ? null : "N. serie " + loaded.serialNumber(),
                 loaded.manufactureYear() == null ? null : "Ano " + loaded.manufactureYear(),
                 loaded.odometerKm() == null ? null : loaded.odometerKm() + " km",
-                loaded.engineHours() == null ? null : loaded.engineHours().toPlainString() + " h de motor")));
+                loaded.engineHours() == null ? null : loaded.engineHours().toPlainString() + " h de motor",
+                loaded.telematicsDeviceId() == null ? null : "GPS: " + loaded.telematicsDeviceId())));
         paintPosition(loaded.position());
         paintButtons(loaded);
     }

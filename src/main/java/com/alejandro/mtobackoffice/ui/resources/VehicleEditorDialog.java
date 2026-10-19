@@ -27,6 +27,7 @@ import com.vaadin.flow.data.binder.Binder;
 
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -34,11 +35,16 @@ import java.util.stream.Stream;
  * va por carretera (y ninguna en uno de solo via), numero ferroviario si su modelo puede ir por via
  * abierta (y ninguno en uno de solo carretera), la empresa si no es propio y el motivo si no esta
  * operativo. Que la matricula o el numero no los tenga otro, o que el modelo no este retirado, lo dice
- * el servicio (409 {@code VEH-409}, {@code VEH-001}) con el dialogo abierto.
+ * el servicio (409 {@code VEH-409}, {@code VEH-001}) con el dialogo abierto. El dispositivo GPS es
+ * opcional (hasta 64 letras sin tildes, cifras, '.', ':', '-' y '_', comprobado antes de llamar), vaciarlo
+ * viaja a {@code null}, y que no lo tenga otro vehiculo lo dice el servicio.
  */
 public class VehicleEditorDialog extends Dialog {
 
     public static final String SAVE_ID = "vehicle-save";
+    static final int TELEMATICS_LENGTH = 64;
+    static final Pattern TELEMATICS_PATTERN = Pattern.compile("[A-Za-z0-9_.:-]+");
+    static final String TELEMATICS_FORMAT = "Solo letras sin tildes, cifras, '.', ':', '-' y '_'";
     private static final List<String> BY_CODE = List.of("code,asc");
 
     private final Binder<VehicleForm> binder = new Binder<>(VehicleForm.class);
@@ -92,6 +98,8 @@ public class VehicleEditorDialog extends Dialog {
         odometer.setId("vehicle-odometer");
         BigDecimalField hours = new BigDecimalField("Horas de motor");
         hours.setId("vehicle-engine-hours");
+        TextField telematics = text("vehicle-telematics-device", "Dispositivo GPS", TELEMATICS_LENGTH);
+        telematics.setHelperText("Por el que llegan sus posiciones; vacio, sin GPS");
         TextArea notes = new TextArea("Notas");
         notes.setId("vehicle-notes");
 
@@ -114,9 +122,12 @@ public class VehicleEditorDialog extends Dialog {
                 "Uno que no esta operativo dice por que").bind("statusReason");
         binder.forField(odometer).bind("odometerKm");
         binder.forField(hours).withValidator(Numbers.all(Numbers.nonNegative(), Numbers.digits(9, 1))).bind("engineHours");
+        binder.forField(telematics).withValidator(value -> value.isBlank() || TELEMATICS_PATTERN.matcher(value.trim()).matches(),
+                TELEMATICS_FORMAT).bind("telematicsDeviceId");
         binder.forField(notes).bind("notes");
 
-        FormLayout layout = new FormLayout(code, name, type, plate, railNumber, serial, year, owner, company, status, reason, odometer, hours, notes);
+        FormLayout layout = new FormLayout(code, name, type, plate, railNumber, serial, year, owner, company, status, reason, odometer, hours,
+                telematics, notes);
         layout.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1), new FormLayout.ResponsiveStep("480px", 2));
         add(layout);
         binder.readBean(form);

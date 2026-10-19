@@ -98,8 +98,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   viven en `client/dto` porque mantenimiento los comparte); `client/maintenance` (la API de
   `mto-maintenance` bajo `/api/maintenance`: `OrderClient` —órdenes, sus transiciones, su historial
   de estados, sus tareas, que solo existen dentro de una orden o de un turno, y sus líneas de
-  material—, `AssetClient`, `MaintenanceCatalogClient` —equipos, tipos de tarea, plantillas de
-  inspección—, `ShiftClient` —turnos, sus tareas y perfiles, asignar una tarea y sacarla—, `InspectionClient`,
+  material—, `AssetClient`, `MaintenanceCatalogClient` —equipos, tipos de tarea (con el equipo que
+  exigen, que se cambia con un `PATCH` merge-patch por su código), plantillas de inspección—, `ShiftClient` —turnos, sus tareas y perfiles, asignar una tarea y sacarla—, `InspectionClient`,
   `DefectClient` y `ReportClient` —cada informe en JSON y como fichero `ResponseEntity<byte[]>`—,
   todos con `revisions` salvo los catálogos y los informes, y `OperationClient`, las operaciones de
   fondo (`GET /operations/{id}`) que deja un `Prefer: respond-async`; DTO como records en
@@ -112,16 +112,19 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   accesos; DTO como records en `client/dto/notification`, con `payload` como `Map` y los
   enumerados tolerantes `ActivityCategory`, `ActivitySeverity`, `ActorKind` y `AccessOutcome`);
   `client/resources` (la API de `mto-resources` bajo `/api/resources`: `PersonClient` —con sus
-  cualificaciones, `/people/{id}/qualifications`, la lista entera, alta, `PATCH` y `DELETE`—,
+  cualificaciones, `/people/{id}/qualifications`, y sus ausencias, `/people/{id}/absences`, cada una la
+  lista entera, alta, `PATCH` y `DELETE`—,
   `OrganizationClient` —el árbol, las unidades, sus hijas y los linemen de un equipo, con `PUT` de la
   lista entera, `POST` para añadir uno y `leave` para que salga—, `VehicleTypeClient`,
   `ParkingSiteClient` y `VehicleClient` —con sus ubicaciones y el tablero, `positions`, ordenado por vía
-  y kp con el vehículo para desempatar, y sus documentos, `/vehicles/{id}/documents`—,
+  y kp con el vehículo para desempatar, sus documentos, `/vehicles/{id}/documents`, y su taller,
+  `/vehicles/{id}/repairs`, con `open`, `close` y `cancel` como `POST` sin cuerpo—,
   `QualificationTypeClient` —el catálogo de tipos de cualificación—, `InstrumentClient` —los
   instrumentos con su calibración, filtrables por `calibrationExpiresBefore`, y su historial— y
   `AccessPointClient` —los puntos de acceso a la vía que `mto-resources` ha recibido de
   `mto-configuration`, una lista entera sin paginar, que `AccessPointListDto` lee también como página
-  (`enabledOnTrack`: los activos de una vía)—; DTO como
+  (`enabledOnTrack`: los activos de una vía)— y `ResourcesReportClient` —el informe de puestos y perfiles,
+  `GET /reports/position-discrepancies`—; DTO como
   records en `client/dto/resources`, con los resúmenes —`PersonSummaryDto`, `UnitSummaryDto`,
   `VehicleSummaryDto`, `QualificationTypeSummaryDto`, `InstrumentSummaryDto`...— iguales por id para que
   un desplegable reconozca lo leído, y las reglas copiadas del servicio en sus enumerados: `OrganizationUnitKind`
@@ -212,8 +215,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `CheckItemsDialog`, el checklist de una tarea o de una inspección; `InspectionsView` e
   `InspectionDetailView` (`InspectionOutcomeDialogs`: el defecto y la orden correctiva que genera),
   `DefectsView` y `DefectDetailView` (`DefectTransitionDialogs`); `ReportsView` en
-  `mantenimiento/informes`; `TeamsView`, `TaskTypesView` e `InspectionTemplatesView`, los
-  catálogos; un `*EditorDialog` con `Binder` sobre un `*Form` mutable por recurso, cuyas
+  `mantenimiento/informes`; `TeamsView`, `TaskTypesView` (con `TaskTypeEquipmentDialog`, el equipo que
+  exige un tipo) e `InspectionTemplatesView`, los catálogos; un `*EditorDialog` con `Binder` sobre un `*Form` mutable por recurso, cuyas
   propiedades se llaman como los campos de la petición para `ServerValidation`;
   `MaintenanceHistory`, el botón «Historial» y la línea de cada recurso en `RevisionsDialog`;
   `MaintenancePickers`, `MaintenanceCatalogs` y `MaintenanceFormats`, lo compartido), `ui/notification` (`NotificationRoutes`: `notificaciones`, `actividad` y
@@ -228,15 +231,17 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `ResourcesClients`; `ResourcesNames`, los nombres de `mto-configuration` como en mantenimiento;
   `ResourcesPickers`, las personas, los vehículos y los instrumentos buscados en el servidor, que usan
   también los turnos de mantenimiento; `PeopleView` con `PersonEditorDialog`, y `PersonDetailView` en
-  `recursos/personal/:personId`, la ficha de una persona con su pestaña `PersonQualificationsPanel`
-  (`PersonQualificationDialog` sobre `PersonQualificationForm`); `QualificationTypesView` en
+  `recursos/personal/:personId`, la ficha de una persona con sus pestañas `PersonQualificationsPanel`
+  (`PersonQualificationDialog` sobre `PersonQualificationForm`) y `PersonAbsencesPanel`
+  (`PersonAbsenceDialog` sobre `PersonAbsenceForm`); `QualificationTypesView` en
   `recursos/cualificaciones`, el catálogo de tipos, con `QualificationTypeEditorDialog`; `InstrumentsView`
   en `recursos/instrumentos` con `InstrumentEditorDialog`; `Expiry`, cómo se dice una caducidad;
   `OrganizationView`, el árbol en un
   `TreeGrid`, y `UnitDetailView` con `UnitEditorDialog`, `TeamMembersPanel`, `TeamMembersDialog`,
   `MemberDialogs` y `ChildUnitsPanel`; `VehiclesView`, `VehicleDetailView` con `VehicleLocationsPanel`,
   `VehicleLocationDialog` (con el punto de acceso de la vía elegida), `VehicleDocumentsPanel`
-  (`VehicleDocumentDialog`) y `VehicleEditorDialog`;
+  (`VehicleDocumentDialog`), `VehicleRepairsPanel` (`VehicleRepairDialog` sobre `VehicleRepairForm`) y
+  `VehicleEditorDialog`; `PositionDiscrepanciesView` en `recursos/discrepancias`, puestos y perfiles;
   `FleetBoardView`, el tablero; `VehicleTypesView` y
   `ParkingSitesView` con sus editores; `ResourcesFormats` y `ResourcesHistory`; en `ui/maintenance`,
   `TaskGeneration`, la generación con `Prefer` y su seguimiento, y `ParkingRows`, dónde queda cada
@@ -324,6 +329,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `QTY-409`/`INT-409` (código repetido); `QUA-404`, `VDO-404`, `INT-404` y `QTY-404` dicen qué ya no existe,
   y el 404 `MSI-404` de mantenimiento, que el instrumento aún no ha llegado allí desde `mto-resources`. El
   404 `TAP-404` es un punto de acceso a la vía que ya no existe o aún no ha llegado a `mto-resources`.
+  Tampoco piden recargar `ABS-001` (la persona ya está ausente en esas fechas) ni `REP-001` (la reparación
+  no admite ese cambio en su estado); `ABS-404` y `REP-404` dicen que ya no existen. El 403 `SCP-403` de
+  mantenimiento no es «no tienes permiso»: el permiso está, pero lo que se escribe es de un EP fuera del
+  ámbito de la persona, y se dice con el detalle del servicio («Queda fuera de tu ambito»). El 503
+  `KCK-503` de `mto-resources` es Keycloak caído para el informe de puestos y perfiles: transitorio.
 - **La paginación es la forma DTO** `{content, page:{size,number,totalElements,totalPages}}`, fijada
   en `mto-configuration` con `spring.data.web.pageable.serialization-mode: via_dto` y pinada allí
   por test. `PageResponse<T>` la lee (y tolera `first`/`last` de stock y maintenance). La API de
@@ -469,7 +479,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (`RevisionOperation`), los de los trabajos (`JobStatus`, `JobType`), los de notificaciones
   (`ActivityCategory`, `ActivitySeverity`, `ActorKind`, `AccessOutcome`) y los de recursos (también
   `QualificationKind`, `VehicleDocumentKind`, `InstrumentKind` y `AccessPointKind`, la clase de un punto de
-  acceso tal como la cuenta `mto-resources`). Cada uno lleva `UNKNOWN`
+  acceso tal como la cuenta `mto-resources`, y `AbsenceKind`, `RepairKind` y `RepairStatus`), y
+  `TaskEquipment`, que solo nombra: el tipo de tarea guarda el equipo como las cadenas leídas, para que
+  uno desconocido vuelva tal cual. Cada uno lleva `UNKNOWN`
   («Desconocido»), un `@JsonCreator(mode = DELEGATING) of(String)` que delega en
   `ClientEnums.parse` y `selectable()` sin `UNKNOWN` para los desplegables: un valor nuevo en el
   servicio se lee como desconocido en vez de romper la página entera, que además fallaría sin
@@ -477,8 +489,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   nada: una reserva `UNKNOWN` no es activa; una línea de material `UNKNOWN` no ofrece ni modificar,
   ni sincronizar, ni quitar (`StockSyncStatus.isChangeable`); un trabajo en un estado `UNKNOWN` se da por terminado,
   para no consultarlo sin fin; uno de un tipo `UNKNOWN` no tiene familia, así que ni se consulta
-  por separado ni se descarga; y un documento de un vehículo de un tipo `UNKNOWN` se ve, pero ni se
-  modifica ni se quita. No se toca el mapper global. Quedan fuera, a propósito, los que solo
+  por separado ni se descarga; un documento de un vehículo de un tipo `UNKNOWN` se ve, pero ni se
+  modifica ni se quita, y lo mismo una ausencia de una clase `UNKNOWN` y una reparación en un estado
+  `UNKNOWN`. No se toca el mapper global. Quedan fuera, a propósito, los que solo
   viajan en peticiones (`AdjustmentDirection`, `RequiredAction`, `ReportFormat`) y el de los
   maestros de `mto-configuration` (`SectionInsulatorInstallationType`): el maestro se devuelve
   entero, y un `UNKNOWN` volvería al servicio como un valor que no existe; tolerarlo exigiría
@@ -778,6 +791,48 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   abandonada), con el diálogo abierto; cerrarlo deja de seguirla y avisa de que continúa allí. El tope
   de operaciones del despliegue es un 429 `OPS-429` con cuándo reintentar. La previsualización sigue
   siendo síncrona. Un `OperationStatus` desconocido se da por terminado, para no preguntar sin fin.
+- **Las ausencias de una persona son de `mto-resources`, y que se solapen lo dice el servicio.** La
+  pestaña «Ausencias» de su ficha (`PersonAbsencesPanel`) pide sus datos al abrirse: clase, desde, hasta y
+  los días, contando los dos extremos. «Nueva ausencia» pide `resources-write`; el diálogo exige la clase y
+  las dos fechas y que el fin no sea anterior al inicio, antes de llamar; que no se solape con otra suya es
+  el 409 `ABS-001`, con el diálogo abierto. Modificar manda lo cambiado y la versión leída, y vaciar las
+  notas viaja a `null`; quitarla pide `resources-delete` y confirmación. Una de una clase desconocida se
+  ve y no abre nada. La clase solo se ve aquí: a mantenimiento le llegan las fechas, que dejan a la persona
+  fuera de los turnos de esos días (su 409 `SHF-001`).
+- **El taller de un vehículo es de `mto-resources`, y sus transiciones las decide el servicio.** La
+  pestaña «Taller» de su ficha (`VehicleRepairsPanel`, todo con `resources-fleet-write`) ofrece en cada
+  fila lo que su estado admite, copiado de `RepairRules` solo para no ofrecer lo que va a fallar
+  (`RepairStatus.canOpen`/`canClose`/`canCancel`): planificada, abrir, modificar y cancelar; abierta,
+  cerrar, modificar y cancelar; cerrada o cancelada, solo modificar (su coste y sus notas); desconocida,
+  nada. Abrir, cerrar y cancelar son `POST` sin cuerpo, se confirman diciendo su efecto sobre el vehículo
+  (una que inmoviliza, abierta, lo pone «En reparacion»; cerrar o cancelar la última lo devuelve a
+  «Operativo»; cancelar una planificada lo deja volver a los turnos de esas fechas) y, como cualquier
+  escritura del taller, releen la ficha entera, cuyo estado puede haber cambiado. El alta elige si nace
+  planificada (con su inicio, obligatorio) o abierta ahora, y si inmoviliza (marcado por defecto); el fin
+  previsto no es anterior al inicio, y los kilómetros, las horas y el coste se comprueban con su columna
+  (`Numbers`). Al modificar, el estado no se elige, las fechas previstas solo cambian planificada o
+  abierta y si inmoviliza, solo planificada. `REP-001` y `VEH-001` dejan el diálogo abierto.
+- **El dispositivo GPS de un vehículo se escribe aquí, y sus posiciones las trae `mto-resources`.**
+  `telematicsDeviceId` es opcional en el editor de vehículos: hasta 64 letras sin tildes, cifras, `.`,
+  `:`, `-` y `_` (el `@Pattern` del servicio, comprobado antes de llamar), vaciarlo viaja a `null`, y que
+  no lo tenga otro vehículo lo dice el servicio. La ficha lo dice («GPS: …») y una posición que llega por
+  él tiene el origen `TELEMATICS`, que se llama «GPS». `resources-telematics-write` es el permiso de la
+  pasarela que las manda: está en `ResourcesRoles` para que el mapeo lo conozca, y ninguna pantalla lo pide.
+- **El equipo que exige un tipo de tarea lo cambia quien supervisa.** `TaskTypesView` enseña en «Equipo
+  exigido» los nombres de `TaskEquipment` (uno desconocido, tal cual; ninguno, una raya), y con
+  `maintenance-supervise` **y** `maintenance-write` (`hasAllRoles`) la fila ofrece «Equipo», un diálogo
+  con una casilla por equipo conocido (`TaskTypeEquipmentDialog`). Viaja como merge-patch por su código
+  con la versión leída: el conjunto se compara sin orden, lo desconocido leído se conserva, quitarlos
+  todos viaja a `null` y sin cambios no se llama; un 409 `CON-001` deja el diálogo abierto. Qué turno
+  lleva ese equipo lo decide mantenimiento (409 `SHF-001`).
+- **Puestos y perfiles es un informe de `mto-resources`, y se lee.** `PositionDiscrepanciesView`
+  (`recursos/discrepancias`, con `resources-read`) pide `GET /reports/position-discrepancies` al entrar y
+  con «Actualizar»: cuándo se calculó, cuántas personas y cuántos usuarios con perfil de puesto, y cuatro
+  secciones (con otro perfil, con varios, sin perfil de puesto, con perfil y sin ficha) con la persona como
+  enlace a su ficha (sin ficha, sin enlace), su usuario, su categoría, el perfil esperado y los que tiene;
+  una vacía dice «Nada». Arreglarlo es cambiar la categoría en Personal o el perfil en Usuarios: aquí no se
+  calcula nada. Con Keycloak caído (503 `KCK-503`) el motivo se dice en el sitio del informe, con
+  «Reintentar» y sin notificación; cualquier otro fallo, como siempre.
 - **Nada de componentes de pago.** `vaadin-spring-boot-starter` trae solo `vaadin-core-internal`.
 
 ### Tests
@@ -967,6 +1022,22 @@ coordenadas y la que falta marcada), la copia devuelta entera con su versión, e
 abierto, el borrado confirmado, el republicado acotado por vía que conserva la vía de los perfiles, el
 mensaje del `TAP-404`, y el diálogo de ubicación con los puntos de acceso de la vía (solo con una elegida,
 pedidos al elegirla, vaciados al cambiarla, el fallo en su ayuda sin aviso, el `TAP-404` que relee la lista
-y se dice en su campo, el `VEH-001` con el diálogo abierto) y la ficha y el histórico con su nombre. Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
+y se dice en su campo, el `VEH-001` con el diálogo abierto) y la ficha y el histórico con su nombre. La fase 5
+(ausencias, taller, GPS, equipo de las tareas y puestos y perfiles) también: en `ClientLayerTest`, las
+ausencias de una persona (la lista, el alta, el merge-patch con las notas vaciadas y la versión, el
+borrado, el `ABS-001` y una clase nueva como `UNKNOWN`), el taller de un vehículo (la lista, el alta, el
+merge-patch, abrir, cerrar y cancelar como `POST` sin cuerpo, el `REP-001`, un estado y una clase nuevos
+como `UNKNOWN`), el dispositivo GPS vaciado a `null` y el origen «GPS», el informe de puestos y perfiles y
+su `KCK-503`, y el equipo de un tipo de tarea (su `PATCH` por código, lo desconocido conservado, `null` al
+quitarlos todos y el `CON-001`); en `SecurityLayerTest`, `resources-telematics-write` en el catálogo y en
+el mapeo; en `ViewLayerTest`, los mensajes de sus códigos (`SCP-403` sin «no tienes permiso»), la pestaña
+Ausencias (los días, lo que se comprueba antes de llamar, el `ABS-001` con el diálogo abierto, modificar,
+quitar con confirmación, solo lectura y quitar con `resources-delete`), la pestaña Taller (las acciones de
+cada estado, las confirmaciones con su efecto, la ficha releída, el `REP-001`; el alta planificada o
+abierta con lo que se comprueba antes de llamar y el `VEH-001`; modificar con las fechas y «Inmoviliza»
+según el estado; solo lectura), el campo GPS (su forma, vaciarlo, la ficha y el origen «GPS»), el
+diálogo del equipo solo con supervise y write, con lo desconocido y su `CON-001`, y Puestos y perfiles
+(sus secciones, el enlace a la persona, el `KCK-503` en su sitio con «Reintentar» y el menú solo con
+`resources-read`). Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
 CI: `mto-platform/scripts/e2e.sh` construye la imagen de este commit, usa la publicada de cada
 hermano y corre el e2e de Playwright de mto-frontend, que recorre las dos aplicaciones.
