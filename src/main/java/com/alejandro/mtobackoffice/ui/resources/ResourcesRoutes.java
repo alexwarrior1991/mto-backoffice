@@ -18,6 +18,7 @@ public final class ResourcesRoutes {
     public static final String PARKING_SITES = FLEET + "/aparcamientos";
     public static final String QUALIFICATION_TYPES = PREFIX + "/cualificaciones";
     public static final String INSTRUMENTS = PREFIX + "/instrumentos";
+    public static final String DISCREPANCIES = PREFIX + "/discrepancias";
 
     private ResourcesRoutes() {
     }

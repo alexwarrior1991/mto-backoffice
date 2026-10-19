@@ -4,6 +4,9 @@ import com.alejandro.mtobackoffice.client.configuration.MasterFilters;
 import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
 import com.alejandro.mtobackoffice.client.dto.RevisionDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonAbsenceDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonAbsenceRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonAbsenceUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonCategory;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonDto;
 import com.alejandro.mtobackoffice.client.dto.resources.PersonFilter;
@@ -28,7 +31,8 @@ import java.util.UUID;
  * Las personas de mto-resources. No se borran nunca: {@code DELETE} desactiva
  * ({@code resources-delete}; 409 {@code UNI-001} si dirige una unidad o un equipo se quedaria con
  * menos de 2 linemen), y se reactiva con un {@code PATCH active=true} ({@code resources-write}).
- * Sus cualificaciones cuelgan de ella: una de cada tipo, que se renueva cambiando su caducidad.
+ * Sus cualificaciones cuelgan de ella: una de cada tipo, que se renueva cambiando su caducidad. Y sus
+ * ausencias, que no se solapan (409 {@code ABS-001}).
  */
 @HttpExchange("/api/resources/people")
 public interface PersonClient {
@@ -80,4 +84,20 @@ public interface PersonClient {
     /** Un borrado de verdad ({@code resources-delete}): 204; su historial lo conserva el servicio. */
     @DeleteExchange("/{id}/qualifications/{qualificationId}")
     void removeQualification(@PathVariable("id") UUID id, @PathVariable("qualificationId") UUID qualificationId);
+
+    /** Sus ausencias, la mas reciente primero. */
+    @GetExchange("/{id}/absences")
+    List<PersonAbsenceDto> absences(@PathVariable("id") UUID id);
+
+    /** 201 ({@code resources-write}); 409 {@code ABS-001} si se solapa con otra suya. */
+    @PostExchange("/{id}/absences")
+    PersonAbsenceDto addAbsence(@PathVariable("id") UUID id, @RequestBody PersonAbsenceRequest request);
+
+    @PatchExchange(value = "/{id}/absences/{absenceId}", contentType = MergePatch.MEDIA_TYPE)
+    PersonAbsenceDto updateAbsence(@PathVariable("id") UUID id, @PathVariable("absenceId") UUID absenceId,
+                                   @RequestBody MergePatch<PersonAbsenceUpdateRequest> patch);
+
+    /** Un borrado de verdad ({@code resources-delete}): 204; su historial lo conserva el servicio. */
+    @DeleteExchange("/{id}/absences/{absenceId}")
+    void removeAbsence(@PathVariable("id") UUID id, @PathVariable("absenceId") UUID absenceId);
 }

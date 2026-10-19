@@ -26,6 +26,7 @@ import com.alejandro.mtobackoffice.client.resources.OrganizationClient;
 import com.alejandro.mtobackoffice.client.resources.ParkingSiteClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
 import com.alejandro.mtobackoffice.client.resources.QualificationTypeClient;
+import com.alejandro.mtobackoffice.client.resources.ResourcesReportClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleTypeClient;
 import com.alejandro.mtobackoffice.client.stock.AssemblyClient;
@@ -246,6 +247,11 @@ public class GatewayClientConfiguration {
     @Bean
     public AccessPointClient accessPointClient(RestClient gatewayRestClient) {
         return proxyFactory(gatewayRestClient).createClient(AccessPointClient.class);
+    }
+
+    @Bean
+    public ResourcesReportClient resourcesReportClient(RestClient gatewayRestClient) {
+        return proxyFactory(gatewayRestClient).createClient(ResourcesReportClient.class);
     }
 
     @Bean

@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.ui.maintenance;
 
 import com.alejandro.mtobackoffice.client.dto.maintenance.FunctionalGroup;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskEquipment;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.MaintenanceRoles;
@@ -8,24 +9,31 @@ import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
+import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.router.Menu;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.spring.security.AuthenticationContext;
 import jakarta.annotation.security.RolesAllowed;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
- * El catalogo de tipos de tarea del plan de mantenimiento, de solo lectura: lo mantiene el servicio.
- * Sus minutos estandar son los que usa la estimacion de carga de una orden.
+ * El catalogo de tipos de tarea del plan de mantenimiento: lo mantiene el servicio. Sus minutos estandar
+ * son los que usa la estimacion de carga de una orden. Lo unico que se cambia aqui es el equipo que exige
+ * cada uno («Equipo exigido»), con {@code maintenance-supervise} y {@code maintenance-write}
+ * ({@link TaskTypeEquipmentDialog}).
  */
 @Route(value = MaintenanceRoutes.TASK_TYPES, layout = MainLayout.class)
 @PageTitle("Tipos de tarea")
@@ -33,13 +41,18 @@ import java.util.List;
 @RolesAllowed(MaintenanceRoles.MAINTENANCE_READ)
 public class TaskTypesView extends VerticalLayout {
 
+    static final String ACTIONS_COLUMN = "actions";
+    static final String NO_EQUIPMENT = "—";
+
     private final MaintenanceClients clients;
+    private final boolean canEditEquipment;
     private final ComboBox<FunctionalGroup> group = new ComboBox<>("Grupo funcional");
     private final Span count = new Span();
     private final Grid<TaskTypeDto> grid = new Grid<>();
 
-    public TaskTypesView(MaintenanceClients clients) {
+    public TaskTypesView(MaintenanceClients clients, AuthenticationContext authentication) {
         this.clients = clients;
+        this.canEditEquipment = authentication.hasAllRoles(MaintenanceRoles.MAINTENANCE_SUPERVISE, MaintenanceRoles.MAINTENANCE_WRITE);
         setSizeFull();
         group.setId("task-types-group");
         group.setItems(FunctionalGroup.selectable());
@@ -63,12 +76,32 @@ public class TaskTypesView extends VerticalLayout {
         grid.addColumn(type -> Screens.yesNo(type.requiresFullPossession())).setHeader("Posesion total").setKey("fullPossession")
                 .setAutoWidth(true);
         grid.addColumn(type -> Screens.yesNo(type.diagnostic())).setHeader("Diagnostico").setKey("diagnostic").setAutoWidth(true);
+        grid.addColumn(TaskTypesView::equipment).setHeader("Equipo exigido").setKey("requiredEquipment").setAutoWidth(true);
         grid.addColumn(type -> Screens.yesNo(type.active())).setHeader("Activo").setKey("active").setAutoWidth(true);
+        grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey(ACTIONS_COLUMN).setAutoWidth(true).setFlexGrow(0);
         grid.setSizeFull();
 
         add(new H2("Tipos de tarea"), toolbar, grid);
         expand(grid);
         refresh();
+    }
+
+    /** Los nombres del equipo que exige, ordenados; uno desconocido, tal como llego; ninguno, una raya. */
+    static String equipment(TaskTypeDto type) {
+        if (type.requiredEquipment().isEmpty()) {
+            return NO_EQUIPMENT;
+        }
+        return type.requiredEquipment().stream().map(TaskEquipment::labelOf).sorted().collect(Collectors.joining(", "));
+    }
+
+    private Component rowActions(TaskTypeDto type) {
+        HorizontalLayout actions = new HorizontalLayout();
+        actions.setSpacing(false);
+        if (canEditEquipment) {
+            actions.add(Screens.rowButton("task-type-equipment-" + type.code(), VaadinIcon.TOOLS, "Equipo de " + type.code(),
+                    click -> new TaskTypeEquipmentDialog(type, clients, saved -> refresh()).open()));
+        }
+        return actions;
     }
 
     private void refresh() {

@@ -16,6 +16,9 @@ import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationKind;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleLocationRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleMobility;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleOperationalStatus;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleRepairDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleRepairRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleRepairUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleUpdateRequest;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -36,7 +39,8 @@ import java.util.UUID;
  * esta cada uno: su historial de ubicaciones, solo de anadir ({@code resources-location-write} para
  * registrar una a mano), y el tablero de la flota. Un vehiculo no se borra: {@code DELETE} lo retira
  * ({@code resources-delete}; 409 {@code VEH-001} mientras sea el vehiculo por defecto de un equipo).
- * Sus documentos que caducan (la ITV, el seguro...) cuelgan de el, uno de cada tipo.
+ * Sus documentos que caducan (la ITV, el seguro...) cuelgan de el, uno de cada tipo, y su taller: las
+ * reparaciones, que no se borran (se cancelan) y, si lo inmovilizan, mandan en su estado.
  */
 @HttpExchange("/api/resources/vehicles")
 public interface VehicleClient {
@@ -111,4 +115,28 @@ public interface VehicleClient {
     /** Un borrado de verdad ({@code resources-delete}): 204. */
     @DeleteExchange("/{id}/documents/{documentId}")
     void removeDocument(@PathVariable("id") UUID id, @PathVariable("documentId") UUID documentId);
+
+    /** Su taller, la mas reciente primero. */
+    @GetExchange("/{id}/repairs")
+    List<VehicleRepairDto> repairs(@PathVariable("id") UUID id);
+
+    /** 201 ({@code resources-fleet-write}): planificada, o abierta ya. */
+    @PostExchange("/{id}/repairs")
+    VehicleRepairDto addRepair(@PathVariable("id") UUID id, @RequestBody VehicleRepairRequest request);
+
+    @PatchExchange(value = "/{id}/repairs/{repairId}", contentType = MergePatch.MEDIA_TYPE)
+    VehicleRepairDto updateRepair(@PathVariable("id") UUID id, @PathVariable("repairId") UUID repairId,
+                                  @RequestBody MergePatch<VehicleRepairUpdateRequest> patch);
+
+    /** {@code PLANNED -> OPEN}, sin cuerpo; 409 {@code REP-001} si no esta planificada. */
+    @PostExchange("/{id}/repairs/{repairId}/open")
+    VehicleRepairDto openRepair(@PathVariable("id") UUID id, @PathVariable("repairId") UUID repairId);
+
+    /** {@code OPEN -> CLOSED}, sin cuerpo; 409 {@code REP-001} si no esta abierta. */
+    @PostExchange("/{id}/repairs/{repairId}/close")
+    VehicleRepairDto closeRepair(@PathVariable("id") UUID id, @PathVariable("repairId") UUID repairId);
+
+    /** Planificada o abierta {@code -> CANCELLED}, sin cuerpo. */
+    @PostExchange("/{id}/repairs/{repairId}/cancel")
+    VehicleRepairDto cancelRepair(@PathVariable("id") UUID id, @PathVariable("repairId") UUID repairId);
 }

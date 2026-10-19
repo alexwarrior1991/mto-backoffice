@@ -289,6 +289,8 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.MonthlyReportDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ProgressReportDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ReportFormat;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftReportDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskEquipment;
+import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeUpdateRequest;
 import com.alejandro.mtobackoffice.client.maintenance.ReportClient;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesRegex;
@@ -307,6 +309,18 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import com.alejandro.mtobackoffice.client.dto.master.TrackSchematicDto;
+import com.alejandro.mtobackoffice.client.dto.resources.AbsenceKind;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonAbsenceDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonAbsenceRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PersonAbsenceUpdateRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.PositionDiscrepancyDto;
+import com.alejandro.mtobackoffice.client.dto.resources.PositionDiscrepancyReportDto;
+import com.alejandro.mtobackoffice.client.dto.resources.RepairKind;
+import com.alejandro.mtobackoffice.client.dto.resources.RepairStatus;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleRepairDto;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleRepairRequest;
+import com.alejandro.mtobackoffice.client.dto.resources.VehicleRepairUpdateRequest;
+import com.alejandro.mtobackoffice.client.resources.ResourcesReportClient;
 import com.alejandro.mtobackoffice.ui.maintenance.TaskGeneration;
 
 /**
@@ -352,6 +366,7 @@ class ClientLayerTest {
     private OperationClient operationClient;
     private QualificationTypeClient qualificationTypeClient;
     private InstrumentClient instrumentClient;
+    private ResourcesReportClient resourcesReportClient;
 
     @BeforeEach
     void setUp() {
@@ -395,6 +410,7 @@ class ClientLayerTest {
         operationClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(OperationClient.class);
         qualificationTypeClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(QualificationTypeClient.class);
         instrumentClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(InstrumentClient.class);
+        resourcesReportClient = GatewayClientConfiguration.proxyFactory(restClient).createClient(ResourcesReportClient.class);
     }
 
     @AfterEach
@@ -3680,9 +3696,9 @@ class ClientLayerTest {
         PageResponse<VehicleDto> page = asUser(() -> vehicleClient.search(new VehicleFilter(" dr ", null, VehicleMobility.RAIL_ONLY, null,
                 VehicleOperationalStatus.LIMITED, true, true), 0, 50, List.of("code,asc")));
         asUser(() -> vehicleClient.create(new VehicleRequest("DR-02", null, UUID.fromString(VEHICLE_TYPE_ID), null, "99 80 9427 002-9", null, null,
-                VehicleOwner.OWN, null, VehicleOperationalStatus.OPERATIONAL, null, null, null, null)));
+                VehicleOwner.OWN, null, VehicleOperationalStatus.OPERATIONAL, null, null, null, null, null)));
         asUser(() -> vehicleClient.update(UUID.fromString(VEHICLE_ID), new MergePatch<>(new VehicleUpdateRequest(null, null, null, null, null, null,
-                null, null, VehicleOperationalStatus.OPERATIONAL, null, null, null, null, null), Set.of("statusReason"), 6L)));
+                null, null, VehicleOperationalStatus.OPERATIONAL, null, null, null, null, null, null), Set.of("statusReason"), 6L)));
         asUser(() -> {
             vehicleClient.deactivate(UUID.fromString(VEHICLE_ID));
             return null;
@@ -4121,6 +4137,273 @@ class ClientLayerTest {
         assertTrue(emptied.instruments().isEmpty(), "un turno sin instrumentos, o de un servicio anterior, trae la lista vacia");
         assertEquals("MSI-404", missing.getProblem().code());
         assertEquals(2, report.shift().instruments().size(), "el parte los lleva con su turno");
+        server.verify();
+    }
+
+    private static final String ABSENCE_ID = "7b8c9d0e-0000-4000-8000-0000000000a1";
+    private static final String REPAIR_ID = "7b8c9d0e-0000-4000-8000-0000000000b1";
+
+    private static String absenceJson(String id, String kind, String startsOn, String endsOn, String notes) {
+        return "{\"id\":\"" + id + "\",\"personId\":\"" + PERSON_ID + "\",\"kind\":\"" + kind + "\",\"startsOn\":\"" + startsOn + "\","
+                + "\"endsOn\":\"" + endsOn + "\",\"notes\":" + (notes == null ? "null" : "\"" + notes + "\"") + ",\"version\":2,\"audit\":null}";
+    }
+
+    /**
+     * Las ausencias de una persona: la lista entera, el alta sin lo vacio y con sus fechas en ISO, la
+     * modificacion con lo cambiado, las notas vaciadas a {@code null} y la version, y quitar con un DELETE.
+     * Una que se solapa con otra suya es un 409 ABS-001; una clase nueva se lee como UNKNOWN. Los dias
+     * cuentan los dos extremos.
+     */
+    @Test
+    void aPersonsAbsencesAreListedAddedPatchedAndRemovedAndAnOverlapIsAConflict() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String absences = RESOURCES + "/people/" + PERSON_ID + "/absences";
+        server.expect(requestTo(absences)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[" + absenceJson(ABSENCE_ID, "VACATION", "2026-11-02", "2026-11-06", "Verano") + ","
+                        + absenceJson("7b8c9d0e-0000-4000-8000-0000000000a2", "SABBATICAL", "2026-12-01", "2026-12-31", null) + "]",
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(absences)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"kind\":\"TRAINING\",\"startsOn\":\"2026-11-16\",\"endsOn\":\"2026-11-18\"}", strict))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                        .body(absenceJson(ABSENCE_ID, "TRAINING", "2026-11-16", "2026-11-18", null)));
+        server.expect(requestTo(absences)).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":409,\"error\":\"CONFLICT\",\"message\":\"PER-000003 is already absent from 2026-11-02 to 2026-11-06\","
+                                + "\"errorCode\":\"ABS-001\",\"correlationId\":\"corr-a1\",\"validationErrors\":[]}"));
+        server.expect(requestTo(absences + "/" + ABSENCE_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"endsOn\":\"2026-11-09\",\"notes\":null,\"version\":2}", strict))
+                .andRespond(withSuccess(absenceJson(ABSENCE_ID, "VACATION", "2026-11-02", "2026-11-09", null), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(absences + "/" + ABSENCE_ID)).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        UUID person = UUID.fromString(PERSON_ID);
+        UUID absence = UUID.fromString(ABSENCE_ID);
+        List<PersonAbsenceDto> listed = asUser(() -> personClient.absences(person));
+        PersonAbsenceRequest training = new PersonAbsenceRequest(AbsenceKind.TRAINING, LocalDate.of(2026, 11, 16), LocalDate.of(2026, 11, 18), null);
+        asUser(() -> personClient.addAbsence(person, training));
+        ConflictApiException overlap = assertThrows(ConflictApiException.class, () -> asUser(() -> personClient.addAbsence(person, training)));
+        PersonAbsenceDto extended = asUser(() -> personClient.updateAbsence(person, absence, new MergePatch<>(
+                new PersonAbsenceUpdateRequest(null, null, LocalDate.of(2026, 11, 9), null), Set.of("notes"), 2L)));
+        asUser(() -> {
+            personClient.removeAbsence(person, absence);
+            return null;
+        });
+
+        assertEquals(AbsenceKind.VACATION, listed.getFirst().kind());
+        assertEquals(5, listed.getFirst().days(), "del lunes al viernes, los dos incluidos");
+        assertEquals("Verano", listed.getFirst().notes());
+        assertEquals(AbsenceKind.UNKNOWN, listed.get(1).kind(), "una clase nueva se lee como desconocida");
+        assertFalse(AbsenceKind.selectable().contains(AbsenceKind.UNKNOWN));
+        assertEquals("ABS-001", overlap.getProblem().code());
+        assertEquals(LocalDate.of(2026, 11, 9), extended.endsOn());
+        assertNull(extended.notes());
+        server.verify();
+    }
+
+    private static String repairJson(String status, String kind, boolean immobilises, String workshop, String cost) {
+        return "{\"id\":\"" + REPAIR_ID + "\",\"code\":\"REP-000004\",\"vehicleId\":\"" + VEHICLE_ID + "\",\"kind\":\"" + kind + "\","
+                + "\"status\":\"" + status + "\",\"immobilises\":" + immobilises + ",\"description\":\"Fuga en el circuito hidraulico\","
+                + "\"workshop\":" + (workshop == null ? "null" : "\"" + workshop + "\"") + ",\"plannedFrom\":\"2026-11-03\",\"plannedTo\":\"2026-11-05\","
+                + "\"openedAt\":" + ("PLANNED".equals(status) ? "null" : "\"2026-11-03T06:00:00Z\"") + ",\"closedAt\":null,\"odometerKm\":12000,"
+                + "\"engineHours\":3500.5,\"cost\":" + cost + ",\"notes\":null,\"version\":1,\"audit\":null}";
+    }
+
+    /**
+     * El taller de un vehiculo: la lista entera, el alta (planificada, con su inicio) sin lo vacio, la
+     * modificacion con lo cambiado, lo vaciado y la version, y abrir, cerrar y cancelar como POST sin cuerpo.
+     * Lo que su estado no admite es un 409 REP-001; un estado y una clase nuevos se leen como UNKNOWN, que
+     * no admiten nada.
+     */
+    @Test
+    void aVehiclesRepairsAreListedAddedPatchedAndMovedThroughTheirStatesWithoutABody() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String repairs = RESOURCES + "/vehicles/" + VEHICLE_ID + "/repairs";
+        server.expect(requestTo(repairs)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[" + repairJson("PLANNED", "BREAKDOWN", true, "Taller de Lod", "null") + ","
+                        + repairJson("ON_HOLD", "WARRANTY", false, null, "120.50") + "]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(repairs)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"kind\":\"BREAKDOWN\",\"status\":\"PLANNED\",\"immobilises\":true,"
+                        + "\"description\":\"Fuga en el circuito hidraulico\",\"workshop\":\"Taller de Lod\",\"plannedFrom\":\"2026-11-03\","
+                        + "\"plannedTo\":\"2026-11-05\",\"engineHours\":3500.5}", strict))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                        .body(repairJson("PLANNED", "BREAKDOWN", true, "Taller de Lod", "null")));
+        server.expect(requestTo(repairs + "/" + REPAIR_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"cost\":980.25,\"workshop\":null,\"version\":1}", strict))
+                .andRespond(withSuccess(repairJson("PLANNED", "BREAKDOWN", true, null, "980.25"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(repairs + "/" + REPAIR_ID + "/open")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(""))
+                .andRespond(withSuccess(repairJson("OPEN", "BREAKDOWN", true, null, "980.25"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(repairs + "/" + REPAIR_ID + "/close")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(""))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":409,\"error\":\"CONFLICT\",\"message\":\"Repair REP-000004 is PLANNED, not OPEN\","
+                                + "\"errorCode\":\"REP-001\",\"correlationId\":\"corr-r1\",\"validationErrors\":[]}"));
+        server.expect(requestTo(repairs + "/" + REPAIR_ID + "/cancel")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(""))
+                .andRespond(withSuccess(repairJson("CANCELLED", "BREAKDOWN", true, null, "980.25"), MediaType.APPLICATION_JSON));
+
+        UUID vehicle = UUID.fromString(VEHICLE_ID);
+        UUID repair = UUID.fromString(REPAIR_ID);
+        List<VehicleRepairDto> listed = asUser(() -> vehicleClient.repairs(vehicle));
+        asUser(() -> vehicleClient.addRepair(vehicle, new VehicleRepairRequest(RepairKind.BREAKDOWN, RepairStatus.PLANNED, true,
+                "Fuga en el circuito hidraulico", "Taller de Lod", LocalDate.of(2026, 11, 3), LocalDate.of(2026, 11, 5), null,
+                new BigDecimal("3500.5"), null, null)));
+        VehicleRepairDto patched = asUser(() -> vehicleClient.updateRepair(vehicle, repair, new MergePatch<>(new VehicleRepairUpdateRequest(null,
+                null, null, null, null, null, null, null, new BigDecimal("980.25"), null), Set.of("workshop"), 1L)));
+        VehicleRepairDto opened = asUser(() -> vehicleClient.openRepair(vehicle, repair));
+        ConflictApiException refused = assertThrows(ConflictApiException.class, () -> asUser(() -> vehicleClient.closeRepair(vehicle, repair)));
+        VehicleRepairDto cancelled = asUser(() -> vehicleClient.cancelRepair(vehicle, repair));
+
+        VehicleRepairDto planned = listed.getFirst();
+        assertEquals("REP-000004", planned.code());
+        assertEquals(RepairStatus.PLANNED, planned.state());
+        assertTrue(planned.isImmobilising());
+        assertTrue(planned.state().canOpen() && planned.state().canCancel() && !planned.state().canClose());
+        assertEquals(RepairStatus.UNKNOWN, listed.get(1).state(), "un estado nuevo se lee como desconocido");
+        assertEquals(RepairKind.UNKNOWN, listed.get(1).kind(), "una clase nueva tambien");
+        assertFalse(listed.get(1).state().isChangeable() || listed.get(1).state().canCancel(), "y no admite nada");
+        assertEquals(0, new BigDecimal("980.25").compareTo(patched.cost()));
+        assertNull(patched.workshop());
+        assertEquals(RepairStatus.OPEN, opened.state());
+        assertTrue(opened.state().canClose() && !opened.state().canOpen());
+        assertEquals("REP-001", refused.getProblem().code());
+        assertEquals(RepairStatus.CANCELLED, cancelled.state());
+        assertTrue(cancelled.state().isChangeable() && !cancelled.state().datesChange() && !cancelled.state().canCancel());
+        assertFalse(RepairStatus.selectable().contains(RepairStatus.UNKNOWN));
+        server.verify();
+    }
+
+    /**
+     * El dispositivo GPS de un vehiculo viaja en el alta y en la modificacion, y vaciarlo es {@code null}
+     * en el merge-patch. Una posicion que llega por el GPS tiene su origen, {@code TELEMATICS}, que se
+     * llama «GPS».
+     */
+    @Test
+    void aVehicleCarriesItsGpsDeviceAndEmptyingItTravelsAsNull() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        server.expect(requestTo(RESOURCES + "/vehicles/" + VEHICLE_ID)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"id\":\"" + VEHICLE_ID + "\",\"code\":\"FG-01\",\"telematicsDeviceId\":\"GPS-118\",\"active\":true,"
+                        + "\"version\":6}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(RESOURCES + "/vehicles")).andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.telematicsDeviceId").value("GPS-119"))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"id\":\"" + VEHICLE_ID + "\",\"code\":\"FG-02\",\"telematicsDeviceId\":\"GPS-119\",\"version\":0}"));
+        server.expect(requestTo(RESOURCES + "/vehicles/" + VEHICLE_ID)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"telematicsDeviceId\":null,\"version\":6}", strict))
+                .andRespond(withSuccess("{\"id\":\"" + VEHICLE_ID + "\",\"code\":\"FG-01\",\"telematicsDeviceId\":null,\"version\":7}",
+                        MediaType.APPLICATION_JSON));
+
+        VehicleDto read = asUser(() -> vehicleClient.findById(UUID.fromString(VEHICLE_ID)));
+        VehicleDto created = asUser(() -> vehicleClient.create(new VehicleRequest("FG-02", null, UUID.fromString(VEHICLE_TYPE_ID), "4321-XYZ", null,
+                null, null, VehicleOwner.OWN, null, VehicleOperationalStatus.OPERATIONAL, null, null, null, null, "GPS-119")));
+        VehicleDto emptied = asUser(() -> vehicleClient.update(UUID.fromString(VEHICLE_ID), new MergePatch<>(new VehicleUpdateRequest(null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null), Set.of("telematicsDeviceId"), 6L)));
+
+        assertEquals("GPS-118", read.telematicsDeviceId());
+        assertEquals("GPS-119", created.telematicsDeviceId());
+        assertNull(emptied.telematicsDeviceId());
+        assertEquals("GPS", VehicleLocationSource.TELEMATICS.label());
+        assertEquals(VehicleLocationSource.TELEMATICS, VehicleLocationSource.of("TELEMATICS"));
+        server.verify();
+    }
+
+    private static String discrepancyJson(String personId, String code, String username, String category, String expected, String profiles) {
+        return "{\"personId\":" + (personId == null ? "null" : "\"" + personId + "\"") + ",\"personCode\":" + (code == null ? "null" : "\"" + code + "\"")
+                + ",\"fullName\":" + (code == null ? "null" : "\"Yossi Cohen\"") + ",\"username\":\"" + username + "\",\"category\":"
+                + (category == null ? "null" : "\"" + category + "\"") + ",\"personActive\":" + (personId != null) + ",\"expectedProfile\":"
+                + (expected == null ? "null" : "\"" + expected + "\"") + ",\"profiles\":" + profiles + "}";
+    }
+
+    /**
+     * El informe de puestos y perfiles de mto-resources: sus cifras y sus cuatro listas (una que no llega se
+     * lee vacia; una persona sin ficha, sin id; una categoria nueva, como desconocida). Con Keycloak caido es
+     * un 503 KCK-503, que es transitorio.
+     */
+    @Test
+    void thePositionDiscrepancyReportIsReadAndKeycloakDownIsATransientUnavailable() {
+        String report = RESOURCES + "/reports/position-discrepancies";
+        server.expect(requestTo(report)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"generatedAt\":\"2026-10-19T08:00:00Z\",\"peopleChecked\":42,\"usersWithPosition\":37,"
+                        + "\"wrongProfile\":[" + discrepancyJson(PERSON_ID, "PER-000003", "y.cohen", "TEAM_LEADER", "mto-position-team-leader",
+                        "[\"mto-position-worker\"]") + "],"
+                        + "\"withoutProfile\":[" + discrepancyJson("3c4d5e6f-0000-4000-8000-000000000002", "PER-000004", "d.levi", "APPRENTICE",
+                        null, "[]") + "],"
+                        + "\"withoutRecord\":[" + discrepancyJson(null, null, "ext.contractor", null, null, "[\"mto-position-supervisor\"]") + "]}",
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(report)).andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":503,\"error\":\"SERVICE_UNAVAILABLE\",\"message\":\"Keycloak cannot be read now\","
+                                + "\"errorCode\":\"KCK-503\",\"correlationId\":\"corr-k1\",\"validationErrors\":[]}"));
+
+        PositionDiscrepancyReportDto read = asUser(() -> resourcesReportClient.positionDiscrepancies());
+        ServiceUnavailableApiException down = assertThrows(ServiceUnavailableApiException.class,
+                () -> asUser(() -> resourcesReportClient.positionDiscrepancies()));
+
+        assertEquals(java.time.Instant.parse("2026-10-19T08:00:00Z"), read.generatedAt());
+        assertEquals(42, read.peopleChecked());
+        assertEquals(37, read.usersWithPosition());
+        PositionDiscrepancyDto wrong = read.wrongProfile().getFirst();
+        assertEquals(UUID.fromString(PERSON_ID), wrong.personId());
+        assertEquals("PER-000003 · Yossi Cohen", wrong.personLabel());
+        assertEquals(PersonCategory.TEAM_LEADER, wrong.category());
+        assertEquals(List.of("mto-position-worker"), wrong.profiles());
+        assertEquals(List.of(), read.severalProfiles(), "una lista que no llega se lee vacia");
+        assertEquals(PersonCategory.UNKNOWN, read.withoutProfile().getFirst().category(), "una categoria nueva no rompe el informe");
+        PositionDiscrepancyDto withoutRecord = read.withoutRecord().getFirst();
+        assertNull(withoutRecord.personId());
+        assertEquals("", withoutRecord.personLabel());
+        assertEquals("ext.contractor", withoutRecord.username());
+        assertEquals("KCK-503", down.getProblem().code());
+        assertEquals(503, down.getStatus().value());
+        server.verify();
+    }
+
+    /**
+     * El equipo que exige un tipo de tarea llega con sus nombres tal cual (uno que esta aplicacion no
+     * conoce, tambien) y se cambia con un merge-patch por su codigo, con la version: el conjunto entero, o
+     * {@code null} para no exigir ninguno. Una version vieja es un 409 CON-001. Uno de antes, sin la clave,
+     * no exige nada.
+     */
+    @Test
+    void aTaskTypeCarriesItsRequiredEquipmentAndIsPatchedByCodeWithItsVersion() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String type = "{\"id\":\"2b3c4d5e-0000-4000-8000-000000000020\",\"code\":\"RG-04\",\"description\":\"Revision del hilo de contacto\","
+                + "\"functionalGroup\":\"OVERHEAD_CONDUCTORS\",\"standardMinutesPerUnit\":12.50,\"unit\":\"SPAN\",\"fixedMinutes\":null,"
+                + "\"requiresFullPossession\":true,\"diagnostic\":false,\"active\":true,\"orderIndex\":4,";
+        server.expect(requestTo(MAINTENANCE + "/task-types")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[" + type + "\"requiredEquipment\":[\"INSULATED_PLATFORM\",\"SAFETY_HARNESS\"],\"version\":3},"
+                        + type.replace("RG-04", "RG-05") + "\"version\":0}]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/task-types/RG-04")).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"requiredEquipment\":[\"EARTHING\",\"SAFETY_HARNESS\"],\"version\":3}", strict))
+                .andRespond(withSuccess(type + "\"requiredEquipment\":[\"EARTHING\",\"SAFETY_HARNESS\"],\"version\":4}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/task-types/RG-04")).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"requiredEquipment\":null,\"version\":4}", strict))
+                .andRespond(withSuccess(type + "\"requiredEquipment\":[],\"version\":5}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(MAINTENANCE + "/task-types/RG-04")).andExpect(method(HttpMethod.PATCH))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":409,\"error\":\"CONFLICT\",\"message\":\"Stale version 3 of RG-04\","
+                                + "\"errorCode\":\"CON-001\",\"correlationId\":\"corr-t1\",\"validationErrors\":[]}"));
+
+        List<TaskTypeDto> types = asUser(() -> maintenanceCatalogClient.taskTypes(null, null, null));
+        TaskTypeDto earthing = asUser(() -> maintenanceCatalogClient.updateTaskType("RG-04", new MergePatch<>(new TaskTypeUpdateRequest(
+                new java.util.TreeSet<>(Set.of("EARTHING", "SAFETY_HARNESS"))), Set.of(), 3L)));
+        TaskTypeDto none = asUser(() -> maintenanceCatalogClient.updateTaskType("RG-04", new MergePatch<>(new TaskTypeUpdateRequest(null),
+                Set.of("requiredEquipment"), 4L)));
+        ConflictApiException stale = assertThrows(ConflictApiException.class, () -> asUser(() -> maintenanceCatalogClient.updateTaskType("RG-04",
+                new MergePatch<>(new TaskTypeUpdateRequest(null), Set.of("requiredEquipment"), 3L))));
+
+        assertEquals(Set.of("INSULATED_PLATFORM", "SAFETY_HARNESS"), types.getFirst().requiredEquipment());
+        assertEquals(3L, types.getFirst().version());
+        assertEquals(Set.of(), types.get(1).requiredEquipment(), "uno de antes, sin la clave, no exige nada");
+        assertEquals("Plataforma aislada", TaskEquipment.labelOf("INSULATED_PLATFORM"));
+        assertEquals("SAFETY_HARNESS", TaskEquipment.labelOf("SAFETY_HARNESS"), "uno desconocido se nombra tal cual llego");
+        assertEquals(Set.of("EARTHING", "SAFETY_HARNESS"), earthing.requiredEquipment());
+        assertEquals(Set.of(), none.requiredEquipment());
+        assertEquals("CON-001", stale.getProblem().code());
         server.verify();
     }
 }

@@ -253,7 +253,7 @@ class SecurityLayerTest {
         Set<String> notification = Set.of(NotificationRoles.NOTIFICATION_INBOX, NotificationRoles.NOTIFICATION_ACTIVITY_READ,
                 NotificationRoles.NOTIFICATION_ACCESS_READ, NotificationRoles.NOTIFICATION_ADMIN);
         Set<String> resources = Set.of(ResourcesRoles.RESOURCES_READ, ResourcesRoles.RESOURCES_WRITE, ResourcesRoles.RESOURCES_FLEET_WRITE,
-                ResourcesRoles.RESOURCES_LOCATION_WRITE, ResourcesRoles.RESOURCES_DELETE);
+                ResourcesRoles.RESOURCES_LOCATION_WRITE, ResourcesRoles.RESOURCES_DELETE, ResourcesRoles.RESOURCES_TELEMATICS_WRITE);
 
         List<Set<String>> sets = List.of(configuration, users, stock, maintenance, notification, resources);
         for (int i = 0; i < sets.size(); i++) {
@@ -337,9 +337,9 @@ class SecurityLayerTest {
     @Test
     void resourcesRolesMatchTheClientRolesOfMtoResourcesApiOnceNormalized() {
         Set<String> declared = Set.of(ResourcesRoles.RESOURCES_READ, ResourcesRoles.RESOURCES_WRITE, ResourcesRoles.RESOURCES_FLEET_WRITE,
-                ResourcesRoles.RESOURCES_LOCATION_WRITE, ResourcesRoles.RESOURCES_DELETE);
+                ResourcesRoles.RESOURCES_LOCATION_WRITE, ResourcesRoles.RESOURCES_DELETE, ResourcesRoles.RESOURCES_TELEMATICS_WRITE);
         Set<String> fromRealm = Set.of("resources-read", "resources-write", "resources-fleet-write", "resources-location-write",
-                        "resources-delete")
+                        "resources-delete", "resources-telematics-write")
                 .stream().map(KeycloakRoleMapper::normalize).collect(Collectors.toSet());
 
         assertEquals(fromRealm, declared);
@@ -359,6 +359,20 @@ class SecurityLayerTest {
         assertTrue(names.contains("ROLE_REALM_MTO_POSITION_TEAM_LEADER"));
         assertTrue(names.contains("ROLE_RESOURCES_LOCATION_WRITE"));
         assertTrue(names.contains("ROLE_CLIENT_MTO_RESOURCES_API_RESOURCES_LOCATION_WRITE"));
+        assertFalse(names.contains("ROLE_RESOURCES_READ"));
+    }
+
+    /**
+     * {@code resources-telematics-write} es el de la pasarela de GPS ({@code POST /telematics/positions}): se
+     * mapea como los demas permisos de mto-resources, aunque ninguna pantalla lo pida.
+     */
+    @Test
+    void theTelematicsRoleOfMtoResourcesIsMappedLikeTheOtherPermissions() {
+        Set<String> names = authorities(mapper.authorities(Map.of(
+                JwtClaimNames.RESOURCE_ACCESS, Map.of(RESOURCES_CLIENT_ID, Map.of(JwtClaimNames.ROLES, List.of("resources-telematics-write"))))));
+
+        assertTrue(names.contains("ROLE_" + ResourcesRoles.RESOURCES_TELEMATICS_WRITE));
+        assertTrue(names.contains("ROLE_CLIENT_MTO_RESOURCES_API_RESOURCES_TELEMATICS_WRITE"));
         assertFalse(names.contains("ROLE_RESOURCES_READ"));
     }
 }

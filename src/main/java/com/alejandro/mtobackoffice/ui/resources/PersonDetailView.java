@@ -51,6 +51,7 @@ public class PersonDetailView extends VerticalLayout implements BeforeEnterObser
 
     public static final String PERSON_ID_PARAMETER = "personId";
     public static final String QUALIFICATIONS_TAB = "Cualificaciones";
+    public static final String ABSENCES_TAB = "Ausencias";
 
     private final ResourcesClients clients;
     private final boolean canWrite;
@@ -122,6 +123,9 @@ public class PersonDetailView extends VerticalLayout implements BeforeEnterObser
         PersonQualificationsPanel qualifications = new PersonQualificationsPanel(() -> person, clients, canWrite, canDelete);
         panels.add(qualifications);
         tabs.add(QUALIFICATIONS_TAB, qualifications);
+        PersonAbsencesPanel absences = new PersonAbsencesPanel(() -> person, clients, canWrite, canDelete);
+        panels.add(absences);
+        tabs.add(ABSENCES_TAB, absences);
         tabs.addSelectedChangeListener(change -> loadTab(tabs, change.getSelectedTab()));
         tabsHolder.removeAll();
         tabsHolder.add(tabs);

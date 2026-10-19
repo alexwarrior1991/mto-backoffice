@@ -5,12 +5,12 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
 
-/** De donde salio una ubicacion: a mano, de un turno de mto-maintenance, del dispositivo de campo o de la telematica. */
+/** De donde salio una ubicacion: a mano, de un turno de mto-maintenance, del dispositivo de campo o del GPS del vehiculo. */
 public enum VehicleLocationSource {
     MANUAL("A mano"),
     SHIFT("Turno"),
     FIELD("Campo"),
-    TELEMATICS("Telematica"),
+    TELEMATICS("GPS"),
     UNKNOWN(ClientEnums.UNKNOWN_LABEL);
 
     private final String label;

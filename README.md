@@ -359,6 +359,29 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   histórico enseñan el nombre del punto de acceso (`trackAccessPoint`) y, sin él, el texto libre de
   siempre (`accessPoint`, «Acceso (texto)» en el diálogo de una bivial en vía o por carretera).
 
+- **Ausencias, taller, GPS, equipo de las tareas y puestos y perfiles** (fase 5), a la par con
+  mto-frontend. La ficha de una persona gana la pestaña **Ausencias** (vacaciones, baja, formación,
+  asuntos propios u otra, con sus dos fechas incluidas y los días que dura): el fin no es anterior al
+  inicio, lo que se solapa con otra suya es el 409 `ABS-001` del servicio con el diálogo abierto, la
+  clase solo se ve aquí (a mantenimiento le llegan las fechas, que dejan a la persona fuera de los turnos
+  de esos días) y quitarla pide confirmación. La ficha de un vehículo gana la pestaña **Taller**: sus
+  reparaciones (avería, revisión, inspección, modificación u otra) con su estado, si inmovilizan el
+  vehículo, sus fechas previstas, cuándo se abrieron y se cerraron, el taller y el coste; el alta elige
+  si nace **planificada** (con su inicio) o **abierta ahora**, y cada fila ofrece lo que admite su estado
+  (planificada: abrir, modificar y cancelar; abierta: cerrar, modificar y cancelar; cerrada o cancelada:
+  modificar), confirmando el efecto sobre el vehículo, que se relee después (una que inmoviliza, abierta,
+  lo pone «En reparación»; cerrar o cancelar la última lo devuelve a «Operativo»). El editor de vehículos
+  gana el **dispositivo GPS** (comprobado antes de llamar; vaciarlo lo quita), la ficha lo dice, y una
+  posición que llega por él tiene el origen «GPS». En **mantenimiento**, los tipos de tarea enseñan el
+  **equipo que exigen** (plataforma aislada, puesta a tierra) y, con `maintenance-supervise` y
+  `maintenance-write`, se cambia en su fila (merge-patch con la versión leída; uno que esta versión no
+  conoce se conserva). Y **Puestos y perfiles** (`recursos/discrepancias`) enseña el informe de
+  `mto-resources` que cruza la categoría de cada persona con el perfil de puesto de su usuario: con otro
+  perfil, con varios, sin ninguno y con perfil y sin ficha, cada persona enlazada a su ficha; con Keycloak
+  caído (503 `KCK-503`) lo dice en su sitio, con «Reintentar». Escribir en mantenimiento algo de un EP
+  fuera del ámbito de la persona es el 403 `SCP-403`, que se dice con el detalle del servicio («Queda
+  fuera de tu ámbito»), no como «no tienes permiso».
+
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|
 | Exportar perfiles, consultar, descargar | `config-read` |
@@ -417,6 +440,7 @@ Las pantallas de mantenimiento (fase 8) siguen los permisos de `mto-maintenance-
 | Altas, modificaciones, transiciones ordinarias, ejecutar tareas, reactivar un activo desactivado aquí | `maintenance-write` |
 | Desactivar un activo (también uno sincronizado), quitar una línea de material | `maintenance-delete` |
 | Cancelar una orden, completarla con `force`; resolver, cerrar o descartar un defecto | `maintenance-write` **y** `maintenance-supervise` |
+| Cambiar el equipo que exige un tipo de tarea | `maintenance-write` **y** `maintenance-supervise` |
 
 Los tres perfiles de mantenimiento del realm llevan `config-read`, `stock-read` y `resources-read`,
 así que quien los tiene ve también Infraestructura, Catálogos, Trabajos, Almacén y Recursos, en
@@ -427,12 +451,13 @@ Las pantallas de recursos (fase 10) siguen los permisos de `mto-resources-api`, 
 
 | Acción en recursos | Roles de cliente de `mto-resources-api` |
 |---|---|
-| Ver personal, organigrama, flota, tablero, cualificaciones, documentos, instrumentos, fichas e historial | `resources-read` |
+| Ver personal, organigrama, flota, tablero, cualificaciones, ausencias, documentos, taller, instrumentos, puestos y perfiles, fichas e historial | `resources-read` |
 | Nombres y desplegables de vías, estaciones y paquetes | además, `config-read` de `mto-configuration-api` |
-| Personas, unidades, linemen, sitios de aparcamiento, cualificaciones de una persona y tipos de cualificación: alta, modificación y reactivar | `resources-write` |
-| Modelos, vehículos, sus documentos e instrumentos: alta, modificación y reactivar | `resources-fleet-write` |
+| Personas, unidades, linemen, sitios de aparcamiento, cualificaciones y ausencias de una persona y tipos de cualificación: alta, modificación y reactivar | `resources-write` |
+| Modelos, vehículos (con su dispositivo GPS), sus documentos, su taller e instrumentos: alta, modificación, transiciones de una reparación y reactivar | `resources-fleet-write` |
 | Registrar dónde está un vehículo (el punto de acceso, entre los de la vía elegida, que se lee con `resources-read`) | `resources-location-write` |
-| Desactivar una persona o una unidad, retirar un modelo, un sitio, un vehículo, un tipo de cualificación o un instrumento; quitar una cualificación o un documento | `resources-delete` |
+| Desactivar una persona o una unidad, retirar un modelo, un sitio, un vehículo, un tipo de cualificación o un instrumento; quitar una cualificación, una ausencia o un documento | `resources-delete` |
+| La pasarela de GPS (`POST /telematics/positions`): ninguna pantalla lo pide | `resources-telematics-write` |
 
 Las pantallas de notificaciones (fase 9) siguen los permisos de `mto-notification-api`, donde el
 permiso lo decide el recurso y ninguno implica otro:
