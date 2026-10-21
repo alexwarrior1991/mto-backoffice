@@ -14,12 +14,14 @@ RUN --mount=type=cache,target=/root/.m2 --mount=type=cache,target=/root/.vaadin 
 
 FROM eclipse-temurin:25-jre-alpine
 
-RUN addgroup -S mtobackoffice \
-    && adduser -S mtobackoffice -G mtobackoffice \
-    && apk add --no-cache curl
+RUN apk add --no-cache curl
 
 WORKDIR /app
 COPY --from=build /workspace/target/mto-backoffice-*.jar /app/app.jar
+# OpenShift (SCC restricted-v2) arranca el contenedor con un UID aleatorio y el grupo 0; Docker, con
+# el 1001, que sin entrada en /etc/passwd tambien es del grupo 0. /app es del grupo 0 y el grupo puede
+# lo mismo que el dueno, asi que los dos funcionan igual y ninguno es root.
+RUN chgrp -R 0 /app && chmod -R g=u /app
 
 # Sin valores por defecto para KEYCLOAK_ISSUER_URI, KEYCLOAK_CLIENT_SECRET ni MTO_GATEWAY_URL: el
 # perfil prod los exige y una imagen no debe llevar dentro a que realm apunta.
@@ -30,5 +32,5 @@ ENV SPRING_PROFILES_ACTIVE=prod \
 
 EXPOSE 8080
 
-USER mtobackoffice
+USER 1001
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
