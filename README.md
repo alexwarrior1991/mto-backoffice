@@ -706,6 +706,10 @@ El cliente `mto-backoffice` del realm necesita además la URL pública como redi
 (`https://<host>/login/oauth2/code/keycloak`) y como post-logout redirect URI, y `KEYCLOAK_ISSUER_URI`,
 `KEYCLOAK_CLIENT_SECRET`, `MTO_GATEWAY_URL` y `MTO_FRONTEND_URL` las de ese entorno.
 
+Detrás del router, además, `SERVER_FORWARDHEADERSSTRATEGY=native`: el redirect URI del login se construye
+con `{baseUrl}`, y sin las `X-Forwarded-*` del router saldría en `http` y con el puerto del pod, y Keycloak lo
+rechazaría. Todo esto lo ponen los charts de `mto-platform/deploy/` (`values/base/backoffice.yaml`).
+
 ## Puertos
 
 | | |
