@@ -664,8 +664,51 @@ docker compose up -d --build     # http://localhost:8085
 
 El CI (`.github/workflows/ci.yml`, calcado del de `mto-gateway`) ejecuta `./mvnw -B verify`, sube
 los informes de surefire, construye la imagen en cada push y la publica en GHCR al entrar en
-`master`. Cuando la imagen exista, `mto-platform` podrá añadir el servicio `backoffice` a su
-`compose.yaml` (perfil `backoffice`, puerto 8085).
+`master`; antes la arranca con un UID cualquiera del grupo 0 (`--user`), como OpenShift con la SCC
+`restricted-v2`: la imagen corre con el `USER 1001` numérico y `/app` es del grupo 0. `mto-platform`
+la levanta como el servicio `backoffice` de su `compose.yaml` (perfil `backoffice`, puerto 8085).
+
+### Desplegar con varias réplicas (OpenShift)
+
+El código no cambia para tener varias réplicas, pero la ruta de entrada sí tiene que saber dos cosas:
+
+- **Afinidad de sesión por cookie.** La sesión de Vaadin (el árbol de componentes de cada pestaña)
+  y los tokens de la persona viven en la memoria de la réplica que la atendió: si la siguiente
+  petición cae en otra, esa réplica no conoce la sesión, Vaadin recarga y la persona vuelve a
+  entrar por el SSO. La Route lleva una cookie con nombre propio, que el router usa para volver a la
+  misma réplica:
+
+  ```yaml
+  metadata:
+    annotations:
+      router.openshift.io/cookie_name: mto-backoffice
+      haproxy.router.openshift.io/timeout: 1h
+  spec:
+    tls:
+      termination: edge            # o reencrypt; nunca passthrough
+      insecureEdgeTerminationPolicy: Redirect
+  ```
+
+  La terminación TLS es `edge` o `reencrypt`, **nunca `passthrough`**: con `passthrough` el router no
+  ve el HTTP, así que no puede poner ni leer la cookie y reparte por conexión.
+- **`@Push` necesita una conexión larga.** La campana y los trabajos en curso llegan por `@Push`
+  (WebSocket, con XHR de reserva): una conexión abierta mientras la pantalla lo está. El router corta
+  por defecto una conexión sin tráfico a los 30 s, así que `haproxy.router.openshift.io/timeout` se
+  alarga (arriba, una hora; Vaadin vuelve a conectar si se corta, pero cada corte es una reconexión).
+- **Un PDB** (`PodDisruptionBudget` con `maxUnavailable: 1`), para que un drenado de nodos no se lleve
+  todas las réplicas a la vez. Una réplica que cae solo devuelve al SSO a las personas que atendía;
+  lo que tenían a medio escribir en un diálogo se pierde, como al reiniciar.
+- **Sin Spring Session ni sesiones en Redis**, a propósito: es un cliente sin base de datos para los
+  tokens, serializar una sesión de Vaadin es frágil y el almacén de tokens se perdería igual (ver
+  `CLAUDE.md`, «Un reinicio no deja un diálogo muerto»). La afinidad es lo que hace falta.
+
+El cliente `mto-backoffice` del realm necesita además la URL pública como redirect URI
+(`https://<host>/login/oauth2/code/keycloak`) y como post-logout redirect URI, y `KEYCLOAK_ISSUER_URI`,
+`KEYCLOAK_CLIENT_SECRET`, `MTO_GATEWAY_URL` y `MTO_FRONTEND_URL` las de ese entorno.
+
+Detrás del router, además, `SERVER_FORWARDHEADERSSTRATEGY=native`: el redirect URI del login se construye
+con `{baseUrl}`, y sin las `X-Forwarded-*` del router saldría en `http` y con el puerto del pod, y Keycloak lo
+rechazaría. Todo esto lo ponen los charts de `mto-platform/deploy/` (`values/base/backoffice.yaml`).
 
 ## Puertos
 

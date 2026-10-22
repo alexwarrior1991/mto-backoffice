@@ -100,11 +100,14 @@ jobs:
       # imagen recien construida sin Keycloak ni gateway detras y espera a que /actuator/health
       # responda. El perfil prod exige el realm, el secreto y el gateway; se le dan valores que no
       # apuntan a nada, porque arrancar no debe tocar la red.
+      #
+      # Corre con un UID cualquiera del grupo 0 (--user), como en OpenShift con la SCC restricted-v2:
+      # que arranque con el 1001 del Dockerfile no prueba que arranque con el que asigna el cluster.
       - name: Smoke test the image
         if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/master' }}
         run: |
           IMAGE=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
-          docker run -d --name mto-backoffice-smoke -p 8085:8080 \
+          docker run -d --name mto-backoffice-smoke --user 1000680000:0 -p 8085:8080 \
             -e KEYCLOAK_ISSUER_URI=http://localhost:8082/realms/mto \
             -e KEYCLOAK_CLIENT_SECRET=smoke \
             -e MTO_GATEWAY_URL=http://localhost:8090 \
