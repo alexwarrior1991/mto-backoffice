@@ -1003,7 +1003,8 @@ fundida, el detalle con su `payload`; los accesos desde el enlace de una regla c
 la URL, filtrados en el servicio, un resultado nuevo como «Desconocido» y su detalle) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway, con los clientes de
 cada servicio y los seis clientes cuyos roles son permisos; redirección al login; sonda de
-salud; ausencia de artefactos comerciales; las dos hojas de Lumo en el shell). Lo que trajo la
+salud; ausencia de artefactos comerciales; las dos hojas de Lumo en el shell; la aplicación en hilos
+virtuales, también el executor de tareas que usa Vaadin, `theApplicationRunsOnVirtualThreadsAndSoDoesTheTaskExecutorVaadinUses`). Lo que trajo la
 convivencia con mto-frontend son casos de esas mismas clases: el enlace a la SPA con su query, el
 tipo padre y los `extras` de un catálogo, la referencia vaciada, el aviso fijo de la lista de
 trabajos, la pestaña oculta, las descargas fallidas, los cambios de usuarios, los desempates, lo
@@ -1018,7 +1019,12 @@ su dotación, sus vehículos y sus aparcamientos, y el 202 de una generación co
 `ViewLayerTest`, el menú de recursos y sus permisos, el personal, el árbol y la ficha de una unidad con
 la regla de 2 a 6, los modelos por secciones, los vehículos y dónde están, el tablero, el vehículo por
 defecto de un equipo, el equipo sincronizado de solo lectura, la dotación del turno y su cierre con
-aparcamientos, la generación seguida hasta su resultado, su fallo y su 429, y las rutas de recursos
+aparcamientos (el error del servicio en la fila de la que salió, aunque las de antes no viajaran), la
+generación seguida hasta su resultado, su fallo (también con un código que no es estándar), un estado
+terminal desconocido que cierra, avisa y relee, y su 429, la ubicación que solo comprueba lo que se ve y la
+de una movilidad desconocida, que parte de «Desconocida», el botón del turno de una ubicación con el nombre
+de su fila, un instrumento con la calibración caducada marcado como en mto-frontend, el alta de una
+inspección sobre un aislador que une dos vías (los turnos de las dos, y otro activo que vacía el turno), y las rutas de recursos
 iguales a las de la SPA. Las cualificaciones y caducidades de `mto-resources` también: en
 `ClientLayerTest`, el catálogo de tipos (una clase nueva como `UNKNOWN`), las cualificaciones de una
 persona con su `QUA-001`, los documentos de un vehículo con su `VDO-409`, los instrumentos con

@@ -593,8 +593,10 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   desde un segundo navegador sustituye los tokens, y las dos pestañas siguen funcionando con los
   nuevos. Salir en una cierra la sesión de Keycloak, y la otra deja de poder renovar el token: en
   su siguiente llamada se le dice que vuelva a entrar.
-- **Una instancia.** Sin sesiones compartidas ni almacén de tokens externo, dos réplicas detrás de
-  un balanceador necesitarían afinidad de sesión. No es el caso de uso.
+- **Varias réplicas, con afinidad de sesión.** Sin sesiones compartidas ni almacén de tokens externo,
+  cada persona tiene que volver siempre a la réplica que la atendió: detrás de un balanceador, con
+  afinidad por cookie (ver «Desplegar con varias réplicas»). Sin ella, cada petición que cae en otra
+  réplica es una vuelta al SSO.
 
 ## Cómo se habla con la API
 
@@ -672,7 +674,7 @@ la levanta como el servicio `backoffice` de su `compose.yaml` (perfil `backoffic
 
 ### Desplegar con varias réplicas (OpenShift)
 
-El código no cambia para tener varias réplicas, pero la ruta de entrada sí tiene que saber dos cosas:
+El código no cambia para tener varias réplicas, pero la ruta de entrada y el despliegue sí tienen que saber esto:
 
 - **Afinidad de sesión por cookie.** La sesión de Vaadin (el árbol de componentes de cada pestaña)
   y los tokens de la persona viven en la memoria de la réplica que la atendió: si la siguiente
@@ -684,7 +686,7 @@ El código no cambia para tener varias réplicas, pero la ruta de entrada sí ti
   metadata:
     annotations:
       router.openshift.io/cookie_name: mto-backoffice
-      haproxy.router.openshift.io/timeout: 1h
+      haproxy.router.openshift.io/timeout-tunnel: 1h
   spec:
     tls:
       termination: edge            # o reencrypt; nunca passthrough
@@ -694,9 +696,13 @@ El código no cambia para tener varias réplicas, pero la ruta de entrada sí ti
   La terminación TLS es `edge` o `reencrypt`, **nunca `passthrough`**: con `passthrough` el router no
   ve el HTTP, así que no puede poner ni leer la cookie y reparte por conexión.
 - **`@Push` necesita una conexión larga.** La campana y los trabajos en curso llegan por `@Push`
-  (WebSocket, con XHR de reserva): una conexión abierta mientras la pantalla lo está. El router corta
-  por defecto una conexión sin tráfico a los 30 s, así que `haproxy.router.openshift.io/timeout` se
-  alarga (arriba, una hora; Vaadin vuelve a conectar si se corta, pero cada corte es una reconexión).
+  (WebSocket, con XHR de reserva): una conexión abierta mientras la pantalla lo está. Un WebSocket ya
+  establecido lo gobierna `haproxy.router.openshift.io/timeout-tunnel` (una hora por defecto en el
+  router; arriba se deja explícito), no `timeout`. `timeout` (30 s por defecto) solo cuenta en el HTTP
+  normal, y con él la reserva por XHR (*long polling*): si un entorno no deja pasar el WebSocket y
+  hay que alargarlo, que sea lo justo, porque también deja abierta todo ese tiempo una petición
+  colgada. Vaadin vuelve a conectar si se corta, pero cada corte es una reconexión. *No comprobado en
+  un clúster: es lo que dice la documentación del router de OpenShift.*
 - **Un PDB** (`PodDisruptionBudget` con `maxUnavailable: 1`), para que un drenado de nodos no se lleve
   todas las réplicas a la vez. Una réplica que cae solo devuelve al SSO a las personas que atendía;
   lo que tenían a medio escribir en un diálogo se pierde, como al reiniciar.
@@ -710,7 +716,11 @@ El cliente `mto-backoffice` del realm necesita además la URL pública como redi
 
 Detrás del router, además, `SERVER_FORWARDHEADERSSTRATEGY=native`: el redirect URI del login se construye
 con `{baseUrl}`, y sin las `X-Forwarded-*` del router saldría en `http` y con el puerto del pod, y Keycloak lo
-rechazaría. Todo esto lo ponen los charts de `mto-platform/deploy/` (`values/base/backoffice.yaml`).
+rechazaría. Tomcat solo cree esas cabeceras si la petición llega de una dirección de su lista de proxies
+internos (`server.tomcat.remoteip.internal-proxies`, por defecto las redes privadas); si el router llega a
+los pods desde otra (con red de host, por ejemplo), hay que añadirla ahí, o el redirect URI vuelve a salir
+mal. *No comprobado en un clúster.* Todo esto lo ponen los charts de `mto-platform/deploy/`
+(`values/base/backoffice.yaml`).
 
 ## Puertos
 

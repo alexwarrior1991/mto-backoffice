@@ -137,6 +137,7 @@ import com.alejandro.mtobackoffice.ui.resources.PersonEditorDialog;
 import com.alejandro.mtobackoffice.ui.resources.PersonQualificationDialog;
 import com.alejandro.mtobackoffice.ui.resources.QualificationTypeEditorDialog;
 import com.alejandro.mtobackoffice.ui.resources.QualificationTypesView;
+import com.alejandro.mtobackoffice.ui.resources.ResourcesPickers;
 import com.alejandro.mtobackoffice.ui.resources.ResourcesRoutes;
 import com.alejandro.mtobackoffice.ui.resources.TeamMembersDialog;
 import com.alejandro.mtobackoffice.ui.resources.UnitDetailView;
@@ -1614,6 +1615,32 @@ class ViewLayerTest {
             assertEquals("shared-polling", thread.get().getName());
         } finally {
             polling.shutdown();
+        }
+    }
+
+    /**
+     * Una pasada que ya estaba en marcha cuando su pantalla se cerro termina con UIDetachedException al llevar
+     * su respuesta con UI.access(): no es un fallo, no se avisa con un WARN y el ciclo sigue.
+     */
+    @Test
+    void aPassThatEndsAfterItsScreenWasClosedIsNoFailure() throws Exception {
+        SharedPolling polling = new SharedPolling(new MockEnvironment().withProperty("spring.threads.virtual.enabled", "true"));
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(SharedPolling.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender = new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        CountDownLatch twice = new CountDownLatch(2);
+        try {
+            polling.every(Duration.ofMillis(10), () -> {
+                twice.countDown();
+                throw new UIDetachedException();
+            });
+            assertTrue(twice.await(5, TimeUnit.SECONDS), "el ciclo sigue");
+            assertTrue(appender.list.stream().noneMatch(event -> event.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.WARN)),
+                    "una pantalla cerrada no es un fallo: " + appender.list);
+        } finally {
+            polling.shutdown();
+            logger.detachAppender(appender);
         }
     }
 
@@ -6416,6 +6443,36 @@ class ViewLayerTest {
                 LocatorJ._get(Div.class, spec -> spec.withId("shift-vehicles-summary")).getText());
     }
 
+    /**
+     * Solo viaja lo rellenado, asi que {@code parkings[0]} del servicio es la primera fila rellenada, no la
+     * primera del dialogo: su error cae en la fila de la que salio, con el dialogo abierto.
+     */
+    @Test
+    void aServiceErrorOnAParkingLandsOnTheRowItCameFromWhenEarlierRowsWereEmpty() {
+        loginAs("mantenimiento.tecnico", SHIFT_CREW_WRITER);
+        stubReferencesForMaintenance();
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(siding(true)), 0, 200));
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        ApiProblem tooLong = new ApiProblem(null, "Bad Request", 400, "Validation failed", null, "VAL-001", null, null, null, false,
+                List.of(new ApiFieldError("parkings[0].description", null, "size must be between 0 and 200")), null);
+        when(shiftClient.close(eq(SHIFT1), any())).thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, tooLong, "corr-p1", null,
+                "POST /api/maintenance/shifts/" + SHIFT1 + "/close"));
+        openShift(shiftWithCrew(ShiftStatus.IN_PROGRESS, null));
+
+        click("shift-close");
+        TextField railText = LocatorJ._get(TextField.class, spec -> spec.withId("parking-description-0"));
+        TextField roadText = LocatorJ._get(TextField.class, spec -> spec.withId("parking-description-1"));
+        LocatorJ._setValue(roadText, "Junto a la caseta");
+        click(ShiftTransitionDialog.CONFIRM_ID);
+
+        verify(shiftClient).close(SHIFT1, new CloseShiftRequest(null, null, null, null,
+                List.of(new VehicleParkingRequest(VAN, null, null, null, "Junto a la caseta"))));
+        assertTrue(roadText.isInvalid(), "parkings[0] es la furgoneta: la dresina no viajo");
+        assertEquals("size must be between 0 and 200", roadText.getErrorMessage());
+        assertFalse(railText.isInvalid());
+        LocatorJ._get(ShiftTransitionDialog.class);
+    }
+
     /** Lo que el servicio dice de un campo cae en el suyo, tambien en los dialogos sin Binder; el dialogo sigue abierto. */
     @Test
     void theFieldErrorsOfTheServiceLandOnTheirFieldsInTheMaintenanceDialogs() {
@@ -7058,6 +7115,54 @@ class ViewLayerTest {
         LocatorJ._get(GenerateTasksDialog.class);
     }
 
+    /**
+     * Una generacion que termina en un estado que esta version no conoce: el dialogo se cierra, avisa de que
+     * hay que revisar las tareas, las relee y no vuelve a preguntar.
+     */
+    @Test
+    void aGenerationThatEndsInAnUnknownStateClosesWarnsAndReloadsTheTasks() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        stubGenerationAccepted();
+        when(operationClient.generation(OPERATION1)).thenReturn(generation(OperationStatus.UNKNOWN, null, null));
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("task-generate");
+        click(GenerateTasksDialog.CONFIRM_ID);
+        GenerateTasksDialog dialog = LocatorJ._get(GenerateTasksDialog.class);
+        dialog.pollOnce();
+        MockVaadin.clientRoundtrip();
+
+        assertTrue(LocatorJ._find(GenerateTasksDialog.class).isEmpty(), "terminada, aunque no se sepa como, el dialogo se cierra");
+        assertEquals("La generacion ha terminado en un estado desconocido: revisa las tareas de la orden.",
+                NotificationsKt.getNotifications().getLast().getElement().getProperty("text"));
+        verify(orderClient, atLeast(2)).tasks(ORDER1);
+        dialog.pollOnce();
+        verify(operationClient, times(1)).generation(OPERATION1);
+    }
+
+    /** Una generacion fallida con un codigo que no es estandar (499) dice su error con el dialogo abierto, y se puede relanzar. */
+    @Test
+    void aFailedGenerationWithANonStandardStatusStillSaysItsError() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        stubGenerationAccepted();
+        when(operationClient.generation(OPERATION1)).thenReturn(generation(OperationStatus.FAILED, null,
+                new OperationErrorDto(499, null, "Client closed the request")));
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("task-generate");
+        click(GenerateTasksDialog.CONFIRM_ID);
+        LocatorJ._get(GenerateTasksDialog.class).pollOnce();
+        MockVaadin.clientRoundtrip();
+
+        assertFalse(NotificationsKt.getNotifications().isEmpty(), "su error se dice");
+        LocatorJ._get(GenerateTasksDialog.class);
+        assertTrue(LocatorJ._get(Button.class, spec -> spec.withId(GenerateTasksDialog.CONFIRM_ID)).isEnabled(), "se puede volver a lanzar");
+    }
+
     private static <T> void chooseByLabel(ComboBox<T> combo, String label) {
         LocatorJ._setValue(combo, combo.getListDataView().getItems()
                 .filter(item -> label.equals(combo.getItemLabelGenerator().apply(item))).findFirst().orElseThrow());
@@ -7264,6 +7369,33 @@ class ViewLayerTest {
 
         verify(inspectionClient).create(new InspectionRequest(ASSET1, LocalDate.of(2026, 10, 6), null, InspectionKind.VISUAL, InspectionResult.OK,
                 null, null, null, null, ORDER1, SHIFT1));
+    }
+
+    /**
+     * El alta desde la lista: un aislador que une dos vias ofrece los turnos trabajados de las dos en una sola
+     * busqueda, y elegir otro activo vacia el turno elegido, que podria no recorrer sus vias.
+     */
+    @Test
+    void anInspectionOfAnAssetJoiningTwoTracksOffersTheShiftsOfBothAndAnotherAssetEmptiesTheShift() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        AssetSummaryDto insulator = new AssetSummaryDto(ASSET1, "SI-0001", "AIS-1", CatenaryAssetType.SECTION_INSULATOR, 12L,
+                new BigDecimal("15.000"), null, null, true, 14L, 3L, null, null);
+        when(shiftClient.search(eq(ShiftFilter.on(List.of(12L, 14L))), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.of(shiftOf(ShiftStatus.CLOSED)), 0, 50));
+        when(shiftClient.search(eq(ShiftFilter.on(List.of(12L))), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(), 0, 50));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.INSPECTIONS);
+        click("inspection-create");
+        ComboBox<ShiftDto> shift = comboWithId(InspectionEditorDialog.SHIFT_ID);
+        assertFalse(shift.isEnabled(), "sin activo no hay turnos que ofrecer");
+        LocatorJ._setValue(comboWithId("inspection-asset"), insulator);
+        verify(shiftClient).search(eq(ShiftFilter.on(List.of(12L, 14L))), anyInt(), anyInt(), anyList());
+        ComboBoxKt.selectByLabel(shift, "SH-000001 · 05/10/2026 · EQ-01 - Brigada norte · Cerrado");
+        assertEquals(SHIFT1, shift.getValue().id());
+
+        LocatorJ._setValue(comboWithId("inspection-asset"), profileSummary());
+        assertNull(shift.getValue(), "otro activo, otras vias: el turno elegido se vacia");
+        assertTrue(ComboBoxKt.getSuggestionItems(shift).isEmpty(), "y se ofrecen los de las suyas");
     }
 
     @Test
@@ -9423,7 +9555,10 @@ class ViewLayerTest {
         assertEquals(List.of("Aparcado · APT-RSH · VIA 1 (EP 4) · kp 12.300", "", "Turno", "service-account-mto-maintenance-svc"),
                 GridKt._getFormattedRow(locations, 0).subList(1, 5));
         verify(vehicleClient, atLeastOnce()).locations(VEHICLE1, null, null, 0, 20);
-        LocatorJ._get(GridKt._getCellComponent(locations, 0, "actions"), Button.class, spec -> spec.withId("location-shift-" + ((VehicleLocationDto) GridKt._get(locations, 0)).id()));
+        Button toShift = LocatorJ._get(GridKt._getCellComponent(locations, 0, "actions"), Button.class,
+                spec -> spec.withId("location-shift-" + ((VehicleLocationDto) GridKt._get(locations, 0)).id()));
+        assertEquals("Ver el turno de la ubicacion del " + Formats.dateTime(Instant.parse("2026-10-16T03:40:00Z")), toShift.getTooltip().getText(),
+                "con el nombre de su fila, como en mto-frontend");
 
         LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("locations-from")), LocalDate.of(2026, 10, 1));
         LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("locations-to")), LocalDate.of(2026, 10, 16));
@@ -9491,6 +9626,68 @@ class ViewLayerTest {
         verify(vehicleClient, times(2)).recordLocation(VEHICLE1, new VehicleLocationRequest(VehicleLocationKind.ON_TRACK, null, null, 12L,
                 new BigDecimal("10.5"), null, null, null, null, "En la playa de vias", null, null, null));
         assertTrue(LocatorJ._find(VehicleLocationDialog.class).isEmpty());
+    }
+
+    /**
+     * Lo que no se ve no se comprueba, porque no viaja: un KP con decimales de mas en un campo que el tipo
+     * elegido esconde no impide guardar. Y una movilidad que esta version no conoce solo admite «Desconocida»,
+     * que es tambien el tipo de partida: no se manda «Aparcado», que no se ofrece.
+     */
+    @Test
+    void aLocationChecksOnlyWhatIsShownAndAnUnknownMobilityStartsOnTheOnlyKindItOffers() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        VehicleTypeSummaryDto newModel = new VehicleTypeSummaryDto(VEHICLE_TYPE1, "NEW-01", "Modelo nuevo", VehicleMobility.UNKNOWN,
+                VehicleCategory.UNKNOWN, true, 2, null, false, Set.of());
+        VehicleDto dresina = vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true);
+        VehicleDto unknown = vehicle(VEHICLE2, "NEW-01", newModel, null, true);
+        stubVehicles(List.of(dresina, unknown));
+        when(vehicleClient.locations(any(), any(), any(), anyInt(), anyInt())).thenReturn(page(List.of(), 0, 20));
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(siding(true)), 0, 200));
+        when(vehicleClient.recordLocation(any(), any())).thenReturn(location(VehicleLocationKind.IN_WORKSHOP, null, null, null, null));
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("vehicle-locate")));
+        BigDecimalField kp = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("location-kp"));
+        LocatorJ._setValue(kp, new BigDecimal("10.12345"));
+        @SuppressWarnings("unchecked")
+        Select<VehicleLocationKind> kind = LocatorJ._get(Select.class, spec -> spec.withId("location-kind"));
+        LocatorJ._setValue(kind, VehicleLocationKind.IN_WORKSHOP);
+        assertFalse(kp.isVisible(), "en el taller no hay kp");
+        LocatorJ._setValue(comboWithId("location-site"), siding(true));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        verify(vehicleClient).recordLocation(eq(VEHICLE1), argThat(request -> request.kind() == VehicleLocationKind.IN_WORKSHOP
+                && request.kp() == null && PARKING_SITE1.equals(request.parkingSiteId())));
+        assertTrue(LocatorJ._find(VehicleLocationDialog.class).isEmpty());
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE2));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("vehicle-locate")));
+        @SuppressWarnings("unchecked")
+        Select<VehicleLocationKind> unknownKind = LocatorJ._get(Select.class, spec -> spec.withId("location-kind"));
+        assertEquals(List.of(VehicleLocationKind.UNKNOWN), ComboBoxKt.getSuggestionItems(unknownKind));
+        assertEquals(VehicleLocationKind.UNKNOWN, unknownKind.getValue(), "lo unico que se ofrece");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        verify(vehicleClient).recordLocation(eq(VEHICLE2), argThat(request -> request.kind() == VehicleLocationKind.UNKNOWN));
+    }
+
+    /**
+     * Un instrumento con la calibracion caducada hoy se marca, como en mto-frontend, y se sigue ofreciendo:
+     * lo que cuenta es la fecha del turno, que decide mantenimiento. Lo dice el servicio si lo dice, y si no, la fecha.
+     */
+    @Test
+    void anInstrumentWhoseCalibrationExpiredIsMarkedAsInMtoFrontend() {
+        LocalDate today = Formats.today();
+        LocalDate yesterday = today.minusDays(1);
+        assertEquals("PT-01 · Pertiga 1 · calibracion caducada (" + Formats.date(yesterday) + ")",
+                ResourcesPickers.instrumentLabel(new InstrumentSummaryDto(INSTRUMENT1, "PT-01", "Pertiga 1", InstrumentKind.EARTHING_POLE, yesterday)));
+        assertEquals("PT-01 · Pertiga 1 (calibrado hasta " + Formats.date(today) + ")",
+                ResourcesPickers.instrumentLabel(new InstrumentSummaryDto(INSTRUMENT1, "PT-01", "Pertiga 1", InstrumentKind.EARTHING_POLE, today)),
+                "hoy todavia vale");
+        assertEquals("PT-01 · Pertiga 1 · calibracion caducada (" + Formats.date(today) + ")",
+                ResourcesPickers.instrumentLabel(new InstrumentSummaryDto(INSTRUMENT1, "PT-01", "Pertiga 1", InstrumentKind.EARTHING_POLE, today, true)),
+                "si el servicio dice que ha caducado, ha caducado");
+        assertEquals("PT-01 · Pertiga 1 (sin calibracion)",
+                ResourcesPickers.instrumentLabel(new InstrumentSummaryDto(INSTRUMENT1, "PT-01", "Pertiga 1", InstrumentKind.EARTHING_POLE, null)));
     }
 
     private static VehicleLocationDto withAccessPoint(VehicleLocationDto location, String accessPoint, AccessPointSummaryDto trackAccessPoint) {

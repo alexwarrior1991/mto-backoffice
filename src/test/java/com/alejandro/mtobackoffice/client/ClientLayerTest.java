@@ -21,6 +21,7 @@ import com.alejandro.mtobackoffice.client.dto.jobs.JobStatus;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobType;
 import com.alejandro.mtobackoffice.client.dto.jobs.UploadedFile;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OperationDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OperationErrorDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OperationStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftVehicleDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.VehicleParkingRequest;
@@ -2700,6 +2701,15 @@ class ClientLayerTest {
         assertTrue(unknown.status().isFinished(), "un estado desconocido no se pregunta sin fin");
         assertEquals("OPS-410", TaskGeneration.failureOf(unknown).getProblem().code());
         assertEquals(500, TaskGeneration.failureOf(unknown).getStatus().value());
+        // Un codigo que no es estandar no tiene nombre en HttpStatus: sigue siendo su error, no una excepcion al decirlo.
+        OperationDto<GenerateTasksResultDto> odd = new OperationDto<>(UUID.fromString(operation), "GENERATE_TASKS", "EP-3", OperationStatus.FAILED,
+                null, null, null, null, null, null, new OperationErrorDto(499, "XXX-499", "Client closed the request"));
+        BackofficeApiException oddFailure = TaskGeneration.failureOf(odd);
+        assertEquals(499, oddFailure.getStatus().value());
+        assertEquals("HTTP 499", oddFailure.getProblem().title());
+        assertEquals("XXX-499", oddFailure.getProblem().code());
+        assertEquals(500, TaskGeneration.failureOf(new OperationDto<>(UUID.fromString(operation), "GENERATE_TASKS", "EP-3", OperationStatus.FAILED,
+                null, null, null, null, null, null, new OperationErrorDto(42, null, "nonsense"))).getStatus().value(), "lo que no es un codigo HTTP es un 500");
         server.verify();
     }
 

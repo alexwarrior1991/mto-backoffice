@@ -97,9 +97,11 @@ public class VehicleLocationDialog extends Dialog {
 
         kind.setLabel("Donde esta");
         kind.setId("location-kind");
-        kind.setItems(VehicleLocationKind.recordable(mobility));
+        List<VehicleLocationKind> recordable = VehicleLocationKind.recordable(mobility);
+        kind.setItems(recordable);
         kind.setItemLabelGenerator(value -> value == null ? "" : value.label());
-        kind.setValue(VehicleLocationKind.PARKED);
+        // Aparcado si lo admite; con una movilidad que esta version no conoce solo cabe «Desconocida».
+        kind.setValue(recordable.contains(VehicleLocationKind.PARKED) ? VehicleLocationKind.PARKED : recordable.getFirst());
         site.setId("location-site");
         site.setItems(sites(clients, mobility));
         site.setItemLabelGenerator(ParkingSiteDto::label);
@@ -238,13 +240,17 @@ public class VehicleLocationDialog extends Dialog {
         Set.<HasValidation>copyOf(fields.values()).forEach(field -> field.setInvalid(false));
     }
 
-    /** Lo evidente: lo que pide cada tipo y las coordenadas juntas. Marca el campo y dice si paso. */
+    /**
+     * Lo evidente: lo que pide cada tipo y las coordenadas juntas. Marca el campo y dice si paso. Solo lo
+     * que se ve: lo oculto no viaja, y un error en un campo que no se ve dejaria el dialogo sin guardar y
+     * sin decir por que.
+     */
     private boolean valid() {
         // Lo que dijo el servicio del punto de acceso (TAP-404) vale hasta el siguiente intento.
         accessPoint.setInvalid(false);
-        boolean ok = Numbers.check(kp, Numbers.kp());
-        ok &= Numbers.check(latitude, Numbers.coordinate(90));
-        ok &= Numbers.check(longitude, Numbers.coordinate(180));
+        boolean ok = !kp.isVisible() || Numbers.check(kp, Numbers.kp());
+        ok &= !latitude.isVisible() || Numbers.check(latitude, Numbers.coordinate(90));
+        ok &= !longitude.isVisible() || Numbers.check(longitude, Numbers.coordinate(180));
         if ((value(latitude) == null) != (value(longitude) == null)) {
             ok = invalid(latitude, "Las coordenadas van juntas: latitud y longitud");
         }

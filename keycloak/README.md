@@ -39,8 +39,7 @@ para que existan los roles que los demás nombran.
 - Ocho **audience mapper** (`oidc-audience-mapper`, `access.token.claim=true`), copiados de
   `mto-frontend`: `mto-configuration-api`, `mto-stock-api`, `mto-maintenance-api`, `mto-users-api`,
   `mto-notification-api`, `mto-gateway-api`, `mto-field-api` y `mto-resources-api` (personal,
-  organización y flota; sus pantallas llegan en una fase posterior, pero la audiencia va ya para
-  que el realm encaje). Sin el de un servicio, ese servicio responde 401 a todo: su
+  organización y flota, con sus pantallas en `recursos/*`). Sin el de un servicio, ese servicio responde 401 a todo: su
   `JwtAudienceValidator` exige su `clientId` en `aud`.
   `mto-platform/scripts/check_realm_consistency.py` comprueba que todo cliente de login lleve los ocho.
 - Sin PKCE: es un cliente confidencial con secreto. Se puede añadir (`pkce.code.challenge.method`

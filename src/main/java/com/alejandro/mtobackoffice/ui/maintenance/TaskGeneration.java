@@ -85,8 +85,10 @@ public class TaskGeneration {
      */
     public static BackofficeApiException failureOf(OperationDto<?> operation) {
         OperationErrorDto error = operation.error();
-        int status = error == null || error.status() == null ? 500 : error.status();
-        ApiProblem problem = new ApiProblem(null, HttpStatus.valueOf(status).name(), status, error == null ? null : error.message(), null,
+        int status = error == null || error.status() == null || error.status() < 100 || error.status() > 999 ? 500 : error.status();
+        // Un codigo que no es estandar (499) no tiene nombre: HttpStatus.valueOf lanzaria y el dialogo se quedaria colgado.
+        HttpStatus known = HttpStatus.resolve(status);
+        ApiProblem problem = new ApiProblem(null, known == null ? "HTTP " + status : known.name(), status, error == null ? null : error.message(), null,
                 error == null ? null : error.errorCode(), null, null, null, false, null, null);
         return BackofficeApiException.of(HttpStatusCode.valueOf(status), problem, null, null, "GET /api/maintenance/operations/" + operation.id());
     }
