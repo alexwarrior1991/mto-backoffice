@@ -254,7 +254,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (paginado, la más reciente primero; el 404 es «sin historial»); `LazyPanel`, la pestaña que
   pide sus datos al abrirse; `Downloads`, el fichero de un servicio servido a través de esta
   aplicación con `DownloadHandler`, que notifica en la pantalla un fallo; `Formats`, cantidades y
-  fechas; `SharedPolling`, el reloj compartido que vuelve a preguntar al servicio mientras hay una
+  fechas, en la zona del navegador (`ClientTimeZone`); `SharedPolling`, el reloj compartido que vuelve a preguntar al servicio mientras hay una
   pantalla abierta: los trabajos en curso y el contador de la campana (un hilo lleva el reloj y, con
   los hilos virtuales, cada pasada corre en el suyo: una llamada lenta solo retrasa su pantalla, y la
   pasada de una pantalla nunca se pisa consigo misma); `PageVisibility`, si la
@@ -652,9 +652,12 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `@JsonInclude(NON_NULL)`: el `null` tiene que viajar. `versionNumber` vuelve como se leyó: es el
   bloqueo optimista, y un cambio concurrente llega como 409. Se edita una **copia** de la fila
   (por Jackson, para que lleve los `extras`), para que cancelar o un rechazo del servicio no
-  cambien lo que enseña el Grid. `profiles.disconnector` se enseña de solo lectura y vuelve como
-  se leyó: `mto-configuration` lo ignora al escribir un perfil (#31), y el vínculo se cambia desde
-  Seccionadores, con el `profileId` del seccionador. Vaciar una referencia opcional a catálogo de un
+  cambien lo que enseña el Grid. Un poste admite varios seccionadores (`V29` de `mto-configuration`):
+  `profiles.disconnectors` (por nombre) y `profiles.disconnector` (el primero, que el servicio sigue
+  mandando) se enseñan de solo lectura, todos (`ProfileEditor.disconnectorsText`), y vuelven como se
+  leyeron: `mto-configuration` los ignora al escribir un perfil (#31), y el vínculo se cambia desde
+  Seccionadores, con el `profileId` de cada seccionador. Sin `disconnectors` (un servicio anterior),
+  `disconnector` es la lista de uno (`ProfileDto.disconnectorsOnThePole`). Vaciar una referencia opcional a catálogo de un
   perfil viaja como `{}` (`ProfileEditor.CLEARED`), porque `null` es «no la toques»; la que nadie
   tocó vuelve como se leyó.
 - **Las listas de maestros se paginan en el servidor.** `MasterView` pide cada página a
@@ -665,9 +668,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   si vienen; las dos cosas se arreglaron en `mto-configuration` para esta fase, no aquí.
 - **El esquema de una vía es una proyección del servicio, cacheada allí.** `GET /tracks/{id}/schematic`
   de `mto-configuration` devuelve en una llamada lo justo para dibujar (los perfiles en el orden
-  físico con sus ménsulas y su seccionador, con la vía que maniobra si no es la del poste y la otra
-  vía si pone dos en paralelo, los aisladores, las estaciones), y `SchematicDrawing`
-  solo reparte los postes a distancia uniforme, coloca cada aislador entre sus dos vecinos por KP y
+  físico con sus ménsulas y sus seccionadores, `disconnectors`, cada uno con la vía que maniobra si no
+  es la del poste y la otra vía si pone dos en paralelo, los aisladores, las estaciones), y `SchematicDrawing`
+  solo reparte los postes a distancia uniforme, apila los rombos de los seccionadores de un poste
+  (`disconnectorY`), coloca cada aislador entre sus dos vecinos por KP y
   **escapa todo texto** antes de meterlo en el SVG (`Svg` vuelca la cadena en `innerHTML` tal cual).
   Nada se ordena, suma ni interpreta aquí; si el dibujo necesita otro dato, se añade a la proyección
   en el servicio. La columna de acciones de `MasterView` existe siempre, también para quien solo
@@ -697,14 +701,27 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   editor la pone entonces en el DTO, ya después de `forgetChildren()`, y si no, se queda el
   `null` que deja al servicio sin decir nada. Media lista no existe: para el servicio la
   colección que llega es el estado final y el hijo que falta se borra (`README_API.md` §4). El 1:1
-  `cantilevers.steadyArm` se manda entero para crearlo o mantenerlo y `null` para quitarlo. El
-  seccionador del perfil ya no se escribe desde el perfil: `ProfileEditor` lo enseña de solo
-  lectura, sin `Binder`, y viaja el objeto leído.
+  `cantilevers.steadyArm` se manda entero para crearlo o mantenerlo y `null` para quitarlo. Los
+  seccionadores del perfil no se escriben desde el perfil: `ProfileEditor` los enseña de solo
+  lectura, sin `Binder`, y viajan como se leyeron.
 - **Un reinicio no deja un diálogo muerto.** Sesión y tokens viven en memoria y se pierden al
   reiniciar; `BackofficeSystemMessages` deja apagado el aviso de sesión caducada para que Vaadin
   recargue en cuanto lo detecte y la cadena de seguridad reentre por el SSO de Keycloak. No se
   persisten las sesiones (serializar una sesión de Vaadin es frágil y el almacén de tokens se
-  perdería igual) ni se introduce una base de datos para los tokens: es un cliente.
+  perdería igual) ni se introduce una base de datos para los tokens: es un cliente. Por lo mismo,
+  **con varias réplicas la ruta lleva afinidad de sesión por cookie**: la sesión de Vaadin y los
+  tokens viven en la réplica que atendió a la persona, y sin afinidad cada petición que cae en otra
+  es una vuelta al SSO (README, «Desplegar con varias réplicas»).
+- **Las fechas se pintan y se escriben en la zona del navegador de cada persona**, como en
+  mto-frontend, no en la del servidor (el contenedor corre en UTC). `ClientTimeZone.current()` la lee
+  de `ExtendedClientDetails.getTimeZoneId()`, que Vaadin 25 trae ya en la petición de arranque, y
+  `Formats` la usa en todo: pintar un `Instant`, pasar lo escrito en un `DateTimePicker` a `Instant`
+  y vuelta, los días de un filtro (`startOfDay`/`endOfDay`), «hoy» (`Formats.today()`, también para
+  las caducidades) y «ahora». Ningún formateador lleva `ZoneId.systemDefault()`. Sin zona del
+  navegador (un hilo sin UI, o una zona que no existe) vale `app.display.time-zone`
+  (`APP_DISPLAY_TIME_ZONE`, `Asia/Jerusalem` como los informes de `mto-maintenance`; UTC en los
+  tests). Las fechas de auditoría de `mto-configuration` (`createDate`, `versionDate`) son
+  `LocalDateTime` del servicio y se pintan tal cual.
 - **Personal, organigrama y flota son de `mto-resources`, y sus reglas las decide el servicio.** Lo que
   se copia aquí es solo para no ofrecer lo que va a fallar: un equipo nace con su jefe y de 2 a 6
   linemen (comprobado antes de llamar), «Añadir lineman» se apaga con 6 y «Sale del equipo» con 2, y
@@ -844,9 +861,9 @@ catálogos: el `versionNumber` leído en el `PUT` y en el lote, y los dos 409 de
 (`CON-001` y `BUS-002`) distinguidos por su código; los maestros: resolución del genérico,
 parámetros de página y orden del `/filter` (sin orden no viaja `sort`, como en el recuento), `extras` e hijos a
 `null` en un `PUT`, referencias a catálogo como `{id, code}`, las ménsulas tipadas con su brazo y
-el seccionador 1:1 en un `PUT`, el seccionador con su estado normal, su accionamiento y sin poste,
+los seccionadores del perfil (varios en un poste, y el `disconnector` de siempre) de vuelta en un `PUT`, el seccionador con su estado normal, su accionamiento y sin poste,
 con su KP y su vía, y el que pone dos vías en paralelo con su vía conectada, que se quita a `null`,
-el esquema de una vía con sus records anidados; los trabajos: la importación como parte multipart con `dryRun` en
+el esquema de una vía con sus records anidados y varios seccionadores en un poste (y `disconnector` solo, de un servicio anterior, como lista de uno), una operación fallida con un código que no es estándar; los trabajos: la importación como parte multipart con `dryRun` en
 la query, el 429 con el trabajo rechazado y el `Retry-After`, la lista paginada con sus filtros,
 el estado por familia y el fichero con sus cabeceras, qué es descargable, un tipo o un estado
 desconocidos leídos como `UNKNOWN`; los usuarios: la
@@ -895,8 +912,8 @@ de cada fila, parser del alta múltiple, notificación de error, diagnóstico de
 maestros: lista paginada, ordenada y filtrada contra el cliente simulado, nombres de referencias en las columnas,
 edición sobre una copia que vuelve con `extras` e hijos a `null`, errores del servicio sobre un
 desplegable, borrado confirmado, alta de un perfil con sus referencias, KP no válido, las
-ménsulas a `null` sin tocar y enteras al tocarlas, el seccionador del perfil de solo lectura y de
-vuelta como se leyó, las agujas en su diálogo y enteras al guardar,
+ménsulas a `null` sin tocar y enteras al tocarlas, los seccionadores del perfil de solo lectura y de
+vuelta como se leyeron (y el `disconnector` solo de un servicio anterior), las agujas en su diálogo y enteras al guardar,
 el perfil legible en la lista de seccionadores, el seccionador guardado sin poste y con su estado
 normal y su accionamiento, con su KP (comprobado antes de llamar) y su vía, el KP que elegir un
 poste vacía y la vía que se queda, la vía que maniobra uno en un poste en la lista y en el editor,
@@ -904,8 +921,11 @@ y vaciada de vuelta a la del poste, la vía conectada en la lista y en el editor
 con el 400 del servicio en su campo, el seccionador sin estación (de ida y vuelta, y con el 400 del servicio sobre la estación
 cuando no queda en ningún sitio), los mensajes de sistema, el esquema de una vía desde
 su fila en una llamada con los postes en el orden recibido, el texto escapado, el fallo notificado
-sin ventana, la vía sin perfiles y el reparto del dibujo (aisladores entre sus vecinos por KP, brazos
-al lado del poste); los trabajos: subir y
+sin ventana, la vía sin perfiles, un poste con dos seccionadores (los dos rombos apilados, escapados y
+contados en el resumen) y el reparto del dibujo (aisladores entre sus vecinos por KP, brazos
+al lado del poste); el sondeo compartido (cada pasada en su hilo virtual, en el hilo del reloj sin
+ellos, y la que termina con su pantalla ya cerrada sin aviso) y las fechas en la zona del navegador
+(pintar, escribir, los días de un filtro y la zona por defecto); los trabajos: subir y
 lanzar una importación, el progreso llegando por `pollOnce()` + `UI.access()` hasta el enlace de
 descarga y el botón de errores (que pide el detalle), el 429 apuntado como rechazado con su aviso,
 un trabajo propio fuera de la página seguido por su familia, la lista paginada y filtrada en el
@@ -983,7 +1003,8 @@ fundida, el detalle con su `payload`; los accesos desde el enlace de una regla c
 la URL, filtrados en el servicio, un resultado nuevo como «Desconocido» y su detalle) y
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway, con los clientes de
 cada servicio y los seis clientes cuyos roles son permisos; redirección al login; sonda de
-salud; ausencia de artefactos comerciales; las dos hojas de Lumo en el shell). Lo que trajo la
+salud; ausencia de artefactos comerciales; las dos hojas de Lumo en el shell; la aplicación en hilos
+virtuales, también el executor de tareas que usa Vaadin, `theApplicationRunsOnVirtualThreadsAndSoDoesTheTaskExecutorVaadinUses`). Lo que trajo la
 convivencia con mto-frontend son casos de esas mismas clases: el enlace a la SPA con su query, el
 tipo padre y los `extras` de un catálogo, la referencia vaciada, el aviso fijo de la lista de
 trabajos, la pestaña oculta, las descargas fallidas, los cambios de usuarios, los desempates, lo
@@ -998,7 +1019,12 @@ su dotación, sus vehículos y sus aparcamientos, y el 202 de una generación co
 `ViewLayerTest`, el menú de recursos y sus permisos, el personal, el árbol y la ficha de una unidad con
 la regla de 2 a 6, los modelos por secciones, los vehículos y dónde están, el tablero, el vehículo por
 defecto de un equipo, el equipo sincronizado de solo lectura, la dotación del turno y su cierre con
-aparcamientos, la generación seguida hasta su resultado, su fallo y su 429, y las rutas de recursos
+aparcamientos (el error del servicio en la fila de la que salió, aunque las de antes no viajaran), la
+generación seguida hasta su resultado, su fallo (también con un código que no es estándar), un estado
+terminal desconocido que cierra, avisa y relee, y su 429, la ubicación que solo comprueba lo que se ve y la
+de una movilidad desconocida, que parte de «Desconocida», el botón del turno de una ubicación con el nombre
+de su fila, un instrumento con la calibración caducada marcado como en mto-frontend, el alta de una
+inspección sobre un aislador que une dos vías (los turnos de las dos, y otro activo que vacía el turno), y las rutas de recursos
 iguales a las de la SPA. Las cualificaciones y caducidades de `mto-resources` también: en
 `ClientLayerTest`, el catálogo de tipos (una clase nueva como `UNKNOWN`), las cualificaciones de una
 persona con su `QUA-001`, los documentos de un vehículo con su `VDO-409`, los instrumentos con

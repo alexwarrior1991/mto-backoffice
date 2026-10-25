@@ -26,7 +26,12 @@ public record TrackSchematicDto(
         sectionInsulators = sectionInsulators == null ? List.of() : sectionInsulators;
     }
 
-    /** Un poste: sus datos principales, sus mensulas y, si lo lleva, su seccionador. */
+    /**
+     * Un poste: sus datos principales, sus mensulas y los seccionadores que cuelgan de el. Un poste
+     * admite varios (V29 de mto-configuration): {@code disconnectors}, por nombre, y
+     * {@code disconnector}, el primero, que el servicio sigue mandando para quien lea uno solo. Si
+     * {@code disconnectors} no llega (un servicio anterior), es {@code disconnector} como lista de uno.
+     */
     public record ProfileNode(
             Long id,
             String code,
@@ -39,12 +44,16 @@ public record TrackSchematicDto(
             String railPoleDistance,
             List<String> sectionings,
             List<CantileverArm> cantilevers,
-            DisconnectorMark disconnector
+            DisconnectorMark disconnector,
+            List<DisconnectorMark> disconnectors
     ) {
 
         public ProfileNode {
             sectionings = sectionings == null ? List.of() : sectionings;
             cantilevers = cantilevers == null ? List.of() : cantilevers;
+            if (disconnectors == null) {
+                disconnectors = disconnector == null ? List.of() : List.of(disconnector);
+            }
         }
     }
 
@@ -61,7 +70,7 @@ public record TrackSchematicDto(
     }
 
     /**
-     * El seccionador que cuelga de un poste. {@code track} es la via que maniobra cuando no es la del
+     * Un seccionador que cuelga de un poste. {@code track} es la via que maniobra cuando no es la del
      * esquema (en un haz de vias cuelga a veces del poste de una y aisla otra); sin ella, la suya es la
      * del esquema. {@code connectedTrack} es la otra via de uno que pone dos en paralelo.
      */

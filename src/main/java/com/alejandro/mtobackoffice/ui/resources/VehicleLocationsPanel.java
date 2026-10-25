@@ -72,7 +72,9 @@ class VehicleLocationsPanel extends LazyPanel {
         if (shift == null || !readsMaintenance) {
             return new HorizontalLayout();
         }
-        return Screens.rowButton("location-shift-" + location.id(), VaadinIcon.CALENDAR_CLOCK, "Ver el turno",
+        // Con el nombre de la fila, como en mto-frontend: todas las filas tienen este boton.
+        return Screens.rowButton("location-shift-" + location.id(), VaadinIcon.CALENDAR_CLOCK, "Ver el turno de la ubicacion del "
+                        + Formats.dateTime(location.observedAt()),
                 click -> UI.getCurrent().navigate(ShiftDetailView.class, ShiftDetailView.parametersOf(shift)));
     }
 

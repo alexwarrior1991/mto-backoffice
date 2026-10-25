@@ -13,6 +13,7 @@ import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.resources.InstrumentClient;
 import com.alejandro.mtobackoffice.client.resources.PersonClient;
 import com.alejandro.mtobackoffice.client.resources.VehicleClient;
+import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.combobox.MultiSelectComboBox;
@@ -96,10 +97,19 @@ public final class ResourcesPickers {
         return combo;
     }
 
-    /** {@code PT-01 · Pertiga 1 (calibrado hasta 31/03/2027)}, o «sin calibracion». */
+    /**
+     * {@code PT-01 · Pertiga 1 (calibrado hasta 31/03/2027)}, o «sin calibracion»; y, como en mto-frontend,
+     * {@code · calibracion caducada} si lo esta hoy. Se ofrece igual: lo que cuenta es la fecha del turno,
+     * y eso lo decide mantenimiento (409 {@code SHF-001}).
+     */
     public static String instrumentLabel(InstrumentSummaryDto instrument) {
-        return instrument.label() + (instrument.calibrationExpiresOn() == null ? " (sin calibracion)"
-                : " (calibrado hasta " + ResourcesFormats.date(instrument.calibrationExpiresOn()) + ")");
+        if (instrument.calibrationExpiresOn() == null) {
+            return instrument.label() + " (sin calibracion)";
+        }
+        String date = ResourcesFormats.date(instrument.calibrationExpiresOn());
+        return instrument.calibrationExpiredOn(Formats.today())
+                ? instrument.label() + " · calibracion caducada (" + date + ")"
+                : instrument.label() + " (calibrado hasta " + date + ")";
     }
 
     private static CallbackDataProvider.FetchCallback<PersonSummaryDto, String> provider(PersonClient people,

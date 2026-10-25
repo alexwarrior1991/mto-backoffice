@@ -126,9 +126,10 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   con su brazo de atirantado 1:1) y las **agujas** de un aislador de sección se editan dentro del
   editor del padre, en su propia tabla con alta, modificación y baja; al guardar, si nadie las
   tocó van a `null` y si alguien las tocó va la lista entera, que para el servicio es el estado
-  final (`README_API.md` §4: la que no mandas se borra). El **seccionador** de un perfil (1:1) se
-  enseña en el editor del perfil, de solo lectura: el vínculo es del seccionador y se cambia en su
-  editor, porque `mto-configuration` ignora el que llega dentro del perfil. En la lista de seccionadores el perfil se muestra
+  final (`README_API.md` §4: la que no mandas se borra). Los **seccionadores** de un perfil (un poste
+  admite varios desde el `V29` de `mto-configuration`) se enseñan en el editor del perfil, de solo
+  lectura: el vínculo es de cada seccionador y se cambia en su editor, porque `mto-configuration`
+  ignora los que llegan dentro del perfil. En la lista de seccionadores el perfil se muestra
   por su identificador y su KP, que el servicio manda ahora con cada fila (`profileCode`,
   `profileKp`) para no ir perfil por perfil. Y los mensajes de sistema de Vaadin quedan fijados en
   castellano y sin diálogo de sesión caducada: tras un reinicio la pantalla recarga sola y vuelve
@@ -223,8 +224,8 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   Vías* (también para quien solo lee): una ventana con la vía como una línea recta y, sobre ella, un
   poste por perfil a distancia uniforme, en el orden físico de la vía, con su código encima y su KP
   debajo, el tipo de poste y el estado, los seccionamientos, sus ménsulas como brazos (con el tipo,
-  hacia el lado que dice `railPoleDistance`) y su seccionador (con la otra vía, si pone dos en
-  paralelo); los aisladores de sección van sobre
+  hacia el lado que dice `railPoleDistance`) y sus seccionadores, apilados si cuelga más de uno (cada
+  uno con la otra vía, si pone dos en paralelo); los aisladores de sección van sobre
   la línea, colocados entre los dos perfiles vecinos por KP, con sus agujas; las estaciones de la
   vía, en la cabecera; el detalle de cada elemento, al pasar por encima. Es esquemático a propósito:
   no es el layout CAD. Lo que se dibuja es la proyección que `mto-configuration` devuelve en **una
@@ -538,6 +539,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 | `MTO_FRONTEND_URL` | La SPA `mto-frontend`, para «Abrir en mto-frontend» (vacío: la barra no lo ofrece) | vacío (`dev`: `http://localhost:4200`) |
 | `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP | `2s` / `15s` |
 | `SPRING_THREADS_VIRTUAL_ENABLED` | Hilos virtuales: Tomcat, las tareas de Vaadin y cada pasada del sondeo compartido | `true` |
+| `APP_DISPLAY_TIME_ZONE` | La zona de las fechas si el navegador no dice la suya (con él, siempre la del navegador, como en mto-frontend) | `Asia/Jerusalem` |
 
 `.env.example` las recoge todas. Perfiles: `dev` (8085, abre el navegador, secreto local), `test`
 (nadie escucha en Keycloak ni en el gateway) y `prod` (realm, secreto y gateway obligatorios).
@@ -591,8 +593,10 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   desde un segundo navegador sustituye los tokens, y las dos pestañas siguen funcionando con los
   nuevos. Salir en una cierra la sesión de Keycloak, y la otra deja de poder renovar el token: en
   su siguiente llamada se le dice que vuelva a entrar.
-- **Una instancia.** Sin sesiones compartidas ni almacén de tokens externo, dos réplicas detrás de
-  un balanceador necesitarían afinidad de sesión. No es el caso de uso.
+- **Varias réplicas, con afinidad de sesión.** Sin sesiones compartidas ni almacén de tokens externo,
+  cada persona tiene que volver siempre a la réplica que la atendió: detrás de un balanceador, con
+  afinidad por cookie (ver «Desplegar con varias réplicas»). Sin ella, cada petición que cae en otra
+  réplica es una vuelta al SSO.
 
 ## Cómo se habla con la API
 
@@ -670,7 +674,7 @@ la levanta como el servicio `backoffice` de su `compose.yaml` (perfil `backoffic
 
 ### Desplegar con varias réplicas (OpenShift)
 
-El código no cambia para tener varias réplicas, pero la ruta de entrada sí tiene que saber dos cosas:
+El código no cambia para tener varias réplicas, pero la ruta de entrada y el despliegue sí tienen que saber esto:
 
 - **Afinidad de sesión por cookie.** La sesión de Vaadin (el árbol de componentes de cada pestaña)
   y los tokens de la persona viven en la memoria de la réplica que la atendió: si la siguiente
@@ -682,7 +686,7 @@ El código no cambia para tener varias réplicas, pero la ruta de entrada sí ti
   metadata:
     annotations:
       router.openshift.io/cookie_name: mto-backoffice
-      haproxy.router.openshift.io/timeout: 1h
+      haproxy.router.openshift.io/timeout-tunnel: 1h
   spec:
     tls:
       termination: edge            # o reencrypt; nunca passthrough
@@ -692,9 +696,13 @@ El código no cambia para tener varias réplicas, pero la ruta de entrada sí ti
   La terminación TLS es `edge` o `reencrypt`, **nunca `passthrough`**: con `passthrough` el router no
   ve el HTTP, así que no puede poner ni leer la cookie y reparte por conexión.
 - **`@Push` necesita una conexión larga.** La campana y los trabajos en curso llegan por `@Push`
-  (WebSocket, con XHR de reserva): una conexión abierta mientras la pantalla lo está. El router corta
-  por defecto una conexión sin tráfico a los 30 s, así que `haproxy.router.openshift.io/timeout` se
-  alarga (arriba, una hora; Vaadin vuelve a conectar si se corta, pero cada corte es una reconexión).
+  (WebSocket, con XHR de reserva): una conexión abierta mientras la pantalla lo está. Un WebSocket ya
+  establecido lo gobierna `haproxy.router.openshift.io/timeout-tunnel` (una hora por defecto en el
+  router; arriba se deja explícito), no `timeout`. `timeout` (30 s por defecto) solo cuenta en el HTTP
+  normal, y con él la reserva por XHR (*long polling*): si un entorno no deja pasar el WebSocket y
+  hay que alargarlo, que sea lo justo, porque también deja abierta todo ese tiempo una petición
+  colgada. Vaadin vuelve a conectar si se corta, pero cada corte es una reconexión. *No comprobado en
+  un clúster: es lo que dice la documentación del router de OpenShift.*
 - **Un PDB** (`PodDisruptionBudget` con `maxUnavailable: 1`), para que un drenado de nodos no se lleve
   todas las réplicas a la vez. Una réplica que cae solo devuelve al SSO a las personas que atendía;
   lo que tenían a medio escribir en un diálogo se pierde, como al reiniciar.
@@ -708,7 +716,11 @@ El cliente `mto-backoffice` del realm necesita además la URL pública como redi
 
 Detrás del router, además, `SERVER_FORWARDHEADERSSTRATEGY=native`: el redirect URI del login se construye
 con `{baseUrl}`, y sin las `X-Forwarded-*` del router saldría en `http` y con el puerto del pod, y Keycloak lo
-rechazaría. Todo esto lo ponen los charts de `mto-platform/deploy/` (`values/base/backoffice.yaml`).
+rechazaría. Tomcat solo cree esas cabeceras si la petición llega de una dirección de su lista de proxies
+internos (`server.tomcat.remoteip.internal-proxies`, por defecto las redes privadas); si el router llega a
+los pods desde otra (con red de host, por ejemplo), hay que añadirla ahí, o el redirect URI vuelve a salir
+mal. *No comprobado en un clúster.* Todo esto lo ponen los charts de `mto-platform/deploy/`
+(`values/base/backoffice.yaml`).
 
 ## Puertos
 

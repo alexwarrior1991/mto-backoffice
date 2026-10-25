@@ -3,6 +3,7 @@ package com.alejandro.mtobackoffice.ui.users;
 import com.alejandro.mtobackoffice.client.dto.users.UserCredentialDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
+import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPanel;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
@@ -16,8 +17,6 @@ import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 
 /**
  * Las credenciales de la persona (contrasena, OTP, llaves), sin secretos ni forma de
@@ -28,7 +27,6 @@ import java.time.format.DateTimeFormatter;
 class UserCredentialsPanel extends LazyPanel {
 
     static final String GRID_ID = "credentials-grid";
-    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault());
 
     private final String userId;
     private final UsersClient client;
@@ -42,7 +40,7 @@ class UserCredentialsPanel extends LazyPanel {
         grid.setId(GRID_ID);
         grid.addColumn(UserCredentialDto::typeLabel).setHeader("Tipo").setKey("type").setAutoWidth(true);
         grid.addColumn(dto -> dto.userLabel() == null ? "" : dto.userLabel()).setHeader("Etiqueta").setKey("userLabel").setFlexGrow(1);
-        grid.addColumn(dto -> dto.createdAt() == null ? "" : DATE_TIME.format(dto.createdAt())).setHeader("Creada").setKey("createdAt").setAutoWidth(true);
+        grid.addColumn(dto -> Formats.dateTime(dto.createdAt())).setHeader("Creada").setKey("createdAt").setAutoWidth(true);
         if (canRemove) {
             grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey("actions").setAutoWidth(true).setFlexGrow(0);
         }

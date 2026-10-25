@@ -137,6 +137,7 @@ import com.alejandro.mtobackoffice.ui.resources.PersonEditorDialog;
 import com.alejandro.mtobackoffice.ui.resources.PersonQualificationDialog;
 import com.alejandro.mtobackoffice.ui.resources.QualificationTypeEditorDialog;
 import com.alejandro.mtobackoffice.ui.resources.QualificationTypesView;
+import com.alejandro.mtobackoffice.ui.resources.ResourcesPickers;
 import com.alejandro.mtobackoffice.ui.resources.ResourcesRoutes;
 import com.alejandro.mtobackoffice.ui.resources.TeamMembersDialog;
 import com.alejandro.mtobackoffice.ui.resources.UnitDetailView;
@@ -148,12 +149,15 @@ import com.alejandro.mtobackoffice.ui.resources.VehicleLocationDialog;
 import com.alejandro.mtobackoffice.ui.resources.VehicleTypeEditorDialog;
 import com.alejandro.mtobackoffice.ui.resources.VehicleTypesView;
 import com.alejandro.mtobackoffice.ui.resources.VehiclesView;
+import com.alejandro.mtobackoffice.ui.support.ClientTimeZone;
 import com.alejandro.mtobackoffice.ui.support.RevisionsDialog;
 import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.alejandro.mtobackoffice.ui.maintenance.CheckItemsDialog;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.alejandro.mtobackoffice.ui.users.TakeOut;
 import com.github.mvysny.kaributesting.v10.RouterLinkKt;
+import com.vaadin.flow.component.UIDetachedException;
+import com.vaadin.flow.component.page.ExtendedClientDetails;
 import com.vaadin.flow.router.RouterLink;
 import org.mockito.InOrder;
 import com.alejandro.mtobackoffice.client.dto.users.RealmProfileDto;
@@ -251,6 +255,7 @@ import com.alejandro.mtobackoffice.ui.stock.ProjectsView;
 import com.alejandro.mtobackoffice.ui.stock.StockRoutes;
 import com.alejandro.mtobackoffice.ui.stock.SuppliersView;
 import com.alejandro.mtobackoffice.ui.stock.WarehousesView;
+import java.time.ZoneId;
 import java.util.function.Function;
 import com.vaadin.flow.component.combobox.MultiSelectComboBox;
 import com.vaadin.flow.component.textfield.PasswordField;
@@ -265,6 +270,7 @@ import com.alejandro.mtobackoffice.ui.jobs.JobsView;
 import com.alejandro.mtobackoffice.ui.lov.LovBulkCreateDialog;
 import com.alejandro.mtobackoffice.ui.lov.LovCrudView;
 import com.alejandro.mtobackoffice.ui.master.EnabledFilter;
+import com.alejandro.mtobackoffice.ui.master.ProfileEditor;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.master.TracksView;
 import com.alejandro.mtobackoffice.ui.views.HomeView;
@@ -1399,9 +1405,10 @@ class ViewLayerTest {
         // Cuelga de un poste de VIA 1 y une otras dos: un haz de vias.
         var disconnector = new TrackSchematicDto.DisconnectorMark(40L, "SEC-40", true, "FEED", "ATOCHA", "VIA 3", "VIA 2");
         var p1 = new TrackSchematicDto.ProfileNode(1L, "P-001", "10.000", 1, "55.000", "HEB", null, "OK", "-2.500",
-                List.of("S1"), List.of(arm), null);
+                List.of("S1"), List.of(arm), null, List.of());
+        // Solo `disconnector`, como un servicio anterior al V29: se lee como una lista de uno.
         var p2 = new TrackSchematicDto.ProfileNode(2L, "P-002", "20.000", 2, null, null, null, null, "2.500",
-                List.of(), List.of(), disconnector);
+                List.of(), List.of(), disconnector, null);
         var turnout = new TrackSchematicDto.SwitchMark(60L, "W31", "15.500", 9, "VIA 1");
         var insulator = new TrackSchematicDto.InsulatorMark(50L, "AIS-50", "15.000", "TRACK_CONNECTION", true,
                 "ATOCHA", "VIA 1", "VIA 2", List.of(turnout));
@@ -1452,8 +1459,10 @@ class ViewLayerTest {
     void whatTheServiceSendsIsEscapedBeforeItBecomesSvg() {
         loginAs("config.lector", "ROLE_CONFIG_READ");
         stubTracks(threeTracks());
+        var first = new TrackSchematicDto.DisconnectorMark(1L, "\"SEC\" & co", null, null, null, "<i>", null);
+        var second = new TrackSchematicDto.DisconnectorMark(2L, "<u>SEC-2</u>", null, null, "<s>", null, null);
         var evil = new TrackSchematicDto.ProfileNode(9L, "<script>P</script>", "1.000", 1, null, null, null, null, null,
-                List.of("<b>"), List.of(), new TrackSchematicDto.DisconnectorMark(1L, "\"SEC\" & co", null, null, null, "<i>", null));
+                List.of("<b>"), List.of(), first, List.of(first, second));
         when(trackClient.schematic(3L)).thenReturn(new TrackSchematicDto(3L, "VIA \"1\" & <b>", true, null, List.of(), List.of(evil), List.of()));
 
         UI.getCurrent().navigate(TRACKS_ROUTE);
@@ -1467,6 +1476,46 @@ class ViewLayerTest {
         assertTrue(svg.contains("VIA &quot;1&quot; &amp; &lt;b&gt;"));
         assertTrue(svg.contains("&quot;SEC&quot; &amp; co"));
         assertTrue(svg.contains("maniobra &lt;i&gt;"), "la via que maniobra tambien");
+        assertFalse(svg.contains("<u>") || svg.contains("<s>"), "y el segundo seccionador del poste: " + svg);
+        assertTrue(svg.contains("&lt;u&gt;SEC-2&lt;/u&gt;") && svg.contains("&lt;s&gt;"));
+    }
+
+    /**
+     * Un poste admite varios seccionadores (V29 de mto-configuration): se dibujan todos, en el orden
+     * en que llegan, apilados al otro lado del poste sin pisarse, y el resumen los cuenta a todos.
+     */
+    @Test
+    void aPoleWithTwoDisconnectorsDrawsBothStackedAndTheSummaryCountsThem() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubTracks(threeTracks());
+        var lower = new TrackSchematicDto.DisconnectorMark(41L, "NAT-NS3", true, "Disc", "NAT", null, null);
+        var upper = new TrackSchematicDto.DisconnectorMark(42L, "NAT-NS4", false, "Disc", "NAT", "VIA 3", null);
+        var pole = new TrackSchematicDto.ProfileNode(1L, "68-2.05", "10.000", 1, null, null, null, null, "2.500",
+                List.of(), List.of(), lower, List.of(lower, upper));
+        var plain = new TrackSchematicDto.ProfileNode(2L, "68-2.06", "20.000", 2, null, null, null, null, "2.500",
+                List.of(), List.of(), null, List.of());
+        when(trackClient.schematic(3L)).thenReturn(new TrackSchematicDto(3L, "VIA 1", true, "EP5", List.of("NAT"),
+                List.of(pole, plain), List.of()));
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(schematicButton(0, 3L));
+
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        assertEquals("2 perfiles · 0 mensulas · 2 seccionadores · 0 aisladores · Estaciones: NAT",
+                LocatorJ._get(dialog, Span.class, spec -> spec.withId(TrackSchematicDialog.SUMMARY_ID)).getText(),
+                "dos seccionadores en un poste son dos, no un poste con seccionador");
+        String svg = drawing(dialog);
+        int first = svg.indexOf("id=\"disconnector-41\"");
+        int second = svg.indexOf("id=\"disconnector-42\"");
+        assertTrue(first > 0 && second > first, "los dos, en el orden en que llegan: " + svg);
+        assertTrue(svg.indexOf("id=\"pole-2\"") > second, "dentro de su poste");
+        assertTrue(svg.contains("Seccionador NAT-NS3 · en carga · funcion Disc · estacion NAT"));
+        assertTrue(svg.contains("Seccionador NAT-NS4 · sin carga · funcion Disc · estacion NAT · maniobra la via VIA 3"));
+        // El rombo de cada uno, centrado en su altura: el segundo, un escalon por encima.
+        String y0 = String.format(java.util.Locale.ROOT, "%.1f", SchematicDrawing.disconnectorY(0));
+        String y1 = String.format(java.util.Locale.ROOT, "%.1f", SchematicDrawing.disconnectorY(1));
+        assertTrue(svg.substring(first, second).contains(" " + y0 + " L"), "el primero, a la altura de siempre");
+        assertTrue(svg.substring(second).contains(" " + y1 + " L"), "el segundo, encima");
     }
 
     @Test
@@ -1569,6 +1618,66 @@ class ViewLayerTest {
         }
     }
 
+    /**
+     * Una pasada que ya estaba en marcha cuando su pantalla se cerro termina con UIDetachedException al llevar
+     * su respuesta con UI.access(): no es un fallo, no se avisa con un WARN y el ciclo sigue.
+     */
+    @Test
+    void aPassThatEndsAfterItsScreenWasClosedIsNoFailure() throws Exception {
+        SharedPolling polling = new SharedPolling(new MockEnvironment().withProperty("spring.threads.virtual.enabled", "true"));
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(SharedPolling.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender = new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        CountDownLatch twice = new CountDownLatch(2);
+        try {
+            polling.every(Duration.ofMillis(10), () -> {
+                twice.countDown();
+                throw new UIDetachedException();
+            });
+            assertTrue(twice.await(5, TimeUnit.SECONDS), "el ciclo sigue");
+            assertTrue(appender.list.stream().noneMatch(event -> event.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.WARN)),
+                    "una pantalla cerrada no es un fallo: " + appender.list);
+        } finally {
+            polling.shutdown();
+            logger.detachAppender(appender);
+        }
+    }
+
+    /**
+     * Las fechas se pintan y se escriben en la zona del navegador de la persona, como en mto-frontend, y no en
+     * la del servidor (el contenedor corre en UTC): una hora escrita aqui es la misma en la SPA. Si el navegador
+     * no la dice, o dice una que no existe, vale la de por defecto ({@code app.display.time-zone}).
+     */
+    @Test
+    void datesArePaintedAndWrittenInTheZoneOfTheBrowser() {
+        UI ui = UI.getCurrent();
+        try {
+            assertEquals(ZoneId.of("UTC"), ClientTimeZone.fallback(), "la del perfil de test");
+            assertEquals(ClientTimeZone.fallback(), ClientTimeZone.current(), "un navegador que no la dice");
+
+            browserZone(ui, "America/New_York");
+            assertEquals(ZoneId.of("America/New_York"), ClientTimeZone.current());
+            Instant night = Instant.parse("2026-01-15T03:00:00Z");
+            assertEquals("14/01/2026 22:00", Formats.dateTime(night));
+            assertEquals(night, Formats.toInstant(LocalDateTime.of(2026, 1, 14, 22, 0)), "las 22:00 escritas son las 22:00 de la persona");
+            assertEquals(LocalDateTime.of(2026, 1, 14, 22, 0), Formats.toLocalDateTime(night));
+            assertEquals(Instant.parse("2026-01-14T05:00:00Z"), Formats.startOfDay(LocalDate.of(2026, 1, 14)));
+            assertEquals(Instant.parse("2026-01-15T04:59:59.999Z"), Formats.endOfDay(LocalDate.of(2026, 1, 14)));
+            assertEquals("15/01 03:00:00", Formats.dateTime(Instant.parse("2026-01-15T08:00:00Z"),
+                    java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm:ss")), "otro patron, la misma zona");
+
+            browserZone(ui, "Mars/Olympus");
+            assertEquals(ClientTimeZone.fallback(), ClientTimeZone.current(), "una zona que no existe no rompe nada");
+        } finally {
+            browserZone(ui, null);
+        }
+    }
+
+    private static void browserZone(UI ui, String zone) {
+        ExtendedClientDetails.updateFromValues(ui, key -> "v-tzid".equals(key) ? zone : null);
+    }
+
     /** El reparto del dibujo, sin Vaadin: espaciado uniforme, el aislador entre sus vecinos por KP, el brazo al lado del poste. */
     @Test
     void theDrawingSpacesPolesEvenlyAndPlacesInsulatorsBetweenTheirNeighboursByKp() {
@@ -1587,7 +1696,7 @@ class ViewLayerTest {
         assertEquals(1, SchematicDrawing.armDirection(profiles.get(1)));
 
         // Dos tramos con la kilometracion reiniciada (README_API §4): el aislador cae en el tramo que lo contiene primero.
-        var reinicio = new TrackSchematicDto.ProfileNode(3L, "P-003", "5.000", 3, null, null, null, null, null, List.of(), List.of(), null);
+        var reinicio = new TrackSchematicDto.ProfileNode(3L, "P-003", "5.000", 3, null, null, null, null, null, List.of(), List.of(), null, null);
         var dosTramos = List.of(profiles.get(0), profiles.get(1), reinicio);
         assertEquals(SchematicDrawing.xOf(0) + SchematicDrawing.STEP * 0.5, SchematicDrawing.insulatorX(dosTramos, "15.000"), 0.001);
         assertEquals(SchematicDrawing.xOf(1) + SchematicDrawing.STEP * (20.0 - 8.0) / (20.0 - 5.0), SchematicDrawing.insulatorX(dosTramos, "8.000"), 0.001,
@@ -1954,22 +2063,21 @@ class ViewLayerTest {
     }
 
     /**
-     * El seccionador de un perfil se ensena de solo lectura y vuelve como se leyo: el vinculo es del
-     * seccionador, y el servicio ignora el que llega dentro del perfil (mto-configuration#31).
+     * Los seccionadores de un perfil se ensenan de solo lectura y vuelven como se leyeron: el vinculo es
+     * de cada seccionador, y el servicio ignora los que llegan dentro del perfil (mto-configuration#31).
+     * Un poste admite varios (V29): se ensenan todos, por el orden en que llegan.
      */
     @Test
-    void theDisconnectorOfAProfileIsReadOnlyAndTravelsAsRead() {
+    void theDisconnectorsOfAProfileAreReadOnlyAndTravelAsRead() {
         loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
         when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null, null)));
         when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
                 .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
         ProfileDto profile = profileWithOneCantilever();
-        DisconnectorDto hanging = new DisconnectorDto();
-        hanging.setId(5L);
-        hanging.setName("SEC-1");
-        hanging.setProfileId(7L);
-        hanging.setDisconnectorFunction(new LovRef(9L, "Disc", "Seccionador"));
+        DisconnectorDto hanging = disconnectorOnPole(5L, "SEC-1", "Disc");
+        DisconnectorDto other = disconnectorOnPole(6L, "SEC-2", "SurgeA");
         profile.setDisconnector(hanging);
+        profile.setDisconnectors(List.of(hanging, other));
         when(profileClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(profile), 0, 50));
         when(profileClient.update(eq(7L), any())).thenAnswer(call -> call.getArgument(1));
 
@@ -1978,17 +2086,41 @@ class ViewLayerTest {
         Grid<ProfileDto> profiles = LocatorJ._get(Grid.class);
         LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(profiles, 0, "actions"), Button.class, spec -> spec.withId("edit-7")));
         Dialog dialog = LocatorJ._get(Dialog.class);
-        TextField disconnector = LocatorJ._get(dialog, TextField.class, spec -> spec.withId("profile-disconnector"));
-        assertTrue(disconnector.isReadOnly(), "el vinculo se cambia desde Seccionadores");
-        assertEquals("SEC-1 (Disc)", disconnector.getValue());
-        assertEquals("El que cuelga de este perfil. Se vincula desde Seccionadores, en el editor del seccionador.",
-                disconnector.getHelperText());
+        TextField disconnectors = LocatorJ._get(dialog, TextField.class, spec -> spec.withId("profile-disconnectors"));
+        assertTrue(disconnectors.isReadOnly(), "el vinculo se cambia desde Seccionadores");
+        assertEquals("SEC-1 (Disc), SEC-2 (SurgeA)", disconnectors.getValue());
+        assertEquals("Los que cuelgan de este perfil. Cada uno se vincula desde Seccionadores, en su editor.",
+                disconnectors.getHelperText());
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
 
         verify(profileClient).update(eq(7L), argThat(dto -> dto.getDisconnector() != null
                 && Long.valueOf(5L).equals(dto.getDisconnector().getId())
-                && Long.valueOf(7L).equals(dto.getDisconnector().getProfileId())));
+                && Long.valueOf(7L).equals(dto.getDisconnector().getProfileId())
+                && dto.getDisconnectors().stream().map(DisconnectorDto::getId).toList().equals(List.of(5L, 6L))));
         verifyNoInteractions(disconnectorClient);
+    }
+
+    /** Un servicio anterior al V29 solo manda {@code disconnector}: se ensena como el unico del poste, y sin el, «Ninguno». */
+    @Test
+    void aProfileWithOnlyTheOldDisconnectorKeyShowsItAndOneWithoutAnyShowsNone() {
+        ProfileDto old = profileWithOneCantilever();
+        old.setDisconnector(disconnectorOnPole(5L, "SEC-1", "Disc"));
+        assertEquals("SEC-1 (Disc)", ProfileEditor.disconnectorsText(old));
+        assertEquals(1, old.disconnectorsOnThePole().size());
+
+        ProfileDto none = profileWithOneCantilever();
+        none.setDisconnectors(List.of());
+        assertEquals("Ninguno", ProfileEditor.disconnectorsText(none));
+        assertEquals("Ninguno", ProfileEditor.disconnectorsText(profileWithOneCantilever()));
+    }
+
+    private static DisconnectorDto disconnectorOnPole(long id, String name, String function) {
+        DisconnectorDto disconnector = new DisconnectorDto();
+        disconnector.setId(id);
+        disconnector.setName(name);
+        disconnector.setProfileId(7L);
+        disconnector.setDisconnectorFunction(new LovRef(9L, function, null));
+        return disconnector;
     }
 
     /** README_API.md §4 quater: las agujas son una coleccion de hijos; el codigo tiene forma fija. */
@@ -6311,6 +6443,36 @@ class ViewLayerTest {
                 LocatorJ._get(Div.class, spec -> spec.withId("shift-vehicles-summary")).getText());
     }
 
+    /**
+     * Solo viaja lo rellenado, asi que {@code parkings[0]} del servicio es la primera fila rellenada, no la
+     * primera del dialogo: su error cae en la fila de la que salio, con el dialogo abierto.
+     */
+    @Test
+    void aServiceErrorOnAParkingLandsOnTheRowItCameFromWhenEarlierRowsWereEmpty() {
+        loginAs("mantenimiento.tecnico", SHIFT_CREW_WRITER);
+        stubReferencesForMaintenance();
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(siding(true)), 0, 200));
+        when(shiftClient.tasks(SHIFT1, null)).thenReturn(List.of());
+        ApiProblem tooLong = new ApiProblem(null, "Bad Request", 400, "Validation failed", null, "VAL-001", null, null, null, false,
+                List.of(new ApiFieldError("parkings[0].description", null, "size must be between 0 and 200")), null);
+        when(shiftClient.close(eq(SHIFT1), any())).thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, tooLong, "corr-p1", null,
+                "POST /api/maintenance/shifts/" + SHIFT1 + "/close"));
+        openShift(shiftWithCrew(ShiftStatus.IN_PROGRESS, null));
+
+        click("shift-close");
+        TextField railText = LocatorJ._get(TextField.class, spec -> spec.withId("parking-description-0"));
+        TextField roadText = LocatorJ._get(TextField.class, spec -> spec.withId("parking-description-1"));
+        LocatorJ._setValue(roadText, "Junto a la caseta");
+        click(ShiftTransitionDialog.CONFIRM_ID);
+
+        verify(shiftClient).close(SHIFT1, new CloseShiftRequest(null, null, null, null,
+                List.of(new VehicleParkingRequest(VAN, null, null, null, "Junto a la caseta"))));
+        assertTrue(roadText.isInvalid(), "parkings[0] es la furgoneta: la dresina no viajo");
+        assertEquals("size must be between 0 and 200", roadText.getErrorMessage());
+        assertFalse(railText.isInvalid());
+        LocatorJ._get(ShiftTransitionDialog.class);
+    }
+
     /** Lo que el servicio dice de un campo cae en el suyo, tambien en los dialogos sin Binder; el dialogo sigue abierto. */
     @Test
     void theFieldErrorsOfTheServiceLandOnTheirFieldsInTheMaintenanceDialogs() {
@@ -6953,6 +7115,54 @@ class ViewLayerTest {
         LocatorJ._get(GenerateTasksDialog.class);
     }
 
+    /**
+     * Una generacion que termina en un estado que esta version no conoce: el dialogo se cierra, avisa de que
+     * hay que revisar las tareas, las relee y no vuelve a preguntar.
+     */
+    @Test
+    void aGenerationThatEndsInAnUnknownStateClosesWarnsAndReloadsTheTasks() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        stubGenerationAccepted();
+        when(operationClient.generation(OPERATION1)).thenReturn(generation(OperationStatus.UNKNOWN, null, null));
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("task-generate");
+        click(GenerateTasksDialog.CONFIRM_ID);
+        GenerateTasksDialog dialog = LocatorJ._get(GenerateTasksDialog.class);
+        dialog.pollOnce();
+        MockVaadin.clientRoundtrip();
+
+        assertTrue(LocatorJ._find(GenerateTasksDialog.class).isEmpty(), "terminada, aunque no se sepa como, el dialogo se cierra");
+        assertEquals("La generacion ha terminado en un estado desconocido: revisa las tareas de la orden.",
+                NotificationsKt.getNotifications().getLast().getElement().getProperty("text"));
+        verify(orderClient, atLeast(2)).tasks(ORDER1);
+        dialog.pollOnce();
+        verify(operationClient, times(1)).generation(OPERATION1);
+    }
+
+    /** Una generacion fallida con un codigo que no es estandar (499) dice su error con el dialogo abierto, y se puede relanzar. */
+    @Test
+    void aFailedGenerationWithANonStandardStatusStillSaysItsError() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        stubGenerationAccepted();
+        when(operationClient.generation(OPERATION1)).thenReturn(generation(OperationStatus.FAILED, null,
+                new OperationErrorDto(499, null, "Client closed the request")));
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("task-generate");
+        click(GenerateTasksDialog.CONFIRM_ID);
+        LocatorJ._get(GenerateTasksDialog.class).pollOnce();
+        MockVaadin.clientRoundtrip();
+
+        assertFalse(NotificationsKt.getNotifications().isEmpty(), "su error se dice");
+        LocatorJ._get(GenerateTasksDialog.class);
+        assertTrue(LocatorJ._get(Button.class, spec -> spec.withId(GenerateTasksDialog.CONFIRM_ID)).isEnabled(), "se puede volver a lanzar");
+    }
+
     private static <T> void chooseByLabel(ComboBox<T> combo, String label) {
         LocatorJ._setValue(combo, combo.getListDataView().getItems()
                 .filter(item -> label.equals(combo.getItemLabelGenerator().apply(item))).findFirst().orElseThrow());
@@ -7159,6 +7369,33 @@ class ViewLayerTest {
 
         verify(inspectionClient).create(new InspectionRequest(ASSET1, LocalDate.of(2026, 10, 6), null, InspectionKind.VISUAL, InspectionResult.OK,
                 null, null, null, null, ORDER1, SHIFT1));
+    }
+
+    /**
+     * El alta desde la lista: un aislador que une dos vias ofrece los turnos trabajados de las dos en una sola
+     * busqueda, y elegir otro activo vacia el turno elegido, que podria no recorrer sus vias.
+     */
+    @Test
+    void anInspectionOfAnAssetJoiningTwoTracksOffersTheShiftsOfBothAndAnotherAssetEmptiesTheShift() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        AssetSummaryDto insulator = new AssetSummaryDto(ASSET1, "SI-0001", "AIS-1", CatenaryAssetType.SECTION_INSULATOR, 12L,
+                new BigDecimal("15.000"), null, null, true, 14L, 3L, null, null);
+        when(shiftClient.search(eq(ShiftFilter.on(List.of(12L, 14L))), anyInt(), anyInt(), anyList()))
+                .thenReturn(page(List.of(shiftOf(ShiftStatus.CLOSED)), 0, 50));
+        when(shiftClient.search(eq(ShiftFilter.on(List.of(12L))), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(), 0, 50));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.INSPECTIONS);
+        click("inspection-create");
+        ComboBox<ShiftDto> shift = comboWithId(InspectionEditorDialog.SHIFT_ID);
+        assertFalse(shift.isEnabled(), "sin activo no hay turnos que ofrecer");
+        LocatorJ._setValue(comboWithId("inspection-asset"), insulator);
+        verify(shiftClient).search(eq(ShiftFilter.on(List.of(12L, 14L))), anyInt(), anyInt(), anyList());
+        ComboBoxKt.selectByLabel(shift, "SH-000001 · 05/10/2026 · EQ-01 - Brigada norte · Cerrado");
+        assertEquals(SHIFT1, shift.getValue().id());
+
+        LocatorJ._setValue(comboWithId("inspection-asset"), profileSummary());
+        assertNull(shift.getValue(), "otro activo, otras vias: el turno elegido se vacia");
+        assertTrue(ComboBoxKt.getSuggestionItems(shift).isEmpty(), "y se ofrecen los de las suyas");
     }
 
     @Test
@@ -9318,7 +9555,10 @@ class ViewLayerTest {
         assertEquals(List.of("Aparcado · APT-RSH · VIA 1 (EP 4) · kp 12.300", "", "Turno", "service-account-mto-maintenance-svc"),
                 GridKt._getFormattedRow(locations, 0).subList(1, 5));
         verify(vehicleClient, atLeastOnce()).locations(VEHICLE1, null, null, 0, 20);
-        LocatorJ._get(GridKt._getCellComponent(locations, 0, "actions"), Button.class, spec -> spec.withId("location-shift-" + ((VehicleLocationDto) GridKt._get(locations, 0)).id()));
+        Button toShift = LocatorJ._get(GridKt._getCellComponent(locations, 0, "actions"), Button.class,
+                spec -> spec.withId("location-shift-" + ((VehicleLocationDto) GridKt._get(locations, 0)).id()));
+        assertEquals("Ver el turno de la ubicacion del " + Formats.dateTime(Instant.parse("2026-10-16T03:40:00Z")), toShift.getTooltip().getText(),
+                "con el nombre de su fila, como en mto-frontend");
 
         LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("locations-from")), LocalDate.of(2026, 10, 1));
         LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("locations-to")), LocalDate.of(2026, 10, 16));
@@ -9386,6 +9626,68 @@ class ViewLayerTest {
         verify(vehicleClient, times(2)).recordLocation(VEHICLE1, new VehicleLocationRequest(VehicleLocationKind.ON_TRACK, null, null, 12L,
                 new BigDecimal("10.5"), null, null, null, null, "En la playa de vias", null, null, null));
         assertTrue(LocatorJ._find(VehicleLocationDialog.class).isEmpty());
+    }
+
+    /**
+     * Lo que no se ve no se comprueba, porque no viaja: un KP con decimales de mas en un campo que el tipo
+     * elegido esconde no impide guardar. Y una movilidad que esta version no conoce solo admite «Desconocida»,
+     * que es tambien el tipo de partida: no se manda «Aparcado», que no se ofrece.
+     */
+    @Test
+    void aLocationChecksOnlyWhatIsShownAndAnUnknownMobilityStartsOnTheOnlyKindItOffers() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        VehicleTypeSummaryDto newModel = new VehicleTypeSummaryDto(VEHICLE_TYPE1, "NEW-01", "Modelo nuevo", VehicleMobility.UNKNOWN,
+                VehicleCategory.UNKNOWN, true, 2, null, false, Set.of());
+        VehicleDto dresina = vehicle(VEHICLE1, "DR-01", RAIL_MODEL, null, true);
+        VehicleDto unknown = vehicle(VEHICLE2, "NEW-01", newModel, null, true);
+        stubVehicles(List.of(dresina, unknown));
+        when(vehicleClient.locations(any(), any(), any(), anyInt(), anyInt())).thenReturn(page(List.of(), 0, 20));
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(siding(true)), 0, 200));
+        when(vehicleClient.recordLocation(any(), any())).thenReturn(location(VehicleLocationKind.IN_WORKSHOP, null, null, null, null));
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("vehicle-locate")));
+        BigDecimalField kp = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("location-kp"));
+        LocatorJ._setValue(kp, new BigDecimal("10.12345"));
+        @SuppressWarnings("unchecked")
+        Select<VehicleLocationKind> kind = LocatorJ._get(Select.class, spec -> spec.withId("location-kind"));
+        LocatorJ._setValue(kind, VehicleLocationKind.IN_WORKSHOP);
+        assertFalse(kp.isVisible(), "en el taller no hay kp");
+        LocatorJ._setValue(comboWithId("location-site"), siding(true));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        verify(vehicleClient).recordLocation(eq(VEHICLE1), argThat(request -> request.kind() == VehicleLocationKind.IN_WORKSHOP
+                && request.kp() == null && PARKING_SITE1.equals(request.parkingSiteId())));
+        assertTrue(LocatorJ._find(VehicleLocationDialog.class).isEmpty());
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE2));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("vehicle-locate")));
+        @SuppressWarnings("unchecked")
+        Select<VehicleLocationKind> unknownKind = LocatorJ._get(Select.class, spec -> spec.withId("location-kind"));
+        assertEquals(List.of(VehicleLocationKind.UNKNOWN), ComboBoxKt.getSuggestionItems(unknownKind));
+        assertEquals(VehicleLocationKind.UNKNOWN, unknownKind.getValue(), "lo unico que se ofrece");
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        verify(vehicleClient).recordLocation(eq(VEHICLE2), argThat(request -> request.kind() == VehicleLocationKind.UNKNOWN));
+    }
+
+    /**
+     * Un instrumento con la calibracion caducada hoy se marca, como en mto-frontend, y se sigue ofreciendo:
+     * lo que cuenta es la fecha del turno, que decide mantenimiento. Lo dice el servicio si lo dice, y si no, la fecha.
+     */
+    @Test
+    void anInstrumentWhoseCalibrationExpiredIsMarkedAsInMtoFrontend() {
+        LocalDate today = Formats.today();
+        LocalDate yesterday = today.minusDays(1);
+        assertEquals("PT-01 · Pertiga 1 · calibracion caducada (" + Formats.date(yesterday) + ")",
+                ResourcesPickers.instrumentLabel(new InstrumentSummaryDto(INSTRUMENT1, "PT-01", "Pertiga 1", InstrumentKind.EARTHING_POLE, yesterday)));
+        assertEquals("PT-01 · Pertiga 1 (calibrado hasta " + Formats.date(today) + ")",
+                ResourcesPickers.instrumentLabel(new InstrumentSummaryDto(INSTRUMENT1, "PT-01", "Pertiga 1", InstrumentKind.EARTHING_POLE, today)),
+                "hoy todavia vale");
+        assertEquals("PT-01 · Pertiga 1 · calibracion caducada (" + Formats.date(today) + ")",
+                ResourcesPickers.instrumentLabel(new InstrumentSummaryDto(INSTRUMENT1, "PT-01", "Pertiga 1", InstrumentKind.EARTHING_POLE, today, true)),
+                "si el servicio dice que ha caducado, ha caducado");
+        assertEquals("PT-01 · Pertiga 1 (sin calibracion)",
+                ResourcesPickers.instrumentLabel(new InstrumentSummaryDto(INSTRUMENT1, "PT-01", "Pertiga 1", InstrumentKind.EARTHING_POLE, null)));
     }
 
     private static VehicleLocationDto withAccessPoint(VehicleLocationDto location, String accessPoint, AccessPointSummaryDto trackAccessPoint) {

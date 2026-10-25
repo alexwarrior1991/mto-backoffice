@@ -21,6 +21,7 @@ import com.alejandro.mtobackoffice.client.dto.jobs.JobStatus;
 import com.alejandro.mtobackoffice.client.dto.jobs.JobType;
 import com.alejandro.mtobackoffice.client.dto.jobs.UploadedFile;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OperationDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.OperationErrorDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OperationStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftVehicleDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.VehicleParkingRequest;
@@ -849,8 +850,13 @@ class ClientLayerTest {
                                             "steadyArmType":"SA1","steadyArmLength":1200}],
                             "disconnector":{"id":40,"name":"SEC-40","onLoad":true,"function":"FEED","station":"ATOCHA",
                                             "track":"VIA 3","connectedTrack":"VIA 2"},
+                            "disconnectors":[{"id":40,"name":"SEC-40","onLoad":true,"function":"FEED","station":"ATOCHA",
+                                              "track":"VIA 3","connectedTrack":"VIA 2"},
+                                             {"id":41,"name":"SEC-41","onLoad":false,"function":"SurgeA"}],
                             "fieldOfTomorrow":{"deep":[1]}},
-                           {"id":8,"code":"P-008","kp":"70.000","orderInTrack":2,"sectionings":[],"cantilevers":[]}],
+                           {"id":8,"code":"P-008","kp":"70.000","orderInTrack":2,"sectionings":[],"cantilevers":[]},
+                           {"id":9,"code":"P-009","kp":"80.000","orderInTrack":3,"sectionings":[],"cantilevers":[],
+                            "disconnector":{"id":42,"name":"SEC-42"}}],
                          "sectionInsulators":[
                            {"id":50,"name":"AIS-50","kp":"15.000","installationType":"TRACK_CONNECTION","enabled":true,
                             "station":"ATOCHA","track":"VIA 1","connectedTrack":"VIA 2",
@@ -862,7 +868,7 @@ class ClientLayerTest {
         assertEquals("VIA 1", schematic.trackName());
         assertEquals("EP4", schematic.executionPackageName());
         assertEquals(List.of("ATOCHA", "CHAMARTIN"), schematic.stations());
-        assertEquals(2, schematic.profiles().size());
+        assertEquals(3, schematic.profiles().size());
         TrackSchematicDto.ProfileNode first = schematic.profiles().getFirst();
         assertEquals("P-007", first.code());
         assertEquals("12.345", first.kp());
@@ -874,9 +880,16 @@ class ClientLayerTest {
         assertEquals("ATOCHA", first.disconnector().station());
         assertEquals("VIA 2", first.disconnector().connectedTrack(), "la otra via de uno que pone dos en paralelo (V27)");
         assertEquals("VIA 3", first.disconnector().track(), "la via que maniobra cuando no es la del poste");
+        assertEquals(List.of("SEC-40", "SEC-41"), first.disconnectors().stream().map(TrackSchematicDto.DisconnectorMark::name).toList(),
+                "un poste admite varios (V29), en el orden del servicio");
+        assertEquals("SurgeA", first.disconnectors().get(1).function());
         TrackSchematicDto.ProfileNode second = schematic.profiles().get(1);
         assertNull(second.disconnector(), "lo que el servicio no manda es null");
+        assertTrue(second.disconnectors().isEmpty(), "sin seccionadores, la lista vacia");
         assertTrue(second.cantilevers().isEmpty());
+        TrackSchematicDto.ProfileNode third = schematic.profiles().get(2);
+        assertEquals(List.of(42L), third.disconnectors().stream().map(TrackSchematicDto.DisconnectorMark::id).toList(),
+                "un servicio anterior al V29 solo manda disconnector: es la lista de uno");
         TrackSchematicDto.InsulatorMark insulator = schematic.sectionInsulators().getFirst();
         assertEquals("AIS-50", insulator.name());
         assertEquals("VIA 2", insulator.connectedTrack());
@@ -1351,15 +1364,21 @@ class ClientLayerTest {
         server.verify();
     }
 
-    /** README_API.md §4: la coleccion de hijos que se manda es el estado final; el 1:1 se manda entero para mantenerlo. */
+    /**
+     * README_API.md §4: la coleccion de hijos que se manda es el estado final. Los seccionadores del
+     * poste (varios desde el V29) no son hijos: el servicio los ignora al escribir y vuelven como se leyeron.
+     */
     @Test
-    void aProfileTravelsWithItsTypedCantileversTheirSteadyArmAndItsDisconnector() {
+    void aProfileTravelsWithItsTypedCantileversTheirSteadyArmAndItsDisconnectors() {
         server.expect(requestTo(GATEWAY + "/api/configuration/profiles/7"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("""
                         {"id":7,"profileId":"P-007","kp":"12.345","trackId":3,"versionNumber":2,
                          "disconnector":{"id":5,"name":"SEC-1","onLoad":true,"stationId":12,"profileId":7,
                                          "profileCode":"P-007","profileKp":"12.345","disconnectorFunction":{"id":9,"code":"Disc"}},
+                         "disconnectors":[{"id":5,"name":"SEC-1","onLoad":true,"stationId":12,"profileId":7,
+                                           "profileCode":"P-007","profileKp":"12.345","disconnectorFunction":{"id":9,"code":"Disc"}},
+                                          {"id":6,"name":"SEC-2","profileId":7,"disconnectorFunction":{"id":10,"code":"SurgeA"}}],
                          "cantilevers":[{"id":21,"cwHeight":5300,"stagger":200,"cantileverType":{"id":4,"code":"CT1"},"profileId":7,
                                          "steadyArm":{"id":31,"length":1200,"steadyArmType":{"id":6,"code":"SA1"},"cantileverId":21,"armFieldOfTomorrow":true}}]}
                         """, MediaType.APPLICATION_JSON));
@@ -1375,11 +1394,17 @@ class ClientLayerTest {
                 .andExpect(jsonPath("$.cantilevers[1].steadyArm").value(nullValue()))
                 .andExpect(jsonPath("$.disconnector.id").value(5))
                 .andExpect(jsonPath("$.disconnector.name").value("SEC-1"))
+                .andExpect(jsonPath("$.disconnectors.length()").value(2))
+                .andExpect(jsonPath("$.disconnectors[1].id").value(6))
+                .andExpect(jsonPath("$.disconnectors[1].disconnectorFunction.code").value("SurgeA"))
+                .andExpect(jsonPath("$.disconnectorsOnThePole").doesNotExist())
                 .andRespond(withSuccess("{\"id\":7,\"versionNumber\":3}", MediaType.APPLICATION_JSON));
 
         ProfileDto profile = asUser(() -> profileClient.findById(7L));
         assertEquals("SEC-1", profile.getDisconnector().getName());
         assertEquals("P-007 (kp 12.345)", profile.getDisconnector().profileLabel());
+        assertEquals(List.of("SEC-1", "SEC-2"), profile.getDisconnectors().stream().map(DisconnectorDto::getName).toList());
+        assertFalse(profile.extras().containsKey("disconnectors"), "es un campo, no un extra que viaje dos veces");
         assertEquals(1200L, profile.getCantilevers().getFirst().getSteadyArm().getLength());
 
         CantileverDto added = new CantileverDto();
@@ -2676,6 +2701,15 @@ class ClientLayerTest {
         assertTrue(unknown.status().isFinished(), "un estado desconocido no se pregunta sin fin");
         assertEquals("OPS-410", TaskGeneration.failureOf(unknown).getProblem().code());
         assertEquals(500, TaskGeneration.failureOf(unknown).getStatus().value());
+        // Un codigo que no es estandar no tiene nombre en HttpStatus: sigue siendo su error, no una excepcion al decirlo.
+        OperationDto<GenerateTasksResultDto> odd = new OperationDto<>(UUID.fromString(operation), "GENERATE_TASKS", "EP-3", OperationStatus.FAILED,
+                null, null, null, null, null, null, new OperationErrorDto(499, "XXX-499", "Client closed the request"));
+        BackofficeApiException oddFailure = TaskGeneration.failureOf(odd);
+        assertEquals(499, oddFailure.getStatus().value());
+        assertEquals("HTTP 499", oddFailure.getProblem().title());
+        assertEquals("XXX-499", oddFailure.getProblem().code());
+        assertEquals(500, TaskGeneration.failureOf(new OperationDto<>(UUID.fromString(operation), "GENERATE_TASKS", "EP-3", OperationStatus.FAILED,
+                null, null, null, null, null, null, new OperationErrorDto(42, null, "nonsense"))).getStatus().value(), "lo que no es un codigo HTTP es un 500");
         server.verify();
     }
 

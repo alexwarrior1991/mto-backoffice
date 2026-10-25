@@ -20,6 +20,6 @@ public record InstrumentDto(UUID id, String code, String name, InstrumentKind ki
     }
 
     public InstrumentSummaryDto summary() {
-        return new InstrumentSummaryDto(id, code, name, kind, calibrationExpiresOn);
+        return new InstrumentSummaryDto(id, code, name, kind, calibrationExpiresOn, calibrationExpired);
     }
 }

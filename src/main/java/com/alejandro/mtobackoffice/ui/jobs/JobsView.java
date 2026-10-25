@@ -21,6 +21,7 @@ import com.alejandro.mtobackoffice.ui.master.Pickers;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.master.ReferenceCatalog;
 import com.alejandro.mtobackoffice.ui.support.Downloads;
+import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.PageVisibility;
 import com.alejandro.mtobackoffice.ui.support.SharedPolling;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
@@ -64,7 +65,6 @@ import org.springframework.http.ResponseEntity;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -119,7 +119,7 @@ public class JobsView extends VerticalLayout {
     static final Set<String> REPUBLISH_BY_STATION = Set.of("disconnector", "section-insulator");
 
     private static final Logger LOGGER = LoggerFactory.getLogger(JobsView.class);
-    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("dd/MM HH:mm:ss").withZone(ZoneId.systemDefault());
+    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("dd/MM HH:mm:ss");
 
     /** Lo ultimo que se pidio al servicio: pagina y filtros. Lo lee tambien el hilo de consulta. */
     private record Query(int page, JobType type, JobStatus status) {
@@ -567,7 +567,7 @@ public class JobsView extends VerticalLayout {
         grid.addColumn(this::labelOf).setHeader("Trabajo").setKey("label").setFlexGrow(1);
         grid.addColumn(job -> job.type() == null ? "" : job.type().label()).setHeader("Tipo").setKey("type").setAutoWidth(true);
         grid.addColumn(job -> job.status() == null ? "" : job.status().label()).setHeader("Estado").setKey("status").setAutoWidth(true);
-        grid.addColumn(job -> job.createdAt() == null ? "" : TIME.format(job.createdAt())).setHeader("Lanzado").setKey("createdAt").setAutoWidth(true);
+        grid.addColumn(job -> Formats.dateTime(job.createdAt(), TIME)).setHeader("Lanzado").setKey("createdAt").setAutoWidth(true);
         grid.addColumn(new ComponentRenderer<>(JobsView::progress)).setHeader("Progreso").setKey("progress").setAutoWidth(true);
         grid.addColumn(job -> String.valueOf(job.successfulItems())).setHeader("Correctos").setKey("successful").setAutoWidth(true);
         grid.addColumn(job -> String.valueOf(job.failedItems())).setHeader("Fallidos").setKey("failed").setAutoWidth(true);

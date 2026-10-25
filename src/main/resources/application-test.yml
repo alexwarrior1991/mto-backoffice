@@ -13,6 +13,9 @@ app:
     base-url: ${MTO_GATEWAY_URL:http://localhost:8090}
   frontend:
     url: http://frontend.test
+  display:
+    # Un navegador simulado no dice su zona: los tests pintan las fechas en UTC, en cualquier maquina.
+    time-zone: UTC
 
 vaadin:
   launch-browser: false

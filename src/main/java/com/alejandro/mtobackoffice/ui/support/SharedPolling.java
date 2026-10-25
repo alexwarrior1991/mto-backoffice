@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.ui.support;
 
+import com.vaadin.flow.component.UIDetachedException;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,11 +52,17 @@ public class SharedPolling {
                 : null;
     }
 
-    /** Ejecuta la tarea cada {@code period}; un fallo se registra y no para el ciclo. */
+    /**
+     * Ejecuta la tarea cada {@code period}; un fallo se registra y no para el ciclo. Una pasada que ya
+     * estaba en marcha cuando su pantalla se cerro termina con {@code UIDetachedException} al llevar su
+     * respuesta con {@code UI.access()}: no es un fallo, y no se avisa.
+     */
     public ScheduledFuture<?> every(Duration period, Runnable task) {
         Runnable pass = () -> {
             try {
                 task.run();
+            } catch (UIDetachedException closed) {
+                LOGGER.debug("La pantalla de una consulta en segundo plano ya se habia cerrado");
             } catch (RuntimeException failure) {
                 LOGGER.warn("La consulta en segundo plano ha fallado: {}", failure.getMessage());
             }

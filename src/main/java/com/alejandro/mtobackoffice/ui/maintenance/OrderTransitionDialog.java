@@ -9,6 +9,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.TeamSummaryDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ConflictApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
+import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.Screens;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.button.Button;
@@ -79,9 +80,10 @@ public class OrderTransitionDialog extends Dialog {
                 add(new Paragraph("Al planificar se reservan en el almacen los materiales de la orden."));
                 DatePicker plannedDate = new DatePicker("Prevista");
                 plannedDate.setId("order-transition-planned-date");
-                plannedDate.setMin(LocalDate.now());
+                LocalDate today = Formats.today();
+                plannedDate.setMin(today);
                 binder.forField(plannedDate).asRequired("La fecha es obligatoria").bind("plannedDate");
-                form.setPlannedDate(order.plannedDate() == null || order.plannedDate().isBefore(LocalDate.now()) ? LocalDate.now() : order.plannedDate());
+                form.setPlannedDate(order.plannedDate() == null || order.plannedDate().isBefore(today) ? today : order.plannedDate());
                 layout.add(plannedDate);
             }
             case ASSIGN -> {

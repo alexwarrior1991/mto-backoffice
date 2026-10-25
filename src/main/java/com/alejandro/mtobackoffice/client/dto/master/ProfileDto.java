@@ -1,14 +1,19 @@
 package com.alejandro.mtobackoffice.client.dto.master;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.math.BigDecimal;
 import java.util.List;
 
 /**
  * Perfil (poste). Las referencias a catalogo van como {@link LovRef}; las tres relaciones N:M
  * ({@code sectionings}, {@code anchorages}, {@code sectioningFeedings}) son listas que reemplazan
- * el conjunto entero. {@code disconnector} es una relacion 1:1 en la que {@code null} significa
- * "desvincular", asi que no se toca: se devuelve tal cual llego. Las mensulas no se editan aqui:
- * van a {@code null} al guardar. {@code kp} es texto en el servicio ({@code \d+(\.\d+)?}).
+ * el conjunto entero. {@code disconnectors} son los seccionadores que cuelgan del poste (un poste
+ * admite varios, V29 de mto-configuration), por nombre, y {@code disconnector}, el primero de ellos,
+ * que el servicio sigue mandando para quien lea uno solo. Los dos son solo de salida: el servicio
+ * los ignora al escribir un perfil (mto-configuration#31), el vinculo se cambia desde el editor del
+ * seccionador y aqui vuelven tal cual llegaron. Las mensulas no se editan aqui: van a {@code null}
+ * al guardar. {@code kp} es texto en el servicio ({@code \d+(\.\d+)?}).
  */
 public class ProfileDto extends MasterDto {
 
@@ -21,6 +26,7 @@ public class ProfileDto extends MasterDto {
     private BigDecimal railPoleDistance;
     private Long trackId;
     private DisconnectorDto disconnector;
+    private List<DisconnectorDto> disconnectors;
     private List<CantileverDto> cantilevers;
     private LovRef profileStatus;
     private LovRef poleType;
@@ -104,6 +110,26 @@ public class ProfileDto extends MasterDto {
 
     public void setDisconnector(DisconnectorDto disconnector) {
         this.disconnector = disconnector;
+    }
+
+    public List<DisconnectorDto> getDisconnectors() {
+        return disconnectors;
+    }
+
+    public void setDisconnectors(List<DisconnectorDto> disconnectors) {
+        this.disconnectors = disconnectors;
+    }
+
+    /**
+     * Los seccionadores del poste para ensenarlos: {@code disconnectors} y, si el servicio no lo
+     * manda (uno anterior al V29), {@code disconnector} como lista de uno. No viaja.
+     */
+    @JsonIgnore
+    public List<DisconnectorDto> disconnectorsOnThePole() {
+        if (disconnectors != null) {
+            return disconnectors;
+        }
+        return disconnector == null ? List.of() : List.of(disconnector);
     }
 
     public List<CantileverDto> getCantilevers() {
