@@ -34,7 +34,8 @@ public final class ClientTimeZone {
 
     /** La del navegador de esa UI, o la de por defecto si no la ha dicho o no es una zona valida. */
     public static ZoneId of(UI ui) {
-        String id = ui.getPage().getExtendedClientDetails().getTimeZoneId();
+        var details = ui.getPage().getExtendedClientDetails();
+        String id = details == null ? null : details.getTimeZoneId();
         if (id == null || id.isBlank()) {
             return fallback;
         }
