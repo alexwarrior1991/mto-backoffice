@@ -23,8 +23,8 @@ import java.util.stream.Collectors;
  * <p>Es esquematico a proposito, no el layout CAD: la distancia entre postes es siempre la misma y
  * el KP se escribe debajo de cada uno. De cada poste se pintan su codigo, el tipo de poste y el
  * estado, sus seccionamientos, sus mensulas como brazos cortos (con el tipo, hacia el lado que da el
- * signo de {@code railPoleDistance}: negativo, a la izquierda) y, si lo lleva, su seccionador como
- * un rombo con su nombre. Los aisladores de seccion van sobre la linea, colocados entre los dos
+ * signo de {@code railPoleDistance}: negativo, a la izquierda) y sus seccionadores como rombos con su
+ * nombre, al otro lado del poste y apilados hacia arriba si cuelga mas de uno. Los aisladores de seccion van sobre la linea, colocados entre los dos
  * postes vecinos por KP (interpolacion lineal; fuera de rango, en el extremo), con sus agujas. El
  * detalle completo de cada elemento va en su {@code <title>}, que el navegador enseña al pasar por
  * encima.</p>
@@ -45,6 +45,10 @@ public final class SchematicDrawing {
     public static final int HEIGHT = 350;
     private static final int MIN_WIDTH = 480;
     private static final int ARM_LENGTH = 38;
+    /** La altura del rombo del primer seccionador de un poste. */
+    static final int DISCONNECTOR_Y = LINE_Y - 60;
+    /** Cuanto sube cada seccionador mas del mismo poste: el rombo, su nombre y su detalle sin pisarse. */
+    static final int DISCONNECTOR_STEP = 32;
     private static final String UTF_8 = StandardCharsets.UTF_8.name();
 
     private SchematicDrawing() {
@@ -169,23 +173,30 @@ public final class SchematicDrawing {
             text(out, "sect", x, LINE_Y + 38, null, String.join(", ", profile.sectionings()));
         }
 
-        DisconnectorMark disconnector = profile.disconnector();
-        if (disconnector != null) {
-            double cx = x - direction * 16;
-            double cy = LINE_Y - 60;
-            out.append("<g id=\"disconnector-").append(disconnector.id()).append("\"><title>")
-                    .append(esc(disconnectorTitle(disconnector))).append("</title>");
-            out.append("<path class=\"disc\" d=\"M").append(fmt(cx)).append(' ').append(fmt(cy - 8))
-                    .append(" L").append(fmt(cx + 8)).append(' ').append(fmt(cy))
-                    .append(" L").append(fmt(cx)).append(' ').append(fmt(cy + 8))
-                    .append(" L").append(fmt(cx - 8)).append(' ').append(fmt(cy)).append(" Z\"/>");
-            text(out, "disc-label", cx - direction * 12, cy + 4, direction < 0 ? "start" : "end", disconnector.name());
-            String detail = join(" · ", disconnector.station(),
-                    disconnector.track() == null ? null : "maniobra " + disconnector.track());
-            if (!detail.isEmpty()) {
-                text(out, "small", cx - direction * 12, cy + 16, direction < 0 ? "start" : "end", detail);
-            }
-            out.append("</g>");
+        List<DisconnectorMark> disconnectors = profile.disconnectors();
+        for (int k = 0; k < disconnectors.size(); k++) {
+            disconnector(out, disconnectors.get(k), x - direction * 16, disconnectorY(k), direction);
+        }
+        out.append("</g>");
+    }
+
+    /** La altura del rombo del seccionador que ocupa esa posicion en su poste: el primero abajo. */
+    public static double disconnectorY(int index) {
+        return DISCONNECTOR_Y - (double) index * DISCONNECTOR_STEP;
+    }
+
+    private static void disconnector(StringBuilder out, DisconnectorMark disconnector, double cx, double cy, int direction) {
+        out.append("<g id=\"disconnector-").append(disconnector.id()).append("\"><title>")
+                .append(esc(disconnectorTitle(disconnector))).append("</title>");
+        out.append("<path class=\"disc\" d=\"M").append(fmt(cx)).append(' ').append(fmt(cy - 8))
+                .append(" L").append(fmt(cx + 8)).append(' ').append(fmt(cy))
+                .append(" L").append(fmt(cx)).append(' ').append(fmt(cy + 8))
+                .append(" L").append(fmt(cx - 8)).append(' ').append(fmt(cy)).append(" Z\"/>");
+        text(out, "disc-label", cx - direction * 12, cy + 4, direction < 0 ? "start" : "end", disconnector.name());
+        String detail = join(" · ", disconnector.station(),
+                disconnector.track() == null ? null : "maniobra " + disconnector.track());
+        if (!detail.isEmpty()) {
+            text(out, "small", cx - direction * 12, cy + 16, direction < 0 ? "start" : "end", detail);
         }
         out.append("</g>");
     }

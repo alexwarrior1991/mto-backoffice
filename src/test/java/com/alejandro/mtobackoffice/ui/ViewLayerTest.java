@@ -265,6 +265,7 @@ import com.alejandro.mtobackoffice.ui.jobs.JobsView;
 import com.alejandro.mtobackoffice.ui.lov.LovBulkCreateDialog;
 import com.alejandro.mtobackoffice.ui.lov.LovCrudView;
 import com.alejandro.mtobackoffice.ui.master.EnabledFilter;
+import com.alejandro.mtobackoffice.ui.master.ProfileEditor;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.master.TracksView;
 import com.alejandro.mtobackoffice.ui.views.HomeView;
@@ -1399,9 +1400,10 @@ class ViewLayerTest {
         // Cuelga de un poste de VIA 1 y une otras dos: un haz de vias.
         var disconnector = new TrackSchematicDto.DisconnectorMark(40L, "SEC-40", true, "FEED", "ATOCHA", "VIA 3", "VIA 2");
         var p1 = new TrackSchematicDto.ProfileNode(1L, "P-001", "10.000", 1, "55.000", "HEB", null, "OK", "-2.500",
-                List.of("S1"), List.of(arm), null);
+                List.of("S1"), List.of(arm), null, List.of());
+        // Solo `disconnector`, como un servicio anterior al V29: se lee como una lista de uno.
         var p2 = new TrackSchematicDto.ProfileNode(2L, "P-002", "20.000", 2, null, null, null, null, "2.500",
-                List.of(), List.of(), disconnector);
+                List.of(), List.of(), disconnector, null);
         var turnout = new TrackSchematicDto.SwitchMark(60L, "W31", "15.500", 9, "VIA 1");
         var insulator = new TrackSchematicDto.InsulatorMark(50L, "AIS-50", "15.000", "TRACK_CONNECTION", true,
                 "ATOCHA", "VIA 1", "VIA 2", List.of(turnout));
@@ -1452,8 +1454,10 @@ class ViewLayerTest {
     void whatTheServiceSendsIsEscapedBeforeItBecomesSvg() {
         loginAs("config.lector", "ROLE_CONFIG_READ");
         stubTracks(threeTracks());
+        var first = new TrackSchematicDto.DisconnectorMark(1L, "\"SEC\" & co", null, null, null, "<i>", null);
+        var second = new TrackSchematicDto.DisconnectorMark(2L, "<u>SEC-2</u>", null, null, "<s>", null, null);
         var evil = new TrackSchematicDto.ProfileNode(9L, "<script>P</script>", "1.000", 1, null, null, null, null, null,
-                List.of("<b>"), List.of(), new TrackSchematicDto.DisconnectorMark(1L, "\"SEC\" & co", null, null, null, "<i>", null));
+                List.of("<b>"), List.of(), first, List.of(first, second));
         when(trackClient.schematic(3L)).thenReturn(new TrackSchematicDto(3L, "VIA \"1\" & <b>", true, null, List.of(), List.of(evil), List.of()));
 
         UI.getCurrent().navigate(TRACKS_ROUTE);
@@ -1467,6 +1471,46 @@ class ViewLayerTest {
         assertTrue(svg.contains("VIA &quot;1&quot; &amp; &lt;b&gt;"));
         assertTrue(svg.contains("&quot;SEC&quot; &amp; co"));
         assertTrue(svg.contains("maniobra &lt;i&gt;"), "la via que maniobra tambien");
+        assertFalse(svg.contains("<u>") || svg.contains("<s>"), "y el segundo seccionador del poste: " + svg);
+        assertTrue(svg.contains("&lt;u&gt;SEC-2&lt;/u&gt;") && svg.contains("&lt;s&gt;"));
+    }
+
+    /**
+     * Un poste admite varios seccionadores (V29 de mto-configuration): se dibujan todos, en el orden
+     * en que llegan, apilados al otro lado del poste sin pisarse, y el resumen los cuenta a todos.
+     */
+    @Test
+    void aPoleWithTwoDisconnectorsDrawsBothStackedAndTheSummaryCountsThem() {
+        loginAs("config.lector", "ROLE_CONFIG_READ");
+        stubTracks(threeTracks());
+        var lower = new TrackSchematicDto.DisconnectorMark(41L, "NAT-NS3", true, "Disc", "NAT", null, null);
+        var upper = new TrackSchematicDto.DisconnectorMark(42L, "NAT-NS4", false, "Disc", "NAT", "VIA 3", null);
+        var pole = new TrackSchematicDto.ProfileNode(1L, "68-2.05", "10.000", 1, null, null, null, null, "2.500",
+                List.of(), List.of(), lower, List.of(lower, upper));
+        var plain = new TrackSchematicDto.ProfileNode(2L, "68-2.06", "20.000", 2, null, null, null, null, "2.500",
+                List.of(), List.of(), null, List.of());
+        when(trackClient.schematic(3L)).thenReturn(new TrackSchematicDto(3L, "VIA 1", true, "EP5", List.of("NAT"),
+                List.of(pole, plain), List.of()));
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(schematicButton(0, 3L));
+
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        assertEquals("2 perfiles · 0 mensulas · 2 seccionadores · 0 aisladores · Estaciones: NAT",
+                LocatorJ._get(dialog, Span.class, spec -> spec.withId(TrackSchematicDialog.SUMMARY_ID)).getText(),
+                "dos seccionadores en un poste son dos, no un poste con seccionador");
+        String svg = drawing(dialog);
+        int first = svg.indexOf("id=\"disconnector-41\"");
+        int second = svg.indexOf("id=\"disconnector-42\"");
+        assertTrue(first > 0 && second > first, "los dos, en el orden en que llegan: " + svg);
+        assertTrue(svg.indexOf("id=\"pole-2\"") > second, "dentro de su poste");
+        assertTrue(svg.contains("Seccionador NAT-NS3 · en carga · funcion Disc · estacion NAT"));
+        assertTrue(svg.contains("Seccionador NAT-NS4 · sin carga · funcion Disc · estacion NAT · maniobra la via VIA 3"));
+        // El rombo de cada uno, centrado en su altura: el segundo, un escalon por encima.
+        String y0 = String.format(java.util.Locale.ROOT, "%.1f", SchematicDrawing.disconnectorY(0));
+        String y1 = String.format(java.util.Locale.ROOT, "%.1f", SchematicDrawing.disconnectorY(1));
+        assertTrue(svg.substring(first, second).contains(" " + y0 + " L"), "el primero, a la altura de siempre");
+        assertTrue(svg.substring(second).contains(" " + y1 + " L"), "el segundo, encima");
     }
 
     @Test
@@ -1587,7 +1631,7 @@ class ViewLayerTest {
         assertEquals(1, SchematicDrawing.armDirection(profiles.get(1)));
 
         // Dos tramos con la kilometracion reiniciada (README_API §4): el aislador cae en el tramo que lo contiene primero.
-        var reinicio = new TrackSchematicDto.ProfileNode(3L, "P-003", "5.000", 3, null, null, null, null, null, List.of(), List.of(), null);
+        var reinicio = new TrackSchematicDto.ProfileNode(3L, "P-003", "5.000", 3, null, null, null, null, null, List.of(), List.of(), null, null);
         var dosTramos = List.of(profiles.get(0), profiles.get(1), reinicio);
         assertEquals(SchematicDrawing.xOf(0) + SchematicDrawing.STEP * 0.5, SchematicDrawing.insulatorX(dosTramos, "15.000"), 0.001);
         assertEquals(SchematicDrawing.xOf(1) + SchematicDrawing.STEP * (20.0 - 8.0) / (20.0 - 5.0), SchematicDrawing.insulatorX(dosTramos, "8.000"), 0.001,
@@ -1954,22 +1998,21 @@ class ViewLayerTest {
     }
 
     /**
-     * El seccionador de un perfil se ensena de solo lectura y vuelve como se leyo: el vinculo es del
-     * seccionador, y el servicio ignora el que llega dentro del perfil (mto-configuration#31).
+     * Los seccionadores de un perfil se ensenan de solo lectura y vuelven como se leyeron: el vinculo es
+     * de cada seccionador, y el servicio ignora los que llegan dentro del perfil (mto-configuration#31).
+     * Un poste admite varios (V29): se ensenan todos, por el orden en que llegan.
      */
     @Test
-    void theDisconnectorOfAProfileIsReadOnlyAndTravelsAsRead() {
+    void theDisconnectorsOfAProfileAreReadOnlyAndTravelAsRead() {
         loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
         when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null, null)));
         when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
                 .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
         ProfileDto profile = profileWithOneCantilever();
-        DisconnectorDto hanging = new DisconnectorDto();
-        hanging.setId(5L);
-        hanging.setName("SEC-1");
-        hanging.setProfileId(7L);
-        hanging.setDisconnectorFunction(new LovRef(9L, "Disc", "Seccionador"));
+        DisconnectorDto hanging = disconnectorOnPole(5L, "SEC-1", "Disc");
+        DisconnectorDto other = disconnectorOnPole(6L, "SEC-2", "SurgeA");
         profile.setDisconnector(hanging);
+        profile.setDisconnectors(List.of(hanging, other));
         when(profileClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(profile), 0, 50));
         when(profileClient.update(eq(7L), any())).thenAnswer(call -> call.getArgument(1));
 
@@ -1978,17 +2021,41 @@ class ViewLayerTest {
         Grid<ProfileDto> profiles = LocatorJ._get(Grid.class);
         LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(profiles, 0, "actions"), Button.class, spec -> spec.withId("edit-7")));
         Dialog dialog = LocatorJ._get(Dialog.class);
-        TextField disconnector = LocatorJ._get(dialog, TextField.class, spec -> spec.withId("profile-disconnector"));
-        assertTrue(disconnector.isReadOnly(), "el vinculo se cambia desde Seccionadores");
-        assertEquals("SEC-1 (Disc)", disconnector.getValue());
-        assertEquals("El que cuelga de este perfil. Se vincula desde Seccionadores, en el editor del seccionador.",
-                disconnector.getHelperText());
+        TextField disconnectors = LocatorJ._get(dialog, TextField.class, spec -> spec.withId("profile-disconnectors"));
+        assertTrue(disconnectors.isReadOnly(), "el vinculo se cambia desde Seccionadores");
+        assertEquals("SEC-1 (Disc), SEC-2 (SurgeA)", disconnectors.getValue());
+        assertEquals("Los que cuelgan de este perfil. Cada uno se vincula desde Seccionadores, en su editor.",
+                disconnectors.getHelperText());
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
 
         verify(profileClient).update(eq(7L), argThat(dto -> dto.getDisconnector() != null
                 && Long.valueOf(5L).equals(dto.getDisconnector().getId())
-                && Long.valueOf(7L).equals(dto.getDisconnector().getProfileId())));
+                && Long.valueOf(7L).equals(dto.getDisconnector().getProfileId())
+                && dto.getDisconnectors().stream().map(DisconnectorDto::getId).toList().equals(List.of(5L, 6L))));
         verifyNoInteractions(disconnectorClient);
+    }
+
+    /** Un servicio anterior al V29 solo manda {@code disconnector}: se ensena como el unico del poste, y sin el, «Ninguno». */
+    @Test
+    void aProfileWithOnlyTheOldDisconnectorKeyShowsItAndOneWithoutAnyShowsNone() {
+        ProfileDto old = profileWithOneCantilever();
+        old.setDisconnector(disconnectorOnPole(5L, "SEC-1", "Disc"));
+        assertEquals("SEC-1 (Disc)", ProfileEditor.disconnectorsText(old));
+        assertEquals(1, old.disconnectorsOnThePole().size());
+
+        ProfileDto none = profileWithOneCantilever();
+        none.setDisconnectors(List.of());
+        assertEquals("Ninguno", ProfileEditor.disconnectorsText(none));
+        assertEquals("Ninguno", ProfileEditor.disconnectorsText(profileWithOneCantilever()));
+    }
+
+    private static DisconnectorDto disconnectorOnPole(long id, String name, String function) {
+        DisconnectorDto disconnector = new DisconnectorDto();
+        disconnector.setId(id);
+        disconnector.setName(name);
+        disconnector.setProfileId(7L);
+        disconnector.setDisconnectorFunction(new LovRef(9L, function, null));
+        return disconnector;
     }
 
     /** README_API.md §4 quater: las agujas son una coleccion de hijos; el codigo tiene forma fija. */

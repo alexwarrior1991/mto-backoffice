@@ -24,14 +24,14 @@ import java.util.function.Function;
 /**
  * Alta o modificacion de un perfil: identificador, KP, via, medidas y las referencias a catalogo
  * (una por campo salvo seccionamientos, anclajes y aparatos de seccionamiento, que son varios),
- * sus mensulas (hasta tres, cada una con su brazo de atirantado) y, de solo lectura, el
- * seccionador que cuelga de el.
+ * sus mensulas (hasta tres, cada una con su brazo de atirantado) y, de solo lectura, los
+ * seccionadores que cuelgan de el (un poste admite varios).
  *
  * <p>Las mensulas siguen la regla de las colecciones de hijos (README_API.md §4): si nadie las
  * toca van a {@code null} y el servicio las deja como estan; si alguien las toca, va la lista
- * entera. El seccionador no se cambia desde aqui: el vinculo es suyo ({@code profileId}) y se
- * cambia en su editor, y el servicio ignora el que llega dentro del perfil
- * (mto-configuration#31). Viaja como se leyo, en la copia de la fila.</p>
+ * entera. Los seccionadores no se cambian desde aqui: el vinculo es de cada uno ({@code profileId}) y
+ * se cambia en su editor, y el servicio ignora los que llegan dentro del perfil
+ * (mto-configuration#31). Viajan como se leyeron, en la copia de la fila.</p>
  */
 public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
 
@@ -103,12 +103,12 @@ public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
         binder.forField(poleGaugeLocation).withValidator(Numbers.whole(false)).bind("poleGaugeLocation");
         binder.forField(railPoleDistance).withValidator(Numbers.whole(true)).bind("railPoleDistance");
 
-        // El seccionador se ensena, pero no pasa por el Binder ni se cambia aqui: ver la clase.
-        TextField disconnector = new TextField("Seccionador");
-        disconnector.setId("profile-disconnector");
-        disconnector.setReadOnly(true);
-        disconnector.setValue(dto.getDisconnector() == null ? "Ninguno" : Pickers.disconnectorRef(dto.getDisconnector()).label());
-        disconnector.setHelperText("El que cuelga de este perfil. Se vincula desde Seccionadores, en el editor del seccionador.");
+        // Los seccionadores se ensenan, pero no pasan por el Binder ni se cambian aqui: ver la clase.
+        TextField disconnectors = new TextField("Seccionadores");
+        disconnectors.setId("profile-disconnectors");
+        disconnectors.setReadOnly(true);
+        disconnectors.setValue(disconnectorsText(dto));
+        disconnectors.setHelperText("Los que cuelgan de este perfil. Cada uno se vincula desde Seccionadores, en su editor.");
 
         cantilevers = new ChildrenEditor<>("Mensulas", "cantilevers", dto.getCantilevers(), MAX_CANTILEVERS, CantileverDto::new,
                 (child, accepted) -> new CantileverDialog(child, lovs, accepted).open(), grid -> {
@@ -121,13 +121,19 @@ public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
 
         form.add(profileId, kp, track, orderInTrack, profileStatus, poleType, foundation, anchorageFoundation,
                 portal, returnSupport, supportType, assemblyConfiguration, sectionings, anchorages, sectioningFeedings,
-                span, heightCantileverSupport, poleGaugeLocation, railPoleDistance, disconnector, cantilevers);
+                span, heightCantileverSupport, poleGaugeLocation, railPoleDistance, disconnectors, cantilevers);
         wide(sectionings);
         wide(anchorages);
         wide(sectioningFeedings);
-        wide(disconnector);
+        wide(disconnectors);
         wide(cantilevers);
         ready();
+    }
+
+    /** Los seccionadores del poste por nombre, como los manda el servicio, o «Ninguno». */
+    public static String disconnectorsText(ProfileDto dto) {
+        List<String> labels = dto.disconnectorsOnThePole().stream().map(one -> Pickers.disconnectorRef(one).label()).toList();
+        return labels.isEmpty() ? "Ninguno" : String.join(", ", labels);
     }
 
     private static String armOf(CantileverDto child) {

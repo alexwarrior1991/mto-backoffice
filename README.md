@@ -126,9 +126,10 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   con su brazo de atirantado 1:1) y las **agujas** de un aislador de sección se editan dentro del
   editor del padre, en su propia tabla con alta, modificación y baja; al guardar, si nadie las
   tocó van a `null` y si alguien las tocó va la lista entera, que para el servicio es el estado
-  final (`README_API.md` §4: la que no mandas se borra). El **seccionador** de un perfil (1:1) se
-  enseña en el editor del perfil, de solo lectura: el vínculo es del seccionador y se cambia en su
-  editor, porque `mto-configuration` ignora el que llega dentro del perfil. En la lista de seccionadores el perfil se muestra
+  final (`README_API.md` §4: la que no mandas se borra). Los **seccionadores** de un perfil (un poste
+  admite varios desde el `V29` de `mto-configuration`) se enseñan en el editor del perfil, de solo
+  lectura: el vínculo es de cada seccionador y se cambia en su editor, porque `mto-configuration`
+  ignora los que llegan dentro del perfil. En la lista de seccionadores el perfil se muestra
   por su identificador y su KP, que el servicio manda ahora con cada fila (`profileCode`,
   `profileKp`) para no ir perfil por perfil. Y los mensajes de sistema de Vaadin quedan fijados en
   castellano y sin diálogo de sesión caducada: tras un reinicio la pantalla recarga sola y vuelve
@@ -223,8 +224,8 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   Vías* (también para quien solo lee): una ventana con la vía como una línea recta y, sobre ella, un
   poste por perfil a distancia uniforme, en el orden físico de la vía, con su código encima y su KP
   debajo, el tipo de poste y el estado, los seccionamientos, sus ménsulas como brazos (con el tipo,
-  hacia el lado que dice `railPoleDistance`) y su seccionador (con la otra vía, si pone dos en
-  paralelo); los aisladores de sección van sobre
+  hacia el lado que dice `railPoleDistance`) y sus seccionadores, apilados si cuelga más de uno (cada
+  uno con la otra vía, si pone dos en paralelo); los aisladores de sección van sobre
   la línea, colocados entre los dos perfiles vecinos por KP, con sus agujas; las estaciones de la
   vía, en la cabecera; el detalle de cada elemento, al pasar por encima. Es esquemático a propósito:
   no es el layout CAD. Lo que se dibuja es la proyección que `mto-configuration` devuelve en **una

@@ -10,7 +10,6 @@ import com.vaadin.flow.component.orderedlayout.Scroller;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 
 import java.util.List;
-import java.util.Objects;
 
 /**
  * La ventana con el esquema de una via: la cabecera (via y paquete), un resumen con los recuentos y
@@ -27,7 +26,8 @@ public class TrackSchematicDialog extends Dialog {
     public static final String LEGEND_ID = "schematic-legend";
 
     static final String LEGEND = "Un poste por perfil, a distancia uniforme y en el orden fisico de la via, con el codigo encima "
-            + "y el KP debajo; los brazos azules son las mensulas (con su tipo), el rombo un seccionador y la marca roja "
+            + "y el KP debajo; los brazos azules son las mensulas (con su tipo), cada rombo un seccionador (apilados si "
+            + "cuelga mas de uno del poste) y la marca roja "
             + "sobre la via un aislador de seccion. El detalle de cada elemento sale al pasar por encima.";
 
     public TrackSchematicDialog(TrackSchematicDto schematic) {
@@ -70,7 +70,7 @@ public class TrackSchematicDialog extends Dialog {
     static String summary(TrackSchematicDto schematic) {
         List<ProfileNode> profiles = schematic.profiles();
         long cantilevers = profiles.stream().mapToLong(profile -> profile.cantilevers().size()).sum();
-        long disconnectors = profiles.stream().map(ProfileNode::disconnector).filter(Objects::nonNull).count();
+        long disconnectors = profiles.stream().mapToLong(profile -> profile.disconnectors().size()).sum();
         String stations = schematic.stations().isEmpty() ? "sin estaciones" : "Estaciones: " + String.join(", ", schematic.stations());
         return count(profiles.size(), "perfil", "perfiles")
                 + " · " + count(cantilevers, "mensula", "mensulas")
