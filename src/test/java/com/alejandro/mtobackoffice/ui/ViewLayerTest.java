@@ -148,12 +148,15 @@ import com.alejandro.mtobackoffice.ui.resources.VehicleLocationDialog;
 import com.alejandro.mtobackoffice.ui.resources.VehicleTypeEditorDialog;
 import com.alejandro.mtobackoffice.ui.resources.VehicleTypesView;
 import com.alejandro.mtobackoffice.ui.resources.VehiclesView;
+import com.alejandro.mtobackoffice.ui.support.ClientTimeZone;
 import com.alejandro.mtobackoffice.ui.support.RevisionsDialog;
 import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.alejandro.mtobackoffice.ui.maintenance.CheckItemsDialog;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
 import com.alejandro.mtobackoffice.ui.users.TakeOut;
 import com.github.mvysny.kaributesting.v10.RouterLinkKt;
+import com.vaadin.flow.component.UIDetachedException;
+import com.vaadin.flow.component.page.ExtendedClientDetails;
 import com.vaadin.flow.router.RouterLink;
 import org.mockito.InOrder;
 import com.alejandro.mtobackoffice.client.dto.users.RealmProfileDto;
@@ -251,6 +254,7 @@ import com.alejandro.mtobackoffice.ui.stock.ProjectsView;
 import com.alejandro.mtobackoffice.ui.stock.StockRoutes;
 import com.alejandro.mtobackoffice.ui.stock.SuppliersView;
 import com.alejandro.mtobackoffice.ui.stock.WarehousesView;
+import java.time.ZoneId;
 import java.util.function.Function;
 import com.vaadin.flow.component.combobox.MultiSelectComboBox;
 import com.vaadin.flow.component.textfield.PasswordField;
@@ -1611,6 +1615,40 @@ class ViewLayerTest {
         } finally {
             polling.shutdown();
         }
+    }
+
+    /**
+     * Las fechas se pintan y se escriben en la zona del navegador de la persona, como en mto-frontend, y no en
+     * la del servidor (el contenedor corre en UTC): una hora escrita aqui es la misma en la SPA. Si el navegador
+     * no la dice, o dice una que no existe, vale la de por defecto ({@code app.display.time-zone}).
+     */
+    @Test
+    void datesArePaintedAndWrittenInTheZoneOfTheBrowser() {
+        UI ui = UI.getCurrent();
+        try {
+            assertEquals(ZoneId.of("UTC"), ClientTimeZone.fallback(), "la del perfil de test");
+            assertEquals(ClientTimeZone.fallback(), ClientTimeZone.current(), "un navegador que no la dice");
+
+            browserZone(ui, "America/New_York");
+            assertEquals(ZoneId.of("America/New_York"), ClientTimeZone.current());
+            Instant night = Instant.parse("2026-01-15T03:00:00Z");
+            assertEquals("14/01/2026 22:00", Formats.dateTime(night));
+            assertEquals(night, Formats.toInstant(LocalDateTime.of(2026, 1, 14, 22, 0)), "las 22:00 escritas son las 22:00 de la persona");
+            assertEquals(LocalDateTime.of(2026, 1, 14, 22, 0), Formats.toLocalDateTime(night));
+            assertEquals(Instant.parse("2026-01-14T05:00:00Z"), Formats.startOfDay(LocalDate.of(2026, 1, 14)));
+            assertEquals(Instant.parse("2026-01-15T04:59:59.999Z"), Formats.endOfDay(LocalDate.of(2026, 1, 14)));
+            assertEquals("15/01 03:00:00", Formats.dateTime(Instant.parse("2026-01-15T08:00:00Z"),
+                    java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm:ss")), "otro patron, la misma zona");
+
+            browserZone(ui, "Mars/Olympus");
+            assertEquals(ClientTimeZone.fallback(), ClientTimeZone.current(), "una zona que no existe no rompe nada");
+        } finally {
+            browserZone(ui, null);
+        }
+    }
+
+    private static void browserZone(UI ui, String zone) {
+        ExtendedClientDetails.updateFromValues(ui, key -> "v-tzid".equals(key) ? zone : null);
     }
 
     /** El reparto del dibujo, sin Vaadin: espaciado uniforme, el aislador entre sus vecinos por KP, el brazo al lado del poste. */

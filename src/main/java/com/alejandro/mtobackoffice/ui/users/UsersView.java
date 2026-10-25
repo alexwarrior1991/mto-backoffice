@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.configuration.security.UserRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.master.EnabledFilter;
+import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPages;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
@@ -35,8 +36,6 @@ import com.vaadin.flow.router.Route;
 import com.vaadin.flow.spring.security.AuthenticationContext;
 import jakarta.annotation.security.RolesAllowed;
 
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -70,7 +69,6 @@ public class UsersView extends VerticalLayout {
     static final int MAX_PAGE = 200;
     /** La forma {@code clave:valor} que exige el servicio para un atributo. */
     static final String ATTRIBUTE_PATTERN = "^[^:\\s]{1,255}:[^\\s]{0,255}$";
-    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault());
 
     private final UsersClient client;
     private final boolean canWrite;
@@ -142,7 +140,7 @@ public class UsersView extends VerticalLayout {
         grid.addColumn(dto -> dto.email() == null ? "" : dto.email()).setHeader("Email").setKey("email").setAutoWidth(true);
         grid.addColumn(dto -> yesNo(dto.emailVerified())).setHeader("Verificado").setKey("emailVerified").setAutoWidth(true);
         grid.addColumn(dto -> yesNo(dto.enabled())).setHeader("Activo").setKey("enabled").setAutoWidth(true);
-        grid.addColumn(dto -> dto.createdAt() == null ? "" : DATE_TIME.format(dto.createdAt())).setHeader("Creado").setKey("createdAt").setAutoWidth(true);
+        grid.addColumn(dto -> Formats.dateTime(dto.createdAt())).setHeader("Creado").setKey("createdAt").setAutoWidth(true);
         grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey(ACTIONS_COLUMN).setAutoWidth(true).setFlexGrow(0);
         grid.addItemDoubleClickListener(event -> open(event.getItem()));
         grid.setPageSize(PAGE_SIZE);

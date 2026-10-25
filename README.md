@@ -539,6 +539,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 | `MTO_FRONTEND_URL` | La SPA `mto-frontend`, para «Abrir en mto-frontend» (vacío: la barra no lo ofrece) | vacío (`dev`: `http://localhost:4200`) |
 | `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP | `2s` / `15s` |
 | `SPRING_THREADS_VIRTUAL_ENABLED` | Hilos virtuales: Tomcat, las tareas de Vaadin y cada pasada del sondeo compartido | `true` |
+| `APP_DISPLAY_TIME_ZONE` | La zona de las fechas si el navegador no dice la suya (con él, siempre la del navegador, como en mto-frontend) | `Asia/Jerusalem` |
 
 `.env.example` las recoge todas. Perfiles: `dev` (8085, abre el navegador, secreto local), `test`
 (nadie escucha en Keycloak ni en el gateway) y `prod` (realm, secreto y gateway obligatorios).

@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
  */
 public class ShiftForm {
 
-    private LocalDate shiftDate = LocalDate.now();
+    private LocalDate shiftDate = Formats.today();
     private TeamSummaryDto teamId;
     private String baseName = "";
     private String vehicle = "";

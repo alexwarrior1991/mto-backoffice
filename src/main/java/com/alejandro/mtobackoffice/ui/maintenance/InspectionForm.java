@@ -9,6 +9,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionUpdateReques
 import com.alejandro.mtobackoffice.client.dto.MergePatch;
 import com.alejandro.mtobackoffice.client.dto.maintenance.ShiftDto;
 import com.alejandro.mtobackoffice.ui.support.Changes;
+import com.alejandro.mtobackoffice.ui.support.Formats;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -21,7 +22,7 @@ public class InspectionForm {
     private AssetSummaryDto assetId;
     /** El turno en que se hizo, solo en el alta: sale en su parte. Una inspeccion no cambia de turno. */
     private ShiftDto shiftId;
-    private LocalDate inspectionDate = LocalDate.now();
+    private LocalDate inspectionDate = Formats.today();
     private String inspector = "";
     private InspectionKind inspectionKind = InspectionKind.VISUAL;
     private InspectionResult result = InspectionResult.OK;

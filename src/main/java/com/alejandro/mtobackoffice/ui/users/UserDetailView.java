@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.configuration.security.UserRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
+import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPanel;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
@@ -34,8 +35,6 @@ import com.vaadin.flow.router.RouteParameters;
 import com.vaadin.flow.spring.security.AuthenticationContext;
 import jakarta.annotation.security.RolesAllowed;
 
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -64,7 +63,6 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
     static final String ROLES_TAB = "Roles de cliente";
     static final String SESSIONS_TAB = "Sesiones";
     static final String CREDENTIALS_TAB = "Credenciales";
-    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault());
 
     private final UsersClient client;
     private final AuthenticationContext authentication;
@@ -206,7 +204,7 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
             parts.add(loaded.email());
         }
         if (loaded.createdAt() != null) {
-            parts.add("creado el " + DATE_TIME.format(loaded.createdAt()));
+            parts.add("creado el " + Formats.dateTime(loaded.createdAt()));
         }
         summary.setText(String.join(" · ", parts));
         pendingActions.setVisible(!loaded.requiredActions().isEmpty());

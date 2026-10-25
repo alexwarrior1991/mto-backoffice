@@ -254,7 +254,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (paginado, la más reciente primero; el 404 es «sin historial»); `LazyPanel`, la pestaña que
   pide sus datos al abrirse; `Downloads`, el fichero de un servicio servido a través de esta
   aplicación con `DownloadHandler`, que notifica en la pantalla un fallo; `Formats`, cantidades y
-  fechas; `SharedPolling`, el reloj compartido que vuelve a preguntar al servicio mientras hay una
+  fechas, en la zona del navegador (`ClientTimeZone`); `SharedPolling`, el reloj compartido que vuelve a preguntar al servicio mientras hay una
   pantalla abierta: los trabajos en curso y el contador de la campana (un hilo lleva el reloj y, con
   los hilos virtuales, cada pasada corre en el suyo: una llamada lenta solo retrasa su pantalla, y la
   pasada de una pantalla nunca se pisa consigo misma); `PageVisibility`, si la
@@ -708,7 +708,20 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   reiniciar; `BackofficeSystemMessages` deja apagado el aviso de sesión caducada para que Vaadin
   recargue en cuanto lo detecte y la cadena de seguridad reentre por el SSO de Keycloak. No se
   persisten las sesiones (serializar una sesión de Vaadin es frágil y el almacén de tokens se
-  perdería igual) ni se introduce una base de datos para los tokens: es un cliente.
+  perdería igual) ni se introduce una base de datos para los tokens: es un cliente. Por lo mismo,
+  **con varias réplicas la ruta lleva afinidad de sesión por cookie**: la sesión de Vaadin y los
+  tokens viven en la réplica que atendió a la persona, y sin afinidad cada petición que cae en otra
+  es una vuelta al SSO (README, «Desplegar con varias réplicas»).
+- **Las fechas se pintan y se escriben en la zona del navegador de cada persona**, como en
+  mto-frontend, no en la del servidor (el contenedor corre en UTC). `ClientTimeZone.current()` la lee
+  de `ExtendedClientDetails.getTimeZoneId()`, que Vaadin 25 trae ya en la petición de arranque, y
+  `Formats` la usa en todo: pintar un `Instant`, pasar lo escrito en un `DateTimePicker` a `Instant`
+  y vuelta, los días de un filtro (`startOfDay`/`endOfDay`), «hoy» (`Formats.today()`, también para
+  las caducidades) y «ahora». Ningún formateador lleva `ZoneId.systemDefault()`. Sin zona del
+  navegador (un hilo sin UI, o una zona que no existe) vale `app.display.time-zone`
+  (`APP_DISPLAY_TIME_ZONE`, `Asia/Jerusalem` como los informes de `mto-maintenance`; UTC en los
+  tests). Las fechas de auditoría de `mto-configuration` (`createDate`, `versionDate`) son
+  `LocalDateTime` del servicio y se pintan tal cual.
 - **Personal, organigrama y flota son de `mto-resources`, y sus reglas las decide el servicio.** Lo que
   se copia aquí es solo para no ofrecer lo que va a fallar: un equipo nace con su jefe y de 2 a 6
   linemen (comprobado antes de llamar), «Añadir lineman» se apaga con 6 y «Sale del equipo» con 2, y

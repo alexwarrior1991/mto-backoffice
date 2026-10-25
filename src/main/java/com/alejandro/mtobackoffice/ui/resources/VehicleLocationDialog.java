@@ -151,7 +151,7 @@ public class VehicleLocationDialog extends Dialog {
         description.setMaxLength(500);
         observedAt.setId("location-observed-at");
         observedAt.setHelperText("Vacio: ahora");
-        observedAt.setMax(LocalDateTime.now().plusMinutes(1));
+        observedAt.setMax(Formats.now().plusMinutes(1));
 
         fields.putAll(Map.of("kind", kind, "parkingSiteId", site, "executionPackageId", executionPackage, "trackId", track, "kp", kp,
                 "accessPointId", accessPoint, "accessPoint", accessPointText, "latitude", latitude, "longitude", longitude, "carrierVehicleId", carrier));

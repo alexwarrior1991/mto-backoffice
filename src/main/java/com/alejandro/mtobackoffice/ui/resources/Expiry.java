@@ -1,5 +1,6 @@
 package com.alejandro.mtobackoffice.ui.resources;
 
+import com.alejandro.mtobackoffice.ui.support.Formats;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 
@@ -20,9 +21,9 @@ public final class Expiry {
     private Expiry() {
     }
 
-    /** El estado de una caducidad a dia de hoy, en la zona del servidor. */
+    /** El estado de una caducidad a dia de hoy, en la zona de la persona (la del navegador). */
     public static String state(LocalDate expiresOn, Boolean expired, String expiredLabel, String withoutDate) {
-        return state(expiresOn, expired, LocalDate.now(), expiredLabel, withoutDate);
+        return state(expiresOn, expired, Formats.today(), expiredLabel, withoutDate);
     }
 
     /**

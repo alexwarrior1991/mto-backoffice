@@ -71,6 +71,11 @@ app:
     # La SPA (mto-frontend), tal como la ve el navegador: 'Abrir en mto-frontend', en la barra, lleva
     # a la misma pantalla alli. Vacia, la barra no lo ofrece.
     url: ${MTO_FRONTEND_URL:}
+  display:
+    # Las fechas se pintan y se escriben en la zona del navegador de cada persona, como en
+    # mto-frontend (el contenedor corre en UTC). Esta es la que vale si el navegador no la dice: la
+    # de los informes de mto-maintenance. Una zona que no existe impide arrancar.
+    time-zone: ${APP_DISPLAY_TIME_ZONE:Asia/Jerusalem}
   correlation:
     # Cabecera con la que cada llamada saliente se identifica. El gateway la acepta si es valida y
     # la propaga al servicio, de modo que el mismo id aparece en su log y en el del servicio.

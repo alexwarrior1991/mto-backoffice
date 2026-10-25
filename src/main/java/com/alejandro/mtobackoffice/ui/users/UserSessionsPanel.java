@@ -4,6 +4,7 @@ import com.alejandro.mtobackoffice.client.dto.users.UserSessionDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
+import com.alejandro.mtobackoffice.ui.support.Formats;
 import com.alejandro.mtobackoffice.ui.support.LazyPanel;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
@@ -22,8 +23,6 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -40,7 +39,6 @@ class UserSessionsPanel extends LazyPanel {
     static final String OFFLINE_GRID_ID = "offline-sessions-grid";
     static final String REVOKE_ALL_ID = "sessions-revoke-all";
     static final String REVOKE_ALL_OFFLINE_ID = "offline-sessions-revoke-all";
-    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault());
 
     private final String userId;
     private final UsersClient client;
@@ -152,6 +150,6 @@ class UserSessionsPanel extends LazyPanel {
     }
 
     private static String format(Instant instant) {
-        return instant == null ? "" : DATE_TIME.format(instant);
+        return Formats.dateTime(instant);
     }
 }
