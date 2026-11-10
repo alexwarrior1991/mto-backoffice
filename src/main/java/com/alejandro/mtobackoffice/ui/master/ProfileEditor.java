@@ -36,7 +36,14 @@ import java.util.function.Function;
 public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
 
     static final int PROFILE_ID_MAX_LENGTH = 50;
-    static final String KP_PATTERN = "\\d+(\\.\\d+)?";
+    /**
+     * El KP del perfil, y el propio de un seccionador sin poste: metros con punto decimal y con
+     * signo, como en mto-configuration ({@code KpText}): un poste de antes del origen de la
+     * kilometracion va en negativo ({@code -77.960}).
+     */
+    static final String KP_PATTERN = "-?\\d+(\\.\\d+)?";
+    /** El signo, 9 enteros, el punto y 3 decimales: {@code -999999999.999}. */
+    static final int KP_MAX_LENGTH = 14;
     /** El tope del servicio ({@code PROFILE_MAX_CANTILEVERS}); el boton de anadir se apaga al llegar. */
     static final int MAX_CANTILEVERS = 3;
 
@@ -54,8 +61,8 @@ public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
         optionalRefsRead = optionalRefs(dto);
 
         TextField profileId = text("Identificador", PROFILE_ID_MAX_LENGTH, true);
-        TextField kp = text("KP", 13, true);
-        kp.setHelperText("Metros, con punto decimal: 10.500");
+        TextField kp = text("KP", KP_MAX_LENGTH, true);
+        kp.setHelperText("Metros, con punto decimal: 10.500 (antes del origen, -77.960)");
         ComboBox<RefItem> track = Pickers.reference("Via", catalog.tracks());
         track.setRequiredIndicatorVisible(true);
         IntegerField orderInTrack = new IntegerField("Orden en la via");
