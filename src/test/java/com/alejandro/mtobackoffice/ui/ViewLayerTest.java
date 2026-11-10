@@ -1800,6 +1800,49 @@ class ViewLayerTest {
         assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
     }
 
+    /**
+     * Un poste de antes del origen de la kilometracion esta en un KP negativo (la cabecera de EP11A),
+     * y el servicio lo admite: viaja con su signo, recortado. Lo que no es un numero sigue sin viajar.
+     */
+    @Test
+    void aProfileBeforeTheKpOriginTravelsWithItsSign() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null, null)));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(executionPackage(100L, "EP4")), 0, 50));
+        when(profileClient.create(any())).thenAnswer(call -> {
+            ProfileDto created = call.getArgument(0);
+            created.setId(99L);
+            return created;
+        });
+
+        UI.getCurrent().navigate(PROFILES_ROUTE);
+        LocatorJ._click(button("Nuevo"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Identificador")), "0-1.01");
+        TextField kp = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("KP"));
+        assertEquals(14, kp.getMaxLength(), "el signo, 9 enteros, el punto y 3 decimales");
+        @SuppressWarnings("unchecked")
+        ComboBox<RefItem> track = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via"));
+        LocatorJ._setValue(track, new RefItem(3L, "TRACK 1 (EP4)"));
+        @SuppressWarnings("unchecked")
+        ComboBox<LovRef> status = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Estado"));
+        LocatorJ._setValue(status, new LovRef(5L, "PT1", "Poste tipo 1"));
+        for (String typed : List.of("+5", "--5", "- 5", "-5,5")) {
+            LocatorJ._setValue(kp, typed);
+            LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+            assertTrue(kp.isInvalid(), "\"" + typed + "\" no es un KP");
+        }
+        verify(profileClient, never()).create(any());
+
+        LocatorJ._setValue(kp, " -77.960 ");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        verify(profileClient).create(argThat(dto -> "-77.960".equals(dto.getKp())));
+    }
+
     @Test
     void aKpWithLettersNeverReachesTheService() {
         loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
@@ -2424,6 +2467,8 @@ class ViewLayerTest {
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
         assertTrue(kp.isInvalid(), "el KP va en metros con punto decimal, como el del perfil");
         verify(disconnectorClient, never()).update(any(), any());
+        LocatorJ._setValue(kp, "-12.5");
+        assertFalse(kp.isInvalid(), "con signo, como el del perfil: antes del origen de la kilometracion");
 
         LocatorJ._setValue(kp, " 98375.5 ");
         LocatorJ._setValue(track, new RefItem(3L, "TRACK 1"));
