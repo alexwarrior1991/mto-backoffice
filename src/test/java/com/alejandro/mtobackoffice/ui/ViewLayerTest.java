@@ -264,6 +264,7 @@ import java.util.Set;
 import com.alejandro.mtobackoffice.client.error.ApiFieldError;
 import com.alejandro.mtobackoffice.client.error.ApiProblem;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.client.error.UnreachableApiException;
 import com.alejandro.mtobackoffice.configuration.security.BackofficeUser;
 import com.alejandro.mtobackoffice.configuration.security.JwtClaimNames;
 import com.alejandro.mtobackoffice.ui.jobs.JobsView;
@@ -466,6 +467,8 @@ import com.vaadin.flow.internal.nodefeature.ElementPropertyMap;
 import com.vaadin.flow.server.SystemMessages;
 import com.vaadin.flow.server.VaadinService;
 import java.math.BigDecimal;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import static org.mockito.Mockito.clearInvocations;
@@ -832,6 +835,39 @@ class ViewLayerTest {
                 spec -> spec.withText("El servicio no esta disponible ahora mismo. Intentalo en 30 s."));
         LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("Referencia: corr-5"));
         assertEquals(0, GridKt._size(grid()));
+    }
+
+    /**
+     * Con el gateway caido (conexion rechazada, timeout) cada llamada falla sin respuesta. La pantalla
+     * sigue en pie: la lista lo dice con el mensaje de mto-frontend y el id que se mando, y la campana,
+     * que pide su contador en cada pantalla, no avisa ni rompe el marco.
+     */
+    @Test
+    void anUnreachableGatewayIsNotifiedByTheScreenAndTheBellStaysQuiet() {
+        loginAs("config.lector", "ROLE_CONFIG_READ", "ROLE_NOTIFICATION_INBOX");
+        when(notificationClient.unreadCount()).thenThrow(new UnreachableApiException(
+                "GET /api/notifications/inbox/unread-count", "corr-bell", new ConnectException("Connection refused")));
+        when(lovClient.findAll(PROFILE_STATUSES)).thenThrow(new UnreachableApiException(
+                "GET /api/configuration/profile-statuses", "corr-sent", new SocketTimeoutException("Read timed out")));
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+
+        LocatorJ._get(LovCrudView.class);
+        InboxBell bell = LocatorJ._get(InboxBell.class);
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size(), "la de la lista; la campana no avisa");
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText(
+                "No se ha podido contactar con el servidor. Comprueba la conexion y vuelve a intentarlo."));
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("Referencia: corr-sent"));
+        assertEquals(0, GridKt._size(grid()));
+
+        // Tampoco en una pasada del sondeo compartido, ni al navegar a otra pantalla.
+        NotificationsKt.clearNotifications();
+        bell.pollOnce();
+        MockVaadin.clientRoundtrip();
+        UI.getCurrent().navigate(HomeView.class);
+        LocatorJ._get(HomeView.class);
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
     }
 
     @Test

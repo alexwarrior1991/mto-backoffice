@@ -14,11 +14,14 @@ spring:
       enabled: ${SPRING_THREADS_VIRTUAL_ENABLED:true}
 
   # Timeouts del RestClient que habla con el gateway. Claves en plural de Boot 4.1. El read-timeout
-  # iguala al del gateway hacia los servicios (15 s): esperar mas aqui no aporta nada.
+  # queda por encima del que el gateway da a los servicios (15 s): con el mismo, este cliente cortaba
+  # a la vez o antes de que llegara el 503/504 del gateway, que es el que trae el Retry-After y el
+  # servicio que no responde. Si es el gateway el que no contesta, el corte de aqui llega tipado
+  # (UnreachableApiException).
   http:
     clients:
       connect-timeout: ${MTO_GATEWAY_CONNECT_TIMEOUT:2s}
-      read-timeout: ${MTO_GATEWAY_READ_TIMEOUT:15s}
+      read-timeout: ${MTO_GATEWAY_READ_TIMEOUT:20s}
 
   # Sesion de servidor de Vaadin. Coincide con el idle de la sesion SSO del realm (30 min): un
   # refresh token que ya no vale y una sesion que sigue viva se traducirian en un "vuelve a entrar"

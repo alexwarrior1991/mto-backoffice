@@ -106,6 +106,7 @@ import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.client.error.ServiceUnavailableApiException;
 import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
 import com.alejandro.mtobackoffice.client.error.TooManyRequestsApiException;
+import com.alejandro.mtobackoffice.client.error.UnreachableApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.client.maintenance.OperationClient;
 import com.alejandro.mtobackoffice.client.resources.AccessPointClient;
@@ -134,6 +135,8 @@ import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -145,6 +148,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import com.alejandro.mtobackoffice.client.dto.master.CantileverDto;
@@ -299,6 +303,7 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -307,6 +312,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import com.alejandro.mtobackoffice.client.dto.master.TrackSchematicDto;
@@ -731,6 +737,40 @@ class ClientLayerTest {
         assertEquals(Duration.ofSeconds(30), exception.getRetryAfter().orElseThrow());
         assertEquals("mto-configuration", exception.getProblem().service());
         assertEquals("corr-5", exception.getCorrelationId());
+    }
+
+    /**
+     * El gateway no contesta (conexion rechazada, timeout): no hay respuesta que decodificar, y aun asi
+     * sale tipado, con el id de correlacion que se mando como referencia, y no como el
+     * ResourceAccessException del RestClient, que ninguna vista captura.
+     */
+    @Test
+    void aTransportFailureIsTypedAndCarriesTheCorrelationIdThatWasSent() {
+        AtomicReference<String> sent = new AtomicReference<>();
+        server.expect(requestTo(GATEWAY + "/api/configuration/profile-statuses"))
+                .andRespond(request -> {
+                    sent.set(request.getHeaders().getFirst("X-Correlation-Id"));
+                    throw new SocketTimeoutException("Read timed out");
+                });
+
+        UnreachableApiException exception = assertThrows(UnreachableApiException.class,
+                () -> asUser(() -> lovClient.findAll(LovResource.PROFILE_STATUSES)));
+
+        assertNotNull(sent.get());
+        assertEquals(sent.get(), exception.getCorrelationId());
+        assertEquals(sent.get(), exception.getReference(), "la referencia que ensena el aviso");
+        assertEquals("GET /api/configuration/profile-statuses", exception.getOperation());
+        assertInstanceOf(SocketTimeoutException.class, exception.getCause());
+        assertTrue(exception.getMessage().contains("Read timed out"), exception.getMessage());
+
+        // Tambien una conexion rechazada, y en una escritura.
+        server.reset();
+        server.expect(requestTo(GATEWAY + "/api/notifications/inbox/read-all"))
+                .andRespond(withException(new ConnectException("Connection refused")));
+        UnreachableApiException refused = assertThrows(UnreachableApiException.class,
+                () -> asUser(() -> notificationClient.markAllRead()));
+        assertEquals("POST /api/notifications/inbox/read-all", refused.getOperation());
+        assertNotNull(refused.getReference());
     }
 
     @Test

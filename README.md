@@ -537,7 +537,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 | `KEYCLOAK_ROLES_CLIENT_IDS` | Clientes cuyos roles del access token son los permisos (lista por comas) | `mto-configuration-api,mto-users-api,mto-stock-api,mto-maintenance-api,mto-notification-api,mto-resources-api` |
 | `MTO_GATEWAY_URL` | El gateway | `http://localhost:8090` |
 | `MTO_FRONTEND_URL` | La SPA `mto-frontend`, para «Abrir en mto-frontend» (vacío: la barra no lo ofrece) | vacío (`dev`: `http://localhost:4200`) |
-| `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP | `2s` / `15s` |
+| `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP hacia el gateway. El de lectura va por encima de los 15 s que el gateway da a los servicios, para que su 503/504 (con `Retry-After`) llegue antes que el corte de aquí | `2s` / `20s` |
 | `SPRING_THREADS_VIRTUAL_ENABLED` | Hilos virtuales: Tomcat, las tareas de Vaadin y cada pasada del sondeo compartido | `true` |
 | `APP_DISPLAY_TIME_ZONE` | La zona de las fechas si el navegador no dice la suya (con él, siempre la del navegador, como en mto-frontend) | `Asia/Jerusalem` |
 
@@ -631,7 +631,11 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   regla de negocio), el de `mto-maintenance` (el mismo, con `path` y `method` de más; sus 409 son
   de estado, no de concurrencia, y ninguno pide recargar), el 401/403 del gateway (solo `correlationId`) y el 503 de su circuit breaker
   (`Retry-After`, `service`), y los convierte en `NotFoundApiException`, `ValidationApiException`, `ForbiddenApiException`,
-  `SessionExpiredApiException`, `ConflictApiException` o `ServiceUnavailableApiException`.
+  `SessionExpiredApiException`, `ConflictApiException` o `ServiceUnavailableApiException`. Lo que no
+  llega a ser una respuesta (el gateway no acepta la conexión, su nombre no se resuelve o no contesta
+  en el `read-timeout`) lo tipa `TransportFailureInterceptor` como `UnreachableApiException`, con el
+  `X-Correlation-Id` que se mandó como referencia: es el `NetworkError` de mto-frontend, y se dice
+  igual («No se ha podido contactar con el servidor…»).
 
 ## Pruebas
 

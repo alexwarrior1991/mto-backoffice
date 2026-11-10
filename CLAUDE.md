@@ -67,8 +67,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `ResourcesRoles` (los permisos de `mto-configuration-api`, `mto-users-api`, `mto-stock-api`,
   `mto-maintenance-api`, `mto-notification-api` y `mto-resources-api`), `SecurityAuthorityPrefixes`,
   `JwtClaimNames`, `KeycloakProperties`.
-- `configuration/client` — `GatewayClientConfiguration` (un `RestClient` hacia el gateway con dos
-  interceptores, `BearerTokenInterceptor` y `CorrelationIdInterceptor`, y `ApiErrorDecoder` como
+- `configuration/client` — `GatewayClientConfiguration` (un `RestClient` hacia el gateway con tres
+  interceptores, `BearerTokenInterceptor`, `CorrelationIdInterceptor` y `TransportFailureInterceptor`, y `ApiErrorDecoder` como
   manejador de estado; `HttpServiceProxyFactory` para las interfaces `@HttpExchange`),
   `UserTokenProvider` (`AuthorizedClientServiceOAuth2AuthorizedClientManager` con `refreshToken()`),
   `GatewayProperties`, `CorrelationProperties`.
@@ -149,7 +149,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `JobDto`, la unión de las tres respuestas del servicio, `JobStatus`, `JobType`, `UploadedFile`);
   `ClientEnums`, lo que comparten los enumerados tolerantes (`parse` y `selectable`). Los
   errores en `client/error` (`ApiProblem`, `ApiErrorDecoder` y la jerarquía
-  `BackofficeApiException`, con `TooManyRequestsApiException` llevando el cuerpo del 429).
+  `BackofficeApiException`, con `TooManyRequestsApiException` llevando el cuerpo del 429 y
+  `UnreachableApiException`, la llamada sin respuesta).
 - `ui` — `MainLayout` (AppLayout, con «Abrir en mto-frontend» en la barra; el menú lo dan las vistas anotadas con `@Menu`, filtradas por
   `AccessAnnotationChecker`; las rutas con prefijo conocido (`infraestructura/*`, `usuarios/*`,
   `almacen/*`, `mantenimiento/*`, `recursos/*`) se agrupan por prefijo (`MainLayout.GROUPS`), una entrada cuya ruta es el propio prefijo es el
@@ -312,7 +313,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   —alias en `title` y `detail`— y que `mto-maintenance` manda igual, con `path` y `method` de más,
   el 401/403 del gateway solo con `correlationId`, y el 503 del
   fallback del gateway con `Retry-After` y `service`) y las vistas solo conocen
-  `BackofficeApiException` y sus subclases. Un 502 no es transitorio y su notificación lleva el
+  `BackofficeApiException` y sus subclases. Un fallo de transporte (el gateway no acepta la
+  conexión, no se resuelve o no contesta en el `read-timeout`, 20 s: por encima de los 15 s del
+  gateway hacia los servicios, para que su 503/504 llegue antes) tampoco sale crudo:
+  `TransportFailureInterceptor`, el último de la cadena, lo tipa como `UnreachableApiException` con
+  el `X-Correlation-Id` que se mandó, y se dice como el `NetworkError` de mto-frontend. Un 502 no es transitorio y su notificación lleva el
   detalle; un 409 `STK-001` es falta de stock y un 422 sin errores por campo es una regla de negocio
   (`UiErrors` los dice así, no como «conflicto» ni «petición no válida»). Los dos 409 de
   `mto-configuration` tampoco se dicen igual: `CON-001` es una versión vieja («recarga y vuelve a
@@ -857,7 +862,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 
 Una clase por capa; se añaden métodos, no clases: `ClientLayerTest` (interfaces `@HttpExchange` y
 `RestClient` reales contra `MockRestServiceServer`: prefijo del gateway, Bearer y correlación, forma
-de página, `problem+json` de configuration, 401/403 y 503 del gateway, cuerpo no JSON; los
+de página, `problem+json` de configuration, 401/403 y 503 del gateway, cuerpo no JSON, un fallo de
+transporte tipado con el id de correlación que se mandó; los
 catálogos: el `versionNumber` leído en el `PUT` y en el lote, y los dos 409 de configuration
 (`CON-001` y `BUS-002`) distinguidos por su código; los maestros: resolución del genérico,
 parámetros de página y orden del `/filter` (sin orden no viaja `sort`, como en el recuento), `extras` e hijos a
@@ -906,7 +912,8 @@ no listado no aporta nada, un rol de realm `users-read`, `stock-read`, `maintena
 disjuntos, registro OIDC sin
 descubrimiento, roles desde el access token, `CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
 de la ruta y su filtro local, menú por roles, controles de escritura ocultos sin permiso, alta por
-diálogo, errores del servicio campo a campo, la modificación con la versión leída y la siguiente
+diálogo, errores del servicio campo a campo, el gateway inalcanzable dicho por la pantalla y callado
+por la campana, la modificación con la versión leída y la siguiente
 con la recargada, la versión vieja con su aviso de recargar y el diálogo abierto, los dos 409 de
 configuration dichos distinto, borrado con confirmación, lote sobre la selección con la versión
 de cada fila, parser del alta múltiple, notificación de error, diagnóstico de audiencias; los
