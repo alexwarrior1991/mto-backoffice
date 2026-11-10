@@ -717,7 +717,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   perdería igual) ni se introduce una base de datos para los tokens: es un cliente. Por lo mismo,
   **con varias réplicas la ruta lleva afinidad de sesión por cookie**: la sesión de Vaadin y los
   tokens viven en la réplica que atendió a la persona, y sin afinidad cada petición que cae en otra
-  es una vuelta al SSO (README, «Desplegar con varias réplicas»).
+  es una vuelta al SSO (README, «Desplegar con varias réplicas»). La sesión caduca con la
+  inactividad de la persona, como la sesión SSO del realm: `server.servlet.session.timeout`
+  (`SERVER_SESSION_TIMEOUT`, 30 min; no `spring.session.*`, que es de Spring Session y aquí no
+  está) y `vaadin.close-idle-sessions: true`, para que el latido de una pestaña olvidada no la
+  mantenga viva.
 - **Las fechas se pintan y se escriben en la zona del navegador de cada persona**, como en
   mto-frontend, no en la del servidor (el contenedor corre en UTC). `ClientTimeZone.current()` la lee
   de `ExtendedClientDetails.getTimeZoneId()`, que Vaadin 25 trae ya en la petición de arranque, y
@@ -1012,7 +1016,8 @@ la URL, filtrados en el servicio, un resultado nuevo como «Desconocido» y su d
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway, con los clientes de
 cada servicio y los seis clientes cuyos roles son permisos; redirección al login; sonda de
 salud; ausencia de artefactos comerciales; las dos hojas de Lumo en el shell; la aplicación en hilos
-virtuales, también el executor de tareas que usa Vaadin, `theApplicationRunsOnVirtualThreadsAndSoDoesTheTaskExecutorVaadinUses`). Lo que trajo la
+virtuales, también el executor de tareas que usa Vaadin, `theApplicationRunsOnVirtualThreadsAndSoDoesTheTaskExecutorVaadinUses`;
+el timeout de sesión del servlet y `vaadin.close-idle-sessions`, que `ViewLayerTest` comprueba además en el servicio de Vaadin). Lo que trajo la
 convivencia con mto-frontend son casos de esas mismas clases: el enlace a la SPA con su query, el
 tipo padre y los `extras` de un catálogo, la referencia vaciada, el aviso fijo de la lista de
 trabajos, la pestaña oculta, las descargas fallidas, los cambios de usuarios, los desempates, lo

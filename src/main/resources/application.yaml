@@ -23,12 +23,6 @@ spring:
       connect-timeout: ${MTO_GATEWAY_CONNECT_TIMEOUT:2s}
       read-timeout: ${MTO_GATEWAY_READ_TIMEOUT:20s}
 
-  # Sesion de servidor de Vaadin. Coincide con el idle de la sesion SSO del realm (30 min): un
-  # refresh token que ya no vale y una sesion que sigue viva se traducirian en un "vuelve a entrar"
-  # con la pantalla todavia abierta.
-  session:
-    timeout: ${SERVER_SESSION_TIMEOUT:30m}
-
 # El registro OIDC 'keycloak' se construye en KeycloakClientRegistrations a partir de app.keycloak.*
 # en lugar de declararlo aqui con issuer-uri: el descubrimiento por issuer es una llamada HTTP
 # durante la creacion del bean, y con ella la aplicacion no arrancaria si Keycloak no esta listo
@@ -38,6 +32,13 @@ server:
   # 8080 stock, 8081 configuration, 8082 Keycloak, 8083 maintenance, 8084 users, 8090 gateway.
   port: ${SERVER_PORT:8085}
   shutdown: graceful
+  # Sesion de servidor (la de Tomcat, que es donde vive la de Vaadin). Coincide con el idle de la
+  # sesion SSO del realm (30 min): un refresh token que ya no vale y una sesion que sigue viva se
+  # traducirian en un "vuelve a entrar" con la pantalla todavia abierta. Es server.servlet.session.*
+  # y no spring.session.*, que es de Spring Session, que aqui no esta: esa clave no hacia nada.
+  servlet:
+    session:
+      timeout: ${SERVER_SESSION_TIMEOUT:30m}
   error:
     include-message: never
     include-stacktrace: never
@@ -46,6 +47,10 @@ vaadin:
   # Solo se escanean las vistas de esta aplicacion: acorta el arranque y evita sorpresas de addons.
   allowed-packages: com.alejandro.mtobackoffice
   launch-browser: false
+  # El latido de Vaadin (una peticion cada 5 min por pestana abierta) no cuenta como actividad: sin
+  # esto, una pestana olvidada mantendria viva la sesion para siempre y el timeout de arriba no
+  # llegaria nunca. Es el parametro closeIdleSessions de Vaadin (InitParameters).
+  close-idle-sessions: true
 
 app:
   keycloak:

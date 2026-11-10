@@ -538,6 +538,7 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 | `MTO_GATEWAY_URL` | El gateway | `http://localhost:8090` |
 | `MTO_FRONTEND_URL` | La SPA `mto-frontend`, para «Abrir en mto-frontend» (vacío: la barra no lo ofrece) | vacío (`dev`: `http://localhost:4200`) |
 | `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP hacia el gateway. El de lectura va por encima de los 15 s que el gateway da a los servicios, para que su 503/504 (con `Retry-After`) llegue antes que el corte de aquí | `2s` / `20s` |
+| `SERVER_SESSION_TIMEOUT` | Inactividad tras la que caduca la sesión de servidor (`server.servlet.session.timeout`); la misma que el idle de la sesión SSO del realm. El latido de Vaadin no cuenta como actividad (`vaadin.close-idle-sessions`) | `30m` |
 | `SPRING_THREADS_VIRTUAL_ENABLED` | Hilos virtuales: Tomcat, las tareas de Vaadin y cada pasada del sondeo compartido | `true` |
 | `APP_DISPLAY_TIME_ZONE` | La zona de las fechas si el navegador no dice la suya (con él, siempre la del navegador, como en mto-frontend) | `Asia/Jerusalem` |
 

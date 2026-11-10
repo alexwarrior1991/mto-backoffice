@@ -870,6 +870,15 @@ class ViewLayerTest {
         assertTrue(NotificationsKt.getNotifications().isEmpty());
     }
 
+    /**
+     * El servlet de Vaadin arranca con closeIdleSessions: el latido de una pestana olvidada no cuenta
+     * como actividad, y la sesion caduca con el timeout del servidor, como la sesion SSO.
+     */
+    @Test
+    void theVaadinHeartbeatDoesNotKeepAnIdleSessionAlive() {
+        assertTrue(VaadinService.getCurrent().getDeploymentConfiguration().isCloseIdleSessions());
+    }
+
     @Test
     void creatingAnEntryPostsItAndReloadsTheCatalogue() {
         loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_LOV_MANAGE");
