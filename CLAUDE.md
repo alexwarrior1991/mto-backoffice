@@ -66,7 +66,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `RefreshedTokenHandler` (lo que hace el manager al renovar: guardar el cliente y avisar), `KeycloakRoleMapper`
   (claims → `ROLE_*` para los clientes de `app.keycloak.roles-client-ids`, más el sinónimo
   `ROLE_CLIENT_<CLIENTE>_*`), `BackofficeUser` (el usuario con las audiencias del access token, las del último),
-  `CurrentPrincipal` (nombre del principal desde cualquier hilo), `PrincipalSessionRecorder`,
+  `CurrentPrincipal` (nombre del principal desde cualquier hilo, y el `sub` de la sesión: `subject()`), `PrincipalSessionRecorder`,
   `SecurityRoles`, `UserRoles`, `StockRoles`, `MaintenanceRoles`, `NotificationRoles` y
   `ResourcesRoles` (los permisos de `mto-configuration-api`, `mto-users-api`, `mto-stock-api`,
   `mto-maintenance-api`, `mto-notification-api` y `mto-resources-api`), `SecurityAuthorityPrefixes`,
@@ -591,6 +591,31 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `RequiredAction.forActionsEmail`), lo dice en la ayuda del campo a quien no los tiene, y no marca
   nada de partida. Si aun así llega el 403, se dice como cualquier otro, con el diálogo abierto. El
   alta de un usuario no cambia: sus acciones al entrar no mandan correo.
+- **Sobre una cuenta de servicio y sobre uno mismo no se ofrece lo que `mto-users` rechaza.** Tener el
+  permiso no basta: el servicio no admite dos objetivos, y lo dice con un 403 propio, distinto de
+  `AUTH-403` (README de `mto-users`, «Sobre quién no se actúa»). Como en mto-frontend:
+  - **Una cuenta de servicio solo se lee** (`USR-SVC-403`). Lo dice el usuario leído, `serviceAccount`
+    (`UserDto.isServiceAccount()`; un `Boolean`, porque un servicio anterior no lo manda: sin la clave no
+    lo es, y aquí no se adivina por el nombre). Su fila dice «Cuenta de servicio» en la columna «Nombre»
+    y solo abre la ficha; la ficha lo dice bajo el título («Cuenta de servicio: solo lectura…») y no
+    ofrece modificar, activar o desactivar, contraseña, correo de acciones, «sacar a la persona» ni
+    borrar; sus cuatro pestañas se leen (sin asignar ni quitar perfiles o roles, sin cerrar sesiones,
+    sin quitar credenciales, y sin pedir los catálogos).
+  - **Nadie cambia sus propios permisos ni se saca a sí mismo** (`USR-SELF-403`). «Uno mismo» es el
+    `sub` de la sesión (`CurrentPrincipal.subject()`/`isSubject(id)`: el del ID token, que es el del
+    access token y el `id` con el que `mto-users` lista a la persona; nunca el nombre). Su fila no
+    ofrece desactivar ni borrar; su ficha, tampoco, ni «sacar a la persona» (su primer paso es
+    desactivar), y sus pestañas de perfiles y de roles se leen con una línea que lo explica
+    (`UserDetailView.OWN_PERMISSIONS_HINT`). Lo demás sigue: modificar sus datos, activarse (el botón
+    solo sale si está desactivado), la contraseña, el correo de acciones, cerrar sus sesiones y quitar
+    una credencial.
+  - **El prefijo `service-account-` está reservado en el alta** (`UserDto.isReservedUsername`, sin
+    distinguir mayúsculas): el formulario lo dice en el campo y no llama.
+  - Si aun así llega el 403 (una fila leída antes, un servicio anterior), `UiErrors` no lo dice como
+    «no tienes permiso»: «Una cuenta de servicio no se modifica desde aqui: se administra con el
+    realm.» y «Nadie cambia sus propios permisos ni se saca a si mismo: tiene que hacerlo otra
+    persona.», cada uno con el detalle del servicio, y con el diálogo abierto. Ninguno pide recargar.
+    No es una regla nueva de negocio: es no ofrecer lo que va a fallar.
 - **La campana y la bandeja son de la persona, y a quién va cada aviso lo decide el servicio con el
   token.** `mto-notification` resuelve al leer, por usuario, perfil y rol de cliente, qué
   notificaciones son mías; aquí no se filtra por nadie ni se cuenta nada: el contador es el de
@@ -1136,6 +1161,13 @@ abierta con lo que se comprueba antes de llamar y el `VEH-001`; modificar con la
 según el estado; solo lectura), el campo GPS (su forma, vaciarlo, la ficha y el origen «GPS»), el
 diálogo del equipo solo con supervise y write, con lo desconocido y su `CON-001`, y Puestos y perfiles
 (sus secciones, el enlace a la persona, el `KCK-503` en su sitio con «Reintentar» y el menú solo con
-`resources-read`). Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
+`resources-read`). Las cuentas de servicio y uno mismo en Usuarios también: en `ClientLayerTest`, el
+usuario con `serviceAccount` y sin la clave (y el prefijo reservado) y los dos 403 tipados con su código;
+en `SecurityLayerTest`, el `sub` de la sesión (`CurrentPrincipal.subject`), que no es el nombre y sigue
+tras un token renovado; en `ViewLayerTest`, los mensajes de `USR-SVC-403` y `USR-SELF-403`, la fila y la
+ficha de una cuenta de servicio (nada que escriba, en la cabecera y en cada pestaña), la fila y la ficha
+propias (sin desactivar, borrar ni «sacar a la persona», perfiles y roles leídos con su línea, y lo demás
+como siempre; activarse sí, estando desactivado), el alta con el prefijo reservado rechazada en su campo
+sin llamar, y un `USR-SVC-403` que aun así llega, dicho con su mensaje y el diálogo abierto. Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
 CI: `mto-platform/scripts/e2e.sh` construye la imagen de este commit, usa la publicada de cada
 hermano y corre el e2e de Playwright de mto-frontend, que recorre las dos aplicaciones.

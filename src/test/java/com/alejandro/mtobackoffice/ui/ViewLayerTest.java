@@ -264,6 +264,7 @@ import java.util.Set;
 import com.alejandro.mtobackoffice.client.error.ApiFieldError;
 import com.alejandro.mtobackoffice.client.error.ApiProblem;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.client.error.ForbiddenApiException;
 import com.alejandro.mtobackoffice.client.error.UnreachableApiException;
 import com.alejandro.mtobackoffice.configuration.security.AccessTokenGrants;
 import com.alejandro.mtobackoffice.configuration.security.BackofficeUser;
@@ -743,9 +744,14 @@ class ViewLayerTest {
     // --- Los permisos siguen al access token renovado ---------------------------------------------
 
     private static void oidcLoginAs(String name, String... authorities) {
+        oidcLoginWithSubject("u-1", name, authorities);
+    }
+
+    /** Una persona que ha entrado por OIDC, con su {@code sub}: el id con el que mto-users la lista. */
+    private static void oidcLoginWithSubject(String subject, String name, String... authorities) {
         Instant now = Instant.now();
         OidcIdToken idToken = OidcIdToken.withTokenValue("id").issuedAt(now).expiresAt(now.plusSeconds(300))
-                .claim("sub", "u-1").claim(JwtClaimNames.PREFERRED_USERNAME, name).build();
+                .claim("sub", subject).claim(JwtClaimNames.PREFERRED_USERNAME, name).build();
         BackofficeUser user = new BackofficeUser(AuthorityUtils.createAuthorityList(authorities), idToken, null,
                 JwtClaimNames.PREFERRED_USERNAME, List.of("mto-configuration-api"));
         SecurityContextHolder.getContext().setAuthentication(new OAuth2AuthenticationToken(user, user.getAuthorities(), "keycloak"));
@@ -3382,7 +3388,7 @@ class ViewLayerTest {
     private static UserDto user(String id, String username, String firstName, String lastName, String email, boolean enabled,
                                 Map<String, List<String>> attributes) {
         return new UserDto(id, username, firstName, lastName, email, email != null, enabled,
-                Instant.parse("2026-09-01T08:30:00Z"), attributes, List.of());
+                Instant.parse("2026-09-01T08:30:00Z"), attributes, List.of(), null);
     }
 
     private static List<UserDto> threeUsers() {
@@ -3801,7 +3807,7 @@ class ViewLayerTest {
     void theUserDetailShowsTheHeaderAndLoadsEachTabWhenSelected() {
         loginAs("usuarios.lector", "ROLE_USERS_READ");
         UserDto ana = new UserDto(ANA_ID, "ana", "Ana", "Alvarez", "ana@mto.local", true, true,
-                Instant.parse("2026-09-01T08:30:00Z"), Map.of("dept", List.of("taller", "noche")), List.of("UPDATE_PASSWORD", "CUSTOM_ACTION"));
+                Instant.parse("2026-09-01T08:30:00Z"), Map.of("dept", List.of("taller", "noche")), List.of("UPDATE_PASSWORD", "CUSTOM_ACTION"), false);
         stubUserDetail(ana);
 
         UI.getCurrent().navigate(ANA_ROUTE);
@@ -4616,6 +4622,220 @@ class ViewLayerTest {
                 "USR-409", null, null, null, false, null, null);
         assertEquals("Ya existe un usuario con ese nombre de usuario o ese email. User exists with same username",
                 UiErrors.message(BackofficeApiException.of(HttpStatus.CONFLICT, problem, "corr-u1", null, "POST /api/users")));
+    }
+
+    // --- Sobre quien no se actua: las cuentas de servicio y uno mismo -------------------------------
+
+    private static final String SVC_ID = "0d5f1d1a-1111-4e43-9a5b-0000000000aa";
+    private static final String SVC_ROUTE = UsersView.ROUTE_PREFIX + "/" + SVC_ID;
+    private static final String[] USERS_EVERYTHING = {"ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_DELETE",
+            "ROLE_USERS_ROLES_WRITE", "ROLE_USERS_PASSWORD_RESET", "ROLE_USERS_PROFILES_WRITE", "ROLE_USERS_SESSIONS_WRITE",
+            "ROLE_USERS_CREDENTIALS_WRITE"};
+    private static final List<String> DETAIL_WRITE_BUTTONS = List.of("user-edit", "user-toggle", "user-reset-password",
+            "user-actions-email", "user-take-out", "user-delete");
+
+    private static UserDto serviceAccount() {
+        return new UserDto(SVC_ID, "service-account-mto-maintenance-svc", null, null, null, false, true,
+                Instant.parse("2026-09-01T08:30:00Z"), Map.of(), List.of(), true);
+    }
+
+    private static ForbiddenApiException usersForbidden(String code, String detail) {
+        ApiProblem problem = new ApiProblem("about:blank", "Forbidden", 403, detail, null, code, null, null, null, false, null, null);
+        return (ForbiddenApiException) BackofficeApiException.of(HttpStatus.FORBIDDEN, problem, "corr-403", null, "PUT /api/users");
+    }
+
+    /** Los dos 403 de mto-users por el objetivo no son «no tienes permiso», y el permiso que falta sigue siendolo. */
+    @Test
+    void theTwoTargetRefusalsOfUsersAreNotSaidAsAMissingPermission() {
+        assertEquals("Una cuenta de servicio no se modifica desde aqui: se administra con el realm. "
+                        + "User service-account-mto-users-svc is the service account of a client: it is read-only through this API",
+                UiErrors.message(usersForbidden("USR-SVC-403",
+                        "User service-account-mto-users-svc is the service account of a client: it is read-only through this API")));
+        assertEquals("Nadie cambia sus propios permisos ni se saca a si mismo: tiene que hacerlo otra persona. "
+                        + "You cannot disable yourself: it has to be done by another administrator",
+                UiErrors.message(usersForbidden("USR-SELF-403", "You cannot disable yourself: it has to be done by another administrator")));
+        assertEquals("No tienes permiso para esta operacion.", UiErrors.message(usersForbidden("AUTH-403", "Access denied")));
+    }
+
+    /** La fila de una cuenta de servicio lo dice y solo abre la ficha; la de las personas sigue con todo. */
+    @Test
+    void aServiceAccountRowSaysSoAndOnlyOpensItsDetail() {
+        loginAs("usuarios.responsable", USERS_EVERYTHING);
+        stubUsers(List.of(serviceAccount(), ana()));
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+
+        List<String> row = GridKt._getFormattedRow(userGrid(), 0);
+        assertTrue(row.contains("service-account-mto-maintenance-svc") && row.contains("Cuenta de servicio"), row.toString());
+        Component actions = GridKt._getCellComponent(userGrid(), 0, "actions");
+        LocatorJ._get(actions, Button.class, spec -> spec.withId("open-" + SVC_ID));
+        for (String id : List.of("edit-", "toggle-", "delete-")) {
+            assertTrue(LocatorJ._find(actions, Button.class, spec -> spec.withId(id + SVC_ID)).isEmpty(), id + " no se ofrece");
+        }
+        assertFalse(GridKt._getFormattedRow(userGrid(), 1).contains("Cuenta de servicio"));
+        Component anaActions = GridKt._getCellComponent(userGrid(), 1, "actions");
+        for (String id : List.of("edit-", "toggle-", "delete-")) {
+            LocatorJ._get(anaActions, Button.class, spec -> spec.withId(id + ANA_ID));
+        }
+        assertEquals("Soporte · Cuenta de servicio", UsersView.nameOf(new UserDto(SVC_ID, "service-account-x", "Soporte", null, null,
+                false, true, null, null, null, true)));
+    }
+
+    /** La ficha de una cuenta de servicio se lee entera y no ofrece nada que escriba, con todos los permisos. */
+    @Test
+    void aServiceAccountDetailIsReadOnlyInItsHeaderAndInEveryTab() {
+        loginAs("usuarios.responsable", USERS_EVERYTHING);
+        stubUserDetail(serviceAccount());
+
+        UI.getCurrent().navigate(SVC_ROUTE);
+
+        LocatorJ._get(H2.class, spec -> spec.withText("service-account-mto-maintenance-svc"));
+        LocatorJ._get(Span.class, spec -> spec.withId("user-service-account")
+                .withText("Cuenta de servicio: solo lectura. Se administra con el realm, no desde aqui."));
+        for (String id : DETAIL_WRITE_BUTTONS) {
+            assertTrue(LocatorJ._find(Button.class, spec -> spec.withId(id)).isEmpty(), id + " no se ofrece");
+        }
+        LocatorJ._get(Button.class, spec -> spec.withText("Volver a la lista"));
+
+        assertEquals(1, GridKt._size(gridWithId("profiles-grid")));
+        assertNull(gridWithId("profiles-grid").getColumnByKey("actions"));
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("profile-assign")).isEmpty());
+        assertTrue(LocatorJ._find(Paragraph.class, spec -> spec.withId("profiles-read-only")).isEmpty(), "la pista es de uno mismo");
+        selectTab(1);
+        assertEquals(1, GridKt._size(gridWithId("roles-grid")));
+        assertNull(gridWithId("roles-grid").getColumnByKey("actions"));
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("role-client")).isEmpty());
+        selectTab(2);
+        assertEquals(2, GridKt._size(gridWithId("sessions-grid")));
+        assertNull(gridWithId("sessions-grid").getColumnByKey("actions"));
+        assertNull(gridWithId("offline-sessions-grid").getColumnByKey("actions"));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("sessions-revoke-all")).isEmpty());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("offline-sessions-revoke-all")).isEmpty());
+        selectTab(3);
+        assertEquals(2, GridKt._size(gridWithId("credentials-grid")));
+        assertNull(gridWithId("credentials-grid").getColumnByKey("actions"));
+        verify(usersClient, never()).profiles();
+        verify(usersClient, never()).clients();
+    }
+
+    /** La fila propia (id = sub) no ofrece desactivar ni borrar; modificar si, y a los demas, todo. */
+    @Test
+    void theOwnRowOffersNeitherDisablingNorDeleting() {
+        oidcLoginWithSubject(ANA_ID, "ana", USERS_EVERYTHING);
+        stubUsers(threeUsers());
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+
+        Component own = GridKt._getCellComponent(userGrid(), 0, "actions");
+        LocatorJ._get(own, Button.class, spec -> spec.withId("open-" + ANA_ID));
+        LocatorJ._get(own, Button.class, spec -> spec.withId("edit-" + ANA_ID));
+        assertTrue(LocatorJ._find(own, Button.class, spec -> spec.withId("toggle-" + ANA_ID)).isEmpty(), "nadie se desactiva");
+        assertTrue(LocatorJ._find(own, Button.class, spec -> spec.withId("delete-" + ANA_ID)).isEmpty(), "nadie se borra");
+        Component other = GridKt._getCellComponent(userGrid(), 1, "actions");
+        for (String id : List.of("edit-", "toggle-", "delete-")) {
+            LocatorJ._get(other, Button.class, spec -> spec.withId(id + BRUNO_ID));
+        }
+    }
+
+    /**
+     * La ficha propia: ni desactivar, ni borrar, ni «sacar a la persona», y sus perfiles y roles se leen
+     * con su pista; lo demas (modificar, contrasena, correo, cerrar sesiones, quitar una credencial), como siempre.
+     */
+    @Test
+    void theOwnDetailKeepsWhatDoesNotTouchPermissionsAndReadsItsProfilesAndRoles() {
+        oidcLoginWithSubject(ANA_ID, "ana", USERS_EVERYTHING);
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+
+        for (String id : List.of("user-edit", "user-reset-password", "user-actions-email")) {
+            detailButton(id);
+        }
+        for (String id : List.of("user-toggle", "user-take-out", "user-delete")) {
+            assertTrue(LocatorJ._find(Button.class, spec -> spec.withId(id)).isEmpty(), id + " no se ofrece sobre uno mismo");
+        }
+        assertTrue(LocatorJ._find(Span.class, spec -> spec.withId("user-service-account")).isEmpty());
+
+        String hint = "Nadie cambia sus propios permisos: tus perfiles y tus roles los asigna o los quita otra persona.";
+        LocatorJ._get(Paragraph.class, spec -> spec.withId("profiles-read-only").withText(hint));
+        assertNull(gridWithId("profiles-grid").getColumnByKey("actions"));
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("profile-assign")).isEmpty());
+        selectTab(1);
+        LocatorJ._get(Paragraph.class, spec -> spec.withId("roles-read-only").withText(hint));
+        assertNull(gridWithId("roles-grid").getColumnByKey("actions"));
+        assertTrue(LocatorJ._find(ComboBox.class, spec -> spec.withId("role-client")).isEmpty());
+        selectTab(2);
+        assertNotNull(gridWithId("sessions-grid").getColumnByKey("actions"), "las sesiones propias se cierran");
+        detailButton("sessions-revoke-all");
+        selectTab(3);
+        assertNotNull(gridWithId("credentials-grid").getColumnByKey("actions"), "una credencial propia se quita");
+    }
+
+    /** Volver a activarse si se ofrece: es lo unico de «Activo» que mto-users admite sobre uno mismo. */
+    @Test
+    void theOwnDisabledUserOffersEnablingAndAnotherPersonsDetailOffersEverything() {
+        oidcLoginWithSubject(CARLA_ID, "carla", USERS_EVERYTHING);
+        UserDto carla = threeUsers().get(2);
+        stubUserDetail(carla);
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(UsersView.ROUTE_PREFIX + "/" + CARLA_ID);
+        assertEquals("Activar", detailButton("user-toggle").getText());
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("user-delete")).isEmpty());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        for (String id : DETAIL_WRITE_BUTTONS) {
+            detailButton(id);
+        }
+        LocatorJ._get(ComboBox.class, spec -> spec.withId("profile-assign"));
+        assertTrue(LocatorJ._find(Paragraph.class, spec -> spec.withId("profiles-read-only")).isEmpty());
+    }
+
+    /** El prefijo de las cuentas de servicio esta reservado: el alta lo dice en su campo y no llama. */
+    @Test
+    void creatingAUserWithTheServiceAccountPrefixIsRejectedInTheFormWithoutCalling() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUsers(threeUsers());
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("user-create")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        TextField username = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Usuario"));
+        for (String reserved : List.of("service-account-nuevo", "Service-Account-Nuevo")) {
+            LocatorJ._setValue(username, reserved);
+            LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
+            assertTrue(username.isInvalid(), reserved);
+            assertEquals("Los nombres que empiezan por service-account- estan reservados a las cuentas de servicio", username.getErrorMessage());
+        }
+        verify(usersClient, never()).create(any());
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty());
+    }
+
+    /** Un USR-SVC-403 que aun asi llega (una fila leida de un servicio anterior) se dice con su mensaje y el dialogo sigue. */
+    @Test
+    void aServiceAccountRefusalThatStillArrivesIsSaidAndTheDialogStaysOpen() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        UserDto unmarked = new UserDto(SVC_ID, "service-account-mto-field-svc", null, null, null, false, true,
+                Instant.parse("2026-09-01T08:30:00Z"), Map.of(), List.of(), null);
+        stubUsers(List.of(unmarked));
+        when(usersClient.update(eq(SVC_ID), any())).thenThrow(usersForbidden("USR-SVC-403",
+                "User service-account-mto-field-svc is the service account of a client: it is read-only through this API"));
+
+        UI.getCurrent().navigate(USERS_ROUTE);
+        assertFalse(GridKt._getFormattedRow(userGrid(), 0).contains("Cuenta de servicio"), "sin la clave no se adivina por el nombre");
+        LocatorJ._click(userAction("edit-" + SVC_ID));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Nombre")), "Campo");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("user-save")));
+
+        verify(usersClient).update(eq(SVC_ID), any());
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto");
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size());
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("Una cuenta de servicio no se modifica desde aqui: "
+                + "se administra con el realm. User service-account-mto-field-svc is the service account of a client: "
+                + "it is read-only through this API"));
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("Referencia: corr-403"));
     }
 
     /** Un 422 sin campos es una regla de negocio y un 409 STK-001 es falta de stock: no «peticion no valida» ni «recarga». */

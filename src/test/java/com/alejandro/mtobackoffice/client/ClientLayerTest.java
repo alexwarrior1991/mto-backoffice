@@ -1524,6 +1524,68 @@ class ClientLayerTest {
         server.verify();
     }
 
+    /** mto-users marca las cuentas de servicio; sin la clave (un servicio anterior) nadie lo es, tampoco por el nombre. */
+    @Test
+    void aUserSaysWhetherItIsAServiceAccountAndWithoutTheKeyItIsNot() {
+        String account = "{\"id\":\"svc-1\",\"username\":\"service-account-mto-users-svc\",\"enabled\":true,\"serviceAccount\":true}";
+        String person = "{\"id\":\"u-2\",\"username\":\"bruno\",\"enabled\":true,\"serviceAccount\":false}";
+        String older = "{\"id\":\"svc-9\",\"username\":\"service-account-mto-field-svc\",\"enabled\":true}";
+        server.expect(requestTo(USERS + "?first=0&max=50")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"content\":[" + account + "," + person + "," + older + "," + ANA + "],\"first\":0,\"max\":50,\"total\":4}",
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(USERS + "/svc-1")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(account, MediaType.APPLICATION_JSON));
+
+        List<UserDto> users = asUser(() -> usersClient.search(null, null, null, null, null, null, 0, 50)).content();
+        UserDto read = asUser(() -> usersClient.get("svc-1"));
+
+        assertTrue(users.get(0).isServiceAccount());
+        assertFalse(users.get(1).isServiceAccount());
+        assertNull(users.get(2).serviceAccount());
+        assertFalse(users.get(2).isServiceAccount(), "sin la clave no se adivina por el nombre");
+        assertFalse(users.get(3).isServiceAccount());
+        assertTrue(read.isServiceAccount());
+        assertTrue(UserDto.isReservedUsername("service-account-nuevo"));
+        assertTrue(UserDto.isReservedUsername(" Service-Account-Nuevo"), "sin distinguir mayusculas");
+        assertFalse(UserDto.isReservedUsername("servicio"));
+        assertFalse(UserDto.isReservedUsername(null));
+        server.verify();
+    }
+
+    /** Los dos 403 de mto-users por el objetivo llegan tipados con su codigo, distinto de AUTH-403. */
+    @Test
+    void theTargetRefusalsOfUsersAreTypedForbiddenWithTheirOwnCodes() {
+        server.expect(requestTo(USERS + "/svc-1/enabled")).andExpect(method(HttpMethod.PATCH))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN).contentType(MediaType.APPLICATION_PROBLEM_JSON).body("""
+                        {"type":"urn:problem:mto-users:USR-SVC-403","title":"Forbidden","status":403,
+                         "detail":"User service-account-mto-users-svc is the service account of a client: it is read-only through this API",
+                         "errorCode":"USR-SVC-403","correlationId":"corr-svc"}"""));
+        server.expect(requestTo(USERS + "/u-1")).andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN).contentType(MediaType.APPLICATION_PROBLEM_JSON).body("""
+                        {"title":"Forbidden","status":403,"detail":"You cannot delete yourself: it has to be done by another administrator",
+                         "errorCode":"USR-SELF-403","correlationId":"corr-self"}"""));
+        server.expect(requestTo(USERS)).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN).contentType(MediaType.APPLICATION_PROBLEM_JSON).body("""
+                        {"title":"Forbidden","status":403,
+                         "detail":"Usernames starting with service-account- are reserved for the service accounts of the realm's clients",
+                         "errorCode":"USR-SVC-403"}"""));
+
+        ForbiddenApiException account = assertThrows(ForbiddenApiException.class,
+                () -> asUser(() -> usersClient.setEnabled("svc-1", new UserEnabledRequest(false))));
+        ForbiddenApiException self = assertThrows(ForbiddenApiException.class, () -> asUser(() -> {
+            usersClient.delete("u-1");
+            return null;
+        }));
+        ForbiddenApiException reserved = assertThrows(ForbiddenApiException.class,
+                () -> asUser(() -> usersClient.create(newUser("service-account-nuevo"))));
+
+        assertEquals("USR-SVC-403", account.getProblem().code());
+        assertTrue(account.getProblem().detail().contains("read-only"));
+        assertEquals("USR-SELF-403", self.getProblem().code());
+        assertEquals("USR-SVC-403", reserved.getProblem().code());
+        server.verify();
+    }
+
     @Test
     void attributeFiltersRepeatTheParameterAndNeverTravelWithSearch() {
         server.expect(requestTo(matchesRegex(".*/api/users\\?attribute=dept(:|%3A)taller&attribute=turno(:|%3A)noche&first=0&max=20")))

@@ -5,6 +5,7 @@ import com.alejandro.mtobackoffice.client.dto.users.UserEnabledRequest;
 import com.alejandro.mtobackoffice.client.dto.users.UsersPage;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
+import com.alejandro.mtobackoffice.configuration.security.CurrentPrincipal;
 import com.alejandro.mtobackoffice.configuration.security.UserRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.master.EnabledFilter;
@@ -53,6 +54,11 @@ import java.util.Optional;
  * <p>Los botones siguen los permisos del servicio: nuevo, modificar y activar/desactivar piden
  * {@code users-write}; borrar, {@code users-delete}; abrir la ficha, solo leer. Esconderlos es
  * cortesia: la guarda real esta en el servicio.</p>
+ *
+ * <p>Tampoco se ofrece lo que mto-users rechaza por el objetivo: una cuenta de servicio
+ * ({@code serviceAccount}) solo se lee, asi que su fila dice «Cuenta de servicio» y solo abre la
+ * ficha (403 {@code USR-SVC-403}); y la fila de quien ha entrado no ofrece desactivar ni borrar
+ * (403 {@code USR-SELF-403}): modificar sus datos si.</p>
  */
 @Route(value = UsersView.ROUTE, layout = MainLayout.class)
 @PageTitle("Usuarios")
@@ -64,6 +70,7 @@ public class UsersView extends VerticalLayout {
     public static final String ROUTE_PREFIX = "usuarios";
     public static final String ROUTE = ROUTE_PREFIX;
     static final String ACTIONS_COLUMN = "actions";
+    static final String SERVICE_ACCOUNT_LABEL = "Cuenta de servicio";
     public static final int PAGE_SIZE = 50;
     /** El tope de {@code max} en mto-users; por encima responde 400. */
     static final int MAX_PAGE = 200;
@@ -136,7 +143,7 @@ public class UsersView extends VerticalLayout {
 
     private Component buildGrid() {
         grid.addColumn(UserDto::username).setHeader("Usuario").setKey("username").setAutoWidth(true);
-        grid.addColumn(UserDto::fullName).setHeader("Nombre").setKey("name").setFlexGrow(1);
+        grid.addColumn(UsersView::nameOf).setHeader("Nombre").setKey("name").setFlexGrow(1);
         grid.addColumn(dto -> dto.email() == null ? "" : dto.email()).setHeader("Email").setKey("email").setAutoWidth(true);
         grid.addColumn(dto -> yesNo(dto.emailVerified())).setHeader("Verificado").setKey("emailVerified").setAutoWidth(true);
         grid.addColumn(dto -> yesNo(dto.enabled())).setHeader("Activo").setKey("enabled").setAutoWidth(true);
@@ -157,6 +164,12 @@ public class UsersView extends VerticalLayout {
         open.setTooltipText("Abrir la ficha");
         open.setId("open-" + user.id());
         actions.add(open);
+        if (user.isServiceAccount()) {
+            // mto-users solo deja leerla: cualquier escritura seria su 403 USR-SVC-403.
+            return actions;
+        }
+        // Nadie se desactiva ni se borra a si mismo (403 USR-SELF-403); activarse y modificarse, si.
+        boolean self = CurrentPrincipal.isSubject(user.id());
         if (canWrite) {
             Button edit = new Button(VaadinIcon.EDIT.create(), click -> openEditor(user));
             edit.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
@@ -166,9 +179,12 @@ public class UsersView extends VerticalLayout {
             toggle.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL);
             toggle.setTooltipText(user.isEnabled() ? "Desactivar" : "Activar");
             toggle.setId("toggle-" + user.id());
-            actions.add(edit, toggle);
+            actions.add(edit);
+            if (!self || !user.isEnabled()) {
+                actions.add(toggle);
+            }
         }
-        if (canDelete) {
+        if (canDelete && !self) {
             Button delete = new Button(VaadinIcon.TRASH.create(), click -> confirmDelete(user));
             delete.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
             delete.setTooltipText("Borrar");
@@ -274,6 +290,15 @@ public class UsersView extends VerticalLayout {
         } catch (BackofficeApiException failure) {
             UiErrors.show(failure);
         }
+    }
+
+    /** El nombre de la fila; el de una cuenta de servicio lo dice, porque su fila solo se abre. */
+    public static String nameOf(UserDto user) {
+        if (!user.isServiceAccount()) {
+            return user.fullName();
+        }
+        String name = user.fullName();
+        return name.isEmpty() || name.equals(user.username()) ? SERVICE_ACCOUNT_LABEL : name + " · " + SERVICE_ACCOUNT_LABEL;
     }
 
     private static String yesNo(Boolean value) {

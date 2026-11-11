@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.InMemoryOAuth2AuthorizedClientService;
@@ -207,6 +208,34 @@ class SecurityLayerTest {
 
         assertEquals(Optional.of("job-runner"), CurrentPrincipal.callAs("job-runner", CurrentPrincipal::name));
         assertEquals(Optional.of("config.lector"), CurrentPrincipal.name(), "el scope termina con la tarea");
+    }
+
+    /** «Uno mismo» en usuarios es el sub de la sesion: el id con el que mto-users lista a la persona. */
+    @Test
+    void theSubjectOfTheSessionIsTheOidcSubAndNobodyWithoutOne() {
+        assertEquals(Optional.empty(), CurrentPrincipal.subject());
+        assertFalse(CurrentPrincipal.isSubject("u-1"));
+
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken("u-1", "n/a", "ROLE_USERS_READ"));
+        assertEquals(Optional.empty(), CurrentPrincipal.subject(), "un principal que no es OIDC no tiene sub: el nombre no vale");
+        assertFalse(CurrentPrincipal.isSubject("u-1"));
+
+        Instant now = Instant.now();
+        OidcIdToken idToken = OidcIdToken.withTokenValue("id").subject("u-1").issuedAt(now).expiresAt(now.plusSeconds(300))
+                .claim(JwtClaimNames.PREFERRED_USERNAME, "ana").build();
+        BackofficeUser user = new BackofficeUser(AuthorityUtils.createAuthorityList("ROLE_USERS_READ"), idToken, null,
+                JwtClaimNames.PREFERRED_USERNAME, List.of("mto-users-api"));
+        SecurityContextHolder.getContext().setAuthentication(new OAuth2AuthenticationToken(user, user.getAuthorities(), "keycloak"));
+
+        assertEquals(Optional.of("u-1"), CurrentPrincipal.subject());
+        assertEquals(Optional.of("ana"), CurrentPrincipal.name(), "el nombre sigue siendo el del principal, no el sub");
+        assertTrue(CurrentPrincipal.isSubject("u-1"));
+        assertFalse(CurrentPrincipal.isSubject("u-2"));
+        assertFalse(CurrentPrincipal.isSubject(null));
+        // Un token renovado con otros permisos sustituye la Authentication: la persona es la misma.
+        SecurityContextHolder.getContext().setAuthentication(new OAuth2AuthenticationToken(
+                user.with(AuthorityUtils.createAuthorityList("ROLE_USERS_WRITE"), List.of()), List.of(), "keycloak"));
+        assertTrue(CurrentPrincipal.isSubject("u-1"));
     }
 
     @Test

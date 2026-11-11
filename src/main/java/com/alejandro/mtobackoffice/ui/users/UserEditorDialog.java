@@ -30,7 +30,7 @@ import java.util.function.Consumer;
 /**
  * Alta o modificacion de un usuario. Aqui solo se valida lo evidente (usuario obligatorio y con
  * la forma que exige el servicio, email con forma de email, contrasena de al menos ocho, atributos
- * legibles); la politica de contrasenas y lo demas lo dice el servicio y se ensena campo a campo.
+ * legibles, y que el nombre no empiece por el prefijo reservado a las cuentas de servicio); la politica de contrasenas y lo demas lo dice el servicio y se ensena campo a campo.
  * En una modificacion el nombre de usuario se ensena pero no se toca, y solo viaja lo que cambio:
  * sin cambios, no se llama.
  */
@@ -39,6 +39,8 @@ public class UserEditorDialog extends Dialog {
     static final int MAX_LENGTH = 255;
     static final String USERNAME_PATTERN = "[a-zA-Z0-9._@-]+";
     static final int MIN_PASSWORD_LENGTH = 8;
+    static final String RESERVED_USERNAME_MESSAGE = "Los nombres que empiezan por " + UserDto.SERVICE_ACCOUNT_PREFIX
+            + " estan reservados a las cuentas de servicio";
 
     private final Binder<UserForm> binder = new Binder<>(UserForm.class);
     private final UserForm form;
@@ -84,6 +86,8 @@ public class UserEditorDialog extends Dialog {
         if (creating) {
             binder.forField(username).asRequired("El usuario es obligatorio")
                     .withValidator(new RegexpValidator("Letras, cifras y . _ @ -", USERNAME_PATTERN))
+                    // mto-users reserva el prefijo a las cuentas de servicio de los clientes (403 USR-SVC-403).
+                    .withValidator(value -> !UserDto.isReservedUsername(value), RESERVED_USERNAME_MESSAGE)
                     .bind("username");
             binder.forField(enabled).bind("enabled");
             binder.forField(temporaryPassword)

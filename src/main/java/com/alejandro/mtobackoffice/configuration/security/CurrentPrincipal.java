@@ -4,6 +4,7 @@ import com.vaadin.flow.server.VaadinSession;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -43,6 +44,25 @@ public final class CurrentPrincipal {
             return Optional.of(name);
         }
         return Optional.empty();
+    }
+
+    /**
+     * El {@code sub} de la persona que ha entrado: su id de usuario en Keycloak, que es el {@code id}
+     * con el que mto-users la lista. Sale del ID token de la sesion (el mismo {@code sub} que lleva el
+     * access token), asi que solo existe en una peticion o dentro de {@code UI.access()}; en un hilo
+     * de fondo, que solo lleva el nombre, no hay.
+     */
+    public static Optional<String> subject() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof OidcUser user) {
+            return Optional.ofNullable(user.getSubject()).filter(subject -> !subject.isBlank());
+        }
+        return Optional.empty();
+    }
+
+    /** Si ese id de usuario es el de la persona que ha entrado. Sin {@code sub} conocido, no lo es. */
+    public static boolean isSubject(String userId) {
+        return userId != null && subject().filter(userId::equals).isPresent();
     }
 
     /** Guarda en la sesion de Vaadin el principal del contexto de seguridad actual, si lo hay. */
