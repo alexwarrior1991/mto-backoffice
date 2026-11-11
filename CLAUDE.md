@@ -59,9 +59,13 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 - `configuration/security` — `SecurityConfiguration` (cadena con `VaadinSecurityConfigurer` y
   `oauth2LoginPage("/oauth2/authorization/keycloak")`; sondas de salud abiertas),
   `KeycloakClientRegistrations` (el registro OIDC **construido a mano** desde `app.keycloak.*`),
-  `BackofficeOidcUserService` (los roles se leen del **access token**), `KeycloakRoleMapper`
+  `BackofficeOidcUserService` (los roles se leen del **access token**), `AccessTokenReader` (verifica un
+  access token y dice lo que concede, `AccessTokenGrants`: lo usan el login y cada renovación),
+  `LiveAuthorities` (lo que concede el último token de cada persona, y `sync()`, que pone al día la
+  sesión del hilo), `LiveAuthoritiesFilter` (ese `sync()` al empezar cada petición),
+  `RefreshedTokenHandler` (lo que hace el manager al renovar: guardar el cliente y avisar), `KeycloakRoleMapper`
   (claims → `ROLE_*` para los clientes de `app.keycloak.roles-client-ids`, más el sinónimo
-  `ROLE_CLIENT_<CLIENTE>_*`), `BackofficeUser` (el usuario con las audiencias del access token),
+  `ROLE_CLIENT_<CLIENTE>_*`), `BackofficeUser` (el usuario con las audiencias del access token, las del último),
   `CurrentPrincipal` (nombre del principal desde cualquier hilo), `PrincipalSessionRecorder`,
   `SecurityRoles`, `UserRoles`, `StockRoles`, `MaintenanceRoles`, `NotificationRoles` y
   `ResourcesRoles` (los permisos de `mto-configuration-api`, `mto-users-api`, `mto-stock-api`,
@@ -70,7 +74,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 - `configuration/client` — `GatewayClientConfiguration` (un `RestClient` hacia el gateway con tres
   interceptores, `BearerTokenInterceptor`, `CorrelationIdInterceptor` y `TransportFailureInterceptor`, y `ApiErrorDecoder` como
   manejador de estado; `HttpServiceProxyFactory` para las interfaces `@HttpExchange`),
-  `UserTokenProvider` (`AuthorizedClientServiceOAuth2AuthorizedClientManager` con `refreshToken()`),
+  `UserTokenProvider` (`AuthorizedClientServiceOAuth2AuthorizedClientManager` con `refreshToken()` y
+  `RefreshedTokenHandler` como manejador de cada renovación),
   `GatewayProperties`, `CorrelationProperties`.
 - `client` — las interfaces `@HttpExchange` por servicio: `client/configuration/LovClient` (los
   ocho endpoints de `AbstractLovController` parametrizados por recurso; `LovResource`, los 17
@@ -280,8 +285,33 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 - **Los roles se leen del access token, no del ID token.** Keycloak pone `resource_access` solo en el
   access token (todos los audience mapper del realm son `id.token.claim=false`), y `oauth2Login`
   construye las autoridades desde el ID token. `BackofficeOidcUserService` verifica el access token
-  (firma y emisor) y aplica `KeycloakRoleMapper`. Un `GrantedAuthoritiesMapper` no sirve: no ve el
-  access token.
+  (firma y emisor) y aplica `KeycloakRoleMapper`, las dos cosas en `AccessTokenReader`. Un
+  `GrantedAuthoritiesMapper` no sirve: no ve el access token.
+- **Los permisos siguen al access token renovado, no al del login**, como en mto-frontend, que rehace
+  su sesión con cada token. Se retira un permiso en Keycloak: el siguiente token (duran cinco minutos)
+  ya no lo trae, y el menú, `@RolesAllowed` y `hasAllRoles` dejan de tenerlo sin volver a entrar; el
+  concedido aparece.
+  - Cada token renovado pasa por `RefreshedTokenHandler` (el `OAuth2AuthorizationSuccessHandler` del
+    manager: solo se llama cuando de verdad se renueva), que lo guarda y se lo da a `LiveAuthorities`.
+    Se verifica y se mapea con el mismo `AccessTokenReader` del login: nada se duplica, y un rol de
+    realm sigue siendo solo `ROLE_REALM_*`. Uno que no se puede verificar no concede ni retira nada.
+  - `LiveAuthorities` guarda **por persona** lo que concede su último token (también el del login). Es
+    por persona porque el token lo es: el cliente autorizado se guarda por nombre de principal, así
+    que dos navegadores de la misma persona comparten token y, por tanto, permisos.
+  - La `Authentication` de una sesión solo se sustituye **desde un hilo de esa sesión** (`sync()`, sobre
+    el contexto que da el `SecurityContextHolder`): al empezar cada petición (`LiveAuthoritiesFilter`,
+    detrás de `SecurityContextHolderFilter`) y, si el token se renueva en una petición o dentro de
+    `UI.access()`, en ese momento. Un hilo de fondo (`SharedPolling`) no tiene sesión: solo deja
+    apuntado lo que concede el token, y cada sesión lo recoge en su siguiente petición. Nunca se
+    escribe la sesión de otro hilo, y no hay registro de sesiones.
+  - Solo se sustituye si cambió el conjunto de `ROLE_*`; la persona es la misma (nombre, ID token para
+    el logout federado, detalles), con `OIDC_USER` y los scopes como estaban y las audiencias del
+    token nuevo.
+  - En pantalla: lo que comprueba un rol lo ve desde la siguiente ida y vuelta al servidor (la
+    navegación y su `@RolesAllowed`, un diálogo o una vista que se construyen); `MainLayout` repinta el
+    menú y la barra (la campana) en la siguiente navegación si las autoridades cambiaron. Lo ya pintado
+    (los botones de la vista abierta) no se repinta solo: sigue hasta que la vista se vuelve a
+    construir, y pulsarlo es el 403 del servicio, que se notifica. No hay repintado por push.
 - **Los roles de realm se emiten solo como `ROLE_REALM_*`, nunca como `ROLE_*`.** Los permisos que
   comprueban las vistas (`@RolesAllowed("CONFIG_READ")`, `@RolesAllowed("USERS_READ")`) son roles
   de **cliente** de `mto-configuration-api`, `mto-users-api`, `mto-stock-api`,
@@ -935,7 +965,11 @@ no listado no aporta nada, un rol de realm `users-read`, `stock-read`, `maintena
 `notification-access-read` o `resources-read` nunca abre el módulo, `SecurityRoles`, `UserRoles`,
 `StockRoles`, `MaintenanceRoles`, `NotificationRoles` y `ResourcesRoles` coinciden con el realm y son
 disjuntos, registro OIDC sin
-descubrimiento, roles desde el access token, `CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
+descubrimiento, roles desde el access token, `CurrentPrincipal`; los permisos que siguen al token
+renovado: el retirado y el concedido con la persona intacta, un rol de realm que sigue sin conceder,
+los mismos roles sin sustituir nada, el token que no se verifica ignorado, las demás sesiones de la
+persona en su siguiente petición tras renovarlo un hilo de fondo, la de otra persona intacta, y el
+manejador que guarda el cliente y avisa), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
 de la ruta y su filtro local, menú por roles, controles de escritura ocultos sin permiso, alta por
 diálogo, errores del servicio campo a campo, el gateway inalcanzable dicho por la pantalla y callado
 por la campana, la modificación con la versión leída y la siguiente
@@ -1038,7 +1072,11 @@ la URL, filtrados en el servicio, un resultado nuevo como «Desconocido» y su d
 cada servicio y los seis clientes cuyos roles son permisos; redirección al login; sonda de
 salud; ausencia de artefactos comerciales; las dos hojas de Lumo en el shell; la aplicación en hilos
 virtuales, también el executor de tareas que usa Vaadin, `theApplicationRunsOnVirtualThreadsAndSoDoesTheTaskExecutorVaadinUses`;
-el timeout de sesión del servlet y `vaadin.close-idle-sessions`, que `ViewLayerTest` comprueba además en el servicio de Vaadin). Lo que trajo la
+el timeout de sesión del servlet y `vaadin.close-idle-sessions`, que `ViewLayerTest` comprueba además en el servicio de Vaadin;
+el manejador de renovación puesto en el manager, y la siguiente petición de una sesión, por la cadena
+de filtros real, con los roles del último token). Que el menú, la campana, los botones y la vista
+cambian en la siguiente navegación tras un token con otros roles es un caso de `ViewLayerTest`
+(`aRefreshedTokenWithOtherRolesChangesTheMenuTheButtonsAndTheViewsAtTheNextNavigation`). Lo que trajo la
 convivencia con mto-frontend son casos de esas mismas clases: el enlace a la SPA con su query, el
 tipo padre y los `extras` de un catálogo, la referencia vaciada, el aviso fijo de la lista de
 trabajos, la pestaña oculta, las descargas fallidas, los cambios de usuarios, los desempates, lo

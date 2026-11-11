@@ -9,18 +9,10 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
-import org.springframework.security.oauth2.jwt.JwtValidators;
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
 
 /**
  * Completa al usuario OIDC con los roles del ACCESS token.
@@ -32,46 +24,44 @@ import java.util.function.Function;
  * el access token.</p>
  *
  * <p>El access token se verifica (firma contra el JWK Set del realm y emisor) antes de fiarse de
- * sus claims, igual que haria un resource server. El decodificador se crea al primer login y se
- * reutiliza.</p>
+ * sus claims, igual que haria un resource server: lo hace {@link AccessTokenReader}, el mismo que lee
+ * cada token renovado. Lo que concede el del login se apunta en {@link LiveAuthorities}, para que
+ * otra sesion de la misma persona, que desde ahora comparte este token, lo siga tambien.</p>
  */
 public class BackofficeOidcUserService implements OAuth2UserService<OidcUserRequest, OidcUser> {
 
     private final OAuth2UserService<OidcUserRequest, OidcUser> delegate;
-    private final KeycloakRoleMapper roleMapper;
-    private final Function<ClientRegistration, JwtDecoder> decoderFactory;
-    private final Map<String, JwtDecoder> decoders = new ConcurrentHashMap<>();
+    private final AccessTokenReader accessTokens;
+    private final LiveAuthorities liveAuthorities;
 
-    public BackofficeOidcUserService(KeycloakRoleMapper roleMapper) {
-        this(new OidcUserService(), roleMapper, BackofficeOidcUserService::decoderFor);
+    public BackofficeOidcUserService(AccessTokenReader accessTokens, LiveAuthorities liveAuthorities) {
+        this(new OidcUserService(), accessTokens, liveAuthorities);
     }
 
     BackofficeOidcUserService(OAuth2UserService<OidcUserRequest, OidcUser> delegate,
-                              KeycloakRoleMapper roleMapper,
-                              Function<ClientRegistration, JwtDecoder> decoderFactory) {
+                              AccessTokenReader accessTokens, LiveAuthorities liveAuthorities) {
         this.delegate = delegate;
-        this.roleMapper = roleMapper;
-        this.decoderFactory = decoderFactory;
+        this.accessTokens = accessTokens;
+        this.liveAuthorities = liveAuthorities;
     }
 
     @Override
     public OidcUser loadUser(OidcUserRequest userRequest) throws OAuth2AuthenticationException {
         OidcUser user = delegate.loadUser(userRequest);
-        Jwt accessToken = decode(userRequest);
+        AccessTokenGrants grants = read(userRequest);
 
         Set<GrantedAuthority> authorities = new HashSet<>(user.getAuthorities());
-        authorities.addAll(roleMapper.authorities(accessToken.getClaims()));
+        authorities.addAll(grants.authorities());
 
-        List<String> audience = accessToken.getAudience() == null ? List.of() : accessToken.getAudience();
-        return new BackofficeUser(authorities, user.getIdToken(), user.getUserInfo(), nameAttribute(userRequest), audience);
+        BackofficeUser backofficeUser = new BackofficeUser(authorities, user.getIdToken(), user.getUserInfo(),
+                nameAttribute(userRequest), grants.audience());
+        liveAuthorities.issued(backofficeUser.getName(), grants);
+        return backofficeUser;
     }
 
-    private Jwt decode(OidcUserRequest userRequest) {
-        ClientRegistration registration = userRequest.getClientRegistration();
-        JwtDecoder decoder = decoders.computeIfAbsent(registration.getRegistrationId(),
-                id -> decoderFactory.apply(registration));
+    private AccessTokenGrants read(OidcUserRequest userRequest) {
         try {
-            return decoder.decode(userRequest.getAccessToken().getTokenValue());
+            return accessTokens.read(userRequest.getClientRegistration(), userRequest.getAccessToken().getTokenValue());
         } catch (JwtException exception) {
             throw new OAuth2AuthenticationException(new OAuth2Error("invalid_token",
                     "The access token could not be verified: " + exception.getMessage(), null), exception);
@@ -82,16 +72,5 @@ public class BackofficeOidcUserService implements OAuth2UserService<OidcUserRequ
         String configured = userRequest.getClientRegistration().getProviderDetails()
                 .getUserInfoEndpoint().getUserNameAttributeName();
         return configured == null || configured.isBlank() ? IdTokenClaimNames.SUB : configured;
-    }
-
-    static JwtDecoder decoderFor(ClientRegistration registration) {
-        NimbusJwtDecoder decoder = NimbusJwtDecoder
-                .withJwkSetUri(registration.getProviderDetails().getJwkSetUri())
-                .build();
-        String issuer = registration.getProviderDetails().getIssuerUri();
-        decoder.setJwtValidator(issuer == null
-                ? JwtValidators.createDefault()
-                : JwtValidators.createDefaultWithIssuer(issuer));
-        return decoder;
     }
 }

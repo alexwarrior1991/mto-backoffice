@@ -265,7 +265,9 @@ import com.alejandro.mtobackoffice.client.error.ApiFieldError;
 import com.alejandro.mtobackoffice.client.error.ApiProblem;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.UnreachableApiException;
+import com.alejandro.mtobackoffice.configuration.security.AccessTokenGrants;
 import com.alejandro.mtobackoffice.configuration.security.BackofficeUser;
+import com.alejandro.mtobackoffice.configuration.security.LiveAuthorities;
 import com.alejandro.mtobackoffice.configuration.security.JwtClaimNames;
 import com.alejandro.mtobackoffice.ui.jobs.JobsView;
 import com.alejandro.mtobackoffice.ui.lov.LovBulkCreateDialog;
@@ -413,6 +415,7 @@ import com.vaadin.flow.component.html.H4;
 import com.vaadin.flow.component.html.ListItem;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.sidenav.SideNav;
 import com.vaadin.flow.component.sidenav.SideNavItem;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.upload.FileRemovedEvent;
@@ -548,6 +551,8 @@ class ViewLayerTest {
     private ApplicationContext context;
     @Autowired
     private ObjectMapper jsonMapper;
+    @Autowired
+    private LiveAuthorities liveAuthorities;
 
     @MockitoBean
     private LovClient lovClient;
@@ -733,6 +738,62 @@ class ViewLayerTest {
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withText("Alta multiple")).isEmpty());
         assertNull(grid().getColumnByKey("actions"));
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("delete-1")).isEmpty());
+    }
+
+    // --- Los permisos siguen al access token renovado ---------------------------------------------
+
+    private static void oidcLoginAs(String name, String... authorities) {
+        Instant now = Instant.now();
+        OidcIdToken idToken = OidcIdToken.withTokenValue("id").issuedAt(now).expiresAt(now.plusSeconds(300))
+                .claim("sub", "u-1").claim(JwtClaimNames.PREFERRED_USERNAME, name).build();
+        BackofficeUser user = new BackofficeUser(AuthorityUtils.createAuthorityList(authorities), idToken, null,
+                JwtClaimNames.PREFERRED_USERNAME, List.of("mto-configuration-api"));
+        SecurityContextHolder.getContext().setAuthentication(new OAuth2AuthenticationToken(user, user.getAuthorities(), "keycloak"));
+    }
+
+    /** Lo que deja un access token renovado y verificado, y la peticion siguiente de la sesion. */
+    private void refreshedWith(String name, String... authorities) {
+        liveAuthorities.issued(name, new AccessTokenGrants(Set.copyOf(AuthorityUtils.createAuthorityList(authorities)),
+                List.of("mto-configuration-api")));
+        liveAuthorities.sync();
+    }
+
+    /**
+     * Se retira un permiso en Keycloak con la pantalla abierta: en cuanto el token se renueva, la
+     * siguiente navegacion ya no ofrece lo que el servicio responderia con 403 (los botones, el menu, la
+     * vista), sin volver a entrar. Y lo concedido aparece. Como en mto-frontend.
+     */
+    @Test
+    void aRefreshedTokenWithOtherRolesChangesTheMenuTheButtonsAndTheViewsAtTheNextNavigation() {
+        oidcLoginAs("permisos.cambian", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_LOV_MANAGE", "OIDC_USER");
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
+        when(notificationClient.unreadCount()).thenReturn(new UnreadCountDto(0, false));
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        button("Nuevo");
+        assertTrue(menuLabels().contains("Catalogos"), menuLabels().toString());
+        assertFalse(menuLabels().contains("Almacen"), menuLabels().toString());
+        assertTrue(LocatorJ._find(InboxBell.class).isEmpty());
+
+        // Se le retira la escritura y se le concede leer el almacen y su bandeja.
+        refreshedWith("permisos.cambian", "ROLE_CONFIG_READ", "ROLE_STOCK_READ", "ROLE_NOTIFICATION_INBOX");
+        UI.getCurrent().navigate(HomeView.class);
+
+        assertTrue(menuLabels().contains("Catalogos"), menuLabels().toString());
+        assertTrue(menuLabels().contains("Almacen"), "lo concedido aparece: " + menuLabels());
+        assertEquals(1, LocatorJ._find(InboxBell.class).size(), "la campana, con su permiso");
+        assertEquals(1, LocatorJ._find(SideNav.class).size(), "el menu se repinta, no se duplica");
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        assertEquals(3, GridKt._size(grid()));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withText("Nuevo")).isEmpty(), "sin config-write no se ofrece el alta");
+
+        // Se le retira tambien la lectura: la vista ya no se abre ni sale en el menu.
+        refreshedWith("permisos.cambian", "ROLE_STOCK_READ");
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(CATALOGUE_ROUTE));
+        UI.getCurrent().navigate(HomeView.class);
+        assertFalse(menuLabels().contains("Catalogos"), menuLabels().toString());
+        assertTrue(menuLabels().contains("Almacen"), menuLabels().toString());
+        assertTrue(LocatorJ._find(InboxBell.class).isEmpty(), "sin notification-inbox, sin campana");
     }
 
     // --- La SPA: las mismas pantallas, a un clic --------------------------------------------------

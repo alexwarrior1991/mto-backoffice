@@ -579,8 +579,18 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   dice y ofrece volver a entrar.
 - «Salir» cierra también la sesión de Keycloak (`end_session_endpoint`); volver a entrar pide
   credenciales.
-- Un cambio de roles en Keycloak se aplica en el siguiente login: las autoridades se calculan al
-  entrar.
+- Un cambio de roles en Keycloak se aplica **sin volver a entrar**, en cuanto se renueva el access
+  token (cinco minutos como mucho, y solo si la persona está usando la aplicación: sin llamadas no se
+  renueva), como en `mto-frontend`. Cada token renovado se verifica y se lee como el del login
+  (`AccessTokenReader`), y los permisos de la persona pasan a ser los suyos (`LiveAuthorities`): el
+  menú, las vistas (`@RolesAllowed`) y los botones dejan de ofrecer lo retirado y ofrecen lo concedido.
+  - Se ve en la **siguiente ida y vuelta al servidor**: la siguiente navegación comprueba la vista con
+    los permisos nuevos y repinta el menú y la campana. Los botones de la pantalla que ya está abierta
+    no cambian solos: siguen hasta que la pantalla se vuelve a abrir, y pulsar uno retirado es el 403
+    del servicio, que se notifica.
+  - Los permisos son por persona, no por sesión: dos navegadores de la misma persona comparten el
+    token (se guarda por nombre de principal), y cada uno recoge el cambio en su siguiente petición.
+  - Un token renovado que no se puede verificar no cambia nada: se queda lo que había.
 
 ### Límites
 

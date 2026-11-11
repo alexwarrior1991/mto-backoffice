@@ -37,9 +37,13 @@ import com.vaadin.flow.spring.security.AuthenticationContext;
 import com.vaadin.flow.theme.lumo.LumoUtility;
 import jakarta.annotation.security.PermitAll;
 
+import org.springframework.security.core.GrantedAuthority;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Marco de todas las pantallas: barra con la persona, la campana de notificaciones y «Salir», y
@@ -58,6 +62,9 @@ import java.util.Map;
  * aplicaciones se usan indistintamente. Sigue a cada navegacion con su query, se abre en otra pestana
  * para no perder lo que haya en esta, y solo sale si {@link FrontendProperties} tiene la direccion.</p>
  *
+ * <p>Los permisos pueden cambiar con la pantalla abierta (siguen al access token renovado): el menu y
+ * la barra se repintan en la siguiente navegacion si han cambiado.</p>
+ *
  * <p>{@code @PermitAll} porque Vaadin comprueba tambien el layout padre: basta con haber entrado,
  * y son las vistas las que piden un rol concreto.</p>
  */
@@ -73,6 +80,9 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
     private final SharedPolling polling;
     private final FrontendProperties frontend;
     private Anchor frontendLink;
+    private Component header;
+    private Component menu;
+    private Set<String> paintedFor;
 
     public MainLayout(AuthenticationContext authenticationContext, AccessAnnotationChecker accessChecker,
                       NotificationClient notifications, SharedPolling polling, FrontendProperties frontend) {
@@ -82,8 +92,25 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
         this.polling = polling;
         this.frontend = frontend;
         setPrimarySection(Section.DRAWER);
-        addToNavbar(header());
-        addToDrawer(menu());
+        paint();
+    }
+
+    /** La barra y el menu, para los permisos que la persona tiene ahora. */
+    private void paint() {
+        if (header != null) {
+            remove(header, menu);
+            frontendLink = null;
+        }
+        paintedFor = grantedAuthorities();
+        header = header();
+        menu = menu();
+        addToNavbar(header);
+        addToDrawer(menu);
+    }
+
+    private Set<String> grantedAuthorities() {
+        return authenticationContext.getGrantedAuthorities().stream()
+                .map(GrantedAuthority::getAuthority).collect(Collectors.toSet());
     }
 
     private Component header() {
@@ -118,9 +145,16 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
     /**
      * El enlace a la SPA sigue a la pantalla en la que se esta, con su query, menos el "continue" con
      * el que Spring Security vuelve del login a la URL pedida: es suyo, no de la pantalla.
+     *
+     * <p>El marco vive mientras vive la pestana, y los permisos siguen al access token renovado
+     * ({@code LiveAuthorities}): si han cambiado desde que se pinto, el menu y la barra (la campana) se
+     * vuelven a pintar en esta navegacion.</p>
      */
     @Override
     public void afterNavigation(AfterNavigationEvent event) {
+        if (!paintedFor.equals(grantedAuthorities())) {
+            paint();
+        }
         if (frontendLink != null) {
             Location location = event.getLocation();
             Location screen = new Location(location.getSegments(), location.getQueryParameters().excluding(SAVED_REQUEST_PARAMETER));
