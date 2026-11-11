@@ -99,6 +99,13 @@ public final class UiErrors {
             // persona. No es «no tienes permiso»: el detalle del servicio dice que EP es y cuales son los suyos.
             case ForbiddenApiException scope when "SCP-403".equals(scope.getProblem().code()) ->
                     "Queda fuera de tu ambito." + detail(exception);
+            // mto-users: el permiso esta, lo que no vale es el objetivo. Una cuenta de servicio solo se lee
+            // (y su prefijo esta reservado en el alta), y nadie se cambia sus roles o perfiles, se desactiva
+            // ni se borra. Ninguno se arregla recargando ni pidiendo otro permiso.
+            case ForbiddenApiException account when "USR-SVC-403".equals(account.getProblem().code()) ->
+                    "Una cuenta de servicio no se modifica desde aqui: se administra con el realm." + detail(exception);
+            case ForbiddenApiException self when "USR-SELF-403".equals(self.getProblem().code()) ->
+                    "Nadie cambia sus propios permisos ni se saca a si mismo: tiene que hacerlo otra persona." + detail(exception);
             case ForbiddenApiException ignored -> "No tienes permiso para esta operacion.";
             // mto-notification: lo que ya no es de la persona o ya no existe. Se dice asi, como en
             // mto-frontend, sin el detalle del servicio (que nombra ids y usuarios en ingles).

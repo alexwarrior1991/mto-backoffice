@@ -1,5 +1,18 @@
 package com.alejandro.mtobackoffice;
 
+import com.alejandro.mtobackoffice.configuration.security.AccessTokenGrants;
+import com.alejandro.mtobackoffice.configuration.security.BackofficeUser;
+import com.alejandro.mtobackoffice.configuration.security.JwtClaimNames;
+import com.alejandro.mtobackoffice.configuration.security.LiveAuthorities;
+import com.alejandro.mtobackoffice.configuration.security.RefreshedTokenHandler;
+import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextImpl;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.security.oauth2.core.oidc.OidcIdToken;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.test.util.ReflectionTestUtils;
 import com.alejandro.mtobackoffice.client.configuration.LovClient;
 import com.alejandro.mtobackoffice.client.configuration.TrackAccessPointClient;
 import com.alejandro.mtobackoffice.client.maintenance.AssetClient;
@@ -56,7 +69,9 @@ import org.springframework.util.ClassUtils;
 
 import java.time.Duration;
 import java.util.Arrays;
+import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -153,6 +168,35 @@ class MtoBackofficeApplicationTests {
                 context.getBean(OAuth2AuthorizedClientRepository.class));
         assertInstanceOf(AuthorizedClientServiceOAuth2AuthorizedClientManager.class,
                 context.getBean(OAuth2AuthorizedClientManager.class));
+        // Y cada token renovado pasa por quien pone los permisos de la persona al dia.
+        assertInstanceOf(RefreshedTokenHandler.class, ReflectionTestUtils.getField(
+                context.getBean(OAuth2AuthorizedClientManager.class), "authorizationSuccessHandler"));
+    }
+
+    /**
+     * Los permisos siguen al access token renovado: lo que concede el ultimo token de la persona llega
+     * a su sesion al empezar su siguiente peticion, se renovara donde se renovara (otro navegador, un
+     * hilo de fondo), y se queda en la sesion.
+     */
+    @Test
+    void theNextRequestOfASessionPicksUpTheRolesOfTheLatestAccessToken() throws Exception {
+        Instant now = Instant.now();
+        OidcIdToken idToken = OidcIdToken.withTokenValue("id").issuedAt(now).expiresAt(now.plusSeconds(300))
+                .claim("sub", "u-1").claim(JwtClaimNames.PREFERRED_USERNAME, "permisos.cambian").build();
+        BackofficeUser user = new BackofficeUser(AuthorityUtils.createAuthorityList("ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "OIDC_USER"),
+                idToken, null, JwtClaimNames.PREFERRED_USERNAME, List.of("mto-configuration-api"));
+        SecurityContext securityContext = new SecurityContextImpl(new OAuth2AuthenticationToken(user, user.getAuthorities(), "keycloak"));
+        MockHttpSession session = new MockHttpSession();
+        session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, securityContext);
+        context.getBean(LiveAuthorities.class).issued("permisos.cambian", new AccessTokenGrants(
+                Set.copyOf(AuthorityUtils.createAuthorityList("ROLE_CONFIG_READ", "ROLE_STOCK_READ")), List.of("mto-stock-api")));
+
+        mockMvc.perform(get("/actuator/info").session(session));
+
+        SecurityContext stored = (SecurityContext) session.getAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
+        assertEquals(Set.of("ROLE_CONFIG_READ", "ROLE_STOCK_READ", "OIDC_USER"),
+                AuthorityUtils.authorityListToSet(stored.getAuthentication().getAuthorities()));
+        assertEquals("permisos.cambian", stored.getAuthentication().getName());
     }
 
     @Test

@@ -30,6 +30,7 @@ import java.util.stream.Collectors;
  */
 class UserProfilesPanel extends LazyPanel {
 
+    static final String READ_ONLY_HINT_ID = "profiles-read-only";
     static final String GRID_ID = "profiles-grid";
     static final String ASSIGN_PICKER_ID = "profile-assign";
     static final String ASSIGN_BUTTON_ID = "profile-assign-button";
@@ -46,14 +47,24 @@ class UserProfilesPanel extends LazyPanel {
     private List<RealmProfileSummaryDto> catalogue = List.of();
     private List<RealmProfileSummaryDto> assigned = List.of();
 
-    /** @param onChanged que hacer tras asignar o quitar uno (los roles de cliente que concede cambian) */
-    UserProfilesPanel(String userId, UsersClient client, boolean canWrite, Runnable onChanged) {
+    /**
+     * @param canWrite     si se ofrece asignar y quitar: el permiso, y que el servicio lo vaya a aceptar
+     * @param readOnlyHint por que no se ofrece aunque se tenga el permiso, o {@code null}
+     * @param onChanged    que hacer tras asignar o quitar uno (los roles de cliente que concede cambian)
+     */
+    UserProfilesPanel(String userId, UsersClient client, boolean canWrite, String readOnlyHint, Runnable onChanged) {
         this.userId = userId;
         this.client = client;
         this.canWrite = canWrite;
         this.onChanged = onChanged;
         add(new Paragraph("Un perfil es un rol compuesto de realm (mto-...) que concede roles de cliente. "
                 + "Aqui se ven las asignaciones directas: quien tiene un rol por un perfil aparece en el perfil, no en el rol."));
+        if (readOnlyHint != null) {
+            Paragraph hint = new Paragraph(readOnlyHint);
+            hint.setId(READ_ONLY_HINT_ID);
+            hint.getStyle().set("color", "var(--lumo-secondary-text-color)");
+            add(hint);
+        }
         grid.setId(GRID_ID);
         grid.addColumn(RealmProfileSummaryDto::name).setHeader("Perfil").setKey("name").setAutoWidth(true);
         grid.addColumn(dto -> dto.description() == null ? "" : dto.description()).setHeader("Descripcion").setKey("description").setFlexGrow(1);

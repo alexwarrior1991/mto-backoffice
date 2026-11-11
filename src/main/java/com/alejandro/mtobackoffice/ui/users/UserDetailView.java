@@ -6,6 +6,7 @@ import com.alejandro.mtobackoffice.client.dto.users.UserEnabledRequest;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
+import com.alejandro.mtobackoffice.configuration.security.CurrentPrincipal;
 import com.alejandro.mtobackoffice.configuration.security.UserRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
 import com.alejandro.mtobackoffice.ui.support.Formats;
@@ -45,6 +46,11 @@ import java.util.List;
  * permiso de {@code mto-users-api}; esconderlo es cortesia, la guarda es el servicio. «Sacar a la
  * persona» pide {@code users-write} y {@code users-sessions-write} a la vez: son sus tres llamadas.
  *
+ * <p>Lo que mto-users rechaza por el objetivo tampoco se ofrece ({@link #paint}): una cuenta de
+ * servicio solo se lee (403 {@code USR-SVC-403}), asi que la cabecera lo dice y no hay ni botones
+ * ni controles en sus pestanas; y en la ficha de quien ha entrado no hay desactivar, borrar ni
+ * «sacar a la persona», y sus perfiles y roles se leen (403 {@code USR-SELF-403}).</p>
+ *
  * <p>Las rutas estaticas del modulo ({@code usuarios/perfiles}, {@code usuarios/roles}) ganan a
  * {@code :userId}: Vaadin resuelve antes los segmentos literales.</p>
  */
@@ -59,6 +65,9 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
     static final String ACTIONS_EMAIL_ID = "user-actions-email";
     static final String DELETE_ID = "user-delete";
     static final String TAKE_OUT_ID = "user-take-out";
+    static final String SERVICE_ACCOUNT_NOTICE_ID = "user-service-account";
+    static final String SERVICE_ACCOUNT_NOTICE = "Cuenta de servicio: solo lectura. Se administra con el realm, no desde aqui.";
+    static final String OWN_PERMISSIONS_HINT = "Nadie cambia sus propios permisos: tus perfiles y tus roles los asigna o los quita otra persona.";
     static final String PROFILES_TAB = "Perfiles";
     static final String ROLES_TAB = "Roles de cliente";
     static final String SESSIONS_TAB = "Sesiones";
@@ -73,7 +82,14 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
     private final Span summary = new Span();
     private final Span pendingActions = new Span();
     private final Span attributes = new Span();
+    private final Span serviceAccountNotice = new Span(SERVICE_ACCOUNT_NOTICE);
     private final Button toggle = new Button();
+    /** Los botones que escriben, cada uno solo si su permiso esta: {@link #paint} decide cuales se ven. */
+    private Button edit;
+    private Button reset;
+    private Button email;
+    private Button takeOut;
+    private Button delete;
     private final Div tabsHolder = new Div();
 
     private UserDto user;
@@ -96,7 +112,10 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
         pendingActions.getStyle().set("color", "var(--lumo-error-text-color)");
         attributes.getStyle().set("color", "var(--lumo-secondary-text-color)");
         tabsHolder.setWidthFull();
-        add(heading, summary, pendingActions, attributes, buttons(), tabsHolder);
+        serviceAccountNotice.setId(SERVICE_ACCOUNT_NOTICE_ID);
+        serviceAccountNotice.getElement().getThemeList().add("badge contrast");
+        serviceAccountNotice.setVisible(false);
+        add(heading, serviceAccountNotice, summary, pendingActions, attributes, buttons(), tabsHolder);
         expand(tabsHolder);
     }
 
@@ -127,7 +146,7 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
         Button back = new Button("Volver a la lista", VaadinIcon.ARROW_LEFT.create(), click -> UI.getCurrent().navigate(UsersView.class));
         buttons.add(back);
         if (canWrite) {
-            Button edit = new Button("Modificar", VaadinIcon.EDIT.create(), click -> new UserEditorDialog(user, client, this::paint).open());
+            edit = new Button("Modificar", VaadinIcon.EDIT.create(), click -> new UserEditorDialog(user, client, this::paint).open());
             edit.setId(EDIT_ID);
             edit.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
             toggle.setId(TOGGLE_ID);
@@ -135,7 +154,7 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
             buttons.add(edit, toggle);
         }
         if (authentication.hasRole(UserRoles.USERS_PASSWORD_RESET)) {
-            Button reset = new Button("Contrasena temporal", VaadinIcon.KEY.create(), click -> new ResetPasswordDialog(user, client, () -> {
+            reset = new Button("Contrasena temporal", VaadinIcon.KEY.create(), click -> new ResetPasswordDialog(user, client, () -> {
                 // Keycloak anade «cambiar la contrasena» a sus acciones y una credencial de tipo password.
                 reload();
                 credentials.reloadIfLoaded();
@@ -144,19 +163,19 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
             buttons.add(reset);
         }
         if (canWrite) {
-            Button email = new Button("Acciones por correo", VaadinIcon.ENVELOPE.create(), click -> new ExecuteActionsEmailDialog(user, client,
+            email = new Button("Acciones por correo", VaadinIcon.ENVELOPE.create(), click -> new ExecuteActionsEmailDialog(user, client,
                     authentication.hasAllRoles(UserRoles.USERS_WRITE, UserRoles.USERS_PASSWORD_RESET)).open());
             email.setId(ACTIONS_EMAIL_ID);
             buttons.add(email);
         }
         if (authentication.hasAllRoles(UserRoles.USERS_WRITE, UserRoles.USERS_SESSIONS_WRITE)) {
-            Button takeOut = new Button("Sacar a la persona", VaadinIcon.EXIT.create(), click -> confirmTakeOut());
+            takeOut = new Button("Sacar a la persona", VaadinIcon.EXIT.create(), click -> confirmTakeOut());
             takeOut.setId(TAKE_OUT_ID);
             takeOut.addThemeVariants(ButtonVariant.LUMO_ERROR);
             buttons.add(takeOut);
         }
         if (authentication.hasRole(UserRoles.USERS_DELETE)) {
-            Button delete = new Button("Borrar", VaadinIcon.TRASH.create(), click -> confirmDelete());
+            delete = new Button("Borrar", VaadinIcon.TRASH.create(), click -> confirmDelete());
             delete.setId(DELETE_ID);
             delete.addThemeVariants(ButtonVariant.LUMO_ERROR);
             buttons.add(delete);
@@ -168,14 +187,20 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
         paint(loaded);
         TabSheet tabs = new TabSheet();
         tabs.setWidthFull();
-        roles = new UserRolesPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_ROLES_WRITE));
+        // Una cuenta de servicio solo se lee, y nadie cambia sus propios permisos: sus pestanas se leen.
+        boolean writable = !loaded.isServiceAccount();
+        boolean self = writable && CurrentPrincipal.isSubject(loaded.id());
+        boolean permissionsWritable = writable && !self;
+        String hint = self ? OWN_PERMISSIONS_HINT : null;
+        roles = new UserRolesPanel(loaded.id(), client,
+                permissionsWritable && authentication.hasRole(UserRoles.USERS_ROLES_WRITE), hint);
         // Un perfil es un rol de realm que concede roles de cliente: cambiarlo cambia la pestana de roles.
-        tabs.add(PROFILES_TAB, new UserProfilesPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_PROFILES_WRITE),
-                () -> roles.reloadIfLoaded()));
+        tabs.add(PROFILES_TAB, new UserProfilesPanel(loaded.id(), client,
+                permissionsWritable && authentication.hasRole(UserRoles.USERS_PROFILES_WRITE), hint, () -> roles.reloadIfLoaded()));
         tabs.add(ROLES_TAB, roles);
-        sessions = new UserSessionsPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_SESSIONS_WRITE));
+        sessions = new UserSessionsPanel(loaded.id(), client, writable && authentication.hasRole(UserRoles.USERS_SESSIONS_WRITE));
         tabs.add(SESSIONS_TAB, sessions);
-        credentials = new UserCredentialsPanel(loaded.id(), client, authentication.hasRole(UserRoles.USERS_CREDENTIALS_WRITE));
+        credentials = new UserCredentialsPanel(loaded.id(), client, writable && authentication.hasRole(UserRoles.USERS_CREDENTIALS_WRITE));
         tabs.add(CREDENTIALS_TAB, credentials);
         tabs.addSelectedChangeListener(change -> loadTab(tabs, change.getSelectedTab()));
         tabsHolder.removeAll();
@@ -215,6 +240,31 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
                 .map(entry -> entry.getKey() + "=" + String.join("|", entry.getValue())).sorted().toList()));
         toggle.setText(loaded.isEnabled() ? "Desactivar" : "Activar");
         toggle.setIcon((loaded.isEnabled() ? VaadinIcon.BAN : VaadinIcon.CHECK).create());
+        offer(loaded);
+    }
+
+    /**
+     * Lo que se ofrece segun de quien es la ficha, ademas del permiso de cada boton. Sobre una cuenta
+     * de servicio mto-users lo rechaza todo (403 {@code USR-SVC-403}); sobre uno mismo, desactivar,
+     * borrar y «sacar a la persona», cuyo primer paso es desactivar (403 {@code USR-SELF-403}).
+     * Activarse, modificar los datos propios, la contrasena y el correo de acciones siguen.
+     */
+    private void offer(UserDto loaded) {
+        boolean writable = !loaded.isServiceAccount();
+        boolean self = CurrentPrincipal.isSubject(loaded.id());
+        serviceAccountNotice.setVisible(!writable);
+        show(edit, writable);
+        show(reset, writable);
+        show(email, writable);
+        toggle.setVisible(writable && !(self && loaded.isEnabled()));
+        show(takeOut, writable && !self);
+        show(delete, writable && !self);
+    }
+
+    private static void show(Button button, boolean visible) {
+        if (button != null) {
+            button.setVisible(visible);
+        }
     }
 
     private static String actionLabel(String action) {

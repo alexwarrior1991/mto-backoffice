@@ -173,7 +173,9 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   protegidos que `mto-users` no lista, y quién tiene cada uno). Los miembros llegan del servicio
   como lista plana y sin total, así que se pasean con «anteriores/siguientes» y una página llena
   es la única señal de que hay más; son asignaciones directas (quien tiene un rol por un perfil
-  aparece en el perfil, no en el rol), y una fila abre la ficha.
+  aparece en el perfil, no en el rol), y una fila abre la ficha. Después, a la par que
+  `mto-frontend`, el módulo dejó de ofrecer lo que `mto-users` rechaza por el objetivo (ver
+  «Sobre quién no se actúa», más abajo).
 
 - **Fase 6**: el módulo **Almacén** sobre `mto-stock`, el inventario de la nave de
   catenaria: catálogos (almacenes, proveedores, proyectos, materiales), existencias y movimientos
@@ -421,6 +423,21 @@ Las pantallas de usuarios (fase 5) siguen los permisos de `mto-users-api`, y nin
 | Quitar una credencial | `users-credentials-write` |
 | «Sacar a la persona» (desactivar, cerrar sesiones, revocar offline) | `users-write` **y** `users-sessions-write` |
 
+**Sobre quién no se actúa.** Tener el permiso no basta: `mto-users` no admite dos objetivos (403 con
+código propio, distinto de `AUTH-403`), y las pantallas no los ofrecen:
+
+| | Una cuenta de servicio (`serviceAccount: true`) | Uno mismo (`id` = `sub` de la sesión) |
+|---|---|---|
+| Lista | la fila dice «Cuenta de servicio» y solo abre la ficha | sin desactivar ni borrar; modificar sí |
+| Cabecera de la ficha | «Cuenta de servicio: solo lectura»; sin modificar, activar/desactivar, contraseña, correo de acciones, «sacar a la persona» ni borrar | sin desactivar, «sacar a la persona» ni borrar; modificar, contraseña y correo sí (y activar, si está desactivado) |
+| Perfiles y roles | se leen | se leen, con una línea que dice que nadie cambia sus propios permisos |
+| Sesiones y credenciales | se leen: sin cerrar ni quitar | como siempre |
+| Si aun así llega el 403 | `USR-SVC-403`: «Una cuenta de servicio no se modifica desde aqui: se administra con el realm.» | `USR-SELF-403`: «Nadie cambia sus propios permisos ni se saca a si mismo: tiene que hacerlo otra persona.» |
+
+En el alta, un nombre de usuario que empiece por `service-account-` (sin distinguir mayúsculas) se
+rechaza en su campo sin llamar: el servicio respondería `USR-SVC-403`. Sin `serviceAccount` en la
+respuesta (un `mto-users` anterior) nadie es una cuenta de servicio: no se adivina por el nombre.
+
 Las pantallas de almacén (fase 6) siguen los permisos de `mto-stock-api`, que el servicio aplica por
 método HTTP (`GET` lee, `POST`/`PUT` escriben, `DELETE` cancela) y ninguno implica otro:
 
@@ -579,8 +596,18 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   dice y ofrece volver a entrar.
 - «Salir» cierra también la sesión de Keycloak (`end_session_endpoint`); volver a entrar pide
   credenciales.
-- Un cambio de roles en Keycloak se aplica en el siguiente login: las autoridades se calculan al
-  entrar.
+- Un cambio de roles en Keycloak se aplica **sin volver a entrar**, en cuanto se renueva el access
+  token (cinco minutos como mucho, y solo si la persona está usando la aplicación: sin llamadas no se
+  renueva), como en `mto-frontend`. Cada token renovado se verifica y se lee como el del login
+  (`AccessTokenReader`), y los permisos de la persona pasan a ser los suyos (`LiveAuthorities`): el
+  menú, las vistas (`@RolesAllowed`) y los botones dejan de ofrecer lo retirado y ofrecen lo concedido.
+  - Se ve en la **siguiente ida y vuelta al servidor**: la siguiente navegación comprueba la vista con
+    los permisos nuevos y repinta el menú y la campana. Los botones de la pantalla que ya está abierta
+    no cambian solos: siguen hasta que la pantalla se vuelve a abrir, y pulsar uno retirado es el 403
+    del servicio, que se notifica.
+  - Los permisos son por persona, no por sesión: dos navegadores de la misma persona comparten el
+    token (se guarda por nombre de principal), y cada uno recoge el cambio en su siguiente petición.
+  - Un token renovado que no se puede verificar no cambia nada: se queda lo que había.
 
 ### Límites
 
@@ -629,7 +656,8 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   `traceId`, `retryable`, `errors[{field,code,message}]`; sus dos 409 son `CON-001`, un
   `versionNumber` que ya no es el guardado y que se arregla recargando, y `BUS-002`, un valor único
   repetido o una entrada en uso, que no), el de `mto-users` (`errorCode`,
-  `correlationId`, `validationErrors[{field,message}]`, `Retry-After` en su 503), el JSON de error
+  `correlationId`, `validationErrors[{field,message}]`, `Retry-After` en su 503; sus 403 `USR-SVC-403`
+  y `USR-SELF-403` no son falta de permiso y se dicen aparte), el JSON de error
   de `mto-stock` (no es `problem+json`: `error`, `message`, `errorCode`, `correlationId`,
   `validationErrors[{field,message}]`; 409 `STK-001` es falta de stock y un 422 sin campos es una
   regla de negocio), el de `mto-maintenance` (el mismo, con `path` y `method` de más; sus 409 son

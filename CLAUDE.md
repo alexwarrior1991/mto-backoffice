@@ -59,10 +59,14 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 - `configuration/security` — `SecurityConfiguration` (cadena con `VaadinSecurityConfigurer` y
   `oauth2LoginPage("/oauth2/authorization/keycloak")`; sondas de salud abiertas),
   `KeycloakClientRegistrations` (el registro OIDC **construido a mano** desde `app.keycloak.*`),
-  `BackofficeOidcUserService` (los roles se leen del **access token**), `KeycloakRoleMapper`
+  `BackofficeOidcUserService` (los roles se leen del **access token**), `AccessTokenReader` (verifica un
+  access token y dice lo que concede, `AccessTokenGrants`: lo usan el login y cada renovación),
+  `LiveAuthorities` (lo que concede el último token de cada persona, y `sync()`, que pone al día la
+  sesión del hilo), `LiveAuthoritiesFilter` (ese `sync()` al empezar cada petición),
+  `RefreshedTokenHandler` (lo que hace el manager al renovar: guardar el cliente y avisar), `KeycloakRoleMapper`
   (claims → `ROLE_*` para los clientes de `app.keycloak.roles-client-ids`, más el sinónimo
-  `ROLE_CLIENT_<CLIENTE>_*`), `BackofficeUser` (el usuario con las audiencias del access token),
-  `CurrentPrincipal` (nombre del principal desde cualquier hilo), `PrincipalSessionRecorder`,
+  `ROLE_CLIENT_<CLIENTE>_*`), `BackofficeUser` (el usuario con las audiencias del access token, las del último),
+  `CurrentPrincipal` (nombre del principal desde cualquier hilo, y el `sub` de la sesión: `subject()`), `PrincipalSessionRecorder`,
   `SecurityRoles`, `UserRoles`, `StockRoles`, `MaintenanceRoles`, `NotificationRoles` y
   `ResourcesRoles` (los permisos de `mto-configuration-api`, `mto-users-api`, `mto-stock-api`,
   `mto-maintenance-api`, `mto-notification-api` y `mto-resources-api`), `SecurityAuthorityPrefixes`,
@@ -70,7 +74,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 - `configuration/client` — `GatewayClientConfiguration` (un `RestClient` hacia el gateway con tres
   interceptores, `BearerTokenInterceptor`, `CorrelationIdInterceptor` y `TransportFailureInterceptor`, y `ApiErrorDecoder` como
   manejador de estado; `HttpServiceProxyFactory` para las interfaces `@HttpExchange`),
-  `UserTokenProvider` (`AuthorizedClientServiceOAuth2AuthorizedClientManager` con `refreshToken()`),
+  `UserTokenProvider` (`AuthorizedClientServiceOAuth2AuthorizedClientManager` con `refreshToken()` y
+  `RefreshedTokenHandler` como manejador de cada renovación),
   `GatewayProperties`, `CorrelationProperties`.
 - `client` — las interfaces `@HttpExchange` por servicio: `client/configuration/LovClient` (los
   ocho endpoints de `AbstractLovController` parametrizados por recurso; `LovResource`, los 17
@@ -280,8 +285,33 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 - **Los roles se leen del access token, no del ID token.** Keycloak pone `resource_access` solo en el
   access token (todos los audience mapper del realm son `id.token.claim=false`), y `oauth2Login`
   construye las autoridades desde el ID token. `BackofficeOidcUserService` verifica el access token
-  (firma y emisor) y aplica `KeycloakRoleMapper`. Un `GrantedAuthoritiesMapper` no sirve: no ve el
-  access token.
+  (firma y emisor) y aplica `KeycloakRoleMapper`, las dos cosas en `AccessTokenReader`. Un
+  `GrantedAuthoritiesMapper` no sirve: no ve el access token.
+- **Los permisos siguen al access token renovado, no al del login**, como en mto-frontend, que rehace
+  su sesión con cada token. Se retira un permiso en Keycloak: el siguiente token (duran cinco minutos)
+  ya no lo trae, y el menú, `@RolesAllowed` y `hasAllRoles` dejan de tenerlo sin volver a entrar; el
+  concedido aparece.
+  - Cada token renovado pasa por `RefreshedTokenHandler` (el `OAuth2AuthorizationSuccessHandler` del
+    manager: solo se llama cuando de verdad se renueva), que lo guarda y se lo da a `LiveAuthorities`.
+    Se verifica y se mapea con el mismo `AccessTokenReader` del login: nada se duplica, y un rol de
+    realm sigue siendo solo `ROLE_REALM_*`. Uno que no se puede verificar no concede ni retira nada.
+  - `LiveAuthorities` guarda **por persona** lo que concede su último token (también el del login). Es
+    por persona porque el token lo es: el cliente autorizado se guarda por nombre de principal, así
+    que dos navegadores de la misma persona comparten token y, por tanto, permisos.
+  - La `Authentication` de una sesión solo se sustituye **desde un hilo de esa sesión** (`sync()`, sobre
+    el contexto que da el `SecurityContextHolder`): al empezar cada petición (`LiveAuthoritiesFilter`,
+    detrás de `SecurityContextHolderFilter`) y, si el token se renueva en una petición o dentro de
+    `UI.access()`, en ese momento. Un hilo de fondo (`SharedPolling`) no tiene sesión: solo deja
+    apuntado lo que concede el token, y cada sesión lo recoge en su siguiente petición. Nunca se
+    escribe la sesión de otro hilo, y no hay registro de sesiones.
+  - Solo se sustituye si cambió el conjunto de `ROLE_*`; la persona es la misma (nombre, ID token para
+    el logout federado, detalles), con `OIDC_USER` y los scopes como estaban y las audiencias del
+    token nuevo.
+  - En pantalla: lo que comprueba un rol lo ve desde la siguiente ida y vuelta al servidor (la
+    navegación y su `@RolesAllowed`, un diálogo o una vista que se construyen); `MainLayout` repinta el
+    menú y la barra (la campana) en la siguiente navegación si las autoridades cambiaron. Lo ya pintado
+    (los botones de la vista abierta) no se repinta solo: sigue hasta que la vista se vuelve a
+    construir, y pulsarlo es el 403 del servicio, que se notifica. No hay repintado por push.
 - **Los roles de realm se emiten solo como `ROLE_REALM_*`, nunca como `ROLE_*`.** Los permisos que
   comprueban las vistas (`@RolesAllowed("CONFIG_READ")`, `@RolesAllowed("USERS_READ")`) son roles
   de **cliente** de `mto-configuration-api`, `mto-users-api`, `mto-stock-api`,
@@ -561,6 +591,31 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `RequiredAction.forActionsEmail`), lo dice en la ayuda del campo a quien no los tiene, y no marca
   nada de partida. Si aun así llega el 403, se dice como cualquier otro, con el diálogo abierto. El
   alta de un usuario no cambia: sus acciones al entrar no mandan correo.
+- **Sobre una cuenta de servicio y sobre uno mismo no se ofrece lo que `mto-users` rechaza.** Tener el
+  permiso no basta: el servicio no admite dos objetivos, y lo dice con un 403 propio, distinto de
+  `AUTH-403` (README de `mto-users`, «Sobre quién no se actúa»). Como en mto-frontend:
+  - **Una cuenta de servicio solo se lee** (`USR-SVC-403`). Lo dice el usuario leído, `serviceAccount`
+    (`UserDto.isServiceAccount()`; un `Boolean`, porque un servicio anterior no lo manda: sin la clave no
+    lo es, y aquí no se adivina por el nombre). Su fila dice «Cuenta de servicio» en la columna «Nombre»
+    y solo abre la ficha; la ficha lo dice bajo el título («Cuenta de servicio: solo lectura…») y no
+    ofrece modificar, activar o desactivar, contraseña, correo de acciones, «sacar a la persona» ni
+    borrar; sus cuatro pestañas se leen (sin asignar ni quitar perfiles o roles, sin cerrar sesiones,
+    sin quitar credenciales, y sin pedir los catálogos).
+  - **Nadie cambia sus propios permisos ni se saca a sí mismo** (`USR-SELF-403`). «Uno mismo» es el
+    `sub` de la sesión (`CurrentPrincipal.subject()`/`isSubject(id)`: el del ID token, que es el del
+    access token y el `id` con el que `mto-users` lista a la persona; nunca el nombre). Su fila no
+    ofrece desactivar ni borrar; su ficha, tampoco, ni «sacar a la persona» (su primer paso es
+    desactivar), y sus pestañas de perfiles y de roles se leen con una línea que lo explica
+    (`UserDetailView.OWN_PERMISSIONS_HINT`). Lo demás sigue: modificar sus datos, activarse (el botón
+    solo sale si está desactivado), la contraseña, el correo de acciones, cerrar sus sesiones y quitar
+    una credencial.
+  - **El prefijo `service-account-` está reservado en el alta** (`UserDto.isReservedUsername`, sin
+    distinguir mayúsculas): el formulario lo dice en el campo y no llama.
+  - Si aun así llega el 403 (una fila leída antes, un servicio anterior), `UiErrors` no lo dice como
+    «no tienes permiso»: «Una cuenta de servicio no se modifica desde aqui: se administra con el
+    realm.» y «Nadie cambia sus propios permisos ni se saca a si mismo: tiene que hacerlo otra
+    persona.», cada uno con el detalle del servicio, y con el diálogo abierto. Ninguno pide recargar.
+    No es una regla nueva de negocio: es no ofrecer lo que va a fallar.
 - **La campana y la bandeja son de la persona, y a quién va cada aviso lo decide el servicio con el
   token.** `mto-notification` resuelve al leer, por usuario, perfil y rol de cliente, qué
   notificaciones son mías; aquí no se filtra por nadie ni se cuenta nada: el contador es el de
@@ -935,7 +990,11 @@ no listado no aporta nada, un rol de realm `users-read`, `stock-read`, `maintena
 `notification-access-read` o `resources-read` nunca abre el módulo, `SecurityRoles`, `UserRoles`,
 `StockRoles`, `MaintenanceRoles`, `NotificationRoles` y `ResourcesRoles` coinciden con el realm y son
 disjuntos, registro OIDC sin
-descubrimiento, roles desde el access token, `CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
+descubrimiento, roles desde el access token, `CurrentPrincipal`; los permisos que siguen al token
+renovado: el retirado y el concedido con la persona intacta, un rol de realm que sigue sin conceder,
+los mismos roles sin sustituir nada, el token que no se verifica ignorado, las demás sesiones de la
+persona en su siguiente petición tras renovarlo un hilo de fondo, la de otra persona intacta, y el
+manejador que guarda el cliente y avisa), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
 de la ruta y su filtro local, menú por roles, controles de escritura ocultos sin permiso, alta por
 diálogo, errores del servicio campo a campo, el gateway inalcanzable dicho por la pantalla y callado
 por la campana, la modificación con la versión leída y la siguiente
@@ -1038,7 +1097,11 @@ la URL, filtrados en el servicio, un resultado nuevo como «Desconocido» y su d
 cada servicio y los seis clientes cuyos roles son permisos; redirección al login; sonda de
 salud; ausencia de artefactos comerciales; las dos hojas de Lumo en el shell; la aplicación en hilos
 virtuales, también el executor de tareas que usa Vaadin, `theApplicationRunsOnVirtualThreadsAndSoDoesTheTaskExecutorVaadinUses`;
-el timeout de sesión del servlet y `vaadin.close-idle-sessions`, que `ViewLayerTest` comprueba además en el servicio de Vaadin). Lo que trajo la
+el timeout de sesión del servlet y `vaadin.close-idle-sessions`, que `ViewLayerTest` comprueba además en el servicio de Vaadin;
+el manejador de renovación puesto en el manager, y la siguiente petición de una sesión, por la cadena
+de filtros real, con los roles del último token). Que el menú, la campana, los botones y la vista
+cambian en la siguiente navegación tras un token con otros roles es un caso de `ViewLayerTest`
+(`aRefreshedTokenWithOtherRolesChangesTheMenuTheButtonsAndTheViewsAtTheNextNavigation`). Lo que trajo la
 convivencia con mto-frontend son casos de esas mismas clases: el enlace a la SPA con su query, el
 tipo padre y los `extras` de un catálogo, la referencia vaciada, el aviso fijo de la lista de
 trabajos, la pestaña oculta, las descargas fallidas, los cambios de usuarios, los desempates, lo
@@ -1098,6 +1161,13 @@ abierta con lo que se comprueba antes de llamar y el `VEH-001`; modificar con la
 según el estado; solo lectura), el campo GPS (su forma, vaciarlo, la ficha y el origen «GPS»), el
 diálogo del equipo solo con supervise y write, con lo desconocido y su `CON-001`, y Puestos y perfiles
 (sus secciones, el enlace a la persona, el `KCK-503` en su sitio con «Reintentar» y el menú solo con
-`resources-read`). Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
+`resources-read`). Las cuentas de servicio y uno mismo en Usuarios también: en `ClientLayerTest`, el
+usuario con `serviceAccount` y sin la clave (y el prefijo reservado) y los dos 403 tipados con su código;
+en `SecurityLayerTest`, el `sub` de la sesión (`CurrentPrincipal.subject`), que no es el nombre y sigue
+tras un token renovado; en `ViewLayerTest`, los mensajes de `USR-SVC-403` y `USR-SELF-403`, la fila y la
+ficha de una cuenta de servicio (nada que escriba, en la cabecera y en cada pestaña), la fila y la ficha
+propias (sin desactivar, borrar ni «sacar a la persona», perfiles y roles leídos con su línea, y lo demás
+como siempre; activarse sí, estando desactivado), el alta con el prefijo reservado rechazada en su campo
+sin llamar, y un `USR-SVC-403` que aun así llega, dicho con su mensaje y el diálogo abierto. Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
 CI: `mto-platform/scripts/e2e.sh` construye la imagen de este commit, usa la publicada de cada
 hermano y corre el e2e de Playwright de mto-frontend, que recorre las dos aplicaciones.

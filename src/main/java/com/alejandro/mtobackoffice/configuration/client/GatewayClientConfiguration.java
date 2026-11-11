@@ -38,6 +38,8 @@ import com.alejandro.mtobackoffice.client.stock.SupplierClient;
 import com.alejandro.mtobackoffice.client.stock.WarehouseClient;
 import com.alejandro.mtobackoffice.client.users.UsersClient;
 import com.alejandro.mtobackoffice.configuration.security.KeycloakClientRegistrations;
+import com.alejandro.mtobackoffice.configuration.security.LiveAuthorities;
+import com.alejandro.mtobackoffice.configuration.security.RefreshedTokenHandler;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -69,16 +71,19 @@ public class GatewayClientConfiguration {
      * Manager que no necesita peticion HTTP en curso: lee el cliente autorizado que guardo el login
      * (Boot lo guarda por principal, en {@code AuthenticatedPrincipalOAuth2AuthorizedClientRepository}
      * sobre este mismo servicio) y solo sabe refrescar, que es lo unico que hace falta despues de
-     * entrar.
+     * entrar. Cada token renovado pasa por {@link RefreshedTokenHandler}: se guarda, y los permisos
+     * de la persona pasan a ser los suyos.
      */
     @Bean
     public OAuth2AuthorizedClientManager userAuthorizedClientManager(ClientRegistrationRepository clientRegistrations,
-                                                                     OAuth2AuthorizedClientService authorizedClients) {
+                                                                     OAuth2AuthorizedClientService authorizedClients,
+                                                                     LiveAuthorities liveAuthorities) {
         AuthorizedClientServiceOAuth2AuthorizedClientManager manager =
                 new AuthorizedClientServiceOAuth2AuthorizedClientManager(clientRegistrations, authorizedClients);
         manager.setAuthorizedClientProvider(OAuth2AuthorizedClientProviderBuilder.builder()
                 .refreshToken()
                 .build());
+        manager.setAuthorizationSuccessHandler(new RefreshedTokenHandler(authorizedClients, liveAuthorities));
         return manager;
     }
 

@@ -43,6 +43,7 @@ import java.util.stream.Collectors;
  */
 class UserRolesPanel extends LazyPanel {
 
+    static final String READ_ONLY_HINT_ID = "roles-read-only";
     static final String GRID_ID = "roles-grid";
     static final String CLIENT_PICKER_ID = "role-client";
     static final String ROLES_PICKER_ID = "role-names";
@@ -66,11 +67,21 @@ class UserRolesPanel extends LazyPanel {
     private final Map<String, List<String>> rolesByClient = new HashMap<>();
     private boolean clientsLoaded;
 
-    UserRolesPanel(String userId, UsersClient client, boolean canWrite) {
+    /**
+     * @param canWrite     si se ofrece asignar y quitar: el permiso, y que el servicio lo vaya a aceptar
+     * @param readOnlyHint por que no se ofrece aunque se tenga el permiso, o {@code null}
+     */
+    UserRolesPanel(String userId, UsersClient client, boolean canWrite, String readOnlyHint) {
         this.userId = userId;
         this.client = client;
         this.canWrite = canWrite;
         add(new Paragraph("Asignaciones directas de roles de cliente. Los clientes protegidos del realm no se listan ni se asignan."));
+        if (readOnlyHint != null) {
+            Paragraph hint = new Paragraph(readOnlyHint);
+            hint.setId(READ_ONLY_HINT_ID);
+            hint.getStyle().set("color", "var(--lumo-secondary-text-color)");
+            add(hint);
+        }
         grid.setId(GRID_ID);
         grid.addColumn(RoleRow::clientId).setHeader("Cliente").setKey("clientId").setAutoWidth(true);
         grid.addColumn(RoleRow::role).setHeader("Rol").setKey("role").setFlexGrow(1);
