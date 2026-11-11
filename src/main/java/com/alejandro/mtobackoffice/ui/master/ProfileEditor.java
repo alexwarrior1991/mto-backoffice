@@ -6,6 +6,7 @@ import com.alejandro.mtobackoffice.client.dto.master.CantileverDto;
 import com.alejandro.mtobackoffice.client.dto.master.LovRef;
 import com.alejandro.mtobackoffice.client.dto.master.ProfileDto;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
+import com.alejandro.mtobackoffice.ui.support.ServerValidation;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.combobox.MultiSelectComboBox;
 import com.vaadin.flow.component.textfield.BigDecimalField;
@@ -17,6 +18,7 @@ import com.vaadin.flow.data.validator.RegexpValidator;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -170,6 +172,11 @@ public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
                 setters.get(i).accept(dto, CLEARED);
             }
         }
+    }
+
+    @Override
+    protected Map<String, Consumer<List<ServerValidation.ChildError>>> childErrors() {
+        return Map.of("cantilevers", cantilevers::showErrors);
     }
 
     /** Las siete referencias opcionales a un catalogo, en el orden de los setters de {@link #prepare}. */

@@ -18,6 +18,7 @@ import com.vaadin.flow.data.binder.Binder;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -26,7 +27,9 @@ import java.util.function.Function;
  * escribe ese mismo objeto por nombre de propiedad, que es lo que permite volcar los
  * {@code errors[{field}]} del servicio sobre cada campo ({@link ServerValidation}); antes de
  * guardar, las colecciones de hijos que el editor no toca van a {@code null}
- * ({@link MasterDto#forgetChildren()}) para que el servicio las deje como estan.
+ * ({@link MasterDto#forgetChildren()}) para que el servicio las deje como estan. mto-configuration
+ * dice el campo como ruta desde la raiz del cuerpo, y {@link ServerValidation#applyWithPaths} lleva
+ * cada error a su sitio sin perder ninguno.
  *
  * <p>Aqui solo se valida lo evidente (obligatorios, longitudes, formato); la regla de negocio la
  * dice el servicio y se ensena en su campo.</p>
@@ -81,11 +84,22 @@ public abstract class MasterEditorDialog<D extends MasterDto> extends Dialog {
     protected void prepare(D dto) {
     }
 
+    /**
+     * Las colecciones de hijos que el editor lleva en una tabla, por su nombre en el cuerpo, con quien
+     * ensena lo que el servicio rechaza de ellas ({@code cantilevers[1].cantileverType}): debajo de la
+     * tabla, con su fila y su campo ({@link ChildrenEditor#showErrors}).
+     */
+    protected Map<String, Consumer<List<ServerValidation.ChildError>>> childErrors() {
+        return Map.of();
+    }
+
     private void save() {
         if (!binder.writeBeanIfValid(dto)) {
             return;
         }
         dto.forgetChildren();
+        // Lo que se dijo de los hijos en el intento anterior ya no vale.
+        childErrors().values().forEach(show -> show.accept(List.of()));
         try {
             prepare(dto);
             D saved = saver.apply(dto);
@@ -94,7 +108,9 @@ public abstract class MasterEditorDialog<D extends MasterDto> extends Dialog {
                     .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
             onSaved.accept(saved);
         } catch (ValidationApiException validation) {
-            List<String> unattributed = ServerValidation.apply(binder, validation);
+            // Cada error en su sitio y ninguno perdido: su campo, el campo de su lista, la tabla de sus
+            // hijos o, si no tiene ninguno, la notificacion con su ruta delante.
+            List<String> unattributed = ServerValidation.applyWithPaths(binder, validation, childErrors());
             if (!unattributed.isEmpty()) {
                 Notification.show(String.join(". ", unattributed), 8000, Notification.Position.BOTTOM_START)
                         .addThemeVariants(NotificationVariant.LUMO_ERROR);

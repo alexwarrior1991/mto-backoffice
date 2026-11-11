@@ -5,11 +5,14 @@ import com.alejandro.mtobackoffice.client.dto.master.SectionInsulatorDto;
 import com.alejandro.mtobackoffice.client.dto.master.SectionInsulatorInstallationType;
 import com.alejandro.mtobackoffice.client.dto.master.SectionInsulatorSwitchDto;
 import com.alejandro.mtobackoffice.ui.support.Numbers;
+import com.alejandro.mtobackoffice.ui.support.ServerValidation;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.textfield.BigDecimalField;
 import com.vaadin.flow.component.textfield.TextField;
 
+import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -79,6 +82,11 @@ public class SectionInsulatorEditor extends MasterEditorDialog<SectionInsulatorD
             dto.setEnabled(Boolean.TRUE);
         }
         ready();
+    }
+
+    @Override
+    protected Map<String, Consumer<List<ServerValidation.ChildError>>> childErrors() {
+        return Map.of("switches", switches::showErrors);
     }
 
     @Override

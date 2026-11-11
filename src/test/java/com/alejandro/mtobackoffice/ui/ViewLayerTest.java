@@ -2152,6 +2152,111 @@ class ViewLayerTest {
     }
 
     /**
+     * mto-configuration dice el campo de cada error como ruta desde la raiz del cuerpo, y ninguno se
+     * pierde: el del perfil cae en su desplegable, el elemento de una lista en el campo de su lista, el
+     * de una mensula (o su brazo) debajo de la tabla de mensulas con su fila y su campo, y lo que no
+     * tiene sitio en el editor, en la notificacion con su ruta delante. Como en mto-frontend.
+     */
+    @Test
+    void a400WithTheFieldPathLandsOnItsFieldItsListItsChildrenTableOrANotice() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null, null)));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        when(profileClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(profileWithOneCantilever()), 0, 50));
+        ApiProblem problem = new ApiProblem("https://api.mto-configuration/errors/val-000", "Error de validacion", 400,
+                "La peticion tiene 5 errores de validacion", null, "VAL-000", "t-9", null, null, false,
+                List.of(new ApiFieldError("poleType", "BUS-001", "El tipo de poste no existe"),
+                        new ApiFieldError("sectionings[0]", "BUS-001", "El seccionamiento no existe"),
+                        new ApiFieldError("cantilevers[0].steadyArm.steadyArmType", "BUS-001", "El tipo de brazo no existe"),
+                        new ApiFieldError("cantilevers[1].cantileverType", "BUS-001", "El tipo de mensula no existe"),
+                        new ApiFieldError("disconnectors[0].connectedTrackId", "BUS-001", "Es la via de su poste")), null);
+        when(profileClient.update(eq(7L), any())).thenThrow(
+                BackofficeApiException.of(HttpStatus.BAD_REQUEST, problem, "corr-9", null, "PUT /api/configuration/profiles/7"));
+
+        UI.getCurrent().navigate(PROFILES_ROUTE);
+        @SuppressWarnings("unchecked")
+        Grid<ProfileDto> profiles = LocatorJ._get(Grid.class);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(profiles, 0, "actions"), Button.class, spec -> spec.withId("edit-7")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        assertTrue(LocatorJ._find(dialog, Div.class, spec -> spec.withId("cantilevers-errors")).isEmpty(),
+                "sin errores no hay nada debajo de la tabla");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        // (a) El campo directo del maestro, en su desplegable.
+        @SuppressWarnings("unchecked")
+        ComboBox<LovRef> poleType = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Tipo de poste"));
+        assertTrue(poleType.isInvalid());
+        assertEquals("El tipo de poste no existe", poleType.getErrorMessage());
+        // (c) El elemento de una lista, en el campo de la lista.
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<LovRef> sectionings = LocatorJ._get(dialog, MultiSelectComboBox.class, spec -> spec.withLabel("Seccionamientos"));
+        assertTrue(sectionings.isInvalid());
+        assertEquals("El seccionamiento no existe", sectionings.getErrorMessage());
+        // (b) El campo de un hijo, bajo su tabla, con su fila y el campo como lo nombra el servicio.
+        Div childErrors = LocatorJ._get(dialog, Div.class, spec -> spec.withId("cantilevers-errors"));
+        assertEquals(List.of("Fila 1 · steadyArm.steadyArmType: El tipo de brazo no existe", "Fila 2 · cantileverType: El tipo de mensula no existe"),
+                LocatorJ._find(childErrors, Span.class).stream().map(Span::getText).toList());
+        // Lo que no tiene sitio en el editor no se pierde: la notificacion, con su ruta delante.
+        NotificationsKt.expectNotifications("disconnectors[0].connectedTrackId: Es la via de su poste");
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto para corregir");
+
+        // Tocar la lista borra lo que se dijo de ella.
+        @SuppressWarnings("unchecked")
+        Grid<CantileverDto> cantilevers = LocatorJ._get(dialog, Grid.class, spec -> spec.withId("cantilevers-grid"));
+        cantilevers.select(GridKt._get(cantilevers, 0));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("cantilevers-remove")));
+        assertFalse(childErrors.isVisible());
+    }
+
+    @Test
+    void the400OfASwitchIsSaidUnderTheSwitchesTableAndABatchErrorIsNotLost() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_CONFIG_IMPORT", "ROLE_LOV_MANAGE");
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(station(12L, "ATOCHA", 100L)), 0, 50));
+        SectionInsulatorDto insulator = new SectionInsulatorDto();
+        insulator.setId(9L);
+        insulator.setName("B7");
+        insulator.setStationId(12L);
+        insulator.setInstallationType(SectionInsulatorInstallationType.IN_TRACK);
+        insulator.setTrackId(3L);
+        insulator.setVersionNumber(1);
+        SectionInsulatorSwitchDto w31 = new SectionInsulatorSwitchDto();
+        w31.setId(41L);
+        w31.setCode("W31");
+        w31.setTrackId(3L);
+        w31.setEnabled(true);
+        insulator.setSwitches(new ArrayList<>(List.of(w31)));
+        when(sectionInsulatorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(insulator), 0, 50));
+        ApiProblem rejected = new ApiProblem("https://api.mto-configuration/errors/val-000", "Error de validacion", 400,
+                "La peticion tiene 1 errores de validacion", null, "VAL-000", "t-10", null, null, false,
+                List.of(new ApiFieldError("switches[0].trackId", "BUS-001", "La via no existe")), null);
+        when(sectionInsulatorClient.update(eq(9L), any())).thenThrow(
+                BackofficeApiException.of(HttpStatus.BAD_REQUEST, rejected, "corr-10", null, "PUT /api/configuration/section-insulators/9"));
+
+        UI.getCurrent().navigate(SECTION_INSULATORS_ROUTE);
+        @SuppressWarnings("unchecked")
+        Grid<SectionInsulatorDto> insulators = LocatorJ._get(Grid.class);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(insulators, 0, "actions"), Button.class, spec -> spec.withId("edit-9")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        Div childErrors = LocatorJ._get(dialog, Div.class, spec -> spec.withId("switches-errors"));
+        assertEquals(List.of("Fila 1 · trackId: La via no existe"),
+                LocatorJ._find(childErrors, Span.class).stream().map(Span::getText).toList());
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "bajo su tabla, no en una notificacion");
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty());
+
+        // (d) Un lote rechazado no pasa por un formulario: su aviso dice cada error con su ruta.
+        ApiProblem batch = new ApiProblem("https://api.mto-configuration/errors/val-000", "Error de validacion", 400,
+                "La peticion tiene 1 errores de validacion", null, "VAL-000", "t-11", null, null, false,
+                List.of(new ApiFieldError("[1].code", "VAL-001", "El campo es obligatorio")), null);
+        assertEquals("Datos no validos: [1].code El campo es obligatorio", UiErrors.message(
+                BackofficeApiException.of(HttpStatus.BAD_REQUEST, batch, "corr-11", null, "POST /api/configuration/pole-types/bulk")));
+    }
+
+    /**
      * Los seccionadores de un perfil se ensenan de solo lectura y vuelven como se leyeron: el vinculo es
      * de cada seccionador, y el servicio ignora los que llegan dentro del perfil (mto-configuration#31).
      * Un poste admite varios (V29): se ensenan todos, por el orden en que llegan.

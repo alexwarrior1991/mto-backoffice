@@ -101,6 +101,7 @@ import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeUpdateRequest
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.WorkDiscipline;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
+import com.alejandro.mtobackoffice.client.error.ApiFieldError;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ForbiddenApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
@@ -700,6 +701,37 @@ class ClientLayerTest {
         assertEquals("name", exception.getProblem().errors().getFirst().field());
         assertEquals("VAL-001", exception.getProblem().errors().getFirst().code());
         assertEquals("Formato invalido", exception.getProblem().errors().get(1).message());
+    }
+
+    /**
+     * mto-configuration dice el campo como ruta desde la raiz del cuerpo (un hijo, el elemento de una
+     * lista, la posicion en un lote) y rechaza con BUS-001 una referencia a catalogo que no existe: la
+     * ruta llega a la pantalla tal cual, sin recortar.
+     */
+    @Test
+    void theFieldOfANestedErrorArrivesWithItsWholePath() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/profiles/7")).andExpect(method(HttpMethod.PUT))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("""
+                                {"type":"https://api.mto-configuration/errors/val-000","title":"Error de validacion","status":400,
+                                 "detail":"La peticion tiene 5 errores de validacion","code":"VAL-000","traceId":"t-9","retryable":false,
+                                 "errors":[{"field":"poleType","code":"BUS-001","message":"Regla de negocio violada: poleType"},
+                                           {"field":"sectionings[1]","code":"BUS-001","message":"Regla de negocio violada: sectionings[1]"},
+                                           {"field":"cantilevers[1].cantileverType","code":"BUS-001","message":"m1"},
+                                           {"field":"cantilevers[0].steadyArm.steadyArmType","code":"BUS-001","message":"m2"},
+                                           {"field":"[1].poleType","code":"BUS-001","message":"m3"}]}
+                                """));
+        ProfileDto profile = new ProfileDto();
+        profile.setId(7L);
+
+        ValidationApiException exception = assertThrows(ValidationApiException.class, () -> asUser(() -> profileClient.update(7L, profile)));
+
+        assertEquals("VAL-000", exception.getProblem().code());
+        assertEquals(List.of("poleType", "sectionings[1]", "cantilevers[1].cantileverType", "cantilevers[0].steadyArm.steadyArmType", "[1].poleType"),
+                exception.getProblem().errors().stream().map(ApiFieldError::field).toList());
+        assertTrue(exception.getProblem().errors().stream().allMatch(error -> "BUS-001".equals(error.code())));
+        server.verify();
     }
 
     @Test

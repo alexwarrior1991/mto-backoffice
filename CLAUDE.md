@@ -656,6 +656,19 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   descripción obligatorios, longitud de columna) y vuelca `errors[{field, code, message}]` campo a
   campo con `ServerValidation`. Un `code` repetido llega como 409 `BUS-002` y un cuerpo sin `code`
   como 400 desde que `RestExceptionHandler` los mapea (antes eran 500).
+- **El error de un maestro llega con la ruta de su campo, y ninguno se pierde.** `mto-configuration`
+  dice el `field` de cada error de un 400 `VAL-000` como ruta desde la raíz del cuerpo (también el
+  `BUS-001` de una referencia a catálogo informada que no existe), y
+  `ServerValidation.applyWithPaths`, que usa `MasterEditorDialog`, lo lleva al primer sitio que case,
+  igual que `applyServerErrors` de mto-frontend: el campo del `Binder` (`poleType` marca su
+  desplegable); el campo de la lista, si es un elemento de una lista de valores (`sectionings[1]`; esto
+  vale para cualquier `ServerValidation.apply`); la tabla de hijos del editor (`childErrors()` del
+  editor → `ChildrenEditor.showErrors`: las ménsulas de un perfil, las agujas de un aislador), debajo
+  de ella, con su fila y el campo **tal como lo nombra el servicio**, sin traducir la ruta («Fila 2 ·
+  cantileverType: …», «Fila 1 · steadyArm.steadyArmType: …»), que se borra al tocar la lista o al
+  volver a guardar; y lo demás, la notificación con su ruta delante
+  (`disconnectors[0].connectedTrackId: …`), con el diálogo abierto. Un lote rechazado (`[1].code` en
+  el alta múltiple de un catálogo) se notifica igual: «Datos no validos: [1].code …» (`UiErrors`).
 - **Un maestro se edita sobre la fila leída y se devuelve entero** (`README_API.md` §4 de
   `mto-configuration`: lee, modifica sobre lo leído, devuélvelo entero). Por eso los DTO de
   `client/dto/master` son clases mutables y no records, y por eso tienen lo que un DTO «solo con

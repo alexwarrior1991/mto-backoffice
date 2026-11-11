@@ -1,9 +1,11 @@
 package com.alejandro.mtobackoffice.ui.master;
 
 import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
+import com.alejandro.mtobackoffice.ui.support.ServerValidation;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H4;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.VaadinIcon;
@@ -44,6 +46,7 @@ public class ChildrenEditor<C extends MasterDto> extends VerticalLayout {
     private final Supplier<C> factory;
     private final Opener<C> opener;
     private boolean touched;
+    private final Div errors = new Div();
 
     public ChildrenEditor(String title, String idPrefix, List<C> initial, int max, Supplier<C> factory,
                           Opener<C> opener, Consumer<Grid<C>> columns) {
@@ -81,13 +84,30 @@ public class ChildrenEditor<C extends MasterDto> extends VerticalLayout {
         grid.setAllRowsVisible(true);
         grid.addSelectionListener(selection -> updateButtons());
         grid.addItemDoubleClickListener(event -> modify(event.getItem()));
-        add(toolbar, grid);
+        errors.setId(idPrefix + "-errors");
+        errors.getElement().setAttribute("role", "alert");
+        errors.getStyle().set("color", "var(--lumo-error-text-color)");
+        errors.addClassNames(LumoUtility.FontSize.SMALL);
+        errors.setVisible(false);
+        add(toolbar, grid, errors);
         show();
     }
 
     /** La lista tal como queda, solo si alguien la toco; vacia si no hay nada que decir. */
     public Optional<List<C>> edited() {
         return touched ? Optional.of(List.copyOf(items)) : Optional.empty();
+    }
+
+    /**
+     * Lo que el servicio rechaza de un hijo al guardar el padre ({@code cantilevers[1].cantileverType}),
+     * debajo de la tabla: «Fila 2 · cantileverType: …», con su fila (la lista viaja en el orden de la
+     * tabla) y el campo tal como lo nombra el servicio. Se borra al tocar la lista o al volver a
+     * guardar, como en mto-frontend.
+     */
+    public void showErrors(List<ServerValidation.ChildError> rejected) {
+        errors.removeAll();
+        rejected.forEach(error -> errors.add(new Div(new Span(error.text()))));
+        errors.setVisible(!rejected.isEmpty());
     }
 
     public List<C> items() {
@@ -120,6 +140,9 @@ public class ChildrenEditor<C extends MasterDto> extends VerticalLayout {
     }
 
     private void show() {
+        if (touched) {
+            showErrors(List.of());
+        }
         grid.setItems(items);
         updateButtons();
     }
