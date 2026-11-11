@@ -8,7 +8,8 @@ import java.util.UUID;
 /**
  * Una linea de material de una orden: el material y el almacen son ids de mto-stock (con el codigo y
  * la descripcion copiados al registrarla), lo previsto y lo consumido, y como va con el almacen.
- * Se reserva al planificar la orden, se consume al completarla y se libera al cancelarla.
+ * Se reserva al planificar la orden y se consume al completarla; al cancelarla, lo ya consumido sale
+ * del almacen y se libera el resto de lo reservado.
  * {@code stockRequestInDoubt} es la peticion que mando al almacen y se quedo sin respuesta, si hay una.
  */
 public record MaterialUsageDto(UUID id, UUID orderId, UUID taskId, UUID materialId, String materialCode, String materialDescriptionSnapshot,
