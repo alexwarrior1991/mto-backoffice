@@ -553,6 +553,14 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `DELETE /sessions` y `DELETE /offline-sessions`, para en el primer `BackofficeApiException` y
   devuelve lo hecho y el paso que falló; el botón pide `users-write` **y** `users-sessions-write`
   (`hasAllRoles`). No es una regla nueva de negocio: es la orquestación documentada allí.
+- **El correo de acciones ofrece lo que el servicio va a aceptar.** `mto-users` pide `users-write`
+  para mandarlo y, si lleva una acción que pone una credencial (`UPDATE_PASSWORD` o `CONFIGURE_TOTP`,
+  `RequiredAction.touchesCredentials()`), además `users-password-reset` (403 `AUTH-403`): un enlace así
+  es restablecer la credencial por correo. El botón sigue pidiendo `users-write`;
+  `ExecuteActionsEmailDialog` ofrece esas dos solo con los dos permisos (`hasAllRoles`,
+  `RequiredAction.forActionsEmail`), lo dice en la ayuda del campo a quien no los tiene, y no marca
+  nada de partida. Si aun así llega el 403, se dice como cualquier otro, con el diálogo abierto. El
+  alta de un usuario no cambia: sus acciones al entrar no mandan correo.
 - **La campana y la bandeja son de la persona, y a quién va cada aviso lo decide el servicio con el
   token.** `mto-notification` resuelve al leer, por usuario, perfil y rol de cliente, qué
   notificaciones son mías; aquí no se filtra por nadie ni se cuenta nada: el contador es el de

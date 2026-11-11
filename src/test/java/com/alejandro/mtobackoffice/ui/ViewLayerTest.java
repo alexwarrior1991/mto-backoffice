@@ -444,6 +444,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.mock.env.MockEnvironment;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -3888,7 +3889,7 @@ class ViewLayerTest {
 
     @Test
     void theActionsEmailDialogSendsTheSelectedActionsAndReportsA502WithItsDetail() {
-        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_PASSWORD_RESET");
         stubUserDetail(ana());
         ApiProblem problem = new ApiProblem("about:blank", "Bad Gateway", 502, "Keycloak no ha podido enviar el correo: SMTP no configurado en el realm", null,
                 "KC-502", null, null, null, false, null, null);
@@ -3929,6 +3930,81 @@ class ViewLayerTest {
         verify(usersClient, times(2)).executeActionsEmail(ANA_ID, expected);
         assertTrue(LocatorJ._find(Dialog.class).isEmpty());
         NotificationsKt.expectNotifications("Correo enviado a ana@mto.local");
+    }
+
+    @Test
+    void theActionsEmailOffersTheCredentialActionsOnlyWithUsersWriteAndPasswordReset() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUserDetail(ana());
+
+        // El boton sigue pidiendo solo users-write; lo que cambia es lo que ofrece el dialogo.
+        UI.getCurrent().navigate(ANA_ROUTE);
+        LocatorJ._click(detailButton("user-actions-email"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RequiredAction> actions = LocatorJ._get(dialog, MultiSelectComboBox.class);
+        assertEquals(List.of(RequiredAction.VERIFY_EMAIL, RequiredAction.UPDATE_PROFILE, RequiredAction.TERMS_AND_CONDITIONS),
+                actions.getListDataView().getItems().toList(),
+                "sin users-password-reset el servicio rechaza un correo con la contrasena o el segundo factor: no se ofrecen");
+        assertEquals("Cambiar la contrasena y configurar el segundo factor piden ademas el permiso de restablecer contrasenas",
+                actions.getHelperText());
+        assertTrue(actions.getValue().isEmpty(), "nada marcado de partida");
+
+        Set<RequiredAction> chosen = new LinkedHashSet<>(List.of(RequiredAction.VERIFY_EMAIL, RequiredAction.UPDATE_PROFILE));
+        LocatorJ._setValue(actions, chosen);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("actions-email-send")));
+
+        verify(usersClient).executeActionsEmail(ANA_ID,
+                new ExecuteActionsEmailRequest(List.of(RequiredAction.VERIFY_EMAIL, RequiredAction.UPDATE_PROFILE), null, null, null));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+    }
+
+    @Test
+    void withBothPermissionsTheActionsEmailOffersTheFiveAndTheCredentialOnesTravel() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_PASSWORD_RESET");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        LocatorJ._click(detailButton("user-actions-email"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RequiredAction> actions = LocatorJ._get(dialog, MultiSelectComboBox.class);
+        assertEquals(List.of(RequiredAction.values()), actions.getListDataView().getItems().toList());
+        assertNull(actions.getHelperText());
+        assertTrue(actions.getValue().isEmpty(), "nada marcado de partida");
+
+        Set<RequiredAction> chosen = new LinkedHashSet<>(List.of(RequiredAction.UPDATE_PASSWORD, RequiredAction.CONFIGURE_TOTP));
+        LocatorJ._setValue(actions, chosen);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("actions-email-send")));
+
+        verify(usersClient).executeActionsEmail(ANA_ID,
+                new ExecuteActionsEmailRequest(List.of(RequiredAction.UPDATE_PASSWORD, RequiredAction.CONFIGURE_TOTP), null, null, null));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+    }
+
+    @Test
+    void the403OfTheActionsEmailIsSaidLikeAnyOtherWithTheDialogOpen() {
+        // El permiso se pudo quitar con la pantalla abierta: manda el servicio.
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_PASSWORD_RESET");
+        stubUserDetail(ana());
+        ApiProblem problem = new ApiProblem("about:blank", "Forbidden", 403, "Access denied", null,
+                "AUTH-403", null, null, null, false, null, null);
+        doThrow(BackofficeApiException.of(HttpStatus.FORBIDDEN, problem, "corr-u7", null, "POST /api/users/" + ANA_ID + "/execute-actions-email"))
+                .when(usersClient).executeActionsEmail(eq(ANA_ID), any());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        LocatorJ._click(detailButton("user-actions-email"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RequiredAction> actions = LocatorJ._get(dialog, MultiSelectComboBox.class);
+        LocatorJ._setValue(actions, Set.of(RequiredAction.UPDATE_PASSWORD));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("actions-email-send")));
+
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size());
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("No tienes permiso para esta operacion."));
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto con lo elegido");
+        NotificationsKt.clearNotifications();
     }
 
     @Test

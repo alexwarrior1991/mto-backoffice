@@ -102,6 +102,7 @@ import com.alejandro.mtobackoffice.client.dto.resources.VehicleUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.WorkDiscipline;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.client.error.ForbiddenApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.client.error.ServiceUnavailableApiException;
 import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
@@ -1642,6 +1643,28 @@ class ClientLayerTest {
         });
 
         assertFalse(reset.toString().contains("Secreta.123"));
+        server.verify();
+    }
+
+    @Test
+    void theActionsEmailWithACredentialActionNeedsTwoPermissionsAndIts403IsTyped() {
+        assertEquals(List.of(RequiredAction.UPDATE_PASSWORD, RequiredAction.CONFIGURE_TOTP),
+                Arrays.stream(RequiredAction.values()).filter(RequiredAction::touchesCredentials).toList());
+        assertEquals(List.of(RequiredAction.VERIFY_EMAIL, RequiredAction.UPDATE_PROFILE, RequiredAction.TERMS_AND_CONDITIONS),
+                RequiredAction.forActionsEmail(false));
+        assertEquals(List.of(RequiredAction.values()), RequiredAction.forActionsEmail(true));
+
+        server.expect(requestTo(USERS + "/u-1/execute-actions-email")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"actions\":[\"UPDATE_PASSWORD\"]}"))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN).contentType(MediaType.APPLICATION_PROBLEM_JSON).body("""
+                        {"status":403,"title":"Forbidden","detail":"Access denied","errorCode":"AUTH-403","correlationId":"corr-403"}"""));
+
+        ForbiddenApiException refused = assertThrows(ForbiddenApiException.class, () -> asUser(() -> {
+            usersClient.executeActionsEmail("u-1", new ExecuteActionsEmailRequest(List.of(RequiredAction.UPDATE_PASSWORD), null, null, null));
+            return null;
+        }));
+
+        assertEquals("AUTH-403", refused.getProblem().code());
         server.verify();
     }
 

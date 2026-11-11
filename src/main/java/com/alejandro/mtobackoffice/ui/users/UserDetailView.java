@@ -144,7 +144,8 @@ public class UserDetailView extends VerticalLayout implements BeforeEnterObserve
             buttons.add(reset);
         }
         if (canWrite) {
-            Button email = new Button("Acciones por correo", VaadinIcon.ENVELOPE.create(), click -> new ExecuteActionsEmailDialog(user, client).open());
+            Button email = new Button("Acciones por correo", VaadinIcon.ENVELOPE.create(), click -> new ExecuteActionsEmailDialog(user, client,
+                    authentication.hasAllRoles(UserRoles.USERS_WRITE, UserRoles.USERS_PASSWORD_RESET)).open());
             email.setId(ACTIONS_EMAIL_ID);
             buttons.add(email);
         }

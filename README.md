@@ -156,7 +156,9 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   se pinta la lista que devuelve el servicio) y **Roles de cliente** (elegir cliente, luego los
   roles que aún no tiene; quitar es el `DELETE` con cuerpo). La contraseña temporal lo es por
   defecto (la fija otra persona) y la política del realm cae sobre el campo; el correo de acciones
-  necesita SMTP en el realm y, sin él, la notificación enseña el detalle del 502. U3 añade a la
+  necesita SMTP en el realm y, sin él, la notificación enseña el detalle del 502. Cambiar la
+  contraseña y configurar el segundo factor solo se ofrecen en él a quien tiene además
+  `users-password-reset`, porque `mto-users` los rechaza sin él (403). U3 añade a la
   ficha las pestañas **Sesiones** (las normales y las offline, cada una con su lista y su «cerrar
   todas» confirmado; una sola se cierra sin preguntar, y una que ya no exista o no sea de ese
   usuario, `SES-404`, se avisa y se recarga) y **Credenciales** (tipo, etiqueta y fecha, sin
@@ -410,6 +412,7 @@ Las pantallas de usuarios (fase 5) siguen los permisos de `mto-users-api`, y nin
 |---|---|
 | Ver la lista, la ficha, perfiles, roles, sesiones, credenciales y catálogos | `users-read` |
 | Nuevo, modificar, activar/desactivar, enviar acciones por correo | `users-write` |
+| Enviar por correo «Cambiar la contraseña» o «Configurar el segundo factor» | `users-write` **y** `users-password-reset` |
 | Borrar | `users-delete` |
 | Asignar y quitar roles de cliente | `users-roles-write` |
 | Asignar y quitar perfiles | `users-profiles-write` |
