@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p>Un solo hilo, {@code shared-polling}, lleva el reloj de todas. Con los hilos virtuales activos
  * ({@code spring.threads.virtual.enabled}) cada pasada corre ademas en un hilo virtual propio
- * ({@code shared-polling-N}): una llamada lenta al gateway (hasta 15 s) solo retrasa su pantalla, y no
+ * ({@code shared-polling-N}): una llamada lenta al gateway (hasta 20 s) solo retrasa su pantalla, y no
  * la de todas las demas, como cuando las pasadas se hacian una detras de otra en el hilo del reloj. La
  * pasada de una pantalla nunca se pisa consigo misma: si la anterior sigue esperando, ese tic se
  * salta. Sin los hilos virtuales, las pasadas vuelven a correr en el hilo del reloj, como antes.</p>

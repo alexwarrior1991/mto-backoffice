@@ -33,11 +33,14 @@ import com.alejandro.mtobackoffice.ui.maintenance.MaintenanceClients;
 import com.alejandro.mtobackoffice.ui.maintenance.TaskGeneration;
 import com.alejandro.mtobackoffice.ui.resources.ResourcesClients;
 import com.vaadin.flow.component.dependency.StyleSheet;
+import com.vaadin.flow.server.InitParameters;
+import com.vaadin.flow.shared.util.SharedUtil;
 import com.vaadin.flow.theme.lumo.Lumo;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.thread.Threading;
+import org.springframework.boot.web.server.autoconfigure.ServerProperties;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.task.TaskExecutor;
@@ -51,6 +54,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.util.ClassUtils;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -120,6 +124,26 @@ class MtoBackofficeApplicationTests {
         CompletableFuture<Thread> thread = new CompletableFuture<>();
         context.getBean("applicationTaskExecutor", TaskExecutor.class).execute(() -> thread.complete(Thread.currentThread()));
         assertTrue(thread.get(5, TimeUnit.SECONDS).isVirtual());
+    }
+
+    /**
+     * La sesion de servidor caduca con la inactividad de la persona, como la sesion SSO del realm: el
+     * timeout es el del servlet (el de {@code spring.session.*} es de Spring Session, que no esta, y no
+     * hacia nada), y el latido de Vaadin no la mantiene viva. Se leen las propiedades
+     * efectivas del contexto: las del servidor, que son las que aplica Tomcat, y el parametro de Vaadin
+     * por su nombre en {@code InitParameters}.
+     */
+    @Test
+    void theServerSessionExpiresWithInactivityAndTheVaadinHeartbeatDoesNotKeepItAlive() {
+        assertEquals(Duration.ofMinutes(30),
+                context.getBean(ServerProperties.class).getServlet().getSession().getTimeout(), "server.servlet.session.timeout");
+        assertFalse(context.getEnvironment().containsProperty("spring.session.timeout"), "no hay Spring Session que la lea");
+        assertFalse(ClassUtils.isPresent("org.springframework.session.Session", getClass().getClassLoader()));
+
+        // Vaadin lee sus parametros de vaadin.<nombre> (SpringServlet, que tambien admite el nombre con
+        // guiones); que el servlet lo aplica lo comprueba ViewLayerTest sobre su servicio.
+        assertEquals(Boolean.TRUE, context.getEnvironment().getProperty(
+                "vaadin." + SharedUtil.camelCaseToDashSeparated(InitParameters.SERVLET_PARAMETER_CLOSE_IDLE_SESSIONS), Boolean.class));
     }
 
     /** Lo que hace que el token se pueda pedir por nombre de principal desde cualquier hilo. */

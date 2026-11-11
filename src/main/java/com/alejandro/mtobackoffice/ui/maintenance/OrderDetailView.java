@@ -245,7 +245,8 @@ public class OrderDetailView extends VerticalLayout implements BeforeEnterObserv
         }
         if (canSupervise && status.isOpen()) {
             Button cancel = button("order-cancel", "Cancelar", VaadinIcon.CLOSE_CIRCLE, () -> new ReasonDialog("Cancelar " + loaded.code(),
-                    "La orden queda cancelada con su motivo y se liberan en el almacen las reservas de sus materiales. No se puede deshacer.",
+                    "La orden queda cancelada con su motivo. De cada material, lo ya consumido sale del almacen y se libera el resto de lo "
+                            + "reservado. No se puede deshacer.",
                     "Cancelar la orden", this::cancel).open());
             cancel.addThemeVariants(ButtonVariant.LUMO_ERROR);
             buttons.add(cancel);

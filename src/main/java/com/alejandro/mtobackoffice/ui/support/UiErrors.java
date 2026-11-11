@@ -8,6 +8,7 @@ import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.client.error.ServiceUnavailableApiException;
 import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
 import com.alejandro.mtobackoffice.client.error.TooManyRequestsApiException;
+import com.alejandro.mtobackoffice.client.error.UnreachableApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.configuration.security.SecurityConfiguration;
 import com.vaadin.flow.component.UI;
@@ -90,6 +91,10 @@ public final class UiErrors {
     public static String message(BackofficeApiException exception) {
         return switch (exception) {
             case SessionExpiredApiException ignored -> "La sesion ha caducado. Hay que volver a entrar.";
+            // El gateway no ha contestado (conexion rechazada, timeout): no hay estado ni detalle que
+            // decir. Es el NetworkError de mto-frontend, con su mismo mensaje.
+            case UnreachableApiException ignored ->
+                    "No se ha podido contactar con el servidor. Comprueba la conexion y vuelve a intentarlo.";
             // mto-maintenance: el permiso esta, pero lo que se escribe es de un EP fuera del ambito de la
             // persona. No es «no tienes permiso»: el detalle del servicio dice que EP es y cuales son los suyos.
             case ForbiddenApiException scope when "SCP-403".equals(scope.getProblem().code()) ->

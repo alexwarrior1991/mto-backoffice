@@ -27,11 +27,19 @@ import java.util.Set;
  * El correo con las acciones que la persona tiene que completar al entrar (cambiar la contrasena,
  * verificar el email...). Lo manda Keycloak, asi que hace falta SMTP en el realm: sin el,
  * mto-users responde 502 y la notificacion ensena su detalle. Sin email no hay a quien mandarlo.
+ *
+ * <p>Cambiar la contrasena y configurar el segundo factor solo se ofrecen con {@code canSetCredentials}
+ * ({@code users-write} y {@code users-password-reset} a la vez): sin el segundo permiso el servicio
+ * responde 403 a un correo que lleve una de las dos. Nada va marcado de partida, asi que el valor por
+ * defecto es el mismo para todos. Si aun asi llega el 403, se dice como cualquier otro, con el dialogo
+ * abierto.</p>
  */
 public class ExecuteActionsEmailDialog extends Dialog {
 
     static final String SEND_ID = "actions-email-send";
     static final int MIN_LIFESPAN_SECONDS = 60;
+    static final String CREDENTIALS_HINT =
+            "Cambiar la contrasena y configurar el segundo factor piden ademas el permiso de restablecer contrasenas";
 
     /** Lo que el Binder lee y escribe; las propiedades se llaman como en el servicio. */
     public static class Form {
@@ -58,7 +66,7 @@ public class ExecuteActionsEmailDialog extends Dialog {
     private final Binder<Form> binder = new Binder<>(Form.class);
     private final Form form = new Form();
 
-    public ExecuteActionsEmailDialog(UserDto user, UsersClient client) {
+    public ExecuteActionsEmailDialog(UserDto user, UsersClient client, boolean canSetCredentials) {
         setHeaderTitle("Correo de acciones para " + user.username());
         setCloseOnOutsideClick(false);
         boolean hasEmail = user.email() != null && !user.email().isBlank();
@@ -67,7 +75,10 @@ public class ExecuteActionsEmailDialog extends Dialog {
                 ? "Keycloak manda a " + user.email() + " un enlace con las acciones elegidas; la persona las completa al abrirlo."
                 : "El usuario no tiene email: Keycloak no tiene a quien mandar el enlace."));
         MultiSelectComboBox<RequiredAction> actions = new MultiSelectComboBox<>("Acciones");
-        actions.setItems(RequiredAction.values());
+        actions.setItems(RequiredAction.forActionsEmail(canSetCredentials));
+        if (!canSetCredentials) {
+            actions.setHelperText(CREDENTIALS_HINT);
+        }
         actions.setItemLabelGenerator(RequiredAction::label);
         actions.setRequiredIndicatorVisible(true);
         IntegerField lifespan = new IntegerField("Validez del enlace (segundos)");

@@ -101,11 +101,14 @@ import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeUpdateRequest
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.WorkDiscipline;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
+import com.alejandro.mtobackoffice.client.error.ApiFieldError;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.client.error.ForbiddenApiException;
 import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.client.error.ServiceUnavailableApiException;
 import com.alejandro.mtobackoffice.client.error.SessionExpiredApiException;
 import com.alejandro.mtobackoffice.client.error.TooManyRequestsApiException;
+import com.alejandro.mtobackoffice.client.error.UnreachableApiException;
 import com.alejandro.mtobackoffice.client.error.ValidationApiException;
 import com.alejandro.mtobackoffice.client.maintenance.OperationClient;
 import com.alejandro.mtobackoffice.client.resources.AccessPointClient;
@@ -134,6 +137,8 @@ import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -145,6 +150,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import com.alejandro.mtobackoffice.client.dto.master.CantileverDto;
@@ -299,6 +305,7 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -307,6 +314,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import com.alejandro.mtobackoffice.client.dto.master.TrackSchematicDto;
@@ -695,6 +703,37 @@ class ClientLayerTest {
         assertEquals("Formato invalido", exception.getProblem().errors().get(1).message());
     }
 
+    /**
+     * mto-configuration dice el campo como ruta desde la raiz del cuerpo (un hijo, el elemento de una
+     * lista, la posicion en un lote) y rechaza con BUS-001 una referencia a catalogo que no existe: la
+     * ruta llega a la pantalla tal cual, sin recortar.
+     */
+    @Test
+    void theFieldOfANestedErrorArrivesWithItsWholePath() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/profiles/7")).andExpect(method(HttpMethod.PUT))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("""
+                                {"type":"https://api.mto-configuration/errors/val-000","title":"Error de validacion","status":400,
+                                 "detail":"La peticion tiene 5 errores de validacion","code":"VAL-000","traceId":"t-9","retryable":false,
+                                 "errors":[{"field":"poleType","code":"BUS-001","message":"Regla de negocio violada: poleType"},
+                                           {"field":"sectionings[1]","code":"BUS-001","message":"Regla de negocio violada: sectionings[1]"},
+                                           {"field":"cantilevers[1].cantileverType","code":"BUS-001","message":"m1"},
+                                           {"field":"cantilevers[0].steadyArm.steadyArmType","code":"BUS-001","message":"m2"},
+                                           {"field":"[1].poleType","code":"BUS-001","message":"m3"}]}
+                                """));
+        ProfileDto profile = new ProfileDto();
+        profile.setId(7L);
+
+        ValidationApiException exception = assertThrows(ValidationApiException.class, () -> asUser(() -> profileClient.update(7L, profile)));
+
+        assertEquals("VAL-000", exception.getProblem().code());
+        assertEquals(List.of("poleType", "sectionings[1]", "cantilevers[1].cantileverType", "cantilevers[0].steadyArm.steadyArmType", "[1].poleType"),
+                exception.getProblem().errors().stream().map(ApiFieldError::field).toList());
+        assertTrue(exception.getProblem().errors().stream().allMatch(error -> "BUS-001".equals(error.code())));
+        server.verify();
+    }
+
     @Test
     void gatewayProblemWithoutCodeIsTolerated() {
         server.expect(requestTo(GATEWAY + "/api/configuration/profile-statuses"))
@@ -731,6 +770,40 @@ class ClientLayerTest {
         assertEquals(Duration.ofSeconds(30), exception.getRetryAfter().orElseThrow());
         assertEquals("mto-configuration", exception.getProblem().service());
         assertEquals("corr-5", exception.getCorrelationId());
+    }
+
+    /**
+     * El gateway no contesta (conexion rechazada, timeout): no hay respuesta que decodificar, y aun asi
+     * sale tipado, con el id de correlacion que se mando como referencia, y no como el
+     * ResourceAccessException del RestClient, que ninguna vista captura.
+     */
+    @Test
+    void aTransportFailureIsTypedAndCarriesTheCorrelationIdThatWasSent() {
+        AtomicReference<String> sent = new AtomicReference<>();
+        server.expect(requestTo(GATEWAY + "/api/configuration/profile-statuses"))
+                .andRespond(request -> {
+                    sent.set(request.getHeaders().getFirst("X-Correlation-Id"));
+                    throw new SocketTimeoutException("Read timed out");
+                });
+
+        UnreachableApiException exception = assertThrows(UnreachableApiException.class,
+                () -> asUser(() -> lovClient.findAll(LovResource.PROFILE_STATUSES)));
+
+        assertNotNull(sent.get());
+        assertEquals(sent.get(), exception.getCorrelationId());
+        assertEquals(sent.get(), exception.getReference(), "la referencia que ensena el aviso");
+        assertEquals("GET /api/configuration/profile-statuses", exception.getOperation());
+        assertInstanceOf(SocketTimeoutException.class, exception.getCause());
+        assertTrue(exception.getMessage().contains("Read timed out"), exception.getMessage());
+
+        // Tambien una conexion rechazada, y en una escritura.
+        server.reset();
+        server.expect(requestTo(GATEWAY + "/api/notifications/inbox/read-all"))
+                .andRespond(withException(new ConnectException("Connection refused")));
+        UnreachableApiException refused = assertThrows(UnreachableApiException.class,
+                () -> asUser(() -> notificationClient.markAllRead()));
+        assertEquals("POST /api/notifications/inbox/read-all", refused.getOperation());
+        assertNotNull(refused.getReference());
     }
 
     @Test
@@ -1602,6 +1675,28 @@ class ClientLayerTest {
         });
 
         assertFalse(reset.toString().contains("Secreta.123"));
+        server.verify();
+    }
+
+    @Test
+    void theActionsEmailWithACredentialActionNeedsTwoPermissionsAndIts403IsTyped() {
+        assertEquals(List.of(RequiredAction.UPDATE_PASSWORD, RequiredAction.CONFIGURE_TOTP),
+                Arrays.stream(RequiredAction.values()).filter(RequiredAction::touchesCredentials).toList());
+        assertEquals(List.of(RequiredAction.VERIFY_EMAIL, RequiredAction.UPDATE_PROFILE, RequiredAction.TERMS_AND_CONDITIONS),
+                RequiredAction.forActionsEmail(false));
+        assertEquals(List.of(RequiredAction.values()), RequiredAction.forActionsEmail(true));
+
+        server.expect(requestTo(USERS + "/u-1/execute-actions-email")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"actions\":[\"UPDATE_PASSWORD\"]}"))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN).contentType(MediaType.APPLICATION_PROBLEM_JSON).body("""
+                        {"status":403,"title":"Forbidden","detail":"Access denied","errorCode":"AUTH-403","correlationId":"corr-403"}"""));
+
+        ForbiddenApiException refused = assertThrows(ForbiddenApiException.class, () -> asUser(() -> {
+            usersClient.executeActionsEmail("u-1", new ExecuteActionsEmailRequest(List.of(RequiredAction.UPDATE_PASSWORD), null, null, null));
+            return null;
+        }));
+
+        assertEquals("AUTH-403", refused.getProblem().code());
         server.verify();
     }
 

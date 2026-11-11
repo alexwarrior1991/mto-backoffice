@@ -264,6 +264,7 @@ import java.util.Set;
 import com.alejandro.mtobackoffice.client.error.ApiFieldError;
 import com.alejandro.mtobackoffice.client.error.ApiProblem;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.client.error.UnreachableApiException;
 import com.alejandro.mtobackoffice.configuration.security.BackofficeUser;
 import com.alejandro.mtobackoffice.configuration.security.JwtClaimNames;
 import com.alejandro.mtobackoffice.ui.jobs.JobsView;
@@ -443,6 +444,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.mock.env.MockEnvironment;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -466,6 +468,8 @@ import com.vaadin.flow.internal.nodefeature.ElementPropertyMap;
 import com.vaadin.flow.server.SystemMessages;
 import com.vaadin.flow.server.VaadinService;
 import java.math.BigDecimal;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import static org.mockito.Mockito.clearInvocations;
@@ -832,6 +836,48 @@ class ViewLayerTest {
                 spec -> spec.withText("El servicio no esta disponible ahora mismo. Intentalo en 30 s."));
         LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("Referencia: corr-5"));
         assertEquals(0, GridKt._size(grid()));
+    }
+
+    /**
+     * Con el gateway caido (conexion rechazada, timeout) cada llamada falla sin respuesta. La pantalla
+     * sigue en pie: la lista lo dice con el mensaje de mto-frontend y el id que se mando, y la campana,
+     * que pide su contador en cada pantalla, no avisa ni rompe el marco.
+     */
+    @Test
+    void anUnreachableGatewayIsNotifiedByTheScreenAndTheBellStaysQuiet() {
+        loginAs("config.lector", "ROLE_CONFIG_READ", "ROLE_NOTIFICATION_INBOX");
+        when(notificationClient.unreadCount()).thenThrow(new UnreachableApiException(
+                "GET /api/notifications/inbox/unread-count", "corr-bell", new ConnectException("Connection refused")));
+        when(lovClient.findAll(PROFILE_STATUSES)).thenThrow(new UnreachableApiException(
+                "GET /api/configuration/profile-statuses", "corr-sent", new SocketTimeoutException("Read timed out")));
+
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+
+        LocatorJ._get(LovCrudView.class);
+        InboxBell bell = LocatorJ._get(InboxBell.class);
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size(), "la de la lista; la campana no avisa");
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText(
+                "No se ha podido contactar con el servidor. Comprueba la conexion y vuelve a intentarlo."));
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("Referencia: corr-sent"));
+        assertEquals(0, GridKt._size(grid()));
+
+        // Tampoco en una pasada del sondeo compartido, ni al navegar a otra pantalla.
+        NotificationsKt.clearNotifications();
+        bell.pollOnce();
+        MockVaadin.clientRoundtrip();
+        UI.getCurrent().navigate(HomeView.class);
+        LocatorJ._get(HomeView.class);
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
+    }
+
+    /**
+     * El servlet de Vaadin arranca con closeIdleSessions: el latido de una pestana olvidada no cuenta
+     * como actividad, y la sesion caduca con el timeout del servidor, como la sesion SSO.
+     */
+    @Test
+    void theVaadinHeartbeatDoesNotKeepAnIdleSessionAlive() {
+        assertTrue(VaadinService.getCurrent().getDeploymentConfiguration().isCloseIdleSessions());
     }
 
     @Test
@@ -2103,6 +2149,111 @@ class ViewLayerTest {
                 && "PT1".equals(dto.getCantilevers().get(1).getCantileverType().code())
                 && Long.valueOf(900L).equals(dto.getCantilevers().get(1).getSteadyArm().getLength())));
         assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo se cierra al guardar");
+    }
+
+    /**
+     * mto-configuration dice el campo de cada error como ruta desde la raiz del cuerpo, y ninguno se
+     * pierde: el del perfil cae en su desplegable, el elemento de una lista en el campo de su lista, el
+     * de una mensula (o su brazo) debajo de la tabla de mensulas con su fila y su campo, y lo que no
+     * tiene sitio en el editor, en la notificacion con su ruta delante. Como en mto-frontend.
+     */
+    @Test
+    void a400WithTheFieldPathLandsOnItsFieldItsListItsChildrenTableOrANotice() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE");
+        when(lovClient.findAll(anyString())).thenReturn(List.of(new LovDto(5L, "PT1", "Poste tipo 1", true, null, null, null)));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        when(profileClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(profileWithOneCantilever()), 0, 50));
+        ApiProblem problem = new ApiProblem("https://api.mto-configuration/errors/val-000", "Error de validacion", 400,
+                "La peticion tiene 5 errores de validacion", null, "VAL-000", "t-9", null, null, false,
+                List.of(new ApiFieldError("poleType", "BUS-001", "El tipo de poste no existe"),
+                        new ApiFieldError("sectionings[0]", "BUS-001", "El seccionamiento no existe"),
+                        new ApiFieldError("cantilevers[0].steadyArm.steadyArmType", "BUS-001", "El tipo de brazo no existe"),
+                        new ApiFieldError("cantilevers[1].cantileverType", "BUS-001", "El tipo de mensula no existe"),
+                        new ApiFieldError("disconnectors[0].connectedTrackId", "BUS-001", "Es la via de su poste")), null);
+        when(profileClient.update(eq(7L), any())).thenThrow(
+                BackofficeApiException.of(HttpStatus.BAD_REQUEST, problem, "corr-9", null, "PUT /api/configuration/profiles/7"));
+
+        UI.getCurrent().navigate(PROFILES_ROUTE);
+        @SuppressWarnings("unchecked")
+        Grid<ProfileDto> profiles = LocatorJ._get(Grid.class);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(profiles, 0, "actions"), Button.class, spec -> spec.withId("edit-7")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        assertTrue(LocatorJ._find(dialog, Div.class, spec -> spec.withId("cantilevers-errors")).isEmpty(),
+                "sin errores no hay nada debajo de la tabla");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        // (a) El campo directo del maestro, en su desplegable.
+        @SuppressWarnings("unchecked")
+        ComboBox<LovRef> poleType = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Tipo de poste"));
+        assertTrue(poleType.isInvalid());
+        assertEquals("El tipo de poste no existe", poleType.getErrorMessage());
+        // (c) El elemento de una lista, en el campo de la lista.
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<LovRef> sectionings = LocatorJ._get(dialog, MultiSelectComboBox.class, spec -> spec.withLabel("Seccionamientos"));
+        assertTrue(sectionings.isInvalid());
+        assertEquals("El seccionamiento no existe", sectionings.getErrorMessage());
+        // (b) El campo de un hijo, bajo su tabla, con su fila y el campo como lo nombra el servicio.
+        Div childErrors = LocatorJ._get(dialog, Div.class, spec -> spec.withId("cantilevers-errors"));
+        assertEquals(List.of("Fila 1 · steadyArm.steadyArmType: El tipo de brazo no existe", "Fila 2 · cantileverType: El tipo de mensula no existe"),
+                LocatorJ._find(childErrors, Span.class).stream().map(Span::getText).toList());
+        // Lo que no tiene sitio en el editor no se pierde: la notificacion, con su ruta delante.
+        NotificationsKt.expectNotifications("disconnectors[0].connectedTrackId: Es la via de su poste");
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto para corregir");
+
+        // Tocar la lista borra lo que se dijo de ella.
+        @SuppressWarnings("unchecked")
+        Grid<CantileverDto> cantilevers = LocatorJ._get(dialog, Grid.class, spec -> spec.withId("cantilevers-grid"));
+        cantilevers.select(GridKt._get(cantilevers, 0));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("cantilevers-remove")));
+        assertFalse(childErrors.isVisible());
+    }
+
+    @Test
+    void the400OfASwitchIsSaidUnderTheSwitchesTableAndABatchErrorIsNotLost() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_CONFIG_IMPORT", "ROLE_LOV_MANAGE");
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "TRACK 1", true, 100L, List.of())), 0, 50));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(station(12L, "ATOCHA", 100L)), 0, 50));
+        SectionInsulatorDto insulator = new SectionInsulatorDto();
+        insulator.setId(9L);
+        insulator.setName("B7");
+        insulator.setStationId(12L);
+        insulator.setInstallationType(SectionInsulatorInstallationType.IN_TRACK);
+        insulator.setTrackId(3L);
+        insulator.setVersionNumber(1);
+        SectionInsulatorSwitchDto w31 = new SectionInsulatorSwitchDto();
+        w31.setId(41L);
+        w31.setCode("W31");
+        w31.setTrackId(3L);
+        w31.setEnabled(true);
+        insulator.setSwitches(new ArrayList<>(List.of(w31)));
+        when(sectionInsulatorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(insulator), 0, 50));
+        ApiProblem rejected = new ApiProblem("https://api.mto-configuration/errors/val-000", "Error de validacion", 400,
+                "La peticion tiene 1 errores de validacion", null, "VAL-000", "t-10", null, null, false,
+                List.of(new ApiFieldError("switches[0].trackId", "BUS-001", "La via no existe")), null);
+        when(sectionInsulatorClient.update(eq(9L), any())).thenThrow(
+                BackofficeApiException.of(HttpStatus.BAD_REQUEST, rejected, "corr-10", null, "PUT /api/configuration/section-insulators/9"));
+
+        UI.getCurrent().navigate(SECTION_INSULATORS_ROUTE);
+        @SuppressWarnings("unchecked")
+        Grid<SectionInsulatorDto> insulators = LocatorJ._get(Grid.class);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(insulators, 0, "actions"), Button.class, spec -> spec.withId("edit-9")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+
+        Div childErrors = LocatorJ._get(dialog, Div.class, spec -> spec.withId("switches-errors"));
+        assertEquals(List.of("Fila 1 · trackId: La via no existe"),
+                LocatorJ._find(childErrors, Span.class).stream().map(Span::getText).toList());
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "bajo su tabla, no en una notificacion");
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty());
+
+        // (d) Un lote rechazado no pasa por un formulario: su aviso dice cada error con su ruta.
+        ApiProblem batch = new ApiProblem("https://api.mto-configuration/errors/val-000", "Error de validacion", 400,
+                "La peticion tiene 1 errores de validacion", null, "VAL-000", "t-11", null, null, false,
+                List.of(new ApiFieldError("[1].code", "VAL-001", "El campo es obligatorio")), null);
+        assertEquals("Datos no validos: [1].code El campo es obligatorio", UiErrors.message(
+                BackofficeApiException.of(HttpStatus.BAD_REQUEST, batch, "corr-11", null, "POST /api/configuration/pole-types/bulk")));
     }
 
     /**
@@ -3843,7 +3994,7 @@ class ViewLayerTest {
 
     @Test
     void theActionsEmailDialogSendsTheSelectedActionsAndReportsA502WithItsDetail() {
-        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_PASSWORD_RESET");
         stubUserDetail(ana());
         ApiProblem problem = new ApiProblem("about:blank", "Bad Gateway", 502, "Keycloak no ha podido enviar el correo: SMTP no configurado en el realm", null,
                 "KC-502", null, null, null, false, null, null);
@@ -3884,6 +4035,81 @@ class ViewLayerTest {
         verify(usersClient, times(2)).executeActionsEmail(ANA_ID, expected);
         assertTrue(LocatorJ._find(Dialog.class).isEmpty());
         NotificationsKt.expectNotifications("Correo enviado a ana@mto.local");
+    }
+
+    @Test
+    void theActionsEmailOffersTheCredentialActionsOnlyWithUsersWriteAndPasswordReset() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE");
+        stubUserDetail(ana());
+
+        // El boton sigue pidiendo solo users-write; lo que cambia es lo que ofrece el dialogo.
+        UI.getCurrent().navigate(ANA_ROUTE);
+        LocatorJ._click(detailButton("user-actions-email"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RequiredAction> actions = LocatorJ._get(dialog, MultiSelectComboBox.class);
+        assertEquals(List.of(RequiredAction.VERIFY_EMAIL, RequiredAction.UPDATE_PROFILE, RequiredAction.TERMS_AND_CONDITIONS),
+                actions.getListDataView().getItems().toList(),
+                "sin users-password-reset el servicio rechaza un correo con la contrasena o el segundo factor: no se ofrecen");
+        assertEquals("Cambiar la contrasena y configurar el segundo factor piden ademas el permiso de restablecer contrasenas",
+                actions.getHelperText());
+        assertTrue(actions.getValue().isEmpty(), "nada marcado de partida");
+
+        Set<RequiredAction> chosen = new LinkedHashSet<>(List.of(RequiredAction.VERIFY_EMAIL, RequiredAction.UPDATE_PROFILE));
+        LocatorJ._setValue(actions, chosen);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("actions-email-send")));
+
+        verify(usersClient).executeActionsEmail(ANA_ID,
+                new ExecuteActionsEmailRequest(List.of(RequiredAction.VERIFY_EMAIL, RequiredAction.UPDATE_PROFILE), null, null, null));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+    }
+
+    @Test
+    void withBothPermissionsTheActionsEmailOffersTheFiveAndTheCredentialOnesTravel() {
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_PASSWORD_RESET");
+        stubUserDetail(ana());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        LocatorJ._click(detailButton("user-actions-email"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RequiredAction> actions = LocatorJ._get(dialog, MultiSelectComboBox.class);
+        assertEquals(List.of(RequiredAction.values()), actions.getListDataView().getItems().toList());
+        assertNull(actions.getHelperText());
+        assertTrue(actions.getValue().isEmpty(), "nada marcado de partida");
+
+        Set<RequiredAction> chosen = new LinkedHashSet<>(List.of(RequiredAction.UPDATE_PASSWORD, RequiredAction.CONFIGURE_TOTP));
+        LocatorJ._setValue(actions, chosen);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("actions-email-send")));
+
+        verify(usersClient).executeActionsEmail(ANA_ID,
+                new ExecuteActionsEmailRequest(List.of(RequiredAction.UPDATE_PASSWORD, RequiredAction.CONFIGURE_TOTP), null, null, null));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty());
+    }
+
+    @Test
+    void the403OfTheActionsEmailIsSaidLikeAnyOtherWithTheDialogOpen() {
+        // El permiso se pudo quitar con la pantalla abierta: manda el servicio.
+        loginAs("usuarios.gestor", "ROLE_USERS_READ", "ROLE_USERS_WRITE", "ROLE_USERS_PASSWORD_RESET");
+        stubUserDetail(ana());
+        ApiProblem problem = new ApiProblem("about:blank", "Forbidden", 403, "Access denied", null,
+                "AUTH-403", null, null, null, false, null, null);
+        doThrow(BackofficeApiException.of(HttpStatus.FORBIDDEN, problem, "corr-u7", null, "POST /api/users/" + ANA_ID + "/execute-actions-email"))
+                .when(usersClient).executeActionsEmail(eq(ANA_ID), any());
+
+        UI.getCurrent().navigate(ANA_ROUTE);
+        LocatorJ._click(detailButton("user-actions-email"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        @SuppressWarnings("unchecked")
+        MultiSelectComboBox<RequiredAction> actions = LocatorJ._get(dialog, MultiSelectComboBox.class);
+        LocatorJ._setValue(actions, Set.of(RequiredAction.UPDATE_PASSWORD));
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("actions-email-send")));
+
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size());
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("No tienes permiso para esta operacion."));
+        assertFalse(LocatorJ._find(Dialog.class).isEmpty(), "el dialogo sigue abierto con lo elegido");
+        NotificationsKt.clearNotifications();
     }
 
     @Test

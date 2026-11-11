@@ -156,7 +156,9 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   se pinta la lista que devuelve el servicio) y **Roles de cliente** (elegir cliente, luego los
   roles que aún no tiene; quitar es el `DELETE` con cuerpo). La contraseña temporal lo es por
   defecto (la fija otra persona) y la política del realm cae sobre el campo; el correo de acciones
-  necesita SMTP en el realm y, sin él, la notificación enseña el detalle del 502. U3 añade a la
+  necesita SMTP en el realm y, sin él, la notificación enseña el detalle del 502. Cambiar la
+  contraseña y configurar el segundo factor solo se ofrecen en él a quien tiene además
+  `users-password-reset`, porque `mto-users` los rechaza sin él (403). U3 añade a la
   ficha las pestañas **Sesiones** (las normales y las offline, cada una con su lista y su «cerrar
   todas» confirmado; una sola se cierra sin preguntar, y una que ya no exista o no sea de ese
   usuario, `SES-404`, se avisa y se recarga) y **Credenciales** (tipo, etiqueta y fecha, sin
@@ -410,6 +412,7 @@ Las pantallas de usuarios (fase 5) siguen los permisos de `mto-users-api`, y nin
 |---|---|
 | Ver la lista, la ficha, perfiles, roles, sesiones, credenciales y catálogos | `users-read` |
 | Nuevo, modificar, activar/desactivar, enviar acciones por correo | `users-write` |
+| Enviar por correo «Cambiar la contraseña» o «Configurar el segundo factor» | `users-write` **y** `users-password-reset` |
 | Borrar | `users-delete` |
 | Asignar y quitar roles de cliente | `users-roles-write` |
 | Asignar y quitar perfiles | `users-profiles-write` |
@@ -537,7 +540,8 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 | `KEYCLOAK_ROLES_CLIENT_IDS` | Clientes cuyos roles del access token son los permisos (lista por comas) | `mto-configuration-api,mto-users-api,mto-stock-api,mto-maintenance-api,mto-notification-api,mto-resources-api` |
 | `MTO_GATEWAY_URL` | El gateway | `http://localhost:8090` |
 | `MTO_FRONTEND_URL` | La SPA `mto-frontend`, para «Abrir en mto-frontend» (vacío: la barra no lo ofrece) | vacío (`dev`: `http://localhost:4200`) |
-| `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP | `2s` / `15s` |
+| `MTO_GATEWAY_CONNECT_TIMEOUT` / `MTO_GATEWAY_READ_TIMEOUT` | Timeouts del cliente HTTP hacia el gateway. El de lectura va por encima de los 15 s que el gateway da a los servicios, para que su 503/504 (con `Retry-After`) llegue antes que el corte de aquí | `2s` / `20s` |
+| `SERVER_SESSION_TIMEOUT` | Inactividad tras la que caduca la sesión de servidor (`server.servlet.session.timeout`); la misma que el idle de la sesión SSO del realm. El latido de Vaadin no cuenta como actividad (`vaadin.close-idle-sessions`) | `30m` |
 | `SPRING_THREADS_VIRTUAL_ENABLED` | Hilos virtuales: Tomcat, las tareas de Vaadin y cada pasada del sondeo compartido | `true` |
 | `APP_DISPLAY_TIME_ZONE` | La zona de las fechas si el navegador no dice la suya (con él, siempre la del navegador, como en mto-frontend) | `Asia/Jerusalem` |
 
@@ -631,7 +635,11 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   regla de negocio), el de `mto-maintenance` (el mismo, con `path` y `method` de más; sus 409 son
   de estado, no de concurrencia, y ninguno pide recargar), el 401/403 del gateway (solo `correlationId`) y el 503 de su circuit breaker
   (`Retry-After`, `service`), y los convierte en `NotFoundApiException`, `ValidationApiException`, `ForbiddenApiException`,
-  `SessionExpiredApiException`, `ConflictApiException` o `ServiceUnavailableApiException`.
+  `SessionExpiredApiException`, `ConflictApiException` o `ServiceUnavailableApiException`. Lo que no
+  llega a ser una respuesta (el gateway no acepta la conexión, su nombre no se resuelve o no contesta
+  en el `read-timeout`) lo tipa `TransportFailureInterceptor` como `UnreachableApiException`, con el
+  `X-Correlation-Id` que se mandó como referencia: es el `NetworkError` de mto-frontend, y se dice
+  igual («No se ha podido contactar con el servidor…»).
 
 ## Pruebas
 

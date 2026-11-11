@@ -55,10 +55,11 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * El cliente HTTP hacia el gateway y las interfaces declarativas que se montan sobre el.
  *
- * <p>Un solo {@link RestClient} con dos interceptores —el Bearer de la persona y el
- * {@code X-Correlation-Id}— y un traductor de errores. No hay circuit breaker aqui: el gateway ya
- * tiene el suyo por servicio y su 503 llega traducido como {@code ServiceUnavailableApiException}.
- * Los timeouts los fija {@code spring.http.clients.*}.</p>
+ * <p>Un solo {@link RestClient} con tres interceptores —el Bearer de la persona, el
+ * {@code X-Correlation-Id} y el que tipa un fallo de transporte— y un traductor de errores. No hay
+ * circuit breaker aqui: el gateway ya tiene el suyo por servicio y su 503 llega traducido como
+ * {@code ServiceUnavailableApiException}; si es el gateway el que no contesta (conexion rechazada,
+ * timeout), {@code UnreachableApiException}. Los timeouts los fija {@code spring.http.clients.*}.</p>
  */
 @Configuration
 @EnableConfigurationProperties({GatewayProperties.class, CorrelationProperties.class})
@@ -105,6 +106,8 @@ public class GatewayClientConfiguration {
                 .baseUrl(baseUrl)
                 .requestInterceptor(new BearerTokenInterceptor(tokens))
                 .requestInterceptor(new CorrelationIdInterceptor(correlationHeader))
+                // El ultimo: ve la peticion con su id de correlacion ya puesto.
+                .requestInterceptor(new TransportFailureInterceptor(correlationHeader))
                 .defaultStatusHandler(HttpStatusCode::isError, errors)
                 .build();
     }

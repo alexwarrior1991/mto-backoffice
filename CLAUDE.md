@@ -67,8 +67,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `ResourcesRoles` (los permisos de `mto-configuration-api`, `mto-users-api`, `mto-stock-api`,
   `mto-maintenance-api`, `mto-notification-api` y `mto-resources-api`), `SecurityAuthorityPrefixes`,
   `JwtClaimNames`, `KeycloakProperties`.
-- `configuration/client` — `GatewayClientConfiguration` (un `RestClient` hacia el gateway con dos
-  interceptores, `BearerTokenInterceptor` y `CorrelationIdInterceptor`, y `ApiErrorDecoder` como
+- `configuration/client` — `GatewayClientConfiguration` (un `RestClient` hacia el gateway con tres
+  interceptores, `BearerTokenInterceptor`, `CorrelationIdInterceptor` y `TransportFailureInterceptor`, y `ApiErrorDecoder` como
   manejador de estado; `HttpServiceProxyFactory` para las interfaces `@HttpExchange`),
   `UserTokenProvider` (`AuthorizedClientServiceOAuth2AuthorizedClientManager` con `refreshToken()`),
   `GatewayProperties`, `CorrelationProperties`.
@@ -149,7 +149,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `JobDto`, la unión de las tres respuestas del servicio, `JobStatus`, `JobType`, `UploadedFile`);
   `ClientEnums`, lo que comparten los enumerados tolerantes (`parse` y `selectable`). Los
   errores en `client/error` (`ApiProblem`, `ApiErrorDecoder` y la jerarquía
-  `BackofficeApiException`, con `TooManyRequestsApiException` llevando el cuerpo del 429).
+  `BackofficeApiException`, con `TooManyRequestsApiException` llevando el cuerpo del 429 y
+  `UnreachableApiException`, la llamada sin respuesta).
 - `ui` — `MainLayout` (AppLayout, con «Abrir en mto-frontend» en la barra; el menú lo dan las vistas anotadas con `@Menu`, filtradas por
   `AccessAnnotationChecker`; las rutas con prefijo conocido (`infraestructura/*`, `usuarios/*`,
   `almacen/*`, `mantenimiento/*`, `recursos/*`) se agrupan por prefijo (`MainLayout.GROUPS`), una entrada cuya ruta es el propio prefijo es el
@@ -312,7 +313,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   —alias en `title` y `detail`— y que `mto-maintenance` manda igual, con `path` y `method` de más,
   el 401/403 del gateway solo con `correlationId`, y el 503 del
   fallback del gateway con `Retry-After` y `service`) y las vistas solo conocen
-  `BackofficeApiException` y sus subclases. Un 502 no es transitorio y su notificación lleva el
+  `BackofficeApiException` y sus subclases. Un fallo de transporte (el gateway no acepta la
+  conexión, no se resuelve o no contesta en el `read-timeout`, 20 s: por encima de los 15 s del
+  gateway hacia los servicios, para que su 503/504 llegue antes) tampoco sale crudo:
+  `TransportFailureInterceptor`, el último de la cadena, lo tipa como `UnreachableApiException` con
+  el `X-Correlation-Id` que se mandó, y se dice como el `NetworkError` de mto-frontend. Un 502 no es transitorio y su notificación lleva el
   detalle; un 409 `STK-001` es falta de stock y un 422 sin errores por campo es una regla de negocio
   (`UiErrors` los dice así, no como «conflicto» ni «petición no válida»). Los dos 409 de
   `mto-configuration` tampoco se dicen igual: `CON-001` es una versión vieja («recarga y vuelve a
@@ -548,6 +553,14 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `DELETE /sessions` y `DELETE /offline-sessions`, para en el primer `BackofficeApiException` y
   devuelve lo hecho y el paso que falló; el botón pide `users-write` **y** `users-sessions-write`
   (`hasAllRoles`). No es una regla nueva de negocio: es la orquestación documentada allí.
+- **El correo de acciones ofrece lo que el servicio va a aceptar.** `mto-users` pide `users-write`
+  para mandarlo y, si lleva una acción que pone una credencial (`UPDATE_PASSWORD` o `CONFIGURE_TOTP`,
+  `RequiredAction.touchesCredentials()`), además `users-password-reset` (403 `AUTH-403`): un enlace así
+  es restablecer la credencial por correo. El botón sigue pidiendo `users-write`;
+  `ExecuteActionsEmailDialog` ofrece esas dos solo con los dos permisos (`hasAllRoles`,
+  `RequiredAction.forActionsEmail`), lo dice en la ayuda del campo a quien no los tiene, y no marca
+  nada de partida. Si aun así llega el 403, se dice como cualquier otro, con el diálogo abierto. El
+  alta de un usuario no cambia: sus acciones al entrar no mandan correo.
 - **La campana y la bandeja son de la persona, y a quién va cada aviso lo decide el servicio con el
   token.** `mto-notification` resuelve al leer, por usuario, perfil y rol de cliente, qué
   notificaciones son mías; aquí no se filtra por nadie ni se cuenta nada: el contador es el de
@@ -643,6 +656,19 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   descripción obligatorios, longitud de columna) y vuelca `errors[{field, code, message}]` campo a
   campo con `ServerValidation`. Un `code` repetido llega como 409 `BUS-002` y un cuerpo sin `code`
   como 400 desde que `RestExceptionHandler` los mapea (antes eran 500).
+- **El error de un maestro llega con la ruta de su campo, y ninguno se pierde.** `mto-configuration`
+  dice el `field` de cada error de un 400 `VAL-000` como ruta desde la raíz del cuerpo (también el
+  `BUS-001` de una referencia a catálogo informada que no existe), y
+  `ServerValidation.applyWithPaths`, que usa `MasterEditorDialog`, lo lleva al primer sitio que case,
+  igual que `applyServerErrors` de mto-frontend: el campo del `Binder` (`poleType` marca su
+  desplegable); el campo de la lista, si es un elemento de una lista de valores (`sectionings[1]`; esto
+  vale para cualquier `ServerValidation.apply`); la tabla de hijos del editor (`childErrors()` del
+  editor → `ChildrenEditor.showErrors`: las ménsulas de un perfil, las agujas de un aislador), debajo
+  de ella, con su fila y el campo **tal como lo nombra el servicio**, sin traducir la ruta («Fila 2 ·
+  cantileverType: …», «Fila 1 · steadyArm.steadyArmType: …»), que se borra al tocar la lista o al
+  volver a guardar; y lo demás, la notificación con su ruta delante
+  (`disconnectors[0].connectedTrackId: …`), con el diálogo abierto. Un lote rechazado (`[1].code` en
+  el alta múltiple de un catálogo) se notifica igual: «Datos no validos: [1].code …» (`UiErrors`).
 - **Un maestro se edita sobre la fila leída y se devuelve entero** (`README_API.md` §4 de
   `mto-configuration`: lee, modifica sobre lo leído, devuélvelo entero). Por eso los DTO de
   `client/dto/master` son clases mutables y no records, y por eso tienen lo que un DTO «solo con
@@ -712,7 +738,11 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   perdería igual) ni se introduce una base de datos para los tokens: es un cliente. Por lo mismo,
   **con varias réplicas la ruta lleva afinidad de sesión por cookie**: la sesión de Vaadin y los
   tokens viven en la réplica que atendió a la persona, y sin afinidad cada petición que cae en otra
-  es una vuelta al SSO (README, «Desplegar con varias réplicas»).
+  es una vuelta al SSO (README, «Desplegar con varias réplicas»). La sesión caduca con la
+  inactividad de la persona, como la sesión SSO del realm: `server.servlet.session.timeout`
+  (`SERVER_SESSION_TIMEOUT`, 30 min; no `spring.session.*`, que es de Spring Session y aquí no
+  está) y `vaadin.close-idle-sessions: true`, para que el latido de una pestaña olvidada no la
+  mantenga viva.
 - **Las fechas se pintan y se escriben en la zona del navegador de cada persona**, como en
   mto-frontend, no en la del servidor (el contenedor corre en UTC). `ClientTimeZone.current()` la lee
   de `ExtendedClientDetails.getTimeZoneId()`, que Vaadin 25 trae ya en la petición de arranque, y
@@ -857,7 +887,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
 
 Una clase por capa; se añaden métodos, no clases: `ClientLayerTest` (interfaces `@HttpExchange` y
 `RestClient` reales contra `MockRestServiceServer`: prefijo del gateway, Bearer y correlación, forma
-de página, `problem+json` de configuration, 401/403 y 503 del gateway, cuerpo no JSON; los
+de página, `problem+json` de configuration, 401/403 y 503 del gateway, cuerpo no JSON, un fallo de
+transporte tipado con el id de correlación que se mandó; los
 catálogos: el `versionNumber` leído en el `PUT` y en el lote, y los dos 409 de configuration
 (`CON-001` y `BUS-002`) distinguidos por su código; los maestros: resolución del genérico,
 parámetros de página y orden del `/filter` (sin orden no viaja `sort`, como en el recuento), `extras` e hijos a
@@ -906,7 +937,8 @@ no listado no aporta nada, un rol de realm `users-read`, `stock-read`, `maintena
 disjuntos, registro OIDC sin
 descubrimiento, roles desde el access token, `CurrentPrincipal`), `ViewLayerTest` (Karibu-Testing 2.7.3 sobre el contexto de Spring: el catálogo
 de la ruta y su filtro local, menú por roles, controles de escritura ocultos sin permiso, alta por
-diálogo, errores del servicio campo a campo, la modificación con la versión leída y la siguiente
+diálogo, errores del servicio campo a campo, el gateway inalcanzable dicho por la pantalla y callado
+por la campana, la modificación con la versión leída y la siguiente
 con la recargada, la versión vieja con su aviso de recargar y el diálogo abierto, los dos 409 de
 configuration dichos distinto, borrado con confirmación, lote sobre la selección con la versión
 de cada fila, parser del alta múltiple, notificación de error, diagnóstico de audiencias; los
@@ -1005,7 +1037,8 @@ la URL, filtrados en el servicio, un resultado nuevo como «Desconocido» y su d
 `MtoBackofficeApplicationTests` (contexto completo sin Keycloak ni gateway, con los clientes de
 cada servicio y los seis clientes cuyos roles son permisos; redirección al login; sonda de
 salud; ausencia de artefactos comerciales; las dos hojas de Lumo en el shell; la aplicación en hilos
-virtuales, también el executor de tareas que usa Vaadin, `theApplicationRunsOnVirtualThreadsAndSoDoesTheTaskExecutorVaadinUses`). Lo que trajo la
+virtuales, también el executor de tareas que usa Vaadin, `theApplicationRunsOnVirtualThreadsAndSoDoesTheTaskExecutorVaadinUses`;
+el timeout de sesión del servlet y `vaadin.close-idle-sessions`, que `ViewLayerTest` comprueba además en el servicio de Vaadin). Lo que trajo la
 convivencia con mto-frontend son casos de esas mismas clases: el enlace a la SPA con su query, el
 tipo padre y los `extras` de un catálogo, la referencia vaciada, el aviso fijo de la lista de
 trabajos, la pestaña oculta, las descargas fallidas, los cambios de usuarios, los desempates, lo
