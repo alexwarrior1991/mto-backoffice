@@ -4054,7 +4054,7 @@ class ViewLayerTest {
         NotificationsKt.clearNotifications();
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("reset-password-save")));
         assertTrue(password.isInvalid());
-        assertEquals("La peticion no es valida. Password policy not met", password.getErrorMessage());
+        assertEquals("Keycloak ha rechazado la peticion. Password policy not met", password.getErrorMessage());
         assertTrue(NotificationsKt.getNotifications().isEmpty(), "en el campo, no en una notificacion");
         assertFalse(LocatorJ._find(Dialog.class).isEmpty());
     }
@@ -4622,6 +4622,32 @@ class ViewLayerTest {
                 "USR-409", null, null, null, false, null, null);
         assertEquals("Ya existe un usuario con ese nombre de usuario o ese email. User exists with same username",
                 UiErrors.message(BackofficeApiException.of(HttpStatus.CONFLICT, problem, "corr-u1", null, "POST /api/users")));
+    }
+
+    /**
+     * mto-users: cerrar una sesion o quitar una credencial que ya no esta, o que es de otra persona, se dice
+     * por lo que es, sin el detalle del servicio; y un rechazo de Keycloak sin errores por campo (la politica
+     * de contrasenas, un atributo que exige el perfil), con su detalle, que es lo que lo explica. Como en
+     * mto-frontend.
+     */
+    @Test
+    void theSessionTheCredentialAndTheKeycloakRefusalOfUsersAreSaidAsWhatTheyAre() {
+        assertEquals("Esa sesion ya no existe o no es de este usuario.", UiErrors.message(usersError(404, "SES-404",
+                "Session 5a0c not found for user 0d5f", null)));
+        assertEquals("Esa credencial ya no existe o no es de este usuario.", UiErrors.message(usersError(404, "CRED-404",
+                "Credential 77 not found for user 0d5f", null)));
+        assertEquals("Keycloak ha rechazado la peticion. Password policy not met", UiErrors.message(usersError(400, "KC-400",
+                "Password policy not met", null)));
+        assertEquals("Datos no validos: password invalidPasswordMinDigitsMessage", UiErrors.message(usersError(400, "KC-400",
+                "Keycloak rejected the request", List.of(new ApiFieldError("password", null, "invalidPasswordMinDigitsMessage")))),
+                "con errores por campo, los campos");
+        assertEquals("No se ha encontrado lo que se pedia. User 0d5f not found", UiErrors.message(usersError(404, "USR-404",
+                "User 0d5f not found", null)), "otro 404 de mto-users sigue como estaba");
+    }
+
+    private static BackofficeApiException usersError(int status, String code, String detail, List<ApiFieldError> errors) {
+        ApiProblem problem = new ApiProblem("about:blank", null, status, detail, null, code, null, null, null, false, errors, null);
+        return BackofficeApiException.of(HttpStatusCode.valueOf(status), problem, "corr-u9", null, "DELETE /api/users/x");
     }
 
     // --- Sobre quien no se actua: las cuentas de servicio y uno mismo -------------------------------

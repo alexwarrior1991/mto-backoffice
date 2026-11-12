@@ -14,18 +14,21 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.regex.Pattern;
 
 /**
  * Convierte cualquier respuesta de error del gateway en una {@link BackofficeApiException}.
  *
- * <p>Tolera los tres formatos que pueden llegar (ver {@link ApiProblem}) y tambien un cuerpo que no
- * sea JSON: entonces el problema queda vacio y el texto, acotado, va al detalle. El id de
+ * <p>Tolera los formatos que pueden llegar (ver {@link ApiProblem}) y tambien un cuerpo que no
+ * sea JSON: entonces el problema queda vacio y el texto, acotado, va al detalle, salvo que sea HTML
+ * (la pagina de error de un proxy), que no se ensena nunca, como en mto-frontend. El id de
  * correlacion se toma de la cabecera de la respuesta, que el gateway siempre devuelve.</p>
  */
 public class ApiErrorDecoder implements RestClient.ResponseSpec.ErrorHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ApiErrorDecoder.class);
     private static final int MAX_RAW_DETAIL = 300;
+    private static final Pattern HTML_START = Pattern.compile("\\s*<(!doctype|html)", Pattern.CASE_INSENSITIVE);
 
     private final ObjectMapper objectMapper;
     private final String correlationHeader;
@@ -64,8 +67,17 @@ public class ApiErrorDecoder implements RestClient.ResponseSpec.ErrorHandler {
             }
         }
         String raw = new String(body, StandardCharsets.UTF_8).strip();
+        if (isHtml(contentType, raw)) {
+            // La pagina de error de un proxy no se le ensena a nadie: queda el estado y la referencia.
+            return ApiProblem.empty();
+        }
         String detail = raw.length() > MAX_RAW_DETAIL ? raw.substring(0, MAX_RAW_DETAIL) + "..." : raw;
         return new ApiProblem(null, null, null, detail, null, null, null, null, null, null, null, null);
+    }
+
+    /** HTML porque lo dice el Content-Type o porque lo es el cuerpo (un proxy que no lo declara, o que miente). */
+    private static boolean isHtml(MediaType contentType, String raw) {
+        return (contentType != null && MediaType.TEXT_HTML.isCompatibleWith(contentType)) || HTML_START.matcher(raw).lookingAt();
     }
 
     private static Duration retryAfter(HttpHeaders headers) {

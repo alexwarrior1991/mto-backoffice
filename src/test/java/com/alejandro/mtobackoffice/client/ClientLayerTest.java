@@ -130,6 +130,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.test.web.client.response.DefaultResponseCreator;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -806,18 +807,44 @@ class ClientLayerTest {
         assertNotNull(refused.getReference());
     }
 
+    /**
+     * Un cuerpo que no es JSON tambien es una excepcion tipada. Si es texto, va acotado al detalle; si es
+     * HTML (la pagina de error de un proxy), no se le ensena a nadie: ni en el detalle ni en el mensaje,
+     * lo diga el Content-Type o el propio cuerpo. Como en mto-frontend.
+     */
     @Test
-    void aNonJsonErrorBodyStillBecomesAnException() {
+    void aNonJsonErrorBodyStillBecomesAnExceptionAndAnHtmlOneIsNeverShown() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/profile-statuses"))
+                .andRespond(withStatus(HttpStatus.BAD_GATEWAY)
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .body("upstream connect error"));
+        BackofficeApiException text = assertThrows(ServiceUnavailableApiException.class,
+                () -> asUser(() -> lovClient.findAll(LovResource.PROFILE_STATUSES)));
+        assertEquals("upstream connect error", text.getProblem().detail());
+        assertFalse(text.getProblem().hasFieldErrors());
+
+        server.reset();
         server.expect(requestTo(GATEWAY + "/api/configuration/profile-statuses"))
                 .andRespond(withStatus(HttpStatus.BAD_GATEWAY)
                         .contentType(MediaType.TEXT_HTML)
-                        .body("<html>Bad Gateway</html>"));
-
-        BackofficeApiException exception = assertThrows(ServiceUnavailableApiException.class,
+                        .header("X-Correlation-Id", "corr-html")
+                        .body("<html><body><h1>502 Bad Gateway</h1>nginx</body></html>"));
+        BackofficeApiException html = assertThrows(ServiceUnavailableApiException.class,
                 () -> asUser(() -> lovClient.findAll(LovResource.PROFILE_STATUSES)));
+        assertNull(html.getProblem().detail(), "la pagina de error de un proxy no se ensena");
+        assertFalse(html.getMessage().contains("<"), html.getMessage());
+        assertEquals("corr-html", html.getReference());
 
-        assertTrue(exception.getProblem().detail().contains("Bad Gateway"));
-        assertFalse(exception.getProblem().hasFieldErrors());
+        // Sin Content-Type, o con uno que miente, lo dice el propio cuerpo.
+        for (MediaType type : new MediaType[] {null, MediaType.TEXT_PLAIN, MediaType.APPLICATION_JSON}) {
+            server.reset();
+            DefaultResponseCreator response = withStatus(HttpStatus.INTERNAL_SERVER_ERROR).body("\n  <!DOCTYPE html><html><title>Error</title></html>");
+            server.expect(requestTo(GATEWAY + "/api/configuration/profile-statuses")).andRespond(type == null ? response : response.contentType(type));
+            BackofficeApiException sniffed = assertThrows(BackofficeApiException.class,
+                    () -> asUser(() -> lovClient.findAll(LovResource.PROFILE_STATUSES)));
+            assertNull(sniffed.getProblem().detail(), String.valueOf(type));
+            assertFalse(sniffed.getMessage().contains("<"), sniffed.getMessage());
+        }
     }
 
     // --- Maestros de infraestructura ------------------------------------------------------------

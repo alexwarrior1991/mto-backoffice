@@ -343,7 +343,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   —alias en `title` y `detail`— y que `mto-maintenance` manda igual, con `path` y `method` de más,
   el 401/403 del gateway solo con `correlationId`, y el 503 del
   fallback del gateway con `Retry-After` y `service`) y las vistas solo conocen
-  `BackofficeApiException` y sus subclases. Un fallo de transporte (el gateway no acepta la
+  `BackofficeApiException` y sus subclases. Un cuerpo que no es JSON va, acotado, al detalle, salvo que sea
+  HTML (lo diga el `Content-Type` o el propio cuerpo: la página de error de un proxy), que no se enseña
+  nunca, como en mto-frontend: queda el estado y la referencia. Un fallo de transporte (el gateway no acepta la
   conexión, no se resuelve o no contesta en el `read-timeout`, 20 s: por encima de los 15 s del
   gateway hacia los servicios, para que su 503/504 llegue antes) tampoco sale crudo:
   `TransportFailureInterceptor`, el último de la cadena, lo tipa como `UnreachableApiException` con
@@ -369,6 +371,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   mantenimiento no es «no tienes permiso»: el permiso está, pero lo que se escribe es de un EP fuera del
   ámbito de la persona, y se dice con el detalle del servicio («Queda fuera de tu ambito»). El 503
   `KCK-503` de `mto-resources` es Keycloak caído para el informe de puestos y perfiles: transitorio.
+  De `mto-users`, además: `SES-404` y `CRED-404` (esa sesión o esa credencial ya no existe o no es de ese
+  usuario, sin el detalle del servicio) y `KC-400` sin errores por campo («Keycloak ha rechazado la
+  peticion», con su detalle, que es el texto de Keycloak: la política de contraseñas, un atributo obligatorio).
 - **La paginación es la forma DTO** `{content, page:{size,number,totalElements,totalPages}}`, fijada
   en `mto-configuration` con `spring.data.web.pageable.serialization-mode: via_dto` y pinada allí
   por test. `PageResponse<T>` la lee (y tolera `first`/`last` de stock y maintenance). La API de
