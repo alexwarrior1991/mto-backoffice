@@ -1936,7 +1936,9 @@ class ViewLayerTest {
         Dialog dialog = LocatorJ._get(Dialog.class);
         LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Identificador")), "0-1.01");
         TextField kp = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("KP"));
-        assertEquals(14, kp.getMaxLength(), "el signo, 9 enteros, el punto y 3 decimales");
+        // El campo no corta lo escrito: un maximo en el navegador cortaria en silencio a 14, espacios
+        // incluidos, y se guardaria otro KP. Se recorta y despues se comprueba la longitud.
+        assertEquals(0, kp.getMaxLength(), "sin maximo en el campo: nunca se corta en silencio");
         @SuppressWarnings("unchecked")
         ComboBox<RefItem> track = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via"));
         LocatorJ._setValue(track, new RefItem(3L, "TRACK 1 (EP4)"));
@@ -1948,12 +1950,17 @@ class ViewLayerTest {
             LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
             assertTrue(kp.isInvalid(), "\"" + typed + "\" no es un KP");
         }
+        LocatorJ._setValue(kp, " 1234567890.1234 ");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        assertTrue(kp.isInvalid(), "15 caracteres tras recortar");
+        assertEquals("Como mucho 14 caracteres", kp.getErrorMessage());
         verify(profileClient, never()).create(any());
 
-        LocatorJ._setValue(kp, " -77.960 ");
+        // 14 caracteres tras recortar, el signo, 9 enteros, el punto y 3 decimales: los espacios no cuentan.
+        LocatorJ._setValue(kp, "  -123456789.960  ");
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
 
-        verify(profileClient).create(argThat(dto -> "-77.960".equals(dto.getKp())));
+        verify(profileClient).create(argThat(dto -> "-123456789.960".equals(dto.getKp())));
     }
 
     @Test
@@ -2685,6 +2692,13 @@ class ViewLayerTest {
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
         assertTrue(kp.isInvalid(), "el KP va en metros con punto decimal, como el del perfil");
         verify(disconnectorClient, never()).update(any(), any());
+        assertEquals(0, kp.getMaxLength(), "sin maximo en el campo: nunca se corta en silencio");
+        LocatorJ._setValue(kp, " 1234567890.1234 ");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        assertEquals("Como mucho 14 caracteres", kp.getErrorMessage(), "15 tras recortar: un error, no otro KP");
+        verify(disconnectorClient, never()).update(any(), any());
+        LocatorJ._setValue(kp, "  -123456789.125  ");
+        assertFalse(kp.isInvalid(), "14 tras recortar: los espacios no cuentan");
         LocatorJ._setValue(kp, "-12.5");
         assertFalse(kp.isInvalid(), "con signo, como el del perfil: antes del origen de la kilometracion");
 

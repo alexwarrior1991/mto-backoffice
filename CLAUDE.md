@@ -677,7 +677,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   los KP de agujas y aisladores no son negativos; lo que va en mm del perfil y el descentramiento son
   enteros, la longitud de un paquete son solo cifras y el KP del perfil, y el propio de un seccionador
   sin poste, viajan recortados y con signo (un poste de antes del origen de la kilometración va en
-  negativo, como admite `mto-configuration`; 14 caracteres como mucho). Un punto de acceso a la vía lleva su KP sin signo con 9 enteros y 3
+  negativo, como admite `mto-configuration`; 14 caracteres como mucho, contados después de recortar: el campo no
+  lleva máximo, porque el navegador cortaría lo escrito en silencio y se guardaría otro KP; lo que no cabe
+  es un error en el campo, «Como mucho 14 caracteres», como en mto-frontend). Un punto de acceso a la vía lleva su KP sin signo con 9 enteros y 3
   decimales (`Numbers.infrastructureKp`), sus toneladas sin signo con 5 y 3 (`tonnes`) y sus coordenadas
   en su rango con 6 decimales (`coordinate(90)`, `coordinate(180)`, las mismas que una ubicación de
   `mto-resources`), y las dos juntas o ninguna: se marca la que falta («Con la latitud va tambien la
