@@ -8235,6 +8235,58 @@ class ViewLayerTest {
         LocatorJ._get(Paragraph.class, spec -> spec.withText("Anadir materiales pide leer el almacen (stock-read)."));
     }
 
+    /**
+     * Vaciar «Previsto» o «Consumido» al modificar una linea no es «no tocarlo»: es un error en su campo,
+     * sin llamar y sin decir que se guardo, como en mto-frontend. Lo que no se puede cambiar (lo previsto de
+     * una reservada) no se pide.
+     */
+    @Test
+    void emptyingThePlannedOrTheConsumedOfALineIsAnErrorInItsFieldAndNothingIsSaved() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        MaterialUsageDto failed = new MaterialUsageDto(LINE_FAILED, ORDER1, null, MAT1, "MAT-001", "Pendola", WH1, new BigDecimal("4.000000"),
+                new BigDecimal("1.000000"), "ud", false, null, StockSyncStatus.FAILED, "Stock service unavailable", null, null, 2L);
+        when(orderClient.updateMaterial(eq(ORDER1), eq(LINE_FAILED), any())).thenReturn(failed);
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(failed));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("order-materials-grid"), 0, "actions"), Button.class,
+                spec -> spec.withId("material-edit-" + LINE_FAILED)));
+        BigDecimalField planned = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-planned"));
+        BigDecimalField consumed = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-consumed"));
+        NotificationsKt.clearNotifications();
+        LocatorJ._setValue(consumed, null);
+        click(MaterialUsageDialog.SAVE_ID);
+        assertTrue(consumed.isInvalid());
+        assertEquals("Lo consumido es obligatorio", consumed.getErrorMessage());
+        assertFalse(planned.isInvalid());
+        LocatorJ._setValue(consumed, new BigDecimal("1"));
+        LocatorJ._setValue(planned, null);
+        click(MaterialUsageDialog.SAVE_ID);
+        assertEquals("Lo previsto es obligatorio", planned.getErrorMessage());
+        assertFalse(consumed.isInvalid());
+        verify(orderClient, never()).updateMaterial(any(), any(), any());
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "no dice que se guardo");
+        assertFalse(LocatorJ._find(MaterialUsageDialog.class).isEmpty(), "el dialogo sigue abierto");
+
+        LocatorJ._setValue(planned, new BigDecimal("5"));
+        click(MaterialUsageDialog.SAVE_ID);
+        verify(orderClient).updateMaterial(ORDER1, LINE_FAILED, MergePatch.of(new MaterialUsageUpdateRequest(new BigDecimal("5"), null, null), 2L));
+        assertTrue(LocatorJ._find(MaterialUsageDialog.class).isEmpty());
+
+        MaterialUsageDto reserved = new MaterialUsageDto(LINE_RESERVED, ORDER1, null, MAT1, "MAT-001", "Pendola", WH1, new BigDecimal("4.000000"),
+                BigDecimal.ZERO, "ud", false, UUID.randomUUID(), StockSyncStatus.RESERVED, null, null, null, 2L);
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(reserved));
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("order-materials-grid"), 0, "actions"), Button.class,
+                spec -> spec.withId("material-edit-" + LINE_RESERVED)));
+        NotificationsKt.clearNotifications();
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-consumed")), null);
+        click(MaterialUsageDialog.SAVE_ID);
+        assertEquals("Lo consumido es obligatorio", LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-consumed")).getErrorMessage());
+        assertFalse(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-planned")).isInvalid(), "lo previsto de una reservada no se pide");
+        verify(orderClient, never()).updateMaterial(eq(ORDER1), eq(LINE_RESERVED), any());
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
+    }
+
     @Test
     void removingAReservedLineWarnsAboutItsReservationAndAStockOutageIsNotified() {
         loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);

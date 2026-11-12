@@ -500,7 +500,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   o sin pedir fuera de borrador, también con la orden terminada, porque el servicio la liquida al
   reintentar; con la orden abierta, además, comprueba una `RESERVED` («Comprobar la reserva en el
   almacén»): si Almacén liberó su reserva, el servicio pide otra. Lo previsto de una línea reservada no se ofrece: el
-  servicio no lo cambia. Un `MAT-001` al completar la orden sugiere sincronizar o, con
+  servicio no lo cambia. Al modificar una línea, «Previsto» y «Consumido» (los que se pueden cambiar) no se
+  dejan vacíos: es un error en su campo, sin llamar y sin decir que se guardó, como en mto-frontend. Un `MAT-001` al completar la orden sugiere sincronizar o, con
   `maintenance-supervise`, completar con `force`.
 - **Una línea con una petición al almacén sin respuesta no cambia lo que viaja en ella.**
   `stockRequestInDoubt` (`RESERVATION` u `OUTPUT`, enumerado tolerante) es la reserva o la salida
