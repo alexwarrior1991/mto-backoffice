@@ -898,7 +898,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   2 s desde `SharedPolling` con la pestaña a la vista (`GET /operations/{id}`, nunca el `Location`, que
   es la ruta interna del servicio): al terminar bien dice lo mismo que la llamada síncrona y relee las
   tareas; si falla, su error como el de la llamada síncrona (`TaskGeneration.failureOf`; `OPS-410` es una
-  abandonada), con el diálogo abierto; cerrarlo deja de seguirla y avisa de que continúa allí. El tope
+  abandonada), con el diálogo abierto; cerrarlo deja de seguirla y avisa de que continúa allí. Si la operación ya no existe
+  (su `GET` responde 404: se purgó), se deja de preguntar, se dice una vez («La operacion ya no existe en el
+  servicio; comprueba las tareas de la orden»), se releen las tareas y el diálogo sigue abierto y utilizable;
+  cualquier otro fallo de una pasada sigue callado y la siguiente lo vuelve a intentar. El tope
   de operaciones del despliegue es un 429 `OPS-429` con cuándo reintentar. La previsualización sigue
   siendo síncrona. Un `OperationStatus` desconocido se da por terminado, para no preguntar sin fin.
 - **Las ausencias de una persona son de `mto-resources`, y que se solapen lo dice el servicio.** La

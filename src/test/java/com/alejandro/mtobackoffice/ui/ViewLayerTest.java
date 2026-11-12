@@ -7674,6 +7674,54 @@ class ViewLayerTest {
                 UiErrors.message(TaskGeneration.failureOf(generation(OperationStatus.FAILED, null, new OperationErrorDto(500, "OPS-410", "Abandoned")))));
     }
 
+    /**
+     * Una operacion que ya no existe en el servicio (purgada: su GET responde 404) no se sigue preguntando
+     * sin fin: se deja de preguntar, se dice una vez, se releen las tareas y el dialogo sigue abierto y
+     * utilizable. Cualquier otro fallo de una pasada sigue callado, y la siguiente lo vuelve a intentar.
+     */
+    @Test
+    void aFollowedGenerationWhoseOperationIsGoneStopsAskingSaysSoOnceAndReloadsTheTasks() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        stubGenerationAccepted();
+        when(operationClient.generation(OPERATION1))
+                .thenThrow(maintenanceError(503, "APP-503", "No connection available"))
+                .thenThrow(maintenanceError(404, "OPS-404", "Operation " + OPERATION1 + " not found"));
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("task-generate");
+        click(GenerateTasksDialog.CONFIRM_ID);
+        GenerateTasksDialog dialog = LocatorJ._get(GenerateTasksDialog.class);
+        NotificationsKt.clearNotifications();
+        clearInvocations(orderClient);
+        dialog.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "otro fallo de una pasada no se avisa");
+        assertFalse(LocatorJ._get(Button.class, spec -> spec.withId(GenerateTasksDialog.CONFIRM_ID)).isEnabled(), "y se sigue");
+
+        dialog.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertEquals(1, NotificationsKt.getNotifications().size());
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText(GenerateTasksDialog.OPERATION_GONE));
+        assertEquals("La operacion ya no existe en el servicio; comprueba las tareas de la orden.", GenerateTasksDialog.OPERATION_GONE);
+        verify(orderClient, atLeastOnce()).tasks(ORDER1);
+        assertFalse(LocatorJ._find(GenerateTasksDialog.class).isEmpty(), "el dialogo sigue abierto");
+        assertTrue(LocatorJ._find(Paragraph.class, spec -> spec.withId(GenerateTasksDialog.OPERATION_ID)).isEmpty(), "ya no se sigue nada");
+        assertTrue(LocatorJ._get(Button.class, spec -> spec.withId(GenerateTasksDialog.CONFIRM_ID)).isEnabled(), "y utilizable");
+
+        dialog.pollOnce();
+        dialog.pollOnce();
+        MockVaadin.clientRoundtrip();
+        verify(operationClient, times(2)).generation(OPERATION1);
+        assertEquals(1, NotificationsKt.getNotifications().size(), "se dice una vez");
+
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Volver")));
+        assertTrue(LocatorJ._find(GenerateTasksDialog.class).isEmpty());
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "cerrarlo ya no avisa de que continua: no se sigue nada");
+    }
+
     /** El tope de operaciones del despliegue es un 429 OPS-429: dice cuando reintentar, con el dialogo abierto. */
     @Test
     void aGenerationBeyondTheOperationsCapSaysWhenToRetry() {
