@@ -876,7 +876,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `config-read`) y en cuanto se elige una, se ofrece el punto de acceso por el que encarriló, para
   cualquier movilidad: los activos de esa vía tal como los tiene `mto-resources`
   (`AccessPointClient.enabledOnTrack`, `GET /track-access-points?trackId=&enabled=true`), pedidos cada vez
-  que cambia la vía, que lo vacía; un fallo al pedirlos no se avisa: lo dice la ayuda del campo. Cada uno
+  que cambia la vía, que lo vacía (cambiar el EP, que acota las vías ofrecidas, conserva la vía y su punto de
+  acceso si la sigue ofreciendo, y la vacía si no: nunca viaja una vía que el desplegable no ofrece); un fallo al pedirlos no se avisa: lo dice la ayuda del campo. Cada uno
   dice su nombre, su tipo y su kp, y «sin biviales» si no sirve para encarrilarlos; no se filtra nada más
   aquí: si le vale al vehículo (biviales, acceso preparado, pesos) lo dice el servicio con su 409
   `VEH-001`, con el diálogo abierto. Es opcional y viaja como `accessPointId`. Uno que ya no existe o aún

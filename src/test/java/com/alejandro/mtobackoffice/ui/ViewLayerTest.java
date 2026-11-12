@@ -10249,6 +10249,64 @@ class ViewLayerTest {
     }
 
     /**
+     * Cambiar el EP, que acota las vias ofrecidas: la via elegida se conserva si sigue entre ellas (y con
+     * ella su punto de acceso, sin volver a pedir la lista), y se vacia si ya no esta, y con ella el punto de
+     * acceso. Nunca viaja una via que el desplegable ya no ofrece.
+     */
+    @Test
+    void changingThePackageOfALocationKeepsTheTrackWhileItIsStillOfferedAndEmptiesItOtherwise() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        VehicleLocationDto onTrack = location(VehicleLocationKind.ON_TRACK, 12L, "10.5", null, null);
+        stubVehicles(List.of(vehicle(VEHICLE1, "UN-01", ROAD_RAIL_MODEL, onTrack, true)));
+        when(vehicleClient.locations(eq(VEHICLE1), any(), any(), anyInt(), anyInt())).thenReturn(page(List.of(onTrack), 0, 20));
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(), 0, 200));
+        AccessPointDto prepared = new AccessPointDto(77L, "Acceso km 110+176", 12L, new BigDecimal("110176.000"), AccessPointKind.PREPARED_ACCESS, true,
+                new BigDecimal("12.500"), new BigDecimal("40.000"), true);
+        when(accessPointClient.enabledOnTrack(12L)).thenReturn(List.of(prepared));
+        when(accessPointClient.enabledOnTrack(20L)).thenReturn(List.of());
+        when(vehicleClient.recordLocation(eq(VEHICLE1), any())).thenReturn(onTrack);
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("vehicle-locate")));
+        @SuppressWarnings("unchecked")
+        Select<VehicleLocationKind> kind = LocatorJ._get(Select.class, spec -> spec.withId("location-kind"));
+        LocatorJ._setValue(kind, VehicleLocationKind.ON_TRACK);
+        ComboBox<RefItem> executionPackage = comboWithId("location-package");
+        ComboBox<RefItem> track = comboWithId("location-track");
+        RefItem track12 = new RefItem(12L, "VIA 1 (EP 4)");
+        LocatorJ._setValue(track, track12);
+        ComboBox<AccessPointDto> accessPoint = comboWithId("location-access-point");
+        LocatorJ._setValue(accessPoint, prepared);
+
+        LocatorJ._setValue(executionPackage, new RefItem(4L, "EP 4"));
+        assertEquals(track12, track.getValue(), "la via es de ese EP: se conserva");
+        assertEquals(prepared, accessPoint.getValue(), "y su punto de acceso tambien");
+        assertEquals(List.of(prepared), ComboBoxKt.getSuggestionItems(accessPoint));
+        assertEquals(List.of(12L), ComboBoxKt.getSuggestionItems(track).stream().map(RefItem::id).toList());
+        verify(accessPointClient, times(1)).enabledOnTrack(12L);
+
+        LocatorJ._setValue(executionPackage, new RefItem(5L, "EP 5"));
+        assertNull(track.getValue(), "la via no es de ese EP: se vacia");
+        assertNull(accessPoint.getValue(), "y con ella el punto de acceso");
+        assertFalse(accessPoint.isVisible(), "que sin via no se ofrece");
+        assertEquals(List.of(20L), ComboBoxKt.getSuggestionItems(track).stream().map(RefItem::id).toList());
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        verify(vehicleClient, never()).recordLocation(any(), any());
+        assertTrue(track.isInvalid(), "en via dice su via: la que ya no se ofrece no viaja");
+
+        RefItem track20 = new RefItem(20L, "VIA 9 (EP 5)");
+        LocatorJ._setValue(track, track20);
+        executionPackage.clear();
+        assertEquals(track20, track.getValue(), "sin EP se ofrecen todas: se conserva");
+        assertEquals(List.of(12L, 20L), ComboBoxKt.getSuggestionItems(track).stream().map(RefItem::id).toList());
+        verify(accessPointClient, times(1)).enabledOnTrack(20L);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        verify(vehicleClient).recordLocation(VEHICLE1, new VehicleLocationRequest(VehicleLocationKind.ON_TRACK, null, null, 20L, null, null,
+                null, null, null, null, null, null, null));
+    }
+
+    /**
      * El punto de acceso por el que encarrilo: donde se ofrece la via y en cuanto hay una elegida, los
      * activos de esa via, pedidos a mto-resources cada vez que cambia (que lo vacia); un fallo al pedirlos
      * lo dice su ayuda, sin aviso. Viaja como accessPointId; el 404 TAP-404 vuelve a pedir la lista y se dice
