@@ -911,7 +911,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (una que inmoviliza, abierta, lo pone «En reparacion»; cerrar o cancelar la última lo devuelve a
   «Operativo»; cancelar una planificada lo deja volver a los turnos de esas fechas) y, como cualquier
   escritura del taller, releen la ficha entera, cuyo estado puede haber cambiado. El alta elige si nace
-  planificada (con su inicio, obligatorio) o abierta ahora, y si inmoviliza (marcado por defecto); el fin
+  planificada (con su inicio, obligatorio; es como abre el dialogo, igual que en mto-frontend) o abierta ahora, y si inmoviliza (marcado por defecto); el fin
   previsto no es anterior al inicio, y los kilómetros, las horas y el coste se comprueban con su columna
   (`Numbers`). Al modificar, el estado no se elige, las fechas previstas solo cambian planificada o
   abierta y si inmoviliza, solo planificada. `REP-001` y `VEH-001` dejan el diálogo abierto.

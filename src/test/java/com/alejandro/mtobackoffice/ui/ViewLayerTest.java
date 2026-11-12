@@ -11259,8 +11259,8 @@ class ViewLayerTest {
     }
 
     /**
-     * El alta de una reparacion nace abierta ahora o planificada (con su inicio, obligatorio) y marcada como
-     * que inmoviliza; lo evidente se comprueba antes de llamar (la clase, la descripcion, el fin previsto, el
+     * El alta de una reparacion nace planificada (con su inicio, obligatorio), o abierta ahora si se elige, y
+     * marcada como que inmoviliza; lo evidente se comprueba antes de llamar (la clase, la descripcion, el fin previsto, el
      * coste con su columna) y un VEH-001 deja el dialogo abierto. Guardar relee la ficha del vehiculo.
      */
     @Test
@@ -11276,13 +11276,16 @@ class ViewLayerTest {
         click("repair-add");
         @SuppressWarnings("unchecked")
         RadioButtonGroup<RepairStatus> status = LocatorJ._get(RadioButtonGroup.class, spec -> spec.withId("repair-status"));
-        assertEquals(RepairStatus.OPEN, status.getValue(), "por defecto se abre ahora");
+        assertEquals(RepairStatus.PLANNED, status.getValue(), "por defecto nace planificada, como en mto-frontend");
         assertEquals(List.of(RepairStatus.PLANNED, RepairStatus.OPEN), status.getListDataView().getItems().toList());
         assertTrue(LocatorJ._get(Checkbox.class, spec -> spec.withId("repair-immobilises")).getValue(), "por defecto inmoviliza");
         click(VehicleRepairDialog.SAVE_ID);
         verify(vehicleClient, never()).addRepair(any(), any());
         assertTrue(LocatorJ._get(Select.class, spec -> spec.withId("repair-kind")).isInvalid(), "la clase es obligatoria");
         assertTrue(LocatorJ._get(TextArea.class, spec -> spec.withId("repair-description")).isInvalid(), "la descripcion tambien");
+        assertEquals("Una planificada dice desde cuando", datePicker("repair-planned-from").getErrorMessage());
+        LocatorJ._setValue(status, RepairStatus.OPEN);
+        assertFalse(datePicker("repair-planned-from").isInvalid(), "abierta ahora no pide el inicio");
 
         LocatorJ._setValue(status, RepairStatus.PLANNED);
         LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("repair-kind")), RepairKind.BREAKDOWN);
