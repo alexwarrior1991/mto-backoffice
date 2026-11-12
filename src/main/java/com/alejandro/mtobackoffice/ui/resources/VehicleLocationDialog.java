@@ -52,7 +52,8 @@ import java.util.stream.Stream;
  * <p>Donde se ofrece la via, en cuanto se elige una se ofrece tambien el punto de acceso por el que
  * encarrilo, del maestro de mto-configuration tal como lo tiene mto-resources: los activos de esa via
  * ({@code GET /track-access-points?trackId=&enabled=true}), pedidos cada vez que cambia la via, que lo
- * vacia; si no se pueden leer, lo dice su ayuda, sin aviso. Es opcional y viaja como
+ * vacia (cambiar el EP conserva la via, y su punto de acceso, si el EP nuevo la sigue ofreciendo, y la vacia
+ * si no); si no se pueden leer, lo dice su ayuda, sin aviso. Es opcional y viaja como
  * {@code accessPointId}. Si le vale al vehiculo (biviales, acceso preparado, pesos) lo dice el servicio
  * con su 409 {@code VEH-001}; uno que ya no existe o aun no ha llegado a Recursos es su 404
  * {@code TAP-404}, que vuelve a pedir la lista; los dos con el dialogo abierto. El texto libre se queda,
@@ -85,6 +86,8 @@ public class VehicleLocationDialog extends Dialog {
     private final DateTimePicker observedAt = new DateTimePicker("Cuando");
     /** Cada campo por el nombre del suyo en la peticion, para los errores del servicio. */
     private final Map<String, HasValidation> fields = new LinkedHashMap<>();
+    /** Mientras el EP cambia las vias ofrecidas y la elegida sigue entre ellas: la via no ha cambiado. */
+    private boolean keepingTrack;
 
     public VehicleLocationDialog(VehicleDto vehicle, ResourcesClients clients, ResourcesNames names, Consumer<VehicleLocationDto> saved) {
         this.vehicle = vehicle;
@@ -113,16 +116,29 @@ public class VehicleLocationDialog extends Dialog {
         executionPackage.setItemLabelGenerator(RefItem::label);
         executionPackage.setClearButtonVisible(true);
         executionPackage.addValueChangeListener(change -> {
+            // La via elegida se conserva si el EP nuevo la sigue ofreciendo, y con ella su punto de acceso
+            // (cambiar las opciones vacia el desplegable un momento: eso no es cambiar de via); si ya no la
+            // ofrece, se vacia, y con ella el punto de acceso. Nunca viaja una via que no se ofrece.
             RefItem chosen = track.getValue();
             List<RefItem> tracks = names.tracks(change.getValue() == null ? null : change.getValue().id());
-            track.setItems(tracks);
-            track.setValue(chosen != null && tracks.contains(chosen) ? chosen : null);
+            boolean kept = chosen != null && tracks.contains(chosen);
+            keepingTrack = kept;
+            try {
+                track.setItems(tracks);
+                track.setValue(kept ? chosen : null);
+            } finally {
+                keepingTrack = false;
+            }
         });
         track.setId("location-track");
         track.setItems(names.tracks(null));
         track.setItemLabelGenerator(RefItem::label);
         track.setClearButtonVisible(true);
-        track.addValueChangeListener(change -> trackChanged(change.getValue()));
+        track.addValueChangeListener(change -> {
+            if (!keepingTrack) {
+                trackChanged(change.getValue());
+            }
+        });
         kp.setId("location-kp");
         accessPoint.setId("location-access-point");
         accessPoint.setItemLabelGenerator(AccessPointDto::label);

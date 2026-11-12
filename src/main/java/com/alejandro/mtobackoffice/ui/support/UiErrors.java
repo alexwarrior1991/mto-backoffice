@@ -113,6 +113,12 @@ public final class UiErrors {
                     "Esa notificacion ya no existe o no va dirigida a ti.";
             case NotFoundApiException line when "ACT-404".equals(line.getProblem().code()) ->
                     "Esa linea del registro ya no existe.";
+            // mto-users: cerrar una sesion o quitar una credencial que ya no esta, o que es de otra persona
+            // (el servicio lo comprueba antes). Sin su detalle, que nombra ids.
+            case NotFoundApiException session when "SES-404".equals(session.getProblem().code()) ->
+                    "Esa sesion ya no existe o no es de este usuario.";
+            case NotFoundApiException credential when "CRED-404".equals(credential.getProblem().code()) ->
+                    "Esa credencial ya no existe o no es de este usuario.";
             // mto-maintenance: una persona o un vehiculo de mto-resources que todavia no ha llegado por
             // evento a mantenimiento (se acaba de dar de alta alli). Llega en unos segundos: reintentar vale.
             case NotFoundApiException crew when "CRW-404".equals(crew.getProblem().code()) ->
@@ -135,6 +141,10 @@ public final class UiErrors {
             // o un almacen retirado...). La linea queda rechazada, con el motivo que viene en el detalle.
             case ValidationApiException stock when "STK-422".equals(stock.getProblem().code()) ->
                     "El almacen ha rechazado la operacion." + detail(exception);
+            // mto-users: Keycloak no admite lo pedido (la politica de contrasenas del realm, un atributo que
+            // el perfil de usuario exige...). Su detalle, que es el texto de Keycloak, es lo que lo explica.
+            case ValidationApiException keycloak when "KC-400".equals(keycloak.getProblem().code()) && !keycloak.getProblem().hasFieldErrors() ->
+                    "Keycloak ha rechazado la peticion." + detail(exception);
             // Un 422 sin errores por campo es una regla de negocio (mto-stock: reserva no activa, conjunto
             // sin lista de materiales, almacen inactivo...): la peticion esta bien, la operacion no cabe.
             case ValidationApiException business when business.getStatus().value() == 422 && !business.getProblem().hasFieldErrors() ->

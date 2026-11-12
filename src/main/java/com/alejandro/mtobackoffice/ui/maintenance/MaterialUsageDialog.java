@@ -33,7 +33,8 @@ import java.util.Objects;
 /**
  * Registrar o modificar una linea de material. El alta elige material y almacen en mto-stock (pide
  * {@code stock-read}) y, si se quiere, la tarea; fuera de borrador el servicio la reserva al
- * momento. La modificacion manda solo lo cambiado; lo previsto de una linea reservada no se ofrece,
+ * momento. La modificacion manda solo lo cambiado, y lo previsto y lo consumido que se pueden cambiar no
+ * se dejan vacios (un error en su campo, sin llamar); lo previsto de una linea reservada no se ofrece,
  * porque el servicio no lo cambia: se quita y se registra otra vez. Con una peticion al almacen sin
  * respuesta no se ofrecen ni lo previsto ni lo consumido, que viajan en ella; lo demas si.
  */
@@ -41,6 +42,8 @@ public class MaterialUsageDialog extends Dialog {
 
     public static final String SAVE_ID = "material-save";
     static final String IN_DOUBT_ID = "material-in-doubt";
+    static final String PLANNED_REQUIRED = "Lo previsto es obligatorio";
+    static final String CONSUMED_REQUIRED = "Lo consumido es obligatorio";
 
     public MaterialUsageDialog(OrderDto order, MaterialUsageDto existing, List<TaskDto> openTasks, MaintenanceClients clients, Runnable saved) {
         boolean creating = existing == null;
@@ -141,15 +144,20 @@ public class MaterialUsageDialog extends Dialog {
             warehouse.setInvalid(true);
             valid = false;
         }
-        if (!Numbers.check(planned, Numbers.all(Numbers.required("Lo previsto es obligatorio"), Numbers.quantity()))) {
+        if (!Numbers.check(planned, Numbers.all(Numbers.required(PLANNED_REQUIRED), Numbers.quantity()))) {
             valid = false;
         }
         return valid;
     }
 
-    /** Lo previsto y lo consumido al modificar: cero o mas, con los decimales del servicio; vacio, no se toca. */
+    /**
+     * Lo previsto y lo consumido al modificar: cero o mas, con los decimales del servicio, y obligatorios,
+     * como en mto-frontend. Una linea siempre tiene los dos, asi que vaciar uno no es «no tocarlo»: sin
+     * esto no viajaba nada y se decia «guardado». Lo que no se puede cambiar (de solo lectura) no se pide.
+     */
     private static boolean validUpdate(BigDecimalField planned, BigDecimalField consumed) {
-        return Numbers.check(planned, Numbers.quantity()) & Numbers.check(consumed, Numbers.quantity());
+        return (planned.isReadOnly() || Numbers.check(planned, Numbers.all(Numbers.required(PLANNED_REQUIRED), Numbers.quantity())))
+                & (consumed.isReadOnly() || Numbers.check(consumed, Numbers.all(Numbers.required(CONSUMED_REQUIRED), Numbers.quantity())));
     }
 
     private static boolean same(BigDecimal value, BigDecimal original) {

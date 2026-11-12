@@ -1936,7 +1936,9 @@ class ViewLayerTest {
         Dialog dialog = LocatorJ._get(Dialog.class);
         LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("Identificador")), "0-1.01");
         TextField kp = LocatorJ._get(dialog, TextField.class, spec -> spec.withLabel("KP"));
-        assertEquals(14, kp.getMaxLength(), "el signo, 9 enteros, el punto y 3 decimales");
+        // El campo no corta lo escrito: un maximo en el navegador cortaria en silencio a 14, espacios
+        // incluidos, y se guardaria otro KP. Se recorta y despues se comprueba la longitud.
+        assertEquals(0, kp.getMaxLength(), "sin maximo en el campo: nunca se corta en silencio");
         @SuppressWarnings("unchecked")
         ComboBox<RefItem> track = LocatorJ._get(dialog, ComboBox.class, spec -> spec.withLabel("Via"));
         LocatorJ._setValue(track, new RefItem(3L, "TRACK 1 (EP4)"));
@@ -1948,12 +1950,17 @@ class ViewLayerTest {
             LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
             assertTrue(kp.isInvalid(), "\"" + typed + "\" no es un KP");
         }
+        LocatorJ._setValue(kp, " 1234567890.1234 ");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        assertTrue(kp.isInvalid(), "15 caracteres tras recortar");
+        assertEquals("Como mucho 14 caracteres", kp.getErrorMessage());
         verify(profileClient, never()).create(any());
 
-        LocatorJ._setValue(kp, " -77.960 ");
+        // 14 caracteres tras recortar, el signo, 9 enteros, el punto y 3 decimales: los espacios no cuentan.
+        LocatorJ._setValue(kp, "  -123456789.960  ");
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
 
-        verify(profileClient).create(argThat(dto -> "-77.960".equals(dto.getKp())));
+        verify(profileClient).create(argThat(dto -> "-123456789.960".equals(dto.getKp())));
     }
 
     @Test
@@ -2685,6 +2692,13 @@ class ViewLayerTest {
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
         assertTrue(kp.isInvalid(), "el KP va en metros con punto decimal, como el del perfil");
         verify(disconnectorClient, never()).update(any(), any());
+        assertEquals(0, kp.getMaxLength(), "sin maximo en el campo: nunca se corta en silencio");
+        LocatorJ._setValue(kp, " 1234567890.1234 ");
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withText("Guardar")));
+        assertEquals("Como mucho 14 caracteres", kp.getErrorMessage(), "15 tras recortar: un error, no otro KP");
+        verify(disconnectorClient, never()).update(any(), any());
+        LocatorJ._setValue(kp, "  -123456789.125  ");
+        assertFalse(kp.isInvalid(), "14 tras recortar: los espacios no cuentan");
         LocatorJ._setValue(kp, "-12.5");
         assertFalse(kp.isInvalid(), "con signo, como el del perfil: antes del origen de la kilometracion");
 
@@ -4054,7 +4068,7 @@ class ViewLayerTest {
         NotificationsKt.clearNotifications();
         LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("reset-password-save")));
         assertTrue(password.isInvalid());
-        assertEquals("La peticion no es valida. Password policy not met", password.getErrorMessage());
+        assertEquals("Keycloak ha rechazado la peticion. Password policy not met", password.getErrorMessage());
         assertTrue(NotificationsKt.getNotifications().isEmpty(), "en el campo, no en una notificacion");
         assertFalse(LocatorJ._find(Dialog.class).isEmpty());
     }
@@ -4622,6 +4636,32 @@ class ViewLayerTest {
                 "USR-409", null, null, null, false, null, null);
         assertEquals("Ya existe un usuario con ese nombre de usuario o ese email. User exists with same username",
                 UiErrors.message(BackofficeApiException.of(HttpStatus.CONFLICT, problem, "corr-u1", null, "POST /api/users")));
+    }
+
+    /**
+     * mto-users: cerrar una sesion o quitar una credencial que ya no esta, o que es de otra persona, se dice
+     * por lo que es, sin el detalle del servicio; y un rechazo de Keycloak sin errores por campo (la politica
+     * de contrasenas, un atributo que exige el perfil), con su detalle, que es lo que lo explica. Como en
+     * mto-frontend.
+     */
+    @Test
+    void theSessionTheCredentialAndTheKeycloakRefusalOfUsersAreSaidAsWhatTheyAre() {
+        assertEquals("Esa sesion ya no existe o no es de este usuario.", UiErrors.message(usersError(404, "SES-404",
+                "Session 5a0c not found for user 0d5f", null)));
+        assertEquals("Esa credencial ya no existe o no es de este usuario.", UiErrors.message(usersError(404, "CRED-404",
+                "Credential 77 not found for user 0d5f", null)));
+        assertEquals("Keycloak ha rechazado la peticion. Password policy not met", UiErrors.message(usersError(400, "KC-400",
+                "Password policy not met", null)));
+        assertEquals("Datos no validos: password invalidPasswordMinDigitsMessage", UiErrors.message(usersError(400, "KC-400",
+                "Keycloak rejected the request", List.of(new ApiFieldError("password", null, "invalidPasswordMinDigitsMessage")))),
+                "con errores por campo, los campos");
+        assertEquals("No se ha encontrado lo que se pedia. User 0d5f not found", UiErrors.message(usersError(404, "USR-404",
+                "User 0d5f not found", null)), "otro 404 de mto-users sigue como estaba");
+    }
+
+    private static BackofficeApiException usersError(int status, String code, String detail, List<ApiFieldError> errors) {
+        ApiProblem problem = new ApiProblem("about:blank", null, status, detail, null, code, null, null, null, false, errors, null);
+        return BackofficeApiException.of(HttpStatusCode.valueOf(status), problem, "corr-u9", null, "DELETE /api/users/x");
     }
 
     // --- Sobre quien no se actua: las cuentas de servicio y uno mismo -------------------------------
@@ -7648,6 +7688,54 @@ class ViewLayerTest {
                 UiErrors.message(TaskGeneration.failureOf(generation(OperationStatus.FAILED, null, new OperationErrorDto(500, "OPS-410", "Abandoned")))));
     }
 
+    /**
+     * Una operacion que ya no existe en el servicio (purgada: su GET responde 404) no se sigue preguntando
+     * sin fin: se deja de preguntar, se dice una vez, se releen las tareas y el dialogo sigue abierto y
+     * utilizable. Cualquier otro fallo de una pasada sigue callado, y la siguiente lo vuelve a intentar.
+     */
+    @Test
+    void aFollowedGenerationWhoseOperationIsGoneStopsAskingSaysSoOnceAndReloadsTheTasks() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.taskTypes(any(), any(), any())).thenReturn(twoTaskTypes());
+        when(orderClient.tasks(ORDER1)).thenReturn(List.of());
+        stubGenerationAccepted();
+        when(operationClient.generation(OPERATION1))
+                .thenThrow(maintenanceError(503, "APP-503", "No connection available"))
+                .thenThrow(maintenanceError(404, "OPS-404", "Operation " + OPERATION1 + " not found"));
+        openOrder(orderOf(MaintenanceOrderStatus.DRAFT, MaintenanceOrderType.PREVENTIVE));
+
+        click("task-generate");
+        click(GenerateTasksDialog.CONFIRM_ID);
+        GenerateTasksDialog dialog = LocatorJ._get(GenerateTasksDialog.class);
+        NotificationsKt.clearNotifications();
+        clearInvocations(orderClient);
+        dialog.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "otro fallo de una pasada no se avisa");
+        assertFalse(LocatorJ._get(Button.class, spec -> spec.withId(GenerateTasksDialog.CONFIRM_ID)).isEnabled(), "y se sigue");
+
+        dialog.pollOnce();
+        MockVaadin.clientRoundtrip();
+        assertEquals(1, NotificationsKt.getNotifications().size());
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText(GenerateTasksDialog.OPERATION_GONE));
+        assertEquals("La operacion ya no existe en el servicio; comprueba las tareas de la orden.", GenerateTasksDialog.OPERATION_GONE);
+        verify(orderClient, atLeastOnce()).tasks(ORDER1);
+        assertFalse(LocatorJ._find(GenerateTasksDialog.class).isEmpty(), "el dialogo sigue abierto");
+        assertTrue(LocatorJ._find(Paragraph.class, spec -> spec.withId(GenerateTasksDialog.OPERATION_ID)).isEmpty(), "ya no se sigue nada");
+        assertTrue(LocatorJ._get(Button.class, spec -> spec.withId(GenerateTasksDialog.CONFIRM_ID)).isEnabled(), "y utilizable");
+
+        dialog.pollOnce();
+        dialog.pollOnce();
+        MockVaadin.clientRoundtrip();
+        verify(operationClient, times(2)).generation(OPERATION1);
+        assertEquals(1, NotificationsKt.getNotifications().size(), "se dice una vez");
+
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withText("Volver")));
+        assertTrue(LocatorJ._find(GenerateTasksDialog.class).isEmpty());
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "cerrarlo ya no avisa de que continua: no se sigue nada");
+    }
+
     /** El tope de operaciones del despliegue es un 429 OPS-429: dice cuando reintentar, con el dialogo abierto. */
     @Test
     void aGenerationBeyondTheOperationsCapSaysWhenToRetry() {
@@ -8207,6 +8295,58 @@ class ViewLayerTest {
         stubMaterials(MaintenanceOrderStatus.PLANNED, List.of());
         assertFalse(hasButton("material-add"));
         LocatorJ._get(Paragraph.class, spec -> spec.withText("Anadir materiales pide leer el almacen (stock-read)."));
+    }
+
+    /**
+     * Vaciar «Previsto» o «Consumido» al modificar una linea no es «no tocarlo»: es un error en su campo,
+     * sin llamar y sin decir que se guardo, como en mto-frontend. Lo que no se puede cambiar (lo previsto de
+     * una reservada) no se pide.
+     */
+    @Test
+    void emptyingThePlannedOrTheConsumedOfALineIsAnErrorInItsFieldAndNothingIsSaved() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        MaterialUsageDto failed = new MaterialUsageDto(LINE_FAILED, ORDER1, null, MAT1, "MAT-001", "Pendola", WH1, new BigDecimal("4.000000"),
+                new BigDecimal("1.000000"), "ud", false, null, StockSyncStatus.FAILED, "Stock service unavailable", null, null, 2L);
+        when(orderClient.updateMaterial(eq(ORDER1), eq(LINE_FAILED), any())).thenReturn(failed);
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(failed));
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("order-materials-grid"), 0, "actions"), Button.class,
+                spec -> spec.withId("material-edit-" + LINE_FAILED)));
+        BigDecimalField planned = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-planned"));
+        BigDecimalField consumed = LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-consumed"));
+        NotificationsKt.clearNotifications();
+        LocatorJ._setValue(consumed, null);
+        click(MaterialUsageDialog.SAVE_ID);
+        assertTrue(consumed.isInvalid());
+        assertEquals("Lo consumido es obligatorio", consumed.getErrorMessage());
+        assertFalse(planned.isInvalid());
+        LocatorJ._setValue(consumed, new BigDecimal("1"));
+        LocatorJ._setValue(planned, null);
+        click(MaterialUsageDialog.SAVE_ID);
+        assertEquals("Lo previsto es obligatorio", planned.getErrorMessage());
+        assertFalse(consumed.isInvalid());
+        verify(orderClient, never()).updateMaterial(any(), any(), any());
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "no dice que se guardo");
+        assertFalse(LocatorJ._find(MaterialUsageDialog.class).isEmpty(), "el dialogo sigue abierto");
+
+        LocatorJ._setValue(planned, new BigDecimal("5"));
+        click(MaterialUsageDialog.SAVE_ID);
+        verify(orderClient).updateMaterial(ORDER1, LINE_FAILED, MergePatch.of(new MaterialUsageUpdateRequest(new BigDecimal("5"), null, null), 2L));
+        assertTrue(LocatorJ._find(MaterialUsageDialog.class).isEmpty());
+
+        MaterialUsageDto reserved = new MaterialUsageDto(LINE_RESERVED, ORDER1, null, MAT1, "MAT-001", "Pendola", WH1, new BigDecimal("4.000000"),
+                BigDecimal.ZERO, "ud", false, UUID.randomUUID(), StockSyncStatus.RESERVED, null, null, null, 2L);
+        UI.getCurrent().navigate(MaintenanceRoutes.ORDERS);
+        stubMaterials(MaintenanceOrderStatus.PLANNED, List.of(reserved));
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId("order-materials-grid"), 0, "actions"), Button.class,
+                spec -> spec.withId("material-edit-" + LINE_RESERVED)));
+        NotificationsKt.clearNotifications();
+        LocatorJ._setValue(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-consumed")), null);
+        click(MaterialUsageDialog.SAVE_ID);
+        assertEquals("Lo consumido es obligatorio", LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-consumed")).getErrorMessage());
+        assertFalse(LocatorJ._get(BigDecimalField.class, spec -> spec.withId("material-planned")).isInvalid(), "lo previsto de una reservada no se pide");
+        verify(orderClient, never()).updateMaterial(eq(ORDER1), eq(LINE_RESERVED), any());
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
     }
 
     @Test
@@ -10249,6 +10389,64 @@ class ViewLayerTest {
     }
 
     /**
+     * Cambiar el EP, que acota las vias ofrecidas: la via elegida se conserva si sigue entre ellas (y con
+     * ella su punto de acceso, sin volver a pedir la lista), y se vacia si ya no esta, y con ella el punto de
+     * acceso. Nunca viaja una via que el desplegable ya no ofrece.
+     */
+    @Test
+    void changingThePackageOfALocationKeepsTheTrackWhileItIsStillOfferedAndEmptiesItOtherwise() {
+        loginAs("recursos.gestor", FLEET_OPERATOR);
+        stubConfigurationNames();
+        VehicleLocationDto onTrack = location(VehicleLocationKind.ON_TRACK, 12L, "10.5", null, null);
+        stubVehicles(List.of(vehicle(VEHICLE1, "UN-01", ROAD_RAIL_MODEL, onTrack, true)));
+        when(vehicleClient.locations(eq(VEHICLE1), any(), any(), anyInt(), anyInt())).thenReturn(page(List.of(onTrack), 0, 20));
+        when(parkingSiteClient.search(any(ParkingSiteFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(), 0, 200));
+        AccessPointDto prepared = new AccessPointDto(77L, "Acceso km 110+176", 12L, new BigDecimal("110176.000"), AccessPointKind.PREPARED_ACCESS, true,
+                new BigDecimal("12.500"), new BigDecimal("40.000"), true);
+        when(accessPointClient.enabledOnTrack(12L)).thenReturn(List.of(prepared));
+        when(accessPointClient.enabledOnTrack(20L)).thenReturn(List.of());
+        when(vehicleClient.recordLocation(eq(VEHICLE1), any())).thenReturn(onTrack);
+
+        UI.getCurrent().navigate(VehicleDetailView.class, VehicleDetailView.parametersOf(VEHICLE1));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("vehicle-locate")));
+        @SuppressWarnings("unchecked")
+        Select<VehicleLocationKind> kind = LocatorJ._get(Select.class, spec -> spec.withId("location-kind"));
+        LocatorJ._setValue(kind, VehicleLocationKind.ON_TRACK);
+        ComboBox<RefItem> executionPackage = comboWithId("location-package");
+        ComboBox<RefItem> track = comboWithId("location-track");
+        RefItem track12 = new RefItem(12L, "VIA 1 (EP 4)");
+        LocatorJ._setValue(track, track12);
+        ComboBox<AccessPointDto> accessPoint = comboWithId("location-access-point");
+        LocatorJ._setValue(accessPoint, prepared);
+
+        LocatorJ._setValue(executionPackage, new RefItem(4L, "EP 4"));
+        assertEquals(track12, track.getValue(), "la via es de ese EP: se conserva");
+        assertEquals(prepared, accessPoint.getValue(), "y su punto de acceso tambien");
+        assertEquals(List.of(prepared), ComboBoxKt.getSuggestionItems(accessPoint));
+        assertEquals(List.of(12L), ComboBoxKt.getSuggestionItems(track).stream().map(RefItem::id).toList());
+        verify(accessPointClient, times(1)).enabledOnTrack(12L);
+
+        LocatorJ._setValue(executionPackage, new RefItem(5L, "EP 5"));
+        assertNull(track.getValue(), "la via no es de ese EP: se vacia");
+        assertNull(accessPoint.getValue(), "y con ella el punto de acceso");
+        assertFalse(accessPoint.isVisible(), "que sin via no se ofrece");
+        assertEquals(List.of(20L), ComboBoxKt.getSuggestionItems(track).stream().map(RefItem::id).toList());
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        verify(vehicleClient, never()).recordLocation(any(), any());
+        assertTrue(track.isInvalid(), "en via dice su via: la que ya no se ofrece no viaja");
+
+        RefItem track20 = new RefItem(20L, "VIA 9 (EP 5)");
+        LocatorJ._setValue(track, track20);
+        executionPackage.clear();
+        assertEquals(track20, track.getValue(), "sin EP se ofrecen todas: se conserva");
+        assertEquals(List.of(12L, 20L), ComboBoxKt.getSuggestionItems(track).stream().map(RefItem::id).toList());
+        verify(accessPointClient, times(1)).enabledOnTrack(20L);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId(VehicleLocationDialog.SAVE_ID)));
+        verify(vehicleClient).recordLocation(VEHICLE1, new VehicleLocationRequest(VehicleLocationKind.ON_TRACK, null, null, 20L, null, null,
+                null, null, null, null, null, null, null));
+    }
+
+    /**
      * El punto de acceso por el que encarrilo: donde se ofrece la via y en cuanto hay una elegida, los
      * activos de esa via, pedidos a mto-resources cada vez que cambia (que lo vacia); un fallo al pedirlos
      * lo dice su ayuda, sin aviso. Viaja como accessPointId; el 404 TAP-404 vuelve a pedir la lista y se dice
@@ -11259,8 +11457,8 @@ class ViewLayerTest {
     }
 
     /**
-     * El alta de una reparacion nace abierta ahora o planificada (con su inicio, obligatorio) y marcada como
-     * que inmoviliza; lo evidente se comprueba antes de llamar (la clase, la descripcion, el fin previsto, el
+     * El alta de una reparacion nace planificada (con su inicio, obligatorio), o abierta ahora si se elige, y
+     * marcada como que inmoviliza; lo evidente se comprueba antes de llamar (la clase, la descripcion, el fin previsto, el
      * coste con su columna) y un VEH-001 deja el dialogo abierto. Guardar relee la ficha del vehiculo.
      */
     @Test
@@ -11276,13 +11474,16 @@ class ViewLayerTest {
         click("repair-add");
         @SuppressWarnings("unchecked")
         RadioButtonGroup<RepairStatus> status = LocatorJ._get(RadioButtonGroup.class, spec -> spec.withId("repair-status"));
-        assertEquals(RepairStatus.OPEN, status.getValue(), "por defecto se abre ahora");
+        assertEquals(RepairStatus.PLANNED, status.getValue(), "por defecto nace planificada, como en mto-frontend");
         assertEquals(List.of(RepairStatus.PLANNED, RepairStatus.OPEN), status.getListDataView().getItems().toList());
         assertTrue(LocatorJ._get(Checkbox.class, spec -> spec.withId("repair-immobilises")).getValue(), "por defecto inmoviliza");
         click(VehicleRepairDialog.SAVE_ID);
         verify(vehicleClient, never()).addRepair(any(), any());
         assertTrue(LocatorJ._get(Select.class, spec -> spec.withId("repair-kind")).isInvalid(), "la clase es obligatoria");
         assertTrue(LocatorJ._get(TextArea.class, spec -> spec.withId("repair-description")).isInvalid(), "la descripcion tambien");
+        assertEquals("Una planificada dice desde cuando", datePicker("repair-planned-from").getErrorMessage());
+        LocatorJ._setValue(status, RepairStatus.OPEN);
+        assertFalse(datePicker("repair-planned-from").isInvalid(), "abierta ahora no pide el inicio");
 
         LocatorJ._setValue(status, RepairStatus.PLANNED);
         LocatorJ._setValue(LocatorJ._get(Select.class, spec -> spec.withId("repair-kind")), RepairKind.BREAKDOWN);

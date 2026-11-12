@@ -44,7 +44,8 @@ public class DisconnectorEditor extends MasterEditorDialog<DisconnectorDto> {
         station.setHelperText("Vacia si no es de ninguna estacion: entonces en un poste o con su via propia");
         ComboBox<RefItem> profile = Pickers.lazyProfile("Perfil", profiles);
         profile.setHelperText("Vacio si el seccionador no esta en un poste");
-        TextField kp = text("KP propio (m)", KP_MAX_LENGTH, false);
+        // Sin maximo en el campo, como el del perfil: se recorta y despues se comprueba la longitud.
+        TextField kp = new TextField("KP propio (m)");
         kp.setHelperText("Solo sin poste: con poste, el del perfil");
         ComboBox<RefItem> track = Pickers.reference("Via propia", catalog.tracks());
         track.setHelperText("Sin poste, la suya. Con poste, solo si maniobra otra via que la del poste");
@@ -70,6 +71,7 @@ public class DisconnectorEditor extends MasterEditorDialog<DisconnectorDto> {
                 .withConverter(Converter.<String, String>from(
                         text -> Result.ok(text == null || text.isBlank() ? null : text.trim()),
                         value -> value == null ? "" : value))
+                .withValidator(value -> value == null || value.length() <= KP_MAX_LENGTH, ProfileEditor.KP_TOO_LONG)
                 .withValidator(value -> value == null || value.matches(ProfileEditor.KP_PATTERN),
                         "Numero con punto decimal, como 98375.500")
                 .bind("kp");

@@ -343,7 +343,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   —alias en `title` y `detail`— y que `mto-maintenance` manda igual, con `path` y `method` de más,
   el 401/403 del gateway solo con `correlationId`, y el 503 del
   fallback del gateway con `Retry-After` y `service`) y las vistas solo conocen
-  `BackofficeApiException` y sus subclases. Un fallo de transporte (el gateway no acepta la
+  `BackofficeApiException` y sus subclases. Un cuerpo que no es JSON va, acotado, al detalle, salvo que sea
+  HTML (lo diga el `Content-Type` o el propio cuerpo: la página de error de un proxy), que no se enseña
+  nunca, como en mto-frontend: queda el estado y la referencia. Un fallo de transporte (el gateway no acepta la
   conexión, no se resuelve o no contesta en el `read-timeout`, 20 s: por encima de los 15 s del
   gateway hacia los servicios, para que su 503/504 llegue antes) tampoco sale crudo:
   `TransportFailureInterceptor`, el último de la cadena, lo tipa como `UnreachableApiException` con
@@ -369,6 +371,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   mantenimiento no es «no tienes permiso»: el permiso está, pero lo que se escribe es de un EP fuera del
   ámbito de la persona, y se dice con el detalle del servicio («Queda fuera de tu ambito»). El 503
   `KCK-503` de `mto-resources` es Keycloak caído para el informe de puestos y perfiles: transitorio.
+  De `mto-users`, además: `SES-404` y `CRED-404` (esa sesión o esa credencial ya no existe o no es de ese
+  usuario, sin el detalle del servicio) y `KC-400` sin errores por campo («Keycloak ha rechazado la
+  peticion», con su detalle, que es el texto de Keycloak: la política de contraseñas, un atributo obligatorio).
 - **La paginación es la forma DTO** `{content, page:{size,number,totalElements,totalPages}}`, fijada
   en `mto-configuration` con `spring.data.web.pageable.serialization-mode: via_dto` y pinada allí
   por test. `PageResponse<T>` la lee (y tolera `first`/`last` de stock y maintenance). La API de
@@ -495,7 +500,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   o sin pedir fuera de borrador, también con la orden terminada, porque el servicio la liquida al
   reintentar; con la orden abierta, además, comprueba una `RESERVED` («Comprobar la reserva en el
   almacén»): si Almacén liberó su reserva, el servicio pide otra. Lo previsto de una línea reservada no se ofrece: el
-  servicio no lo cambia. Un `MAT-001` al completar la orden sugiere sincronizar o, con
+  servicio no lo cambia. Al modificar una línea, «Previsto» y «Consumido» (los que se pueden cambiar) no se
+  dejan vacíos: es un error en su campo, sin llamar y sin decir que se guardó, como en mto-frontend. Un `MAT-001` al completar la orden sugiere sincronizar o, con
   `maintenance-supervise`, completar con `force`.
 - **Una línea con una petición al almacén sin respuesta no cambia lo que viaja en ella.**
   `stockRequestInDoubt` (`RESERVATION` u `OUTPUT`, enumerado tolerante) es la reserva o la salida
@@ -671,7 +677,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   los KP de agujas y aisladores no son negativos; lo que va en mm del perfil y el descentramiento son
   enteros, la longitud de un paquete son solo cifras y el KP del perfil, y el propio de un seccionador
   sin poste, viajan recortados y con signo (un poste de antes del origen de la kilometración va en
-  negativo, como admite `mto-configuration`; 14 caracteres como mucho). Un punto de acceso a la vía lleva su KP sin signo con 9 enteros y 3
+  negativo, como admite `mto-configuration`; 14 caracteres como mucho, contados después de recortar: el campo no
+  lleva máximo, porque el navegador cortaría lo escrito en silencio y se guardaría otro KP; lo que no cabe
+  es un error en el campo, «Como mucho 14 caracteres», como en mto-frontend). Un punto de acceso a la vía lleva su KP sin signo con 9 enteros y 3
   decimales (`Numbers.infrastructureKp`), sus toneladas sin signo con 5 y 3 (`tonnes`) y sus coordenadas
   en su rango con 6 decimales (`coordinate(90)`, `coordinate(180)`, las mismas que una ubicación de
   `mto-resources`), y las dos juntas o ninguna: se marca la que falta («Con la latitud va tambien la
@@ -876,7 +884,8 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `config-read`) y en cuanto se elige una, se ofrece el punto de acceso por el que encarriló, para
   cualquier movilidad: los activos de esa vía tal como los tiene `mto-resources`
   (`AccessPointClient.enabledOnTrack`, `GET /track-access-points?trackId=&enabled=true`), pedidos cada vez
-  que cambia la vía, que lo vacía; un fallo al pedirlos no se avisa: lo dice la ayuda del campo. Cada uno
+  que cambia la vía, que lo vacía (cambiar el EP, que acota las vías ofrecidas, conserva la vía y su punto de
+  acceso si la sigue ofreciendo, y la vacía si no: nunca viaja una vía que el desplegable no ofrece); un fallo al pedirlos no se avisa: lo dice la ayuda del campo. Cada uno
   dice su nombre, su tipo y su kp, y «sin biviales» si no sirve para encarrilarlos; no se filtra nada más
   aquí: si le vale al vehículo (biviales, acceso preparado, pesos) lo dice el servicio con su 409
   `VEH-001`, con el diálogo abierto. Es opcional y viaja como `accessPointId`. Uno que ya no existe o aún
@@ -891,7 +900,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   2 s desde `SharedPolling` con la pestaña a la vista (`GET /operations/{id}`, nunca el `Location`, que
   es la ruta interna del servicio): al terminar bien dice lo mismo que la llamada síncrona y relee las
   tareas; si falla, su error como el de la llamada síncrona (`TaskGeneration.failureOf`; `OPS-410` es una
-  abandonada), con el diálogo abierto; cerrarlo deja de seguirla y avisa de que continúa allí. El tope
+  abandonada), con el diálogo abierto; cerrarlo deja de seguirla y avisa de que continúa allí. Si la operación ya no existe
+  (su `GET` responde 404: se purgó), se deja de preguntar, se dice una vez («La operacion ya no existe en el
+  servicio; comprueba las tareas de la orden»), se releen las tareas y el diálogo sigue abierto y utilizable;
+  cualquier otro fallo de una pasada sigue callado y la siguiente lo vuelve a intentar. El tope
   de operaciones del despliegue es un 429 `OPS-429` con cuándo reintentar. La previsualización sigue
   siendo síncrona. Un `OperationStatus` desconocido se da por terminado, para no preguntar sin fin.
 - **Las ausencias de una persona son de `mto-resources`, y que se solapen lo dice el servicio.** La
@@ -911,7 +923,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (una que inmoviliza, abierta, lo pone «En reparacion»; cerrar o cancelar la última lo devuelve a
   «Operativo»; cancelar una planificada lo deja volver a los turnos de esas fechas) y, como cualquier
   escritura del taller, releen la ficha entera, cuyo estado puede haber cambiado. El alta elige si nace
-  planificada (con su inicio, obligatorio) o abierta ahora, y si inmoviliza (marcado por defecto); el fin
+  planificada (con su inicio, obligatorio; es como abre el dialogo, igual que en mto-frontend) o abierta ahora, y si inmoviliza (marcado por defecto); el fin
   previsto no es anterior al inicio, y los kilómetros, las horas y el coste se comprueban con su columna
   (`Numbers`). Al modificar, el estado no se elige, las fechas previstas solo cambian planificada o
   abierta y si inmoviliza, solo planificada. `REP-001` y `VEH-001` dejan el diálogo abierto.

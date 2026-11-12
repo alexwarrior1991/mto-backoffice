@@ -46,6 +46,7 @@ public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
     static final String KP_PATTERN = "-?\\d+(\\.\\d+)?";
     /** El signo, 9 enteros, el punto y 3 decimales: {@code -999999999.999}. */
     static final int KP_MAX_LENGTH = 14;
+    static final String KP_TOO_LONG = "Como mucho " + KP_MAX_LENGTH + " caracteres";
     /** El tope del servicio ({@code PROFILE_MAX_CANTILEVERS}); el boton de anadir se apaga al llegar. */
     static final int MAX_CANTILEVERS = 3;
 
@@ -63,7 +64,10 @@ public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
         optionalRefsRead = optionalRefs(dto);
 
         TextField profileId = text("Identificador", PROFILE_ID_MAX_LENGTH, true);
-        TextField kp = text("KP", KP_MAX_LENGTH, true);
+        // Sin maximo en el campo: el navegador cortaria lo escrito a 14, espacios incluidos, y se guardaria
+        // otro KP. La longitud se comprueba despues de recortar, y lo que no cabe es un error.
+        TextField kp = new TextField("KP");
+        kp.setRequiredIndicatorVisible(true);
         kp.setHelperText("Metros, con punto decimal: 10.500 (antes del origen, -77.960)");
         ComboBox<RefItem> track = Pickers.reference("Via", catalog.tracks());
         track.setRequiredIndicatorVisible(true);
@@ -91,6 +95,7 @@ public class ProfileEditor extends MasterEditorDialog<ProfileDto> {
         // Recortado antes de comprobarlo y de enviarlo, como en mto-frontend.
         binder.forField(kp).asRequired("El KP es obligatorio")
                 .withConverter(Converter.<String, String>from(text -> Result.ok(text == null ? null : text.trim()), value -> value == null ? "" : value))
+                .withValidator(text -> text.length() <= KP_MAX_LENGTH, KP_TOO_LONG)
                 .withValidator(new RegexpValidator("Numero con punto decimal, como 10.500", KP_PATTERN)).bind("kp");
         binder.forField(track).asRequired("La via es obligatoria").withConverter(Pickers.refToId(catalog::trackRef)).bind("trackId");
         binder.forField(orderInTrack).bind("orderInTrack");

@@ -14,11 +14,11 @@ import java.time.LocalDate;
 /**
  * Modelo mutable del dialogo de una reparacion. Sus propiedades se llaman como los campos de la peticion
  * para que un {@code validationErrors[].field} del servicio caiga en su campo. El estado solo se elige en
- * el alta (planificada o abierta ahora); despues cambia con sus transiciones.
+ * el alta (planificada, que es como abre, o abierta ahora); despues cambia con sus transiciones.
  */
 public class VehicleRepairForm {
 
-    private RepairStatus status = RepairStatus.OPEN;
+    private RepairStatus status = RepairStatus.PLANNED;
     private RepairKind kind;
     private boolean immobilises = true;
     private String description = "";

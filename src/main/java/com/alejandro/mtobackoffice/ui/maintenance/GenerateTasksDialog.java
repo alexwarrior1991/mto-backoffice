@@ -11,6 +11,7 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.OperationStatus;
 import com.alejandro.mtobackoffice.client.dto.maintenance.OrderDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
+import com.alejandro.mtobackoffice.client.error.NotFoundApiException;
 import com.alejandro.mtobackoffice.configuration.security.CurrentPrincipal;
 import com.alejandro.mtobackoffice.ui.master.RefItem;
 import com.alejandro.mtobackoffice.ui.support.Formats;
@@ -80,6 +81,8 @@ public class GenerateTasksDialog extends Dialog {
     public static final String PREVIEW_GRID_ID = "generate-preview-grid";
     public static final String PREVIEW_SUMMARY_ID = "generate-preview-summary";
     public static final String OPERATION_ID = "generate-operation";
+    /** El 404 del seguimiento: la operacion se purgo (o nunca existio) y nadie va a decir como acabo. */
+    public static final String OPERATION_GONE = "La operacion ya no existe en el servicio; comprueba las tareas de la orden.";
     public static final String STILL_RUNNING = "La generacion sigue en el servicio: sus tareas apareceran en la orden al terminar.";
     private static final Logger LOGGER = LoggerFactory.getLogger(GenerateTasksDialog.class);
 
@@ -240,7 +243,8 @@ public class GenerateTasksDialog extends Dialog {
     /**
      * Una pasada, en el hilo de {@code SharedPolling} (los tests la llaman con {@link #pollOnce()}): con la
      * pestana a la vista, pregunta por la operacion y lleva lo que diga al dialogo con {@code UI.access()}.
-     * Un fallo al preguntar no se notifica en cada pasada: la siguiente lo vuelve a intentar.
+     * Un fallo al preguntar no se notifica en cada pasada: la siguiente lo vuelve a intentar. Salvo el 404:
+     * la operacion ya no existe, y se deja de preguntar ({@link #gone}).
      */
     void poll(UI ui) {
         UUID id = following;
@@ -250,6 +254,14 @@ public class GenerateTasksDialog extends Dialog {
         OperationDto<GenerateTasksResultDto> current;
         try {
             current = CurrentPrincipal.callAs(principal, () -> clients.generation().status(id));
+        } catch (NotFoundApiException missing) {
+            // La operacion ya no existe (purgada): preguntar otra vez daria lo mismo, sin fin.
+            ui.access(() -> {
+                if (id.equals(following)) {
+                    gone(missing);
+                }
+            });
+            return;
         } catch (BackofficeApiException failure) {
             LOGGER.warn("No se ha podido consultar la generacion {}: {}", id, failure.getMessage());
             return;
@@ -259,6 +271,19 @@ public class GenerateTasksDialog extends Dialog {
                 apply(current);
             }
         });
+    }
+
+    /**
+     * La operacion ya no esta en el servicio y nadie va a decir como acabo: se deja de preguntar, se dice
+     * una vez, se releen las tareas (puede haber terminado bien antes de purgarse) y el dialogo se queda
+     * abierto y utilizable, para volver a lanzarla si hace falta.
+     */
+    private void gone(NotFoundApiException missing) {
+        stopFollowing(false);
+        operation.setVisible(false);
+        actions.forEach(button -> button.setEnabled(true));
+        UiErrors.show(missing, OPERATION_GONE);
+        done.run();
     }
 
     /** Para los tests: una pasada con la UI de este dialogo. */
