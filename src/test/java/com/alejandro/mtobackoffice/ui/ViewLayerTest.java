@@ -11763,4 +11763,244 @@ class ViewLayerTest {
         assertThrows(Throwable.class, () -> UI.getCurrent().navigate(ResourcesRoutes.DISCREPANCIES));
         verify(resourcesReportClient, never()).positionDiscrepancies();
     }
+
+    // --- Fase 6: el historial de un maestro y de un catalogo (mto-configuration) ----------------------
+
+    private static final String[] AUDITOR = {"ROLE_CONFIG_READ", "ROLE_CONFIG_AUDIT"};
+
+    private void stubHistoryReferences() {
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(executionPackage(100L, "EP4")), 0, 50));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(station(12L, "ATOCHA", 100L), station(13L, "CHAMARTIN", 100L)), 0, 50));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "VIA 1", true, 100L, List.of(12L, 13L)), track(4L, "VIA 2", true, 100L, List.of())), 0, 50));
+        when(businessEntityClient.findAll()).thenReturn(List.of(new com.alejandro.mtobackoffice.client.dto.master.BusinessEntityDto(9L, "B-1", "ACME", "AC")));
+    }
+
+    /** La linea «Como quedo» de la revision mas reciente del historial que abre el boton de la primera fila. */
+    private static String historyLineOfTheFirstRow(String route, Long id) {
+        UI.getCurrent().navigate(route);
+        LocatorJ._click(rowAction(anyGrid(), 0, "history-" + id));
+        String line = GridKt._getFormattedRow(gridWithId("revisions-grid"), 0).get(5);
+        LocatorJ._get(Dialog.class).close();
+        MockVaadin.clientRoundtrip();
+        return line;
+    }
+
+    /**
+     * El historial pide {@code config-audit} y {@code config-read}, los dos (README_API.md §6 de
+     * mto-configuration): con uno solo el servicio responde 403, asi que el boton no se ofrece. Un rol
+     * de realm que se llame igual no lo da.
+     */
+    @Test
+    void theHistoryOfAMasterAndOfACatalogueIsOfferedOnlyWithAuditAndRead() {
+        stubTracks(threeTracks());
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
+
+        loginAs("config.lector", "ROLE_CONFIG_READ", "ROLE_REALM_CONFIG_AUDIT");
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        assertEquals(List.of("schematic-3"), actionIds(anyGrid(), 0), "leer el dato no da derecho a ver quien lo cambio");
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        assertNull(grid().getColumnByKey("actions"), "sin nada que ofrecer, el catalogo no tiene columna de acciones");
+
+        loginAs("config.auditor", AUDITOR);
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        assertEquals(List.of("schematic-3", "history-3"), actionIds(anyGrid(), 0));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withText("Nuevo")).isEmpty(), "auditar no es escribir");
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        assertEquals(List.of("history-3"), actionIds(anyGrid(), 0), "DEFINITIVE, la primera por codigo");
+
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_CONFIG_DELETE", "ROLE_LOV_MANAGE", "ROLE_CONFIG_AUDIT");
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        assertEquals(List.of("edit-3", "schematic-3", "history-3", "delete-3"), actionIds(anyGrid(), 0));
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        assertEquals(List.of("edit-3", "history-3", "delete-3"), actionIds(anyGrid(), 0));
+        verify(trackClient, never()).revisions(any(), anyInt(), anyInt());
+        verify(lovClient, never()).revisions(any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void theHistoryOfAMasterRowIsPagedInTheServiceNewestFirstAndNamesItsReferences() {
+        loginAs("config.auditor", AUDITOR);
+        stubTracks(threeTracks());
+        List<RevisionDto<TrackDto>> history = new ArrayList<>();
+        history.add(revision(30, RevisionOperation.DELETED, "config.responsable", "HTTP", track(3L, "VIA 1", false, 100L, List.of(12L))));
+        history.add(revision(29, RevisionOperation.UNKNOWN, "system", "SYSTEM", null));
+        for (int number = 28; number >= 1; number--) {
+            history.add(revision(number, number == 1 ? RevisionOperation.CREATED : RevisionOperation.UPDATED, "config.responsable", "HTTP",
+                    track(3L, "VIA " + number, true, 100L, List.of(12L, 99L))));
+        }
+        when(trackClient.revisions(eq(3L), anyInt(), anyInt())).thenAnswer(call -> page(history, call.getArgument(1), call.getArgument(2)));
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(rowAction(anyGrid(), 0, "history-3"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        Grid<Object> grid = gridWithId("revisions-grid");
+
+        assertEquals("Historial de VIA 1", dialog.getHeaderTitle());
+        assertEquals(30, GridKt._size(grid));
+        LocatorJ._get(dialog, Span.class, spec -> spec.withText("30 revisiones, la mas reciente primero"));
+        List<String> newest = GridKt._getFormattedRow(grid, 0);
+        assertTrue(newest.containsAll(List.of("30", "Baja", "config.responsable", "HTTP", "corr-30", "VIA 1 · EP4 · estaciones: ATOCHA (EP4) · inactiva")),
+                newest.toString());
+        List<String> withoutRow = GridKt._getFormattedRow(grid, 1);
+        assertTrue(withoutRow.containsAll(List.of("29", "Desconocido", "SYSTEM", "Sin datos de la fila en esta revision")), withoutRow.toString());
+        assertEquals("VIA 1 · EP4 · estaciones: ATOCHA (EP4), #99 · activa", GridKt._getFormattedRow(grid, 29).get(5),
+                "una estacion que ya no esta se dice por su id");
+        verify(trackClient, atLeastOnce()).revisions(3L, 0, RevisionsDialog.PAGE_SIZE);
+        verify(trackClient, atLeastOnce()).revisions(eq(3L), intThat(page -> page > 0), anyInt());
+        verify(trackClient, never()).findById(any());
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
+    }
+
+    /** Una linea por recurso: sus campos principales y los nombres de sus referencias, como en su lista. */
+    @Test
+    void eachMasterDescribesItsRowInItsHistory() {
+        loginAs("config.auditor", AUDITOR);
+        stubHistoryReferences();
+
+        ExecutionPackageDto ep = executionPackage(100L, "EP4");
+        ep.setCompanyId(9L);
+        ep.setStartDate(LocalDate.of(2026, 1, 15));
+        ep.setLength(120000L);
+        ep.setInitialPackage(true);
+        when(executionPackageClient.revisions(eq(100L), anyInt(), anyInt())).thenReturn(page(List.of(
+                revision(1, RevisionOperation.CREATED, "config.responsable", "HTTP", ep)), 0, 20));
+        assertEquals("EP4 · ACME (B-1) · inicio 15/01/2026 · longitud 120000 · inicial · activo", historyLineOfTheFirstRow("infraestructura/paquetes", 100L));
+
+        when(stationClient.revisions(eq(12L), anyInt(), anyInt())).thenReturn(page(List.of(
+                revision(1, RevisionOperation.CREATED, "config.responsable", "HTTP", station(12L, "ATOCHA", 100L))), 0, 20));
+        assertEquals("ATOCHA · EP4", historyLineOfTheFirstRow("infraestructura/estaciones", 12L));
+
+        ProfileDto profile = profileWithOneCantilever();
+        profile.setPoleType(new LovRef(6L, "HEB", "Perfil HEB"));
+        profile.setSpan(new BigDecimal("55.000"));
+        when(profileClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(profile), 0, 50));
+        when(profileClient.revisions(eq(7L), anyInt(), anyInt())).thenReturn(page(List.of(
+                revision(1, RevisionOperation.UPDATED, "config.responsable", "HTTP", profile)), 0, 20));
+        assertEquals("P-007 · KP 12.345 · VIA 1 (EP4) · estado PT1 · poste HEB · vano 55.000 m · 1 mensula",
+                historyLineOfTheFirstRow(PROFILES_ROUTE, 7L));
+
+        DisconnectorDto onPole = disconnectorOnPole(40L, "SEC-40", "Disc");
+        onPole.setStationId(12L);
+        onPole.setProfileCode("P-007");
+        onPole.setProfileKp("12.345");
+        onPole.setOnLoad(true);
+        onPole.setNormallyOpen(false);
+        onPole.setDriveType(DisconnectorDriveType.MOTOR);
+        onPole.setConnectedTrackId(4L);
+        DisconnectorDto offPole = new DisconnectorDto();
+        offPole.setId(40L);
+        offPole.setName("SEC-40");
+        offPole.setKp("110176.000");
+        offPole.setTrackId(3L);
+        when(disconnectorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(onPole), 0, 50));
+        when(disconnectorClient.revisions(eq(40L), anyInt(), anyInt())).thenReturn(page(List.of(
+                revision(2, RevisionOperation.UPDATED, "config.responsable", "HTTP", onPole),
+                revision(1, RevisionOperation.CREATED, "config.responsable", "HTTP", offPole)), 0, 20));
+        UI.getCurrent().navigate("infraestructura/seccionadores");
+        LocatorJ._click(rowAction(anyGrid(), 0, "history-40"));
+        assertEquals("SEC-40 · ATOCHA (EP4) · Disc · perfil P-007 (kp 12.345) · en carga · normalmente cerrado · accionamiento motor"
+                + " · via conectada VIA 2 (EP4)", GridKt._getFormattedRow(gridWithId("revisions-grid"), 0).get(5));
+        assertEquals("SEC-40 · sin poste, KP 110176.000 · sin carga · via propia VIA 1 (EP4)",
+                GridKt._getFormattedRow(gridWithId("revisions-grid"), 1).get(5), "sin estacion ni poste, como admite el servicio");
+        LocatorJ._get(Dialog.class).close();
+        MockVaadin.clientRoundtrip();
+
+        SectionInsulatorDto insulator = new SectionInsulatorDto();
+        insulator.setId(50L);
+        insulator.setName("AIS-50");
+        insulator.setStationId(12L);
+        insulator.setKp(new BigDecimal("15.000"));
+        insulator.setInstallationType(SectionInsulatorInstallationType.TRACK_CONNECTION);
+        insulator.setTrackId(3L);
+        insulator.setConnectedTrackId(4L);
+        insulator.setSwitches(new ArrayList<>(List.of(new SectionInsulatorSwitchDto(), new SectionInsulatorSwitchDto())));
+        when(sectionInsulatorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(insulator), 0, 50));
+        when(sectionInsulatorClient.revisions(eq(50L), anyInt(), anyInt())).thenReturn(page(List.of(
+                revision(1, RevisionOperation.CREATED, "config.responsable", "HTTP", insulator)), 0, 20));
+        assertEquals("AIS-50 · ATOCHA (EP4) · KP 15.000 · Conexion de vias · VIA 1 (EP4) · via conectada VIA 2 (EP4) · 2 agujas · activo",
+                historyLineOfTheFirstRow("infraestructura/aisladores", 50L));
+
+        TrackAccessPointDto access = accessPointRow();
+        access.setKind("FERRY");
+        access.setRoadRailAccess(false);
+        access.setEnabled(false);
+        when(trackAccessPointClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(access), 0, 50));
+        when(trackAccessPointClient.revisions(eq(77L), anyInt(), anyInt())).thenReturn(page(List.of(
+                revision(1, RevisionOperation.CREATED, "config.responsable", "HTTP", access)), 0, 20));
+        assertEquals("Acceso km 110+176 · VIA 1 (EP4) · ATOCHA (EP4) · KP 110176.000 · FERRY · Izquierda · sin biviales · inactivo",
+                historyLineOfTheFirstRow(TrackAccessPointsView.ROUTE, 77L), "una clase que esta pantalla no conoce se ensena cruda");
+    }
+
+    /**
+     * Sin revisiones el servicio responde 404 {@code NOT-001} (una fila sembrada por una migracion): es
+     * «sin historial todavia», sin aviso. Cualquier otro fallo (el 403 de un permiso retirado) se
+     * avisa y deja la tabla vacia.
+     */
+    @Test
+    void aMasterRowWithoutRevisionsSaysSoAndAnyOtherFailureIsNotified() {
+        loginAs("config.auditor", AUDITOR);
+        stubTracks(threeTracks());
+        ApiProblem none = new ApiProblem(null, "Recurso no encontrado", 404, "No hay revisiones de Track 3", null, "NOT-001", "t-h1", null, null,
+                false, List.of(), null);
+        when(trackClient.revisions(eq(3L), anyInt(), anyInt())).thenThrow(
+                BackofficeApiException.of(HttpStatus.NOT_FOUND, none, "corr-h1", null, "GET /api/configuration/tracks/3/revisions"));
+        when(trackClient.revisions(eq(4L), anyInt(), anyInt())).thenThrow(BackofficeApiException.of(HttpStatus.FORBIDDEN, ApiProblem.empty(),
+                "corr-h2", null, "GET /api/configuration/tracks/4/revisions"));
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(rowAction(anyGrid(), 0, "history-3"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._get(dialog, Span.class, spec -> spec.withId("revisions-empty"));
+        assertTrue(LocatorJ._find(dialog, Grid.class).isEmpty());
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "un 404 aqui es «sin historial», no un error");
+        dialog.close();
+        MockVaadin.clientRoundtrip();
+
+        LocatorJ._click(rowAction(anyGrid(), 1, "history-4"));
+        assertEquals(0, GridKt._size(gridWithId("revisions-grid")));
+        assertFalse(NotificationsKt.getNotifications().isEmpty(), "el 403 si se avisa");
+        assertTrue(LocatorJ._find(Span.class, spec -> spec.withId("revisions-empty")).stream().noneMatch(Span::isVisible));
+    }
+
+    /**
+     * El de una entrada de catalogo, en el mismo dialogo: codigo, descripcion, su tipo en los tres
+     * catalogos que lo tienen y si estaba activa. Su borrado es fisico y la revision solo trae el id:
+     * se dice, no se pinta como una entrada vacia e inactiva. Una sembrada por una migracion no tiene
+     * historial.
+     */
+    @Test
+    void theHistoryOfACatalogueEntrySaysItsTypeAndADeletionThatOnlyKeepsTheId() {
+        loginAs("config.auditor", AUDITOR);
+        when(lovClient.findAll("foundations")).thenReturn(List.of(foundationRead(),
+                new LovDto(6L, "C-2", "Cimentacion 2", true, 1, null, null)));
+        List<RevisionDto<LovDto>> history = List.of(
+                revision(3, RevisionOperation.DELETED, "config.responsable", "HTTP", new LovDto(5L, null, null, false, null, null, null)),
+                revision(2, RevisionOperation.UPDATED, "config.responsable", "HTTP", foundationRead().withEnabled(false)),
+                revision(1, RevisionOperation.CREATED, "system", "SYSTEM", null));
+        when(lovClient.revisions(eq("foundations"), eq(5L), anyInt(), anyInt())).thenAnswer(call -> page(history, call.getArgument(2), call.getArgument(3)));
+        ApiProblem none = new ApiProblem(null, "Recurso no encontrado", 404, "No hay revisiones", null, "NOT-001", "t-h3", null, null, false, List.of(), null);
+        when(lovClient.revisions(eq("foundations"), eq(6L), anyInt(), anyInt())).thenThrow(
+                BackofficeApiException.of(HttpStatus.NOT_FOUND, none, "corr-h3", null, "GET /api/configuration/foundations/6/revisions"));
+
+        UI.getCurrent().navigate(FOUNDATIONS_ROUTE);
+        LocatorJ._click(rowAction(anyGrid(), 0, "history-5"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        Grid<Object> grid = gridWithId("revisions-grid");
+
+        assertEquals("Historial de C-1", dialog.getHeaderTitle());
+        assertEquals(3, GridKt._size(grid));
+        List<String> deleted = GridKt._getFormattedRow(grid, 0);
+        assertTrue(deleted.containsAll(List.of("3", "Baja", "Borrada del catalogo: sus datos estan en la revision anterior")), deleted.toString());
+        assertEquals("C-1 · Cimentacion 1 · tipo FT-OLD · inactivo", GridKt._getFormattedRow(grid, 1).get(5));
+        assertEquals("Sin datos de la entrada en esta revision", GridKt._getFormattedRow(grid, 2).get(5));
+        verify(lovClient, atLeastOnce()).revisions("foundations", 5L, 0, RevisionsDialog.PAGE_SIZE);
+        dialog.close();
+        MockVaadin.clientRoundtrip();
+
+        LocatorJ._click(rowAction(anyGrid(), 1, "history-6"));
+        LocatorJ._get(LocatorJ._get(Dialog.class), Span.class, spec -> spec.withId("revisions-empty"));
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
+    }
 }

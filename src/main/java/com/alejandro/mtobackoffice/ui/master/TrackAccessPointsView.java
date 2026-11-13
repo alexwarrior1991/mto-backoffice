@@ -111,6 +111,11 @@ public class TrackAccessPointsView extends MasterView<TrackAccessPointDto> {
     }
 
     @Override
+    protected String describe(TrackAccessPointDto dto) {
+        return MasterHistory.trackAccessPoint(dto, catalog);
+    }
+
+    @Override
     protected String labelOf(TrackAccessPointDto dto) {
         return dto.getName() == null ? super.labelOf(dto) : dto.getName();
     }

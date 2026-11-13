@@ -4624,4 +4624,111 @@ class ClientLayerTest {
         assertEquals("CON-001", stale.getProblem().code());
         server.verify();
     }
+
+    // --- El historial de un maestro y de un catalogo (mto-configuration) ------------------------------
+
+    private static String configurationRevisions(String content, long total) {
+        return "{\"content\":[" + content + "],\"page\":{\"size\":20,\"number\":0,\"totalElements\":" + total + ",\"totalPages\":1}}";
+    }
+
+    /**
+     * {@code GET /{recurso}/{id}/revisions} con la forma de mto-stock y mto-maintenance: el generico se
+     * resuelve contra la subinterfaz y la fila sale tipada, con sus hijos de entonces (las mensulas de
+     * un perfil), el {@code versionNumber} a {@code null} y lo que la pantalla no modela ({@code userId},
+     * {@code requestMethod}, {@code requestUri}) ignorado. Una via llega sin hijos, y una operacion o
+     * un origen que el servicio estrene no rompen la pagina.
+     */
+    @Test
+    void theHistoryOfAMasterComesTypedNewestFirstWithTheRowAsItWas() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/profiles/7/revisions?page=0&size=20")).andExpect(method(HttpMethod.GET))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer token-for-" + PRINCIPAL))
+                .andRespond(withSuccess(configurationRevisions("""
+                        {"revision":{"revision":4217,"revisionAt":"2026-11-13T07:29:37.512Z","operation":"UPDATED","author":"config.responsable",
+                                     "source":"HTTP","correlationId":"5f0c","userId":"0b9d","requestMethod":"PUT",
+                                     "requestUri":"/api/v1/configuration/profiles/7"},
+                         "entity":{"id":7,"profileId":"P-007","kp":"12.345","trackId":3,"span":55.000,
+                                   "poleType":{"id":5,"code":"HEB"},"cantilevers":[{"id":21,"cantileverType":{"id":2,"code":"PT1"}}],
+                                   "versionUser":"config.responsable","versionDate":"2026-11-13T07:29:37.5","versionNumber":null}},
+                        {"revision":{"revision":4001,"revisionAt":"2026-11-02T08:01:11Z","operation":"CREATED","author":"system",
+                                     "source":"SYSTEM","correlationId":null,"userId":null,"requestMethod":null,"requestUri":null},
+                         "entity":null}
+                        """, 2), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/tracks/3/revisions?page=1&size=5")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(configurationRevisions("""
+                        {"revision":{"revision":12,"revisionAt":"2026-11-01T08:00:00Z","operation":"MERGED","author":"config.responsable",
+                                     "source":"REPLAY","correlationId":"c-1"},
+                         "entity":{"id":3,"name":"VIA 1","enabled":false,"executionPackageId":100,"stationIds":[12,13],"profiles":null,
+                                   "versionNumber":null}}
+                        """, 6), MediaType.APPLICATION_JSON));
+
+        PageResponse<RevisionDto<ProfileDto>> profile = asUser(() -> profileClient.revisions(7L, 0, 20));
+        PageResponse<RevisionDto<TrackDto>> track = asUser(() -> trackClient.revisions(3L, 1, 5));
+
+        RevisionDto<ProfileDto> newest = profile.content().getFirst();
+        assertEquals(4217, newest.revision().revision());
+        assertEquals(Instant.parse("2026-11-13T07:29:37.512Z"), newest.revision().revisionAt());
+        assertEquals(RevisionOperation.UPDATED, newest.revision().operation());
+        assertEquals("config.responsable", newest.revision().author());
+        assertEquals("HTTP", newest.revision().source());
+        assertEquals("5f0c", newest.revision().correlationId());
+        assertEquals("P-007", newest.entity().getProfileId());
+        assertEquals("HEB", newest.entity().getPoleType().code());
+        assertEquals(1, newest.entity().getCantilevers().size(), "un perfil lleva las mensulas que tenia en esa revision");
+        assertNull(newest.entity().getVersionNumber(), "la auditoria no guarda el contador del bloqueo optimista");
+        assertEquals("SYSTEM", profile.content().get(1).revision().source());
+        assertNull(profile.content().get(1).entity(), "una revision sin fila se lee, no rompe la pagina");
+        assertEquals(2, profile.page().totalElements());
+
+        RevisionDto<TrackDto> merged = track.content().getFirst();
+        assertEquals(RevisionOperation.UNKNOWN, merged.revision().operation(), "una operacion nueva se lee como desconocida");
+        assertEquals("REPLAY", merged.revision().source(), "el origen es la cadena leida");
+        assertEquals(List.of(12L, 13L), merged.entity().getStationIds());
+        assertNull(merged.entity().getProfiles(), "una via llega sin sus hijos, como en la lista");
+        assertEquals(Boolean.FALSE, merged.entity().getEnabled());
+        server.verify();
+    }
+
+    /**
+     * El de un catalogo, con el recurso en la ruta. Su borrado es fisico: la revision {@code DELETED}
+     * solo trae el id. Sin ninguna revision (una entrada sembrada por una migracion) es el 404
+     * {@code NOT-001}, y sin {@code config-audit} el 403, los dos tipados.
+     */
+    @Test
+    void theHistoryOfACatalogueEntryKeepsItsTypeAndItsDeletionOnlyBringsTheId() {
+        server.expect(requestTo(GATEWAY + "/api/configuration/foundations/5/revisions?page=0&size=20")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(configurationRevisions("""
+                        {"revision":{"revision":31,"revisionAt":"2026-11-13T09:00:00Z","operation":"DELETED","author":"config.responsable",
+                                     "source":"HTTP","correlationId":"c-3","requestMethod":"DELETE"},
+                         "entity":{"id":5,"code":null,"description":null,"type":null,"enabled":false,"versionNumber":null}},
+                        {"revision":{"revision":30,"revisionAt":"2026-11-12T09:00:00Z","operation":"CREATED","author":"config.responsable",
+                                     "source":"HTTP","correlationId":"c-2","requestMethod":"POST"},
+                         "entity":{"id":5,"code":"C-1","description":"Cimentacion 1","enabled":true,"drawingNumber":"D-12",
+                                   "foundationType":{"id":3,"code":"FT-A","description":"Tipo A"},"versionNumber":null}}
+                        """, 2), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(GATEWAY + "/api/configuration/profile-statuses/1/revisions?page=0&size=20"))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_PROBLEM_JSON).body("""
+                        {"title":"Recurso no encontrado","status":404,"detail":"No hay revisiones de ProfileStatus 1","code":"NOT-001","traceId":"t-1"}
+                        """));
+        server.expect(requestTo(GATEWAY + "/api/configuration/profile-statuses/2/revisions?page=0&size=20"))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN).contentType(MediaType.APPLICATION_PROBLEM_JSON).body("""
+                        {"title":"Acceso denegado","status":403,"detail":"Access Denied","code":"SEC-003","traceId":"t-2"}
+                        """));
+
+        PageResponse<RevisionDto<LovDto>> history = asUser(() -> lovClient.revisions("foundations", 5L, 0, 20));
+        NotFoundApiException none = assertThrows(NotFoundApiException.class, () -> asUser(() -> lovClient.revisions("profile-statuses", 1L, 0, 20)));
+        ForbiddenApiException denied = assertThrows(ForbiddenApiException.class, () -> asUser(() -> lovClient.revisions("profile-statuses", 2L, 0, 20)));
+
+        LovDto deleted = history.content().getFirst().entity();
+        assertEquals(RevisionOperation.DELETED, history.content().getFirst().revision().operation());
+        assertEquals(5L, deleted.id());
+        assertNull(deleted.code());
+        assertNull(deleted.description());
+        LovDto created = history.content().get(1).entity();
+        assertEquals("C-1", created.code());
+        assertEquals("FT-A", created.parent("foundationType").orElseThrow().code(), "el tipo de entonces viene con la entrada");
+        assertNull(created.versionNumber());
+        assertEquals("NOT-001", none.getProblem().code());
+        assertEquals(403, denied.getStatus().value());
+        server.verify();
+    }
 }

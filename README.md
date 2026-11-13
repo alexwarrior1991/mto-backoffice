@@ -387,6 +387,18 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   fuera del ámbito de la persona es el 403 `SCP-403`, que se dice con el detalle del servicio («Queda
   fuera de tu ámbito»), no como «no tienes permiso».
 
+- **Historial de los maestros y de los catálogos** (fase 6). Cada fila de cada maestro de
+  Infraestructura y de cada catálogo ofrece, a quien tiene `config-audit` **y** `config-read` (los
+  perfiles `mto-auditor` y `mto-admin`), el botón **Historial**: las revisiones que guarda
+  `mto-configuration` (`GET /api/configuration/{recurso}/{id}/revisions`), en el mismo diálogo que
+  almacén y mantenimiento, paginadas en el servicio y la más reciente primero, con quién, cuándo, la
+  operación, el origen (`HTTP`, o `SYSTEM` para un trabajo o una importación), la correlación y una
+  línea que dice cómo quedó la fila, con los nombres de su vía, su estación, su paquete y sus
+  catálogos (los de hoy: cada revisión guarda a qué apuntaba, no cómo se llamaba). Una fila sembrada
+  por una migración no tiene revisiones: el servicio responde 404 y se dice «sin historial todavía».
+  El borrado de una entrada de catálogo es físico y su revisión solo guarda el id: se dice «Borrada
+  del catálogo», y sus datos están en la revisión anterior.
+
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|
 | Exportar perfiles, consultar, descargar | `config-read` |
@@ -398,6 +410,7 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
 | Ver la lista y buscar | `config-read` |
 | Nuevo, modificar | `config-write` |
 | Borrar (lógico) | `config-delete` |
+| Historial de una fila | `config-audit` + `config-read` |
 
 Los botones siguen los permisos que aplica el servicio a cada catálogo:
 
@@ -406,6 +419,7 @@ Los botones siguen los permisos que aplica el servicio a cada catálogo:
 | Ver el catálogo | `config-read` |
 | Nuevo, modificar | `config-write` + `lov-manage` |
 | Borrar | `config-delete` + `lov-manage` |
+| Historial de una entrada | `config-audit` + `config-read` |
 | Alta múltiple, activar/desactivar seleccionados | `config-import` + `lov-manage` |
 
 Las pantallas de usuarios (fase 5) siguen los permisos de `mto-users-api`, y ninguno implica otro:

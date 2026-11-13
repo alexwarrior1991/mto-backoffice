@@ -83,6 +83,11 @@ public class DisconnectorsView extends MasterView<DisconnectorDto> {
     }
 
     @Override
+    protected String describe(DisconnectorDto dto) {
+        return MasterHistory.disconnector(dto, catalog);
+    }
+
+    @Override
     protected String labelOf(DisconnectorDto dto) {
         return dto.getName() == null ? super.labelOf(dto) : dto.getName();
     }

@@ -97,6 +97,11 @@ public class ProfilesView extends MasterView<ProfileDto> {
     }
 
     @Override
+    protected String describe(ProfileDto dto) {
+        return MasterHistory.profile(dto, catalog);
+    }
+
+    @Override
     protected String labelOf(ProfileDto dto) {
         return dto.getProfileId() == null ? super.labelOf(dto) : dto.getProfileId() + " (kp " + dto.getKp() + ")";
     }
