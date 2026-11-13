@@ -45,6 +45,14 @@ public class RevisionsDialog<D> extends Dialog {
      * @param describe una linea con la entidad tal como quedo en cada revision
      */
     public RevisionsDialog(String label, Source<D> source, Function<D, String> describe) {
+        this(label, source, describe, "");
+    }
+
+    /**
+     * @param whenMissing lo que se dice en «Como quedo» de una revision que llega sin la fila
+     *                    ({@code entity: null}: el servicio no pudo reconstruirla)
+     */
+    public RevisionsDialog(String label, Source<D> source, Function<D, String> describe, String whenMissing) {
         this.source = source;
         setHeaderTitle("Historial de " + label);
         setWidth("min(76rem, 96vw)");
@@ -60,7 +68,7 @@ public class RevisionsDialog<D> extends Dialog {
         grid.addColumn(row -> row.revision().operation() == null ? "" : row.revision().operation().label()).setHeader("Operacion").setKey("operation").setAutoWidth(true);
         grid.addColumn(row -> text(row.revision().author())).setHeader("Quien").setKey("author").setAutoWidth(true);
         grid.addColumn(row -> text(row.revision().source())).setHeader("Origen").setKey("source").setAutoWidth(true);
-        grid.addColumn(row -> row.entity() == null ? "" : describe.apply(row.entity())).setHeader("Como quedo").setKey("entity").setFlexGrow(1);
+        grid.addColumn(row -> row.entity() == null ? whenMissing : describe.apply(row.entity())).setHeader("Como quedo").setKey("entity").setFlexGrow(1);
         grid.addColumn(row -> text(row.revision().correlationId())).setHeader("Correlacion").setKey("correlationId").setAutoWidth(true);
         grid.setPageSize(PAGE_SIZE);
         grid.setSizeFull();

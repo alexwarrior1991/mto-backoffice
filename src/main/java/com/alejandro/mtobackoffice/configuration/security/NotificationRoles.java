@@ -6,7 +6,8 @@ package com.alejandro.mtobackoffice.configuration.security;
  * {@code ROLE_NOTIFICATION_INBOX}). Ninguno implica otro, y en ese servicio el permiso lo decide el
  * recurso, no el verbo: la bandeja es de quien la lee, el registro pide el suyo y los accesos
  * —usuario e IP— piden uno aparte, que no viene con el registro. {@code notification-admin} abre
- * la administracion del servicio (reglas, entregas, fuentes), que todavia no tiene pantalla aqui.
+ * la administracion del servicio ({@code notificaciones/administracion}): fuentes, colas de mensajes
+ * muertos, entregas, reglas y avisos manuales.
  */
 public final class NotificationRoles {
 
@@ -19,7 +20,7 @@ public final class NotificationRoles {
     /** Los accesos: logins, fallos, logouts y bloqueos, con usuario e IP. */
     public static final String NOTIFICATION_ACCESS_READ = "NOTIFICATION_ACCESS_READ";
 
-    /** Administracion del servicio; sin pantalla todavia. */
+    /** Administracion del servicio: fuentes, colas de mensajes muertos, entregas, reglas y avisos manuales. */
     public static final String NOTIFICATION_ADMIN = "NOTIFICATION_ADMIN";
 
     private NotificationRoles() {

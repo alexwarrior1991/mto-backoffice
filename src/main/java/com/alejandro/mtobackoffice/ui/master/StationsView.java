@@ -56,6 +56,11 @@ public class StationsView extends MasterView<StationDto> {
     }
 
     @Override
+    protected String describe(StationDto dto) {
+        return MasterHistory.station(dto, catalog);
+    }
+
+    @Override
     protected String labelOf(StationDto dto) {
         return dto.getName() == null ? super.labelOf(dto) : dto.getName();
     }

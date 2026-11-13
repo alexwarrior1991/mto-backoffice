@@ -82,7 +82,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   catálogos con su ruta y su título), `MasterClient<D>` (lo que comparten los maestros de
   `CRUDController`: `POST /filter` paginado, `GET/POST/PUT/DELETE`) con siete subinterfaces vacías (salvo `TrackClient`, que añade `schematic`: el esquema de la vía en una llamada)
   que solo ponen la ruta y el tipo (`StationClient`, `TrackClient`, `TrackAccessPointClient`...; Spring
-  resuelve el genérico contra la subinterfaz), `BusinessEntityClient` (solo lectura), `MasterFilters` (cuerpo y orden
+  resuelve el genérico contra la subinterfaz; y `revisions`, el historial de una fila, como el de `LovClient` para una entrada), `BusinessEntityClient` (solo lectura), `MasterFilters` (cuerpo y orden
   del `/filter`) y `JobsClient` (los trabajos en segundo plano: importaciones multipart con
   `@RequestPart Resource`, exportación, republicado, la lista de todas las familias (`GET /jobs`,
   paginada y filtrable por tipo y estado), estado y fichero por familia, `JobFamily`);
@@ -104,7 +104,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `mto-maintenance` bajo `/api/maintenance`: `OrderClient` —órdenes, sus transiciones, su historial
   de estados, sus tareas, que solo existen dentro de una orden o de un turno, y sus líneas de
   material—, `AssetClient`, `MaintenanceCatalogClient` —equipos, tipos de tarea (con el equipo que
-  exigen, que se cambia con un `PATCH` merge-patch por su código), plantillas de inspección—, `ShiftClient` —turnos, sus tareas y perfiles, asignar una tarea y sacarla—, `InspectionClient`,
+  exigen, que se cambia con un `PATCH` merge-patch por su código), plantillas de inspección (la lista entera, la versión siguiente de un tipo con un `POST` y el `PATCH` merge-patch de una versión con su `lockVersion`)—, `ShiftClient` —turnos, sus tareas y perfiles, asignar una tarea y sacarla—, `InspectionClient`,
   `DefectClient` y `ReportClient` —cada informe en JSON y como fichero `ResponseEntity<byte[]>`—,
   todos con `revisions` salvo los catálogos y los informes, y `OperationClient`, las operaciones de
   fondo (`GET /operations/{id}`) que deja un `Prefer: respond-async`; DTO como records en
@@ -114,8 +114,13 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   enumerados tolerantes —ver las reglas—); `client/notification/NotificationClient` (la API de
   `mto-notification` bajo `/api/notifications`: mi bandeja paginada con sus filtros, el contador
   acotado, marcar una o todas, el registro con sus filtros y el detalle de una línea, y los
-  accesos; DTO como records en `client/dto/notification`, con `payload` como `Map` y los
-  enumerados tolerantes `ActivityCategory`, `ActivitySeverity`, `ActorKind` y `AccessOutcome`);
+  accesos; y la administración, `/admin/**`: las reglas, el estado de las fuentes, las entregas
+  paginadas con sus filtros y su reintento, las colas de mensajes muertos —contarlas, mirar y
+  reprocesar con `max`—, el correo de prueba y el aviso general; DTO como records en
+  `client/dto/notification`, con `payload` como `Map` y los enumerados tolerantes `ActivityCategory`,
+  `ActivitySeverity`, `ActorKind` y `AccessOutcome`, y los de la administración: `DeliveryStatus` (con
+  `canRetry`), `DeliveryScope`, `InboxMessageStatus`, `SourceCursorKind`, `ReprocessOutcome` y
+  `ReprocessStop`; `AudienceKind` y `BroadcastChannel` solo viajan en peticiones);
   `client/resources` (la API de `mto-resources` bajo `/api/resources`: `PersonClient` —con sus
   cualificaciones, `/people/{id}/qualifications`, y sus ausencias, `/people/{id}/absences`, cada una la
   lista entera, alta, `PATCH` y `DELETE`—,
@@ -158,7 +163,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `UnreachableApiException`, la llamada sin respuesta).
 - `ui` — `MainLayout` (AppLayout, con «Abrir en mto-frontend» en la barra; el menú lo dan las vistas anotadas con `@Menu`, filtradas por
   `AccessAnnotationChecker`; las rutas con prefijo conocido (`infraestructura/*`, `usuarios/*`,
-  `almacen/*`, `mantenimiento/*`, `recursos/*`) se agrupan por prefijo (`MainLayout.GROUPS`), una entrada cuya ruta es el propio prefijo es el
+  `almacen/*`, `mantenimiento/*`, `recursos/*`, `notificaciones/*`, `actividad/*`) se agrupan por prefijo (`MainLayout.GROUPS`), una entrada cuya ruta es el propio prefijo es el
   nodo del grupo, y los catálogos se listan a mano porque su vista lleva el recurso en la ruta),
   `ui/views/HomeView`,
   `ui/lov` (`LovCrudView` en `catalogos/:resource`, `LovEditorDialog` con `Binder` sobre el modelo
@@ -166,6 +171,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   la lista paginada en el servidor con `LazyPages` (una petición por página) sobre `POST /filter`;
   `MasterEditorDialog<D>`, el `Binder` sobre el DTO leído; una vista y un editor por maestro, también
   `TrackAccessPointsView` en `infraestructura/accesos` con `TrackAccessPointEditor`;
+  `MasterHistory`, la línea de cada maestro en el historial de una fila;
   `ReferenceCatalog` y `LovCatalog`, los nombres y las entradas de catálogo cargados una vez por
   pantalla; `Pickers`, desplegables y conversores; `EnabledFilter`, el filtro de tres estados;
   `ChildrenEditor<C>`, la tabla de hijos dentro del editor del padre, con `CantileverDialog` y
@@ -222,10 +228,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `InspectionDetailView` (`InspectionOutcomeDialogs`: el defecto y la orden correctiva que genera),
   `DefectsView` y `DefectDetailView` (`DefectTransitionDialogs`); `ReportsView` en
   `mantenimiento/informes`; `TeamsView`, `TaskTypesView` (con `TaskTypeEquipmentDialog`, el equipo que
-  exige un tipo) e `InspectionTemplatesView`, los catálogos; un `*EditorDialog` con `Binder` sobre un `*Form` mutable por recurso, cuyas
+  exige un tipo) e `InspectionTemplatesView` (con `InspectionTemplateVersionDialog`, la versión siguiente de un tipo, e `InspectionTemplateRenameDialog`), los catálogos; un `*EditorDialog` con `Binder` sobre un `*Form` mutable por recurso, cuyas
   propiedades se llaman como los campos de la petición para `ServerValidation`;
   `MaintenanceHistory`, el botón «Historial» y la línea de cada recurso en `RevisionsDialog`;
-  `MaintenancePickers`, `MaintenanceCatalogs` y `MaintenanceFormats`, lo compartido), `ui/notification` (`NotificationRoutes`: `notificaciones`, `actividad` y
+  `MaintenancePickers`, `MaintenanceCatalogs` y `MaintenanceFormats`, lo compartido), `ui/notification` (`NotificationRoutes`: `notificaciones`, `notificaciones/administracion`, `actividad` y
   `actividad/accesos`; `InboxBell`, la campana de la barra, que `MainLayout` pone solo con
   `notification-inbox` y que pide el contador al entrar y cada 30 s desde `SharedPolling` con
   `CurrentPrincipal.callAs` + `UI.access()`; `NotificationsView`, la bandeja paginada en el
@@ -233,7 +239,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (una ruta de esta aplicación con sus parámetros, o una pestaña nueva si es absoluto);
   `ActivityView`, el registro con los filtros del servicio y los de la URL (`BeforeEnterObserver`);
   `AccessView`, los accesos con su permiso aparte; `EventDetailDialog`, una línea entera con su
-  `payload` clave a clave), `ui/resources` (`ResourcesRoutes`, las rutas bajo `recursos`;
+  `payload` clave a clave; `NotificationAdminView`, la administración del servicio, con sus cinco
+  pestañas `LazyPanel`: `AdminSourcesPanel`, `AdminDeadLettersPanel` (con `DeadLetterPeekDialog` y
+  `DeadLetterReprocessDialog`), `AdminDeliveriesPanel`, `AdminRulesPanel` y `AdminBroadcastsPanel` (con
+  `TestEmailDialog` sobre `TestEmailForm` y `BroadcastDialog` sobre `BroadcastForm`)), `ui/resources` (`ResourcesRoutes`, las rutas bajo `recursos`;
   `ResourcesClients`; `ResourcesNames`, los nombres de `mto-configuration` como en mantenimiento;
   `ResourcesPickers`, las personas, los vehículos y los instrumentos buscados en el servidor, que usan
   también los turnos de mantenimiento; `PeopleView` con `PersonEditorDialog`, y `PersonDetailView` en
@@ -444,6 +453,22 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (y de cada fila de activos), y `MaintenanceHistory` pone la línea de cada recurso. No es la
   pestaña «Estados» de una orden o un defecto: esa es `/history`, las transiciones con su
   comentario, que el servicio guarda aparte.
+- **El historial de un maestro y de un catálogo es el de `mto-configuration`, y pide dos permisos.**
+  `GET /{recurso}/{id}/revisions` (los siete maestros y los 17 catálogos; `MasterClient.revisions`,
+  `LovClient.revisions`), en el mismo `RevisionsDialog`, paginado en el servicio y la más reciente
+  primero. El botón «Historial» de cada fila (`history-<id>`, entre las acciones propias y borrar) se
+  ofrece solo con `config-audit` **y** `config-read` (`hasAllRoles`): con uno solo el servicio responde
+  403. En un catálogo, la columna de acciones existe si hay algo que ofrecer (escribir, borrar o
+  auditar). La línea «Como quedo» la pone `MasterHistory` por maestro (y `LovCrudView.describe` para
+  una entrada): sus campos principales y los nombres de sus referencias como en su lista
+  (`ReferenceCatalog`; `#id` lo que ya no está), sin separadores sueltos por lo que falta. Los nombres
+  son los de hoy, también para el servicio. Una fila sin revisiones (sembrada por una migración) es el
+  404 `NOT-001`: «sin historial todavía», sin aviso. Una revisión sin fila (`entity: null`) dice «Sin
+  datos de la fila en esta revision», y el borrado de una entrada de catálogo, que es físico y solo
+  guarda el id, «Borrada del catalogo: sus datos estan en la revision anterior». `source` es la cadena
+  leída (`HTTP` o `SYSTEM`); `userId`, `requestMethod` y `requestUri` no se leen. La `entity` de una
+  revisión no es un cuerpo para un `PUT` (`versionNumber` llega a `null`): desde el historial no se
+  edita nada.
 - **En mantenimiento, una transición solo se ofrece en su estado de origen, y la decide el
   servicio.** Los estados de cada recurso (`MaintenanceOrderStatus.canPlan`/`canAssign`/`canStart`/
   `canComplete`, `ShiftStatus.canStart`/`canClose`, `DefectStatus.isPending`...) están copiados de
@@ -655,6 +680,40 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   de administración de Keycloak que ya cuenta el de `mto-users` del mismo cambio) solo viaja como
   `includeSuperseded=true` cuando se pide. Una línea se enseña entera en `EventDetailDialog`, con
   su `payload` tal cual lo dejó la lista blanca del servicio: aquí no se interpreta nada.
+- **La administración de notificaciones es la de `mto-notification`, y lo que admite cada cosa lo dice
+  el servicio.** `NotificationAdminView` (`notificaciones/administracion`, con `notification-admin`, que
+  llevan `mto-notification-admin` y `mto-ops`; en el menú cuelga de la bandeja, el nodo del grupo
+  «Notificaciones») tiene cinco pestañas `LazyPanel`: cada una pide sus datos la primera vez que se abre
+  y con su «Actualizar», sin sondeo.
+  - **Fuentes** (`GET /admin/sources`): el inbox por fuente y estado, el lector de Keycloak (hasta dónde
+    leyó, quién lo tiene arrendado, su último error), las ráfagas abiertas y las entregas por estado. Las
+    cifras son del servicio; un estado de entrega nuevo se enseña con su clave.
+  - **Mensajes muertos (DLQ)** (`GET /admin/dead-letters`): `messages: null` es «Sin cola en el broker»,
+    y `enabled: false`, RabbitMQ apagado en el despliegue, que se dice sin tabla ni acciones. «Mirar» y
+    «Reprocesar» se ofrecen solo donde hay mensajes (`QueueDto.hasMessages`): sin cola sería el 409
+    `SRC-409`. «Mirar» pide los primeros 20 (`GET /dead-letters/{source}?max=20`) y enseña lo que hay,
+    nunca el cuerpo; si falla, se avisa y no se abre nada. «Reprocesar»
+    (`POST /dead-letters/{source}/reprocess?max=`) dice en su diálogo qué va a pasar, pide de 1 a 100 (20
+    de partida; fuera de rango no se llama), enseña en el mismo diálogo el resultado (pedidos, sacados,
+    procesados, duplicados, fallidos, cuántos quedan, por qué paró y qué fue de cada mensaje) y relee las
+    colas; un error se dice con el diálogo abierto. Nada lo repite solo.
+  - **Entregas** (`GET /admin/deliveries`): paginadas, filtradas (estado, canal escrito entero y
+    notificación por su id, que a medias no pide nada) y ordenadas en el servicio, con `createdAt,desc`
+    de partida y de desempate (el servicio no ordena por el id). «Reintentar» solo en una fallida o una
+    omitida (`DeliveryStatus.canRetry`, copiado del servicio; lo demás sería su 409 `DLV-409`), sin
+    confirmación, y la lista se relee salga bien o no.
+  - **Reglas** (`GET /admin/rules`): de solo lectura (se cambian en el YAML del servicio), enteras, con
+    filtro local sin mayúsculas ni tildes.
+  - **Avisos manuales**: el correo de prueba (`POST /admin/test-email {to}`, 202) exige una dirección
+    con forma de email; el aviso general (`POST /admin/broadcasts`, 201) ofrece solo lo que el servicio
+    acepta (las cuatro clases de audiencia de `AudienceKind`, una por línea como `CLASE:clave`; los dos
+    canales de `BroadcastChannel`; las tres gravedades), comprueba lo evidente antes de llamar (título,
+    al menos una audiencia bien formada, al menos un canal, un enlace que la bandeja sepa seguir) y **se
+    confirma antes de enviarse**, diciendo a quién va y por dónde: llega a personas de verdad. Lo vacío
+    no viaja. Los errores del servicio van a su campo (`ServerValidation`), con el diálogo abierto; tras
+    enviar, las entregas se releen si su pestaña ya se abrió.
+  - Sus códigos se dicen por lo que son, sin pedir recargar: `DLV-404`, `DLV-409`, `SRC-404`, `SRC-409`
+    (con el detalle del servicio), `SRC-503` y `NTF-422` (con su detalle).
 - **Una lista paginada en el servidor pide una vez cada página** (`LazyPages`). Vaadin pide por
   separado el recuento y la página (`setItems(fetch, count)`), y los servicios devuelven las dos
   cosas en la misma respuesta: el recuento pide la primera página con el tamaño y el orden del Grid
@@ -940,6 +999,37 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   con la versión leída: el conjunto se compara sin orden, lo desconocido leído se conserva, quitarlos
   todos viaja a `null` y sin cambios no se llama; un 409 `CON-001` deja el diálogo abierto. Qué turno
   lleva ese equipo lo decide mantenimiento (409 `SHF-001`).
+- **Las plantillas de inspección las mantiene quien supervisa, y una versión no cambia sus puntos.**
+  `InspectionTemplatesView` enseña arriba los cuatro tipos de activo con su versión activa (también el que
+  no tiene ninguna: «Sin plantilla activa») y debajo todas las versiones, «Activa» o «Anterior», con quién
+  creó cada una y cuándo (`audit`), y los puntos de la elegida. Quien solo lee ve eso. Con
+  `maintenance-supervise` **y** `maintenance-write` (`hasAllRoles`), y solo si el servicio las deja
+  escribir, se mantienen desde ahí:
+  - **«Nueva version»** de un tipo (`InspectionTemplateVersionDialog`, `POST /inspection-templates`): el
+    nombre y la lista ENTERA de puntos en orden (añadir, quitar, subir y bajar), partiendo de la activa del
+    tipo (sin activa, de la última; sin ninguna, vacía) o, desde la fila de una versión, de esa. Nace
+    activa y la activa pasa a anterior, y el diálogo lo dice antes. `replacesVersion` es el número de la
+    activa del tipo tal como se leyó, y no viaja si no había. Ni `orderIndex` ni `id` viajan: el orden es
+    la posición.
+  - De una versión que existe solo cambian **el nombre y si es la activa** (`PATCH` merge-patch): renombrar
+    (`InspectionTemplateRenameDialog`; sin cambios no se llama) y activar o desactivar, que se confirman
+    diciendo su efecto (la activa de ahora pasa a anterior; desactivar la activa deja las inspecciones
+    nuevas del tipo sin checklist). No se ofrece editar los puntos de una versión ni borrarla: el servicio
+    no lo hace.
+  - **`version` es el número de la versión, no el bloqueo, y no se manda nunca.** El bloqueo optimista es
+    `lockVersion`, que viaja dentro de `InspectionTemplateUpdateRequest`, con la `version` del `MergePatch`
+    a `null` (el servicio rechaza esa clave en el parche).
+  - Lo evidente se comprueba antes de llamar con las reglas del servicio (nombre obligatorio, de 1 a 100
+    puntos, el código con su patrón y sin repetir, el texto obligatorio, mínimo y máximo con signo, 9
+    enteros y 3 decimales, `Numbers.measure`, y mínimo ≤ máximo). Los errores por campo del servicio caen
+    en el nombre, en el campo de su fila (`items[1].code`) o bajo la lista (`items`, `items[1]`); lo demás
+    se notifica con su ruta, y un 400 `VAL-001` sin campos, con su detalle. Un 409 `CON-001` deja el
+    diálogo abierto y pide recargar; el 404 `TPL-404` se dice por lo que es.
+  - Tras cualquier escritura **se relee la lista entera** (cambió otra fila del tipo), y también si activar
+    o desactivar falla: un rechazo es que lo leído ya no vale.
+  - Un servicio anterior no manda `lockVersion` ni `audit` y no tiene esas rutas: con una sola versión
+    leída sin `lockVersion` no se ofrece escribir nada (`InspectionTemplateDto.writable`). Una versión de
+    un tipo de activo desconocido se lee y no abre nada.
 - **Puestos y perfiles es un informe de `mto-resources`, y se lee.** `PositionDiscrepanciesView`
   (`recursos/discrepancias`, con `resources-read`) pide `GET /reports/position-discrepancies` al entrar y
   con «Actualizar»: cuándo se calculó, cuántas personas y cuántos usuarios con perfil de puesto, y cuatro
@@ -1173,13 +1263,33 @@ abierta con lo que se comprueba antes de llamar y el `VEH-001`; modificar con la
 según el estado; solo lectura), el campo GPS (su forma, vaciarlo, la ficha y el origen «GPS»), el
 diálogo del equipo solo con supervise y write, con lo desconocido y su `CON-001`, y Puestos y perfiles
 (sus secciones, el enlace a la persona, el `KCK-503` en su sitio con «Reintentar» y el menú solo con
-`resources-read`). Las cuentas de servicio y uno mismo en Usuarios también: en `ClientLayerTest`, el
+`resources-read`). El historial de los maestros y de los catálogos (fase 6) también: en
+`ClientLayerTest`, el de un perfil y el de una vía tipados contra su subinterfaz (las ménsulas de
+entonces, la vía sin hijos, `versionNumber` a `null`, una revisión sin fila, una operación nueva como
+`UNKNOWN`) y el de una entrada de catálogo (su tipo, el borrado solo con el id, el 404 `NOT-001` y el
+403); en `ViewLayerTest`, el botón solo con `config-audit` y `config-read` (un rol de realm no lo da),
+el historial de una vía paginado en el servicio con sus nombres, la línea de cada uno de los siete
+maestros, la fila sin revisiones dicha sin aviso y el 403 avisado, y el de una entrada de catálogo con
+su tipo, su borrado y la sembrada sin historial. Y la administración de notificaciones: en
+`ClientLayerTest`, las reglas y el estado de las fuentes con lo que estrene el servicio, las entregas
+con sus filtros, su desempate y su reintento (`DLV-404`, `DLV-409`, y qué estados se reintentan), las
+colas de mensajes muertos contadas, miradas y reprocesadas con sus tres errores tipados, el correo de
+prueba y el aviso general con sus cuerpos y sus rechazos, y la regla de una audiencia; en
+`ViewLayerTest`, los mensajes de sus códigos, el menú (cuelga de la bandeja, solo con el rol de
+cliente), cada pestaña pidiendo lo suyo solo al abrirse, las fuentes con «Actualizar» y su fallo, las
+colas con sus acciones solo donde hay mensajes y el broker apagado, mirar (y el fallo que no abre
+nada), reprocesar (el máximo fuera de rango sin llamar, el resultado en el diálogo, las colas releídas,
+el error con el diálogo abierto), las entregas filtradas y ordenadas en el servicio con el reintento
+solo donde cabe y la lista releída también si el servicio dice que no, las reglas con su filtro local,
+el correo de prueba (lo evidente, el error en su campo, las entregas releídas) y el aviso general (lo
+que ofrece, lo que comprueba, la confirmación con a quién va, lo vacío sin viajar, y el rechazo del
+servicio con el diálogo abierto). Las cuentas de servicio y uno mismo en Usuarios también: en `ClientLayerTest`, el
 usuario con `serviceAccount` y sin la clave (y el prefijo reservado) y los dos 403 tipados con su código;
 en `SecurityLayerTest`, el `sub` de la sesión (`CurrentPrincipal.subject`), que no es el nombre y sigue
 tras un token renovado; en `ViewLayerTest`, los mensajes de `USR-SVC-403` y `USR-SELF-403`, la fila y la
 ficha de una cuenta de servicio (nada que escriba, en la cabecera y en cada pestaña), la fila y la ficha
 propias (sin desactivar, borrar ni «sacar a la persona», perfiles y roles leídos con su línea, y lo demás
 como siempre; activarse sí, estando desactivado), el alta con el prefijo reservado rechazada en su campo
-sin llamar, y un `USR-SVC-403` que aun así llega, dicho con su mensaje y el diálogo abierto. Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
+sin llamar, y un `USR-SVC-403` que aun así llega, dicho con su mensaje y el diálogo abierto. Las plantillas de inspección también: en `ClientLayerTest`, la lista con `lockVersion` y `audit` (una versión de un servicio anterior sin ellas, y un tipo de activo nuevo, que no se escriben), el `POST` con la lista entera sin `version` ni lo vacío y `replacesVersion` solo si había activa, el `PATCH` con `lockVersion` y nunca `version`, y `CON-001`, `TPL-404` y los errores por campo con la ruta de su fila; en `ViewLayerTest`, los cuatro tipos con su activa y las versiones con quién las creó, las acciones solo con supervise y write (ni con uno solo, ni ante un servicio anterior, ni en un tipo desconocido), la versión nueva desde la activa (lo que se comprueba antes de llamar, quitar y bajar puntos, la lista entera con la versión que sustituye, la lista releída con la nueva elegida), desde una anterior y desde nada (los errores del servicio en su campo, en su fila o bajo la lista, el `VAL-001` y el `CON-001` con el diálogo abierto), y renombrar, activar y desactivar con su `lockVersion`, sus confirmaciones y la lista releída, también cuando el servicio dice que no. Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
 CI: `mto-platform/scripts/e2e.sh` construye la imagen de este commit, usa la publicada de cada
 hermano y corre el e2e de Playwright de mto-frontend, que recorre las dos aplicaciones.

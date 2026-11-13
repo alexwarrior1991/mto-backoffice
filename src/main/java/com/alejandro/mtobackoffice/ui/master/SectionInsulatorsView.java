@@ -85,6 +85,11 @@ public class SectionInsulatorsView extends MasterView<SectionInsulatorDto> {
     }
 
     @Override
+    protected String describe(SectionInsulatorDto dto) {
+        return MasterHistory.sectionInsulator(dto, catalog);
+    }
+
+    @Override
     protected String labelOf(SectionInsulatorDto dto) {
         return dto.getName() == null ? super.labelOf(dto) : dto.getName();
     }

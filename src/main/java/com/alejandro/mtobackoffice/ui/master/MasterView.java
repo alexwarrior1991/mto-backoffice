@@ -7,6 +7,7 @@ import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.SecurityRoles;
 import com.alejandro.mtobackoffice.ui.support.LazyPages;
+import com.alejandro.mtobackoffice.ui.support.RevisionsDialog;
 import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
@@ -47,7 +48,8 @@ import com.vaadin.flow.component.ComponentEventListener;
  * a {@code null} los hijos que no toca).</p>
  *
  * <p>Los botones siguen los permisos del servicio: crear y modificar piden {@code config-write};
- * borrar (logico), {@code config-delete}. Esconderlos es cortesia: la guarda real esta en el
+ * borrar (logico), {@code config-delete}; el historial de una fila, {@code config-audit} y
+ * {@code config-read} juntos. Esconderlos es cortesia: la guarda real esta en el
  * servicio. La columna de acciones existe siempre, tambien para quien solo lee, porque un maestro
  * puede ofrecer acciones de lectura ({@link #addRowActions}: el esquema de una via).</p>
  */
@@ -65,6 +67,8 @@ public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
     private final ObjectMapper objectMapper;
     protected final boolean canWrite;
     protected final boolean canDelete;
+    /** El historial pide los dos: leer el dato no da derecho a ver quien lo cambio, y el historial ensena la fila. */
+    protected final boolean canAudit;
 
     private final TextField search = new TextField();
     private final HorizontalLayout filters = new HorizontalLayout();
@@ -80,6 +84,7 @@ public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
         this.objectMapper = objectMapper;
         this.canWrite = authentication.hasRole(SecurityRoles.CONFIG_WRITE);
         this.canDelete = authentication.hasRole(SecurityRoles.CONFIG_DELETE);
+        this.canAudit = authentication.hasAllRoles(SecurityRoles.CONFIG_AUDIT, SecurityRoles.CONFIG_READ);
         setSizeFull();
         add(new H2(resource.title()), toolbar(), grid);
         expand(grid);
@@ -155,6 +160,9 @@ public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
             actions.add(rowButton("edit-" + dto.getId(), VaadinIcon.EDIT, "Modificar", click -> edit(dto)));
         }
         addRowActions(dto, actions);
+        if (canAudit) {
+            actions.add(rowButton("history-" + dto.getId(), VaadinIcon.CLOCK, "Historial", click -> history(dto).open()));
+        }
         if (canDelete) {
             Button delete = rowButton("delete-" + dto.getId(), VaadinIcon.TRASH, "Borrar", click -> confirmDelete(dto));
             delete.addThemeVariants(ButtonVariant.LUMO_ERROR);
@@ -175,6 +183,20 @@ public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
                                       ComponentEventListener<ClickEvent<Button>> listener) {
         return RowActions.button(id, icon, tooltip, listener);
     }
+
+    /**
+     * El historial de una fila, en el dialogo de almacen y de mantenimiento: sus revisiones paginadas
+     * en el servicio ({@code GET /{id}/revisions}), la mas reciente primero, y en cada una la fila tal
+     * como quedo ({@link #describe}). Sin revisiones el servicio responde 404 y el dialogo dice «sin
+     * historial todavia».
+     */
+    RevisionsDialog<D> history(D row) {
+        return new RevisionsDialog<>(labelOf(row), (page, size) -> client.revisions(row.getId(), page, size), this::describe,
+                MasterHistory.NO_ENTITY);
+    }
+
+    /** Una linea con la fila tal como quedo en una revision: sus campos principales y los nombres de sus referencias. */
+    protected abstract String describe(D dto);
 
     private Map<String, Object> filterBody() {
         Map<String, Object> filter = MasterFilters.of("searchText", search.getValue());

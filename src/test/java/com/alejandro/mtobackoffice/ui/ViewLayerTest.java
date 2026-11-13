@@ -1,5 +1,23 @@
 package com.alejandro.mtobackoffice.ui;
 
+import com.alejandro.mtobackoffice.client.dto.notification.AdminNotificationDto;
+import com.alejandro.mtobackoffice.client.dto.notification.BroadcastChannel;
+import com.alejandro.mtobackoffice.client.dto.notification.BroadcastRequest;
+import com.alejandro.mtobackoffice.client.dto.notification.DeadLetterPeekDto;
+import com.alejandro.mtobackoffice.client.dto.notification.DeadLetterQueuesDto;
+import com.alejandro.mtobackoffice.client.dto.notification.DeadLetterReprocessDto;
+import com.alejandro.mtobackoffice.client.dto.notification.DeliveryDto;
+import com.alejandro.mtobackoffice.client.dto.notification.DeliveryFilter;
+import com.alejandro.mtobackoffice.client.dto.notification.DeliveryScope;
+import com.alejandro.mtobackoffice.client.dto.notification.DeliveryStatus;
+import com.alejandro.mtobackoffice.client.dto.notification.InboxMessageStatus;
+import com.alejandro.mtobackoffice.client.dto.notification.ReprocessOutcome;
+import com.alejandro.mtobackoffice.client.dto.notification.ReprocessStop;
+import com.alejandro.mtobackoffice.client.dto.notification.RuleDto;
+import com.alejandro.mtobackoffice.client.dto.notification.RulesDto;
+import com.alejandro.mtobackoffice.client.dto.notification.SourceCursorKind;
+import com.alejandro.mtobackoffice.client.dto.notification.SourceStatusDto;
+import com.alejandro.mtobackoffice.client.dto.notification.TestEmailRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationOutcome;
 import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationPreviewLineDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationSelection;
@@ -392,6 +410,9 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.AssetUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.FunctionalGroup;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateItemDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateItemRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskUnit;
@@ -520,6 +541,9 @@ import com.alejandro.mtobackoffice.client.dto.resources.VehicleRepairRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleRepairUpdateRequest;
 import com.alejandro.mtobackoffice.client.resources.ResourcesReportClient;
 import com.alejandro.mtobackoffice.ui.maintenance.TaskTypeEquipmentDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.InspectionTemplateRenameDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.InspectionTemplateVersionDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.InspectionTemplatesView;
 import com.alejandro.mtobackoffice.ui.master.SchematicDrawing;
 import com.alejandro.mtobackoffice.ui.master.TrackSchematicDialog;
 import com.alejandro.mtobackoffice.ui.resources.PersonAbsenceDialog;
@@ -11681,6 +11705,364 @@ class ViewLayerTest {
                 && patch.cleared().equals(Set.of("requiredEquipment")) && patch.version() == 1L));
     }
 
+    // --- Las plantillas de inspeccion, que mantiene quien supervisa ------------------------------------
+
+    private static final UUID TPL_PROFILE_V1 = UUID.fromString("0195a000-0000-7000-8000-00000000b001");
+    private static final UUID TPL_PROFILE_V2 = UUID.fromString("0195a000-0000-7000-8000-00000000b002");
+    private static final UUID TPL_PROFILE_V3 = UUID.fromString("0195a000-0000-7000-8000-00000000b003");
+    private static final UUID TPL_DISCONNECTOR_V1 = UUID.fromString("0195a000-0000-7000-8000-00000000c001");
+    private static final UUID TPL_TRACK_V1 = UUID.fromString("0195a000-0000-7000-8000-00000000d001");
+    private static final InspectionTemplateItemDto TPL_HEIGHT = new InspectionTemplateItemDto(UUID.randomUUID(), "P-01", "Altura del hilo", "mm",
+            new BigDecimal("5300"), new BigDecimal("5700"), true, 1);
+    private static final InspectionTemplateItemDto TPL_STATE = new InspectionTemplateItemDto(UUID.randomUUID(), "P-02", "Estado de la mensula", null,
+            null, null, false, 2);
+
+    private static InspectionTemplateDto template(UUID id, CatenaryAssetType type, int version, String name, boolean active, Long lockVersion,
+                                                  InspectionTemplateItemDto... items) {
+        return new InspectionTemplateDto(id, type, version, name, active, List.of(items), lockVersion,
+                new AuditDto(Instant.parse("2026-11-13T08:40:00Z"), Instant.parse("2026-11-13T08:40:00Z"), "config.responsable", "config.responsable"));
+    }
+
+    /** Un seccionador con una version anterior y sin activa, y un perfil con la 2 activa y la 1 anterior. */
+    private static List<InspectionTemplateDto> threeTemplates() {
+        return List.of(template(TPL_DISCONNECTOR_V1, CatenaryAssetType.DISCONNECTOR, 1, "Seccionador", false, 1L, TPL_STATE),
+                template(TPL_PROFILE_V2, CatenaryAssetType.PROFILE, 2, "Perfil", true, 0L, TPL_HEIGHT, TPL_STATE),
+                template(TPL_PROFILE_V1, CatenaryAssetType.PROFILE, 1, "Perfil antiguo", false, 3L, TPL_STATE));
+    }
+
+    private static List<String> templateActions(String gridId, int row) {
+        return LocatorJ._find(GridKt._getCellComponent(gridWithId(gridId), row, InspectionTemplatesView.ACTIONS_COLUMN), Button.class).stream()
+                .map(button -> button.getId().orElse("").replaceAll("-0195a000.*$", "")).toList();
+    }
+
+    private static void clickTemplateAction(String gridId, int row, String id) {
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId(gridId), row, InspectionTemplatesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId(id)));
+    }
+
+    private static TextField templateText(String id) {
+        return LocatorJ._get(TextField.class, spec -> spec.withId(id));
+    }
+
+    private static BigDecimalField templateNumber(String id) {
+        return LocatorJ._get(BigDecimalField.class, spec -> spec.withId(id));
+    }
+
+    private void openTemplates() {
+        UI.getCurrent().navigate(HomeView.class);
+        UI.getCurrent().navigate(MaintenanceRoutes.TEMPLATES);
+    }
+
+    /**
+     * La lista dice, para los cuatro tipos de activo (tambien el que no tiene ninguna version), cual es su
+     * plantilla activa, y de cada version si es la activa o una anterior y quien la creo. Mantenerlas pide
+     * maintenance-supervise y maintenance-write juntos, y que el servicio las deje escribir: con una version
+     * sin lockVersion (un servicio anterior) no se ofrece nada, y una de un tipo desconocido solo se lee.
+     */
+    @Test
+    void theTemplatesShowTheActiveVersionOfEveryAssetTypeAndOnlySuperviseWithWriteMaintainsThem() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(threeTemplates());
+
+        UI.getCurrent().navigate(MaintenanceRoutes.TEMPLATES);
+        Grid<Object> types = gridWithId("template-types-grid");
+        assertEquals(4, GridKt._size(types));
+        assertEquals(List.of("Tramo de via", "Sin plantilla activa", "0"), GridKt._getFormattedRow(types, 0).subList(0, 3));
+        assertEquals(List.of("Perfil", "Version 2 · Perfil", "2"), GridKt._getFormattedRow(types, 1).subList(0, 3));
+        assertEquals(List.of("Seccionador", "Sin plantilla activa", "1"), GridKt._getFormattedRow(types, 2).subList(0, 3));
+        assertEquals(List.of("Aislador de seccion", "Sin plantilla activa", "0"), GridKt._getFormattedRow(types, 3).subList(0, 3));
+        Grid<Object> versions = gridWithId("templates-grid");
+        assertEquals(List.of("Seccionador", "1", "Seccionador", "Anterior", "1", "config.responsable · 13/11/2026 08:40"),
+                GridKt._getFormattedRow(versions, 0).subList(0, 6));
+        assertEquals(List.of("Perfil", "2", "Perfil", "Activa", "2"), GridKt._getFormattedRow(versions, 1).subList(0, 5));
+        assertEquals(List.of("Perfil", "1", "Perfil antiguo", "Anterior", "1"), GridKt._getFormattedRow(versions, 2).subList(0, 5));
+        LocatorJ._get(H3.class, spec -> spec.withText("Puntos de Perfil (version 2)"));
+        assertEquals(List.of(), templateActions("template-types-grid", 0), "sin maintenance-supervise no se crea");
+        assertEquals(List.of(), templateActions("templates-grid", 1), "sin maintenance-supervise no se cambia");
+
+        loginAs("supervisor.sin.escritura", "ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_SUPERVISE");
+        openTemplates();
+        assertEquals(List.of(), templateActions("template-types-grid", 1), "supervise sin write tampoco");
+        assertEquals(List.of(), templateActions("templates-grid", 1));
+
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        openTemplates();
+        assertEquals(List.of("template-new-TRACK_SECTION"), templateActions("template-types-grid", 0));
+        assertEquals(List.of("template-new-PROFILE"), templateActions("template-types-grid", 1));
+        assertEquals(List.of("template-copy", "template-rename", "template-activate"), templateActions("templates-grid", 0));
+        assertEquals(List.of("template-copy", "template-rename", "template-deactivate"), templateActions("templates-grid", 1));
+        assertEquals(List.of("template-copy", "template-rename", "template-activate"), templateActions("templates-grid", 2));
+        assertEquals("Nueva version de Tramo de via", LocatorJ._get(GridKt._getCellComponent(gridWithId("template-types-grid"), 0,
+                InspectionTemplatesView.ACTIONS_COLUMN), Button.class).getTooltip().getText());
+        assertEquals("Desactivar la version 2 de Perfil", LocatorJ._get(GridKt._getCellComponent(gridWithId("templates-grid"), 1,
+                InspectionTemplatesView.ACTIONS_COLUMN), Button.class, spec -> spec.withId("template-deactivate-" + TPL_PROFILE_V2)).getTooltip().getText());
+
+        // Un servicio anterior no manda lockVersion ni audit: se lee como siempre y no se ofrece escribir nada.
+        when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(List.of(
+                new InspectionTemplateDto(TPL_PROFILE_V2, CatenaryAssetType.PROFILE, 2, "Perfil", true, List.of(TPL_HEIGHT)),
+                template(TPL_DISCONNECTOR_V1, CatenaryAssetType.DISCONNECTOR, 1, "Seccionador", true, 1L)));
+        openTemplates();
+        assertEquals(List.of(), templateActions("template-types-grid", 0), "con una version sin bloqueo no se crea ninguna");
+        assertEquals(List.of(), templateActions("templates-grid", 0));
+        assertEquals(List.of(), templateActions("templates-grid", 1));
+        assertEquals("", GridKt._getFormattedRow(gridWithId("templates-grid"), 1).get(5), "sin auditoria, nada");
+
+        // Un tipo de activo que esta aplicacion no conoce se lee, y no abre nada.
+        when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(List.of(
+                template(UUID.randomUUID(), CatenaryAssetType.UNKNOWN, 1, "Calefactor", true, 0L)));
+        openTemplates();
+        assertEquals(4, GridKt._size(gridWithId("template-types-grid")), "los cuatro conocidos");
+        assertEquals(List.of("Desconocido", "1", "Calefactor", "Activa"), GridKt._getFormattedRow(gridWithId("templates-grid"), 0).subList(0, 4));
+        assertEquals(List.of(), templateActions("templates-grid", 0));
+        assertEquals(List.of("template-new-PROFILE"), templateActions("template-types-grid", 1));
+        verify(maintenanceCatalogClient, never()).createInspectionTemplate(any());
+        verify(maintenanceCatalogClient, never()).updateInspectionTemplate(any(), any());
+    }
+
+    /**
+     * «Nueva version» de un tipo parte de los puntos de su activa, en su orden: se anaden, se quitan y se
+     * suben o bajan, lo evidente se comprueba antes de llamar, y viaja la lista entera con replacesVersion,
+     * el numero de la activa leida. La nueva nace activa: la lista se relee entera y queda elegida.
+     */
+    @Test
+    void aNewTemplateVersionStartsFromTheActiveOneAndTravelsWholeWithTheVersionItReplaces() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        InspectionTemplateDto created = template(TPL_PROFILE_V3, CatenaryAssetType.PROFILE, 3, "Perfil 2027", true, 0L, TPL_STATE, TPL_HEIGHT);
+        when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(threeTemplates()).thenReturn(List.of(
+                threeTemplates().getFirst(), created, template(TPL_PROFILE_V2, CatenaryAssetType.PROFILE, 2, "Perfil", false, 1L, TPL_HEIGHT, TPL_STATE),
+                threeTemplates().get(2)));
+        when(maintenanceCatalogClient.createInspectionTemplate(any())).thenReturn(created);
+
+        UI.getCurrent().navigate(MaintenanceRoutes.TEMPLATES);
+        clickTemplateAction("template-types-grid", 1, "template-new-PROFILE");
+        assertEquals("Nueva version de la plantilla de Perfil", LocatorJ._get(InspectionTemplateVersionDialog.class).getHeaderTitle());
+        assertEquals("Parte de los puntos de la version 2. La nueva version nace activa y la version 2, la activa ahora, pasa a anterior. "
+                        + "Los puntos de una version no se cambian despues. Las inspecciones ya creadas no cambian.",
+                LocatorJ._get(Paragraph.class, spec -> spec.withId(InspectionTemplateVersionDialog.NOTICE_ID)).getText());
+        assertEquals("Perfil", templateText(InspectionTemplateVersionDialog.NAME_ID).getValue());
+        assertEquals("P-01", templateText("template-item-code-0").getValue());
+        assertEquals("Altura del hilo", templateText("template-item-label-0").getValue());
+        assertEquals("mm", templateText("template-item-unit-0").getValue());
+        assertEquals(new BigDecimal("5300"), templateNumber("template-item-min-0").getValue());
+        assertTrue(LocatorJ._get(Checkbox.class, spec -> spec.withId("template-item-measure-0")).getValue());
+        assertEquals("P-02", templateText("template-item-code-1").getValue());
+        assertFalse(LocatorJ._get(Button.class, spec -> spec.withId("template-item-up-0")).isEnabled(), "el primero no sube");
+        assertFalse(LocatorJ._get(Button.class, spec -> spec.withId("template-item-down-1")).isEnabled(), "el ultimo no baja");
+
+        // Lo evidente, antes de llamar: el nombre, y de cada punto su codigo, su texto y su rango.
+        LocatorJ._setValue(templateText(InspectionTemplateVersionDialog.NAME_ID), "  ");
+        click(InspectionTemplateVersionDialog.ADD_ID);
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        assertEquals("El nombre es obligatorio", templateText(InspectionTemplateVersionDialog.NAME_ID).getErrorMessage());
+        assertEquals("El codigo es obligatorio", templateText("template-item-code-2").getErrorMessage());
+        assertEquals("El texto es obligatorio", templateText("template-item-label-2").getErrorMessage());
+        assertFalse(templateText("template-item-code-0").isInvalid());
+        LocatorJ._setValue(templateText("template-item-code-2"), "p 03");
+        LocatorJ._setValue(templateText("template-item-label-2"), "Tension");
+        LocatorJ._setValue(templateNumber("template-item-min-2"), new BigDecimal("10"));
+        LocatorJ._setValue(templateNumber("template-item-max-2"), new BigDecimal("5"));
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        assertEquals("Mayusculas sin tildes, cifras, '_', '.' y '-', sin espacios y empezando por letra o cifra",
+                templateText("template-item-code-2").getErrorMessage());
+        assertEquals("El minimo no puede ser mayor que el maximo", templateNumber("template-item-min-2").getErrorMessage());
+        LocatorJ._setValue(templateText("template-item-code-2"), "P-01");
+        LocatorJ._setValue(templateNumber("template-item-min-2"), new BigDecimal("1.2345"));
+        LocatorJ._setValue(templateNumber("template-item-max-2"), new BigDecimal("1234567890"));
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        assertEquals("Codigo repetido en la plantilla", templateText("template-item-code-2").getErrorMessage());
+        assertFalse(templateText("template-item-code-0").isInvalid(), "se marca el repetido, no el primero");
+        assertEquals("Como mucho 3 decimales", templateNumber("template-item-min-2").getErrorMessage());
+        assertEquals("Como mucho 9 cifras enteras", templateNumber("template-item-max-2").getErrorMessage());
+        verify(maintenanceCatalogClient, never()).createInspectionTemplate(any());
+
+        // Se quita el punto nuevo, se baja el primero y viaja la lista entera, en el orden de la pantalla.
+        click("template-item-remove-2");
+        assertTrue(LocatorJ._find(TextField.class, spec -> spec.withId("template-item-code-2")).isEmpty());
+        click("template-item-down-0");
+        assertEquals("P-02", templateText("template-item-code-0").getValue());
+        assertEquals("P-01", templateText("template-item-code-1").getValue());
+        LocatorJ._setValue(templateText(InspectionTemplateVersionDialog.NAME_ID), " Perfil 2027 ");
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        verify(maintenanceCatalogClient).createInspectionTemplate(new InspectionTemplateRequest(CatenaryAssetType.PROFILE, "Perfil 2027", List.of(
+                new InspectionTemplateItemRequest("P-02", "Estado de la mensula", null, null, null, false),
+                new InspectionTemplateItemRequest("P-01", "Altura del hilo", "mm", new BigDecimal("5300"), new BigDecimal("5700"), true)), 2));
+        assertTrue(LocatorJ._find(InspectionTemplateVersionDialog.class).isEmpty());
+        NotificationsKt.expectNotifications("Creada la version 3 de la plantilla de Perfil, ya activa");
+        verify(maintenanceCatalogClient, times(2)).inspectionTemplates();
+        assertEquals(List.of("Perfil", "Version 3 · Perfil 2027", "3"), GridKt._getFormattedRow(gridWithId("template-types-grid"), 1).subList(0, 3));
+        assertEquals(List.of("Perfil", "2", "Perfil", "Anterior"), GridKt._getFormattedRow(gridWithId("templates-grid"), 2).subList(0, 4));
+        LocatorJ._get(H3.class, spec -> spec.withText("Puntos de Perfil 2027 (version 3)"));
+    }
+
+    /**
+     * Una version nueva tambien parte de una anterior (replacesVersion sigue siendo la activa del tipo) y de
+     * nada: la primera de un tipo sin versiones empieza vacia, exige al menos un punto y viaja sin
+     * replacesVersion. Los errores del servicio caen en el nombre, en el campo de su fila o bajo la lista, y
+     * lo demas se notifica con su ruta; un CON-001 pide recargar. El dialogo sigue abierto en todos.
+     */
+    @Test
+    void aTemplateVersionFromAPreviousOneOrFromNothingAndTheServiceErrorsLandOnTheirRow() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        InspectionTemplateDto first = template(TPL_TRACK_V1, CatenaryAssetType.TRACK_SECTION, 1, "Tramo", true, 0L);
+        when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(threeTemplates());
+        ApiProblem invalid = new ApiProblem(null, "BAD_REQUEST", 400, "Validation failed", null, "REQ-VALIDATION", null, "corr-tpl", null, false,
+                List.of(new ApiFieldError("name", null, "size must be between 0 and 120"),
+                        new ApiFieldError("items[1].code", null, "must match the pattern"),
+                        new ApiFieldError("items[0].maxValue", null, "numeric value out of bounds"),
+                        new ApiFieldError("items", null, "size must be between 1 and 100"),
+                        new ApiFieldError("items[1]", null, "must not be null"),
+                        new ApiFieldError("replacesVersion", null, "must be greater than or equal to 1")), null);
+        when(maintenanceCatalogClient.createInspectionTemplate(any()))
+                .thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, invalid, "corr-tpl", null, "POST /api/maintenance/inspection-templates"))
+                .thenThrow(maintenanceError(400, "VAL-001", "items[1].code: 'T-1' is repeated in the template"))
+                .thenThrow(maintenanceError(409, "CON-001", "The active template of TRACK_SECTION changed"))
+                .thenReturn(first);
+
+        UI.getCurrent().navigate(MaintenanceRoutes.TEMPLATES);
+        // Desde la version 1 de Perfil, anterior: sus puntos, y la que sustituye es la 2, la activa.
+        clickTemplateAction("templates-grid", 2, "template-copy-" + TPL_PROFILE_V1);
+        assertEquals("Parte de los puntos de la version 1. La nueva version nace activa y la version 2, la activa ahora, pasa a anterior. "
+                        + "Los puntos de una version no se cambian despues. Las inspecciones ya creadas no cambian.",
+                LocatorJ._get(Paragraph.class, spec -> spec.withId(InspectionTemplateVersionDialog.NOTICE_ID)).getText());
+        assertEquals("Perfil antiguo", templateText(InspectionTemplateVersionDialog.NAME_ID).getValue());
+        assertEquals("P-02", templateText("template-item-code-0").getValue());
+        assertTrue(LocatorJ._find(TextField.class, spec -> spec.withId("template-item-code-1")).isEmpty());
+        LocatorJ._get(InspectionTemplateVersionDialog.class).close();
+
+        // La primera de Tramo de via: vacia, sin nada que sustituir.
+        clickTemplateAction("template-types-grid", 0, "template-new-TRACK_SECTION");
+        assertEquals("Es la primera version de Tramo de via. La nueva version nace activa. Los puntos de una version no se cambian despues. "
+                        + "Las inspecciones ya creadas no cambian.",
+                LocatorJ._get(Paragraph.class, spec -> spec.withId(InspectionTemplateVersionDialog.NOTICE_ID)).getText());
+        assertEquals("", templateText(InspectionTemplateVersionDialog.NAME_ID).getValue());
+        assertTrue(LocatorJ._find(TextField.class, spec -> spec.withId("template-item-code-0")).isEmpty());
+        LocatorJ._setValue(templateText(InspectionTemplateVersionDialog.NAME_ID), "Tramo");
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        Paragraph listError = LocatorJ._get(Paragraph.class, spec -> spec.withId(InspectionTemplateVersionDialog.ITEMS_ERROR_ID));
+        assertEquals("Una plantilla lleva al menos un punto", listError.getText());
+        verify(maintenanceCatalogClient, never()).createInspectionTemplate(any());
+        click(InspectionTemplateVersionDialog.ADD_ID);
+        click(InspectionTemplateVersionDialog.ADD_ID);
+        assertFalse(listError.isVisible(), "tocar la lista borra su error");
+        LocatorJ._setValue(templateText("template-item-code-0"), "T-1");
+        LocatorJ._setValue(templateText("template-item-label-0"), " Estado del tramo ");
+        LocatorJ._setValue(templateText("template-item-code-1"), "T-2");
+        LocatorJ._setValue(templateText("template-item-label-1"), "Gálibo");
+        LocatorJ._setValue(templateText("template-item-unit-1"), " ");
+
+        // Los errores por campo del servicio, cada uno en su sitio.
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        assertEquals("size must be between 0 and 120", templateText(InspectionTemplateVersionDialog.NAME_ID).getErrorMessage());
+        assertEquals("must match the pattern", templateText("template-item-code-1").getErrorMessage());
+        assertEquals("numeric value out of bounds", templateNumber("template-item-max-0").getErrorMessage());
+        assertFalse(templateText("template-item-code-0").isInvalid());
+        assertEquals("size must be between 1 and 100. Fila 2: must not be null", listError.getText());
+        NotificationsKt.expectNotifications("replacesVersion: must be greater than or equal to 1");
+        LocatorJ._get(InspectionTemplateVersionDialog.class);
+
+        // Un 400 sin lista de campos (VAL-001) y el CON-001: notificados, con el dialogo abierto.
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("La peticion no es valida. items[1].code: 'T-1' is repeated in the template"));
+        NotificationsKt.clearNotifications();
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Conflicto con otro cambio: recarga y vuelve a intentarlo."));
+        NotificationsKt.clearNotifications();
+        LocatorJ._get(InspectionTemplateVersionDialog.class);
+        verify(maintenanceCatalogClient, times(1)).inspectionTemplates();
+
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        verify(maintenanceCatalogClient, times(4)).createInspectionTemplate(new InspectionTemplateRequest(CatenaryAssetType.TRACK_SECTION, "Tramo",
+                List.of(new InspectionTemplateItemRequest("T-1", "Estado del tramo", null, null, null, false),
+                        new InspectionTemplateItemRequest("T-2", "Gálibo", null, null, null, false)), null));
+        assertTrue(LocatorJ._find(InspectionTemplateVersionDialog.class).isEmpty());
+        verify(maintenanceCatalogClient, times(2)).inspectionTemplates();
+    }
+
+    /**
+     * De una version que existe solo cambian el nombre y si es la activa: un merge-patch con el lockVersion
+     * leido y solo lo cambiado (nunca version). Renombrar sin cambios no llama; activar y desactivar se
+     * confirman diciendo su efecto. Tras escribir se relee la lista entera, tambien si el servicio dice que
+     * no; el CON-001 de un renombrado deja su dialogo abierto, y el TPL-404 se dice por lo que es.
+     */
+    @Test
+    void aTemplateVersionIsRenamedActivatedAndDeactivatedWithItsLockVersionAndTheListIsReadAgain() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(threeTemplates());
+        when(maintenanceCatalogClient.updateInspectionTemplate(eq(TPL_PROFILE_V2), any()))
+                .thenThrow(maintenanceError(409, "CON-001", "Inspection template was changed by someone else"))
+                .thenReturn(threeTemplates().get(1));
+        when(maintenanceCatalogClient.updateInspectionTemplate(eq(TPL_PROFILE_V1), any())).thenReturn(threeTemplates().get(2));
+        when(maintenanceCatalogClient.updateInspectionTemplate(eq(TPL_DISCONNECTOR_V1), any()))
+                .thenThrow(maintenanceError(404, "TPL-404", "Inspection template not found"));
+        assertEquals("Esa version de la plantilla de inspeccion no existe: recarga la lista.",
+                UiErrors.message(maintenanceError(404, "TPL-404", "Inspection template not found")));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.TEMPLATES);
+        clickTemplateAction("templates-grid", 1, "template-rename-" + TPL_PROFILE_V2);
+        assertEquals("Renombrar la version 2 de Perfil", LocatorJ._get(InspectionTemplateRenameDialog.class).getHeaderTitle());
+        TextField name = templateText(InspectionTemplateRenameDialog.NAME_ID);
+        assertEquals("Perfil", name.getValue());
+        LocatorJ._setValue(name, " ");
+        click(InspectionTemplateRenameDialog.SAVE_ID);
+        assertEquals("El nombre es obligatorio", name.getErrorMessage());
+        LocatorJ._setValue(name, " Perfil ");
+        click(InspectionTemplateRenameDialog.SAVE_ID);
+        verify(maintenanceCatalogClient, never()).updateInspectionTemplate(any(), any());
+        assertTrue(LocatorJ._find(InspectionTemplateRenameDialog.class).isEmpty(), "sin cambios no se llama");
+
+        clickTemplateAction("templates-grid", 1, "template-rename-" + TPL_PROFILE_V2);
+        LocatorJ._setValue(templateText(InspectionTemplateRenameDialog.NAME_ID), "Perfil de catenaria");
+        click(InspectionTemplateRenameDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Conflicto con otro cambio: recarga y vuelve a intentarlo."));
+        NotificationsKt.clearNotifications();
+        LocatorJ._get(InspectionTemplateRenameDialog.class);
+        verify(maintenanceCatalogClient, times(1)).inspectionTemplates();
+        click(InspectionTemplateRenameDialog.SAVE_ID);
+        MergePatch<InspectionTemplateUpdateRequest> renamed = MergePatch.of(new InspectionTemplateUpdateRequest("Perfil de catenaria", null, 0L), null);
+        verify(maintenanceCatalogClient, times(2)).updateInspectionTemplate(TPL_PROFILE_V2, renamed);
+        assertEquals(Map.of("name", "Perfil de catenaria", "lockVersion", 0L), renamed.body(), "ni version ni active");
+        assertTrue(LocatorJ._find(InspectionTemplateRenameDialog.class).isEmpty());
+        NotificationsKt.expectNotifications("Renombrada la version 2 de Perfil");
+        verify(maintenanceCatalogClient, times(2)).inspectionTemplates();
+
+        // Activar una anterior: la activa de ahora pasa a anterior, y se dice antes.
+        clickTemplateAction("templates-grid", 2, "template-activate-" + TPL_PROFILE_V1);
+        ConfirmDialog confirm = LocatorJ._get(ConfirmDialog.class);
+        assertEquals("La version 2, la activa ahora, pasa a anterior. Las inspecciones nuevas de Perfil copiaran los puntos de la version 1; "
+                + "las ya creadas no cambian.", confirm.getElement().getProperty("message"));
+        verify(maintenanceCatalogClient, never()).updateInspectionTemplate(eq(TPL_PROFILE_V1), any());
+        ConfirmDialogKt._fireConfirm(confirm);
+        MergePatch<InspectionTemplateUpdateRequest> activated = MergePatch.of(new InspectionTemplateUpdateRequest(null, true, 3L), null);
+        verify(maintenanceCatalogClient).updateInspectionTemplate(TPL_PROFILE_V1, activated);
+        assertEquals(Map.of("active", true, "lockVersion", 3L), activated.body());
+        NotificationsKt.expectNotifications("Activada la version 1 de Perfil");
+        verify(maintenanceCatalogClient, times(3)).inspectionTemplates();
+
+        // Desactivar la activa: el tipo se queda sin plantilla.
+        clickTemplateAction("templates-grid", 1, "template-deactivate-" + TPL_PROFILE_V2);
+        confirm = LocatorJ._get(ConfirmDialog.class);
+        assertEquals("Perfil se queda sin plantilla activa: las inspecciones nuevas de ese tipo no tendran checklist hasta que se active una "
+                + "version. Las ya creadas no cambian.", confirm.getElement().getProperty("message"));
+        ConfirmDialogKt._fireConfirm(confirm);
+        verify(maintenanceCatalogClient).updateInspectionTemplate(TPL_PROFILE_V2,
+                MergePatch.of(new InspectionTemplateUpdateRequest(null, false, 0L), null));
+        NotificationsKt.expectNotifications("Desactivada la version 2 de Perfil");
+        verify(maintenanceCatalogClient, times(4)).inspectionTemplates();
+
+        // Activar la de un tipo sin activa no nombra ninguna anterior; si el servicio dice que no, se avisa y se relee igual.
+        clickTemplateAction("templates-grid", 0, "template-activate-" + TPL_DISCONNECTOR_V1);
+        confirm = LocatorJ._get(ConfirmDialog.class);
+        assertEquals("Las inspecciones nuevas de Seccionador copiaran los puntos de la version 1; las ya creadas no cambian.",
+                confirm.getElement().getProperty("message"));
+        ConfirmDialogKt._fireConfirm(confirm);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Esa version de la plantilla de inspeccion no existe: recarga la lista."));
+        verify(maintenanceCatalogClient, times(5)).inspectionTemplates();
+    }
+
     private static PositionDiscrepancyReportDto discrepancies() {
         PositionDiscrepancyDto yossi = new PositionDiscrepancyDto(PERSON1, "PER-000003", "Yossi Cohen", "y.cohen", PersonCategory.TEAM_LEADER, true,
                 "mto-position-team-leader", List.of("mto-position-worker"));
@@ -11762,5 +12144,853 @@ class ViewLayerTest {
         loginAs("recursos.impostor", "ROLE_REALM_RESOURCES_READ");
         assertThrows(Throwable.class, () -> UI.getCurrent().navigate(ResourcesRoutes.DISCREPANCIES));
         verify(resourcesReportClient, never()).positionDiscrepancies();
+    }
+
+    // --- Fase 6: el historial de un maestro y de un catalogo (mto-configuration) ----------------------
+
+    private static final String[] AUDITOR = {"ROLE_CONFIG_READ", "ROLE_CONFIG_AUDIT"};
+
+    private void stubHistoryReferences() {
+        when(executionPackageClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(executionPackage(100L, "EP4")), 0, 50));
+        when(stationClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(station(12L, "ATOCHA", 100L), station(13L, "CHAMARTIN", 100L)), 0, 50));
+        when(trackClient.filter(anyInt(), anyInt(), anyList(), anyMap()))
+                .thenReturn(page(List.of(track(3L, "VIA 1", true, 100L, List.of(12L, 13L)), track(4L, "VIA 2", true, 100L, List.of())), 0, 50));
+        when(businessEntityClient.findAll()).thenReturn(List.of(new com.alejandro.mtobackoffice.client.dto.master.BusinessEntityDto(9L, "B-1", "ACME", "AC")));
+    }
+
+    /** La linea «Como quedo» de la revision mas reciente del historial que abre el boton de la primera fila. */
+    private static String historyLineOfTheFirstRow(String route, Long id) {
+        UI.getCurrent().navigate(route);
+        LocatorJ._click(rowAction(anyGrid(), 0, "history-" + id));
+        String line = GridKt._getFormattedRow(gridWithId("revisions-grid"), 0).get(5);
+        LocatorJ._get(Dialog.class).close();
+        MockVaadin.clientRoundtrip();
+        return line;
+    }
+
+    /**
+     * El historial pide {@code config-audit} y {@code config-read}, los dos (README_API.md §6 de
+     * mto-configuration): con uno solo el servicio responde 403, asi que el boton no se ofrece. Un rol
+     * de realm que se llame igual no lo da.
+     */
+    @Test
+    void theHistoryOfAMasterAndOfACatalogueIsOfferedOnlyWithAuditAndRead() {
+        stubTracks(threeTracks());
+        when(lovClient.findAll(PROFILE_STATUSES)).thenReturn(threeStatuses());
+
+        loginAs("config.lector", "ROLE_CONFIG_READ", "ROLE_REALM_CONFIG_AUDIT");
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        assertEquals(List.of("schematic-3"), actionIds(anyGrid(), 0), "leer el dato no da derecho a ver quien lo cambio");
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        assertNull(grid().getColumnByKey("actions"), "sin nada que ofrecer, el catalogo no tiene columna de acciones");
+
+        loginAs("config.auditor", AUDITOR);
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        assertEquals(List.of("schematic-3", "history-3"), actionIds(anyGrid(), 0));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withText("Nuevo")).isEmpty(), "auditar no es escribir");
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        assertEquals(List.of("history-3"), actionIds(anyGrid(), 0), "DEFINITIVE, la primera por codigo");
+
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_CONFIG_DELETE", "ROLE_LOV_MANAGE", "ROLE_CONFIG_AUDIT");
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        assertEquals(List.of("edit-3", "schematic-3", "history-3", "delete-3"), actionIds(anyGrid(), 0));
+        UI.getCurrent().navigate(CATALOGUE_ROUTE);
+        assertEquals(List.of("edit-3", "history-3", "delete-3"), actionIds(anyGrid(), 0));
+        verify(trackClient, never()).revisions(any(), anyInt(), anyInt());
+        verify(lovClient, never()).revisions(any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void theHistoryOfAMasterRowIsPagedInTheServiceNewestFirstAndNamesItsReferences() {
+        loginAs("config.auditor", AUDITOR);
+        stubTracks(threeTracks());
+        List<RevisionDto<TrackDto>> history = new ArrayList<>();
+        history.add(revision(30, RevisionOperation.DELETED, "config.responsable", "HTTP", track(3L, "VIA 1", false, 100L, List.of(12L))));
+        history.add(revision(29, RevisionOperation.UNKNOWN, "system", "SYSTEM", null));
+        for (int number = 28; number >= 1; number--) {
+            history.add(revision(number, number == 1 ? RevisionOperation.CREATED : RevisionOperation.UPDATED, "config.responsable", "HTTP",
+                    track(3L, "VIA " + number, true, 100L, List.of(12L, 99L))));
+        }
+        when(trackClient.revisions(eq(3L), anyInt(), anyInt())).thenAnswer(call -> page(history, call.getArgument(1), call.getArgument(2)));
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(rowAction(anyGrid(), 0, "history-3"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        Grid<Object> grid = gridWithId("revisions-grid");
+
+        assertEquals("Historial de VIA 1", dialog.getHeaderTitle());
+        assertEquals(30, GridKt._size(grid));
+        LocatorJ._get(dialog, Span.class, spec -> spec.withText("30 revisiones, la mas reciente primero"));
+        List<String> newest = GridKt._getFormattedRow(grid, 0);
+        assertTrue(newest.containsAll(List.of("30", "Baja", "config.responsable", "HTTP", "corr-30", "VIA 1 · EP4 · estaciones: ATOCHA (EP4) · inactiva")),
+                newest.toString());
+        List<String> withoutRow = GridKt._getFormattedRow(grid, 1);
+        assertTrue(withoutRow.containsAll(List.of("29", "Desconocido", "SYSTEM", "Sin datos de la fila en esta revision")), withoutRow.toString());
+        assertEquals("VIA 1 · EP4 · estaciones: ATOCHA (EP4), #99 · activa", GridKt._getFormattedRow(grid, 29).get(5),
+                "una estacion que ya no esta se dice por su id");
+        verify(trackClient, atLeastOnce()).revisions(3L, 0, RevisionsDialog.PAGE_SIZE);
+        verify(trackClient, atLeastOnce()).revisions(eq(3L), intThat(page -> page > 0), anyInt());
+        verify(trackClient, never()).findById(any());
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
+    }
+
+    /** Una linea por recurso: sus campos principales y los nombres de sus referencias, como en su lista. */
+    @Test
+    void eachMasterDescribesItsRowInItsHistory() {
+        loginAs("config.auditor", AUDITOR);
+        stubHistoryReferences();
+
+        ExecutionPackageDto ep = executionPackage(100L, "EP4");
+        ep.setCompanyId(9L);
+        ep.setStartDate(LocalDate.of(2026, 1, 15));
+        ep.setLength(120000L);
+        ep.setInitialPackage(true);
+        when(executionPackageClient.revisions(eq(100L), anyInt(), anyInt())).thenReturn(page(List.of(
+                revision(1, RevisionOperation.CREATED, "config.responsable", "HTTP", ep)), 0, 20));
+        assertEquals("EP4 · ACME (B-1) · inicio 15/01/2026 · longitud 120000 · inicial · activo", historyLineOfTheFirstRow("infraestructura/paquetes", 100L));
+
+        when(stationClient.revisions(eq(12L), anyInt(), anyInt())).thenReturn(page(List.of(
+                revision(1, RevisionOperation.CREATED, "config.responsable", "HTTP", station(12L, "ATOCHA", 100L))), 0, 20));
+        assertEquals("ATOCHA · EP4", historyLineOfTheFirstRow("infraestructura/estaciones", 12L));
+
+        ProfileDto profile = profileWithOneCantilever();
+        profile.setPoleType(new LovRef(6L, "HEB", "Perfil HEB"));
+        profile.setSpan(new BigDecimal("55.000"));
+        when(profileClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(profile), 0, 50));
+        when(profileClient.revisions(eq(7L), anyInt(), anyInt())).thenReturn(page(List.of(
+                revision(1, RevisionOperation.UPDATED, "config.responsable", "HTTP", profile)), 0, 20));
+        assertEquals("P-007 · KP 12.345 · VIA 1 (EP4) · estado PT1 · poste HEB · vano 55.000 m · 1 mensula",
+                historyLineOfTheFirstRow(PROFILES_ROUTE, 7L));
+
+        DisconnectorDto onPole = disconnectorOnPole(40L, "SEC-40", "Disc");
+        onPole.setStationId(12L);
+        onPole.setProfileCode("P-007");
+        onPole.setProfileKp("12.345");
+        onPole.setOnLoad(true);
+        onPole.setNormallyOpen(false);
+        onPole.setDriveType(DisconnectorDriveType.MOTOR);
+        onPole.setConnectedTrackId(4L);
+        DisconnectorDto offPole = new DisconnectorDto();
+        offPole.setId(40L);
+        offPole.setName("SEC-40");
+        offPole.setKp("110176.000");
+        offPole.setTrackId(3L);
+        when(disconnectorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(onPole), 0, 50));
+        when(disconnectorClient.revisions(eq(40L), anyInt(), anyInt())).thenReturn(page(List.of(
+                revision(2, RevisionOperation.UPDATED, "config.responsable", "HTTP", onPole),
+                revision(1, RevisionOperation.CREATED, "config.responsable", "HTTP", offPole)), 0, 20));
+        UI.getCurrent().navigate("infraestructura/seccionadores");
+        LocatorJ._click(rowAction(anyGrid(), 0, "history-40"));
+        assertEquals("SEC-40 · ATOCHA (EP4) · Disc · perfil P-007 (kp 12.345) · en carga · normalmente cerrado · accionamiento motor"
+                + " · via conectada VIA 2 (EP4)", GridKt._getFormattedRow(gridWithId("revisions-grid"), 0).get(5));
+        assertEquals("SEC-40 · sin poste, KP 110176.000 · sin carga · via propia VIA 1 (EP4)",
+                GridKt._getFormattedRow(gridWithId("revisions-grid"), 1).get(5), "sin estacion ni poste, como admite el servicio");
+        LocatorJ._get(Dialog.class).close();
+        MockVaadin.clientRoundtrip();
+
+        SectionInsulatorDto insulator = new SectionInsulatorDto();
+        insulator.setId(50L);
+        insulator.setName("AIS-50");
+        insulator.setStationId(12L);
+        insulator.setKp(new BigDecimal("15.000"));
+        insulator.setInstallationType(SectionInsulatorInstallationType.TRACK_CONNECTION);
+        insulator.setTrackId(3L);
+        insulator.setConnectedTrackId(4L);
+        insulator.setSwitches(new ArrayList<>(List.of(new SectionInsulatorSwitchDto(), new SectionInsulatorSwitchDto())));
+        when(sectionInsulatorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(insulator), 0, 50));
+        when(sectionInsulatorClient.revisions(eq(50L), anyInt(), anyInt())).thenReturn(page(List.of(
+                revision(1, RevisionOperation.CREATED, "config.responsable", "HTTP", insulator)), 0, 20));
+        assertEquals("AIS-50 · ATOCHA (EP4) · KP 15.000 · Conexion de vias · VIA 1 (EP4) · via conectada VIA 2 (EP4) · 2 agujas · activo",
+                historyLineOfTheFirstRow("infraestructura/aisladores", 50L));
+
+        TrackAccessPointDto access = accessPointRow();
+        access.setKind("FERRY");
+        access.setRoadRailAccess(false);
+        access.setEnabled(false);
+        when(trackAccessPointClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(access), 0, 50));
+        when(trackAccessPointClient.revisions(eq(77L), anyInt(), anyInt())).thenReturn(page(List.of(
+                revision(1, RevisionOperation.CREATED, "config.responsable", "HTTP", access)), 0, 20));
+        assertEquals("Acceso km 110+176 · VIA 1 (EP4) · ATOCHA (EP4) · KP 110176.000 · FERRY · Izquierda · sin biviales · inactivo",
+                historyLineOfTheFirstRow(TrackAccessPointsView.ROUTE, 77L), "una clase que esta pantalla no conoce se ensena cruda");
+    }
+
+    /**
+     * Sin revisiones el servicio responde 404 {@code NOT-001} (una fila sembrada por una migracion): es
+     * «sin historial todavia», sin aviso. Cualquier otro fallo (el 403 de un permiso retirado) se
+     * avisa y deja la tabla vacia.
+     */
+    @Test
+    void aMasterRowWithoutRevisionsSaysSoAndAnyOtherFailureIsNotified() {
+        loginAs("config.auditor", AUDITOR);
+        stubTracks(threeTracks());
+        ApiProblem none = new ApiProblem(null, "Recurso no encontrado", 404, "No hay revisiones de Track 3", null, "NOT-001", "t-h1", null, null,
+                false, List.of(), null);
+        when(trackClient.revisions(eq(3L), anyInt(), anyInt())).thenThrow(
+                BackofficeApiException.of(HttpStatus.NOT_FOUND, none, "corr-h1", null, "GET /api/configuration/tracks/3/revisions"));
+        when(trackClient.revisions(eq(4L), anyInt(), anyInt())).thenThrow(BackofficeApiException.of(HttpStatus.FORBIDDEN, ApiProblem.empty(),
+                "corr-h2", null, "GET /api/configuration/tracks/4/revisions"));
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(rowAction(anyGrid(), 0, "history-3"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._get(dialog, Span.class, spec -> spec.withId("revisions-empty"));
+        assertTrue(LocatorJ._find(dialog, Grid.class).isEmpty());
+        assertTrue(NotificationsKt.getNotifications().isEmpty(), "un 404 aqui es «sin historial», no un error");
+        dialog.close();
+        MockVaadin.clientRoundtrip();
+
+        LocatorJ._click(rowAction(anyGrid(), 1, "history-4"));
+        assertEquals(0, GridKt._size(gridWithId("revisions-grid")));
+        assertFalse(NotificationsKt.getNotifications().isEmpty(), "el 403 si se avisa");
+        assertTrue(LocatorJ._find(Span.class, spec -> spec.withId("revisions-empty")).stream().noneMatch(Span::isVisible));
+    }
+
+    /**
+     * El de una entrada de catalogo, en el mismo dialogo: codigo, descripcion, su tipo en los tres
+     * catalogos que lo tienen y si estaba activa. Su borrado es fisico y la revision solo trae el id:
+     * se dice, no se pinta como una entrada vacia e inactiva. Una sembrada por una migracion no tiene
+     * historial.
+     */
+    @Test
+    void theHistoryOfACatalogueEntrySaysItsTypeAndADeletionThatOnlyKeepsTheId() {
+        loginAs("config.auditor", AUDITOR);
+        when(lovClient.findAll("foundations")).thenReturn(List.of(foundationRead(),
+                new LovDto(6L, "C-2", "Cimentacion 2", true, 1, null, null)));
+        List<RevisionDto<LovDto>> history = List.of(
+                revision(3, RevisionOperation.DELETED, "config.responsable", "HTTP", new LovDto(5L, null, null, false, null, null, null)),
+                revision(2, RevisionOperation.UPDATED, "config.responsable", "HTTP", foundationRead().withEnabled(false)),
+                revision(1, RevisionOperation.CREATED, "system", "SYSTEM", null));
+        when(lovClient.revisions(eq("foundations"), eq(5L), anyInt(), anyInt())).thenAnswer(call -> page(history, call.getArgument(2), call.getArgument(3)));
+        ApiProblem none = new ApiProblem(null, "Recurso no encontrado", 404, "No hay revisiones", null, "NOT-001", "t-h3", null, null, false, List.of(), null);
+        when(lovClient.revisions(eq("foundations"), eq(6L), anyInt(), anyInt())).thenThrow(
+                BackofficeApiException.of(HttpStatus.NOT_FOUND, none, "corr-h3", null, "GET /api/configuration/foundations/6/revisions"));
+
+        UI.getCurrent().navigate(FOUNDATIONS_ROUTE);
+        LocatorJ._click(rowAction(anyGrid(), 0, "history-5"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        Grid<Object> grid = gridWithId("revisions-grid");
+
+        assertEquals("Historial de C-1", dialog.getHeaderTitle());
+        assertEquals(3, GridKt._size(grid));
+        List<String> deleted = GridKt._getFormattedRow(grid, 0);
+        assertTrue(deleted.containsAll(List.of("3", "Baja", "Borrada del catalogo: sus datos estan en la revision anterior")), deleted.toString());
+        assertEquals("C-1 · Cimentacion 1 · tipo FT-OLD · inactivo", GridKt._getFormattedRow(grid, 1).get(5));
+        assertEquals("Sin datos de la entrada en esta revision", GridKt._getFormattedRow(grid, 2).get(5));
+        verify(lovClient, atLeastOnce()).revisions("foundations", 5L, 0, RevisionsDialog.PAGE_SIZE);
+        dialog.close();
+        MockVaadin.clientRoundtrip();
+
+        LocatorJ._click(rowAction(anyGrid(), 1, "history-6"));
+        LocatorJ._get(LocatorJ._get(Dialog.class), Span.class, spec -> spec.withId("revisions-empty"));
+        assertTrue(NotificationsKt.getNotifications().isEmpty());
+    }
+
+    // --- Fase 6: la administracion de notificaciones (notification-admin) -------------------------------
+
+    private static final String[] NOTIFICATION_ADMIN = {"ROLE_NOTIFICATION_INBOX", "ROLE_NOTIFICATION_ADMIN"};
+    private static final int SOURCES_TAB = 0;
+    private static final int DEAD_LETTERS_TAB = 1;
+    private static final int DELIVERIES_TAB = 2;
+    private static final int RULES_TAB = 3;
+    private static final int BROADCASTS_TAB = 4;
+    private static final UUID DELIVERY_FAILED = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000601");
+    private static final UUID DELIVERY_SENT = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000602");
+    private static final UUID DELIVERY_SKIPPED = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000603");
+    private static final UUID DELIVERY_UNKNOWN = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000604");
+
+    private static BackofficeApiException adminError(int status, String code, String message) {
+        ApiProblem problem = new ApiProblem(null, HttpStatus.valueOf(status).name(), status, message, null, code, null, null, null, false, null, null);
+        return BackofficeApiException.of(HttpStatusCode.valueOf(status), problem, "corr-a9", null, "POST /api/notifications/admin");
+    }
+
+    /** El aviso de error que hay en pantalla dice ese texto, con su referencia. */
+    private static void expectAdminError(String text) {
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size(), "un solo aviso");
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText(text));
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("Referencia: corr-a9"));
+    }
+
+    private void stubNotificationAdmin() {
+        when(notificationClient.adminSources()).thenReturn(new SourceStatusDto(List.of(), List.of(), 0L, Map.of()));
+        when(notificationClient.deadLetterQueues()).thenReturn(new DeadLetterQueuesDto(true, List.of()));
+        when(notificationClient.adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<DeliveryDto>of(), 0, 50));
+        when(notificationClient.adminRules()).thenReturn(new RulesDto("classpath:notification-rules.yml", Map.of(), List.of()));
+    }
+
+    private void openNotificationAdmin(int tab) {
+        loginAs("notificaciones.responsable", NOTIFICATION_ADMIN);
+        UI.getCurrent().navigate(NotificationRoutes.ADMIN);
+        if (tab != SOURCES_TAB) {
+            selectTab(tab);
+        }
+    }
+
+    private static DeliveryDto delivery(UUID id, DeliveryStatus status, String recipient, String username, String error) {
+        return new DeliveryDto(id, NOTIFICATION1, "email", DeliveryScope.RECIPIENT, null, recipient, username, status, 5, 5, null,
+                status == DeliveryStatus.SENT ? NOTIFIED_AT.plusSeconds(60) : null, error, NOTIFIED_AT);
+    }
+
+    private static DeadLetterQueuesDto.QueueDto queue(String source, Long messages) {
+        return new DeadLetterQueuesDto.QueueDto(source, "mto.notification." + source + ".queue", "mto.notification." + source + ".queue.dlq", messages);
+    }
+
+    /** Sus codigos no son «conflicto, recarga» ni «no se ha encontrado»: cada uno dice lo que pasa. */
+    @Test
+    void theErrorsOfTheNotificationAdministrationSayWhatHappened() {
+        assertEquals("Esa entrega ya no existe.", UiErrors.message(adminError(404, "DLV-404", "Delivery x was not found")));
+        assertEquals("La entrega ya no admite el reintento: solo se reintenta una fallida o una omitida.",
+                UiErrors.message(adminError(409, "DLV-409", "Delivery x is SENT and only FAILED or SKIPPED deliveries can be retried")));
+        assertEquals("Esa fuente no existe en mto-notification.", UiErrors.message(adminError(404, "SRC-404", "Source nope was not found")));
+        assertEquals("RabbitMQ esta apagado en este despliegue, o esa cola de mensajes muertos no existe en el broker."
+                        + " The dead letter queue q.dlq does not exist in the broker",
+                UiErrors.message(adminError(409, "SRC-409", "The dead letter queue q.dlq does not exist in the broker")));
+        assertEquals("RabbitMQ no responde ahora: la cola se queda como estaba. Intentalo mas tarde.",
+                UiErrors.message(adminError(503, "SRC-503", "RabbitMQ did not answer")));
+        assertEquals("El aviso nombra una audiencia o un canal que el servicio no conoce. Channel 'sms' is unknown; known channels are [inbox, email]",
+                UiErrors.message(adminError(422, "NTF-422", "Channel 'sms' is unknown; known channels are [inbox, email]")));
+    }
+
+    /**
+     * La administracion cuelga de la bandeja en el menu, y solo la ve quien tiene el rol de cliente
+     * {@code notification-admin}: con la bandeja sola no esta, y un rol de realm que se llame igual no la abre.
+     */
+    @Test
+    void theAdministrationOfNotificationsHangsFromTheInboxInTheMenuOnlyWithItsRole() {
+        stubNotificationAdmin();
+        loginAs("notificaciones.responsable", NOTIFICATION_ADMIN);
+        UI.getCurrent().navigate(HomeView.class);
+        List<String> labels = menuLabels();
+        assertTrue(labels.contains("Notificaciones") && labels.contains("Administracion"), labels.toString());
+        SideNavItem inbox = LocatorJ._find(SideNavItem.class).stream().filter(item -> "Notificaciones".equals(item.getLabel())).findFirst().orElseThrow();
+        assertEquals(List.of("Administracion"), inbox.getItems().stream().map(SideNavItem::getLabel).toList(), "cuelga de la bandeja");
+        assertEquals(NotificationRoutes.INBOX, inbox.getPath(), "y la bandeja sigue siendo una pantalla");
+
+        UI.getCurrent().navigate(NotificationRoutes.ADMIN);
+        LocatorJ._get(H2.class, spec -> spec.withText("Administracion de notificaciones"));
+        assertEquals("notificaciones/administracion", NotificationRoutes.ADMIN);
+
+        loginAs("mantenimiento.tecnico", "ROLE_NOTIFICATION_INBOX", "ROLE_NOTIFICATION_ACTIVITY_READ", "ROLE_REALM_NOTIFICATION_ADMIN");
+        UI.getCurrent().navigate(HomeView.class);
+        assertFalse(menuLabels().contains("Administracion"), menuLabels().toString());
+        clearInvocations(notificationClient);
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(NotificationRoutes.ADMIN));
+        verify(notificationClient, never()).adminSources();
+    }
+
+    /** Cada pestana pide sus datos la primera vez que se abre, y no al volver a ella: entrar son los de la primera. */
+    @Test
+    void theAdministrationOnlyAsksForTheTabThatIsOpened() {
+        stubNotificationAdmin();
+        openNotificationAdmin(SOURCES_TAB);
+
+        assertEquals(List.of("Fuentes", "Mensajes muertos (DLQ)", "Entregas", "Reglas", "Avisos manuales"),
+                LocatorJ._find(com.vaadin.flow.component.tabs.Tab.class).stream().map(com.vaadin.flow.component.tabs.Tab::getLabel).toList());
+        verify(notificationClient, times(1)).adminSources();
+        verify(notificationClient, never()).deadLetterQueues();
+        verify(notificationClient, never()).adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList());
+        verify(notificationClient, never()).adminRules();
+
+        selectTab(DEAD_LETTERS_TAB);
+        verify(notificationClient, times(1)).deadLetterQueues();
+        selectTab(RULES_TAB);
+        verify(notificationClient, times(1)).adminRules();
+        selectTab(BROADCASTS_TAB);
+        selectTab(SOURCES_TAB);
+        selectTab(DEAD_LETTERS_TAB);
+        verify(notificationClient, times(1)).adminSources();
+        verify(notificationClient, times(1)).deadLetterQueues();
+        verify(notificationClient, never()).adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList());
+
+        selectTab(DELIVERIES_TAB);
+        assertEquals(0, GridKt._size(gridWithId("admin-deliveries-grid")));
+        verify(notificationClient, atLeastOnce()).adminDeliveries(eq(DeliveryFilter.NONE), eq(0), anyInt(), eq(List.of("createdAt,desc")));
+    }
+
+    /** Las cifras son las del servicio: el inbox por fuente y estado, el lector de Keycloak, las rafagas y las entregas. */
+    @Test
+    void theSourcesShowWhatTheServiceCountsAndAreAskedAgainOnDemand() {
+        stubNotificationAdmin();
+        Map<String, Long> deliveries = new java.util.LinkedHashMap<>();
+        deliveries.put("SENT", 40L);
+        deliveries.put("DEFERRED", 7L);
+        deliveries.put("PENDING", 1L);
+        deliveries.put("FAILED", 2L);
+        when(notificationClient.adminSources()).thenReturn(new SourceStatusDto(
+                List.of(new SourceStatusDto.CursorDto(SourceCursorKind.KEYCLOAK_LOGIN, NOTIFIED_AT, "pod-1", NOTIFIED_AT.plusSeconds(60), NOTIFIED_AT,
+                                NOTIFIED_AT, null),
+                        new SourceStatusDto.CursorDto(SourceCursorKind.UNKNOWN, null, null, null, null, null, "Keycloak did not answer")),
+                List.of(new SourceStatusDto.InboxCountDto("mto-maintenance", InboxMessageStatus.PROCESSED, 1204),
+                        new SourceStatusDto.InboxCountDto("mto-stock", InboxMessageStatus.FAILED, 2),
+                        new SourceStatusDto.InboxCountDto("mto-field", InboxMessageStatus.UNKNOWN, 1)),
+                3L, deliveries));
+
+        openNotificationAdmin(SOURCES_TAB);
+
+        Grid<Object> inbox = gridWithId("admin-inbox-grid");
+        assertEquals(3, GridKt._size(inbox));
+        assertEquals(List.of("mto-maintenance", "Procesado", "1204"), GridKt._getFormattedRow(inbox, 0));
+        assertEquals(List.of("mto-stock", "Fallido", "2"), GridKt._getFormattedRow(inbox, 1));
+        assertEquals(List.of("mto-field", "Desconocido", "1"), GridKt._getFormattedRow(inbox, 2));
+        Grid<Object> cursors = gridWithId("admin-cursors-grid");
+        assertEquals(List.of("Accesos de Keycloak", Formats.dateTime(NOTIFIED_AT), Formats.dateTime(NOTIFIED_AT), Formats.dateTime(NOTIFIED_AT),
+                "pod-1 hasta " + Formats.dateTime(NOTIFIED_AT.plusSeconds(60)), ""), GridKt._getFormattedRow(cursors, 0));
+        assertEquals(List.of("Desconocido", "", "", "", "", "Keycloak did not answer"), GridKt._getFormattedRow(cursors, 1));
+        assertEquals("Rafagas abiertas: 3 · Entregas: Pendiente 1 · Enviada 40 · Fallida 2 · DEFERRED 7",
+                LocatorJ._get(Span.class, spec -> spec.withId("admin-sources-summary")).getText(),
+                "los estados conocidos en su orden; uno nuevo, con su clave");
+
+        when(notificationClient.adminSources()).thenThrow(BackofficeApiException.of(HttpStatus.SERVICE_UNAVAILABLE, ApiProblem.empty(), "corr-a1",
+                null, "GET /api/notifications/admin/sources"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("admin-sources-refresh")));
+        verify(notificationClient, times(2)).adminSources();
+        assertEquals(0, GridKt._size(inbox));
+        assertEquals(1, NotificationsKt.getNotifications().size(), "el fallo se avisa");
+    }
+
+    /**
+     * Mirar y reprocesar se ofrecen solo donde hay mensajes: una cola que el broker no tiene seria el
+     * 409 {@code SRC-409}, y una vacia no tiene nada. Con el broker apagado se dice y no hay tabla.
+     */
+    @Test
+    void theDeadLetterQueuesOfferPeekAndReprocessOnlyWhereThereAreMessages() {
+        stubNotificationAdmin();
+        when(notificationClient.deadLetterQueues()).thenReturn(new DeadLetterQueuesDto(true,
+                List.of(queue("maintenance", 3L), queue("stock", 0L), queue("field", null))));
+
+        openNotificationAdmin(DEAD_LETTERS_TAB);
+
+        Grid<Object> grid = gridWithId("admin-dlq-grid");
+        assertEquals(3, GridKt._size(grid));
+        assertEquals(List.of("maintenance", "mto.notification.maintenance.queue", "mto.notification.maintenance.queue.dlq", "3"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 4));
+        assertEquals("0", GridKt._getFormattedRow(grid, 1).get(3));
+        assertEquals("Sin cola en el broker", GridKt._getFormattedRow(grid, 2).get(3));
+        assertEquals(List.of("peek-maintenance", "reprocess-maintenance"), actionIds(grid, 0));
+        assertEquals(List.of(), actionIds(grid, 1));
+        assertEquals(List.of(), actionIds(grid, 2));
+        assertTrue(LocatorJ._find(Span.class, spec -> spec.withId("admin-dlq-disabled")).isEmpty(), "con broker no se dice nada");
+
+        when(notificationClient.deadLetterQueues()).thenReturn(new DeadLetterQueuesDto(false, List.of()));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("admin-dlq-refresh")));
+        assertEquals("RabbitMQ esta apagado en este despliegue: no hay colas de mensajes muertos que mirar ni reprocesar.",
+                LocatorJ._get(Span.class, spec -> spec.withId("admin-dlq-disabled")).getText());
+        assertTrue(LocatorJ._find(Grid.class, spec -> spec.withId("admin-dlq-grid")).isEmpty(), "sin broker no hay tabla ni acciones");
+
+        when(notificationClient.deadLetterQueues()).thenThrow(adminError(503, "SRC-503", "RabbitMQ did not answer"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("admin-dlq-refresh")));
+        expectAdminError("RabbitMQ no responde ahora: la cola se queda como estaba. Intentalo mas tarde.");
+        assertEquals(0, GridKt._size(gridWithId("admin-dlq-grid")));
+    }
+
+    /** Mirar no saca nada de la cola y nunca ensena el cuerpo: metadatos, el motivo del broker, el problema y lo que guarda el inbox. */
+    @Test
+    void peekingADeadLetterQueueShowsItsMessagesAndAFailureOpensNothing() {
+        stubNotificationAdmin();
+        when(notificationClient.deadLetterQueues()).thenReturn(new DeadLetterQueuesDto(true, List.of(queue("maintenance", 3L), queue("users", 1L))));
+        when(notificationClient.peekDeadLetters("maintenance", 20)).thenReturn(new DeadLetterPeekDto("maintenance",
+                "mto.notification.maintenance.queue.dlq", 3L, List.of(
+                new DeadLetterPeekDto.PeekedDto(new DeadLetterPeekDto.MessageDto("m-1", "mto-maintenance", "MAINTENANCE_ORDER_CREATED", "order", "o-1",
+                        "mto.maintenance.exchange", "mto.maintenance.order.created", "rejected", 2L, NOTIFIED_AT, 812, null),
+                        new DeadLetterPeekDto.InboxRecordDto(InboxMessageStatus.FAILED, 3, NOTIFIED_AT, "No rule engine")),
+                new DeadLetterPeekDto.PeekedDto(new DeadLetterPeekDto.MessageDto(null, null, null, null, null, null, null, "delivery_limit", 1L, null, 12,
+                        "The body is not an envelope"), null))));
+        when(notificationClient.peekDeadLetters("users", 20)).thenThrow(adminError(404, "SRC-404", "Source users was not found"));
+
+        openNotificationAdmin(DEAD_LETTERS_TAB);
+        LocatorJ._click(rowAction(gridWithId("admin-dlq-grid"), 0, "peek-maintenance"));
+
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        assertEquals("Mensajes muertos de maintenance", dialog.getHeaderTitle());
+        assertEquals("mto.notification.maintenance.queue.dlq: 3 en la cola; se ensenan los primeros 2, que siguen en ella."
+                + " El cuerpo de un mensaje no se ensena nunca.", LocatorJ._get(dialog, Span.class, spec -> spec.withId("peek-summary")).getText());
+        Grid<Object> peeked = gridWithId("peek-grid");
+        assertEquals(2, GridKt._size(peeked));
+        assertEquals(List.of("m-1", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", "mto.maintenance.exchange", "mto-maintenance",
+                        "order o-1", "rejected x2", Formats.dateTime(NOTIFIED_AT), "812 B", "",
+                        "Fallido · 3 intentos · fallo el " + Formats.dateTime(NOTIFIED_AT) + " · No rule engine"),
+                GridKt._getFormattedRow(peeked, 0));
+        assertEquals(List.of("", "", "", "", "", "", "delivery_limit", "", "12 B", "The body is not an envelope", "Sin registro en el inbox"),
+                GridKt._getFormattedRow(peeked, 1));
+        verify(notificationClient, never()).reprocessDeadLetters(any(), anyInt());
+        dialog.close();
+        MockVaadin.clientRoundtrip();
+
+        LocatorJ._click(rowAction(gridWithId("admin-dlq-grid"), 1, "peek-users"));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "si no se puede mirar, no se abre nada");
+        expectAdminError("Esa fuente no existe en mto-notification.");
+    }
+
+    /**
+     * Reprocesar dice que va a pasar, pide cuantos como mucho (de 1 a 100, 20 de partida) y, al
+     * terminar, ensena en el mismo dialogo que fue de cada mensaje y relee las colas. Un maximo fuera
+     * de rango no llama, y un error del servicio se dice con el dialogo abierto.
+     */
+    @Test
+    void reprocessingADeadLetterQueueAsksHowManyShowsWhatBecameOfEachAndRereadsTheQueues() {
+        stubNotificationAdmin();
+        when(notificationClient.deadLetterQueues()).thenReturn(new DeadLetterQueuesDto(true, List.of(queue("maintenance", 3L))));
+        when(notificationClient.reprocessDeadLetters("maintenance", 20)).thenReturn(new DeadLetterReprocessDto("maintenance",
+                "mto.notification.maintenance.queue.dlq", 20, 3, 1L, 1L, 1L, 1L, ReprocessStop.EMPTY, List.of(
+                new DeadLetterReprocessDto.ResultDto("m-1", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", ReprocessOutcome.PROCESSED, null),
+                new DeadLetterReprocessDto.ResultDto("m-2", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", ReprocessOutcome.FAILED,
+                        "its signature does not match"),
+                new DeadLetterReprocessDto.ResultDto("m-3", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", ReprocessOutcome.DUPLICATE, null))));
+        when(notificationClient.reprocessDeadLetters("maintenance", 5)).thenReturn(new DeadLetterReprocessDto("maintenance", "q.dlq", 5, 5, 5L, 0L, 0L,
+                null, ReprocessStop.UNKNOWN, List.of(new DeadLetterReprocessDto.ResultDto("m-9", "X", "k", ReprocessOutcome.UNKNOWN, null))));
+        when(notificationClient.reprocessDeadLetters("maintenance", 100)).thenThrow(adminError(409, "SRC-409", "The queue does not exist"));
+
+        openNotificationAdmin(DEAD_LETTERS_TAB);
+        LocatorJ._click(rowAction(gridWithId("admin-dlq-grid"), 0, "reprocess-maintenance"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        IntegerField max = LocatorJ._get(dialog, IntegerField.class, spec -> spec.withId("reprocess-max"));
+        Button run = LocatorJ._get(dialog, Button.class, spec -> spec.withId("reprocess-run"));
+
+        assertEquals("Reprocesar los mensajes muertos de maintenance", dialog.getHeaderTitle());
+        assertEquals("Pasa los primeros mensajes de mto.notification.maintenance.queue.dlq otra vez por el consumidor de maintenance, cada uno una"
+                        + " vez. Los que se aplican, y los que ya estaban aplicados, salen de la cola; los que vuelven a fallar se quedan en ella, con su"
+                        + " motivo. No se republica nada, y lo que se aplique puede generar avisos, como cualquier evento.",
+                LocatorJ._get(dialog, Paragraph.class, spec -> spec.withId("reprocess-explanation")).getText());
+        assertEquals(20, max.getValue(), "20 de partida, el lote del servicio");
+        assertTrue(LocatorJ._find(dialog, Grid.class).isEmpty(), "sin resultado todavia");
+
+        for (Integer outOfRange : Arrays.asList(0, 101, null)) {
+            max.setValue(outOfRange);
+            LocatorJ._click(run);
+            assertTrue(max.isInvalid(), "fuera de rango: " + outOfRange);
+            assertEquals("Entre 1 y 100 mensajes", max.getErrorMessage());
+        }
+        verify(notificationClient, never()).reprocessDeadLetters(any(), anyInt());
+
+        clearInvocations(notificationClient);
+        max.setValue(20);
+        LocatorJ._click(run);
+        assertFalse(max.isInvalid());
+        assertEquals("Pedidos 20 · sacados 3 · procesados 1 · duplicados 1 · fallidos 1 · quedan 1 en la cola · paro porque la cola se quedo sin mensajes",
+                LocatorJ._get(dialog, Span.class, spec -> spec.withId("reprocess-summary")).getText());
+        Grid<Object> results = gridWithId("reprocess-results");
+        assertEquals(3, GridKt._size(results));
+        assertEquals(List.of("m-1", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", "Procesado", ""), GridKt._getFormattedRow(results, 0));
+        assertEquals(List.of("m-2", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", "Fallido", "its signature does not match"),
+                GridKt._getFormattedRow(results, 1));
+        assertEquals("Duplicado", GridKt._getFormattedRow(results, 2).get(3));
+        verify(notificationClient, times(1)).deadLetterQueues();
+        assertTrue(dialog.isOpened(), "el resultado se lee en el mismo dialogo");
+
+        max.setValue(5);
+        LocatorJ._click(run);
+        assertEquals("Pedidos 5 · sacados 5 · procesados 5 · duplicados 0 · fallidos 0 · paro por un motivo que esta version no conoce",
+                LocatorJ._get(dialog, Span.class, spec -> spec.withId("reprocess-summary")).getText());
+        assertEquals("Desconocido", GridKt._getFormattedRow(results, 0).get(3));
+
+        clearInvocations(notificationClient);
+        NotificationsKt.clearNotifications();
+        max.setValue(100);
+        LocatorJ._click(run);
+        expectAdminError("RabbitMQ esta apagado en este despliegue, o esa cola de mensajes muertos no existe en el broker. The queue does not exist");
+        assertTrue(dialog.isOpened(), "el error se dice con el dialogo abierto");
+        verify(notificationClient, never()).deadLetterQueues();
+    }
+
+    /**
+     * Las entregas se piden paginadas, filtradas y ordenadas al servicio. «Reintentar» solo en las que
+     * el servicio reintenta (fallidas y omitidas); una desconocida no ofrece nada. Un id de
+     * notificacion a medias no pide nada.
+     */
+    @Test
+    void theDeliveriesAreFilteredAndSortedInTheServiceAndOnlyAFailedOrSkippedOneOffersRetry() {
+        stubNotificationAdmin();
+        List<DeliveryDto> all = List.of(
+                delivery(DELIVERY_FAILED, DeliveryStatus.FAILED, "ana@mto.local", "ana", "Mail server connection failed"),
+                delivery(DELIVERY_SENT, DeliveryStatus.SENT, "luis@mto.local", null, null),
+                new DeliveryDto(DELIVERY_SKIPPED, NOTIFICATION1, "email", DeliveryScope.AUDIENCE, "PROFILE:mto-ops", null, null, DeliveryStatus.SKIPPED, 0, 5,
+                        null, null, "No address", NOTIFIED_AT),
+                delivery(DELIVERY_UNKNOWN, DeliveryStatus.UNKNOWN, "eva@mto.local", "eva", null));
+        when(notificationClient.adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList())).thenAnswer(call -> {
+            DeliveryFilter filter = call.getArgument(0);
+            return page(all.stream().filter(row -> filter.status() == null || filter.status() == row.status()).toList(), call.getArgument(1),
+                    call.getArgument(2));
+        });
+
+        openNotificationAdmin(DELIVERIES_TAB);
+        Grid<Object> grid = gridWithId("admin-deliveries-grid");
+
+        assertEquals(4, GridKt._size(grid));
+        LocatorJ._get(Span.class, spec -> spec.withText("4 entregas"));
+        assertEquals(List.of(Formats.dateTime(NOTIFIED_AT), "email", "Destinatario", "ana@mto.local (ana)", "Fallida", "5/5", "", "",
+                "Mail server connection failed", NOTIFICATION1.toString()), GridKt._getFormattedRow(grid, 0).subList(0, 10));
+        assertEquals("luis@mto.local", GridKt._getFormattedRow(grid, 1).get(3));
+        assertEquals(Formats.dateTime(NOTIFIED_AT.plusSeconds(60)), GridKt._getFormattedRow(grid, 1).get(7));
+        assertEquals(List.of("Audiencia", "PROFILE:mto-ops", "Omitida", "0/5"), GridKt._getFormattedRow(grid, 2).subList(2, 6));
+        assertEquals("Desconocido", GridKt._getFormattedRow(grid, 3).get(4));
+        assertEquals(List.of("retry-" + DELIVERY_FAILED), actionIds(grid, 0));
+        assertEquals(List.of(), actionIds(grid, 1), "una enviada no se reintenta");
+        assertEquals(List.of("retry-" + DELIVERY_SKIPPED), actionIds(grid, 2));
+        assertEquals(List.of(), actionIds(grid, 3), "lo desconocido no abre nada");
+        ComboBox<DeliveryStatus> status = LocatorJ._get(ComboBox.class, spec -> spec.withId("admin-deliveries-status"));
+        assertFalse(status.getListDataView().getItems().toList().contains(DeliveryStatus.UNKNOWN));
+
+        LocatorJ._setValue(status, DeliveryStatus.FAILED);
+        assertEquals(1, GridKt._size(grid));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 entrega"));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("admin-deliveries-channel")), " email ");
+        GridKt._size(grid);
+        verify(notificationClient, atLeastOnce()).adminDeliveries(eq(new DeliveryFilter(DeliveryStatus.FAILED, "email", null)), eq(0), anyInt(),
+                eq(List.of("createdAt,desc")));
+
+        TextField notification = LocatorJ._get(TextField.class, spec -> spec.withId("admin-deliveries-notification"));
+        clearInvocations(notificationClient);
+        LocatorJ._setValue(notification, "5e6f7a8b-0000");
+        GridKt._size(grid);
+        assertTrue(notification.isInvalid(), "un id a medias no se pide");
+        assertEquals("El id entero de una notificacion (un UUID)", notification.getErrorMessage());
+        verify(notificationClient, never()).adminDeliveries(argThat(filter -> filter.notificationId() != null), anyInt(), anyInt(), anyList());
+        LocatorJ._setValue(notification, NOTIFICATION1.toString());
+        GridKt._size(grid);
+        assertFalse(notification.isInvalid());
+        verify(notificationClient, atLeastOnce()).adminDeliveries(eq(new DeliveryFilter(DeliveryStatus.FAILED, "email", NOTIFICATION1)), eq(0), anyInt(),
+                anyList());
+
+        grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("status"), SortDirection.ASCENDING)));
+        GridKt._get(grid, 0);
+        verify(notificationClient, atLeastOnce()).adminDeliveries(any(DeliveryFilter.class), eq(0), anyInt(), eq(List.of("status,asc")));
+    }
+
+    /** Reintentar devuelve la entrega a la cola y relee la lista; si su estado ya no lo admite, se dice y se relee igual. */
+    @Test
+    void retryingADeliveryQueuesItAgainAndRereadsTheListAlsoWhenTheServiceRefuses() {
+        stubNotificationAdmin();
+        when(notificationClient.adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(
+                delivery(DELIVERY_FAILED, DeliveryStatus.FAILED, "ana@mto.local", "ana", "boom"),
+                delivery(DELIVERY_SKIPPED, DeliveryStatus.SKIPPED, "luis@mto.local", null, "No address")), 0, 50));
+        when(notificationClient.retryDelivery(DELIVERY_FAILED)).thenReturn(delivery(DELIVERY_FAILED, DeliveryStatus.PENDING, "ana@mto.local", "ana", null));
+        when(notificationClient.retryDelivery(DELIVERY_SKIPPED)).thenThrow(adminError(409, "DLV-409", "Delivery is SENT"));
+
+        openNotificationAdmin(DELIVERIES_TAB);
+        Grid<Object> grid = gridWithId("admin-deliveries-grid");
+        assertEquals(2, GridKt._size(grid));
+        MockVaadin.clientRoundtrip();
+
+        clearInvocations(notificationClient);
+        LocatorJ._click(rowAction(grid, 0, "retry-" + DELIVERY_FAILED));
+        verify(notificationClient).retryDelivery(DELIVERY_FAILED);
+        NotificationsKt.expectNotifications("Entrega en cola otra vez");
+        GridKt._size(grid);
+        verify(notificationClient, atLeastOnce()).adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList());
+        MockVaadin.clientRoundtrip();
+
+        clearInvocations(notificationClient);
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(rowAction(grid, 1, "retry-" + DELIVERY_SKIPPED));
+        expectAdminError("La entrega ya no admite el reintento: solo se reintenta una fallida o una omitida.");
+        GridKt._size(grid);
+        verify(notificationClient, atLeastOnce()).adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    /** Las reglas son de solo lectura: se cambian en el YAML del servicio. Llegan enteras y el filtro es local. */
+    @Test
+    void theLoadedRulesAreReadOnlyAndFilteredLocally() {
+        stubNotificationAdmin();
+        Map<String, Object> variables = new java.util.LinkedHashMap<>();
+        variables.put("maintenance-service-account", "svc");
+        variables.put("large-burst-threshold", 50);
+        when(notificationClient.adminRules()).thenReturn(new RulesDto("classpath:notification-rules.yml", variables, List.of(
+                new RuleDto("maintenance-order-urgent", List.of("maintenance.order.created", "maintenance.order.status-changed"), "payload.type == 'URGENT'",
+                        ActivitySeverity.CRITICAL, List.of("PROFILE:mto-maintenance-manager", "USER:#{payload.assignedUser}"), List.of("inbox", "email"),
+                        "Orden urgente #{payload.code}", "Cuerpo", "/mantenimiento/ordenes/#{event.subject.id}", "PT30M", "#{payload.code}"),
+                new RuleDto("stock-below-minimum", List.of("stock.material.below-minimum"), null, null, List.of("PROFILE:mto-warehouse-manager"),
+                        List.of("inbox"), "Material bajo minimo", null, null, "P1DT2H", null),
+                new RuleDto("access-streak", List.of("access.*"), null, ActivitySeverity.UNKNOWN, List.of(), List.of(), "Racha", null, null, "30m", null))));
+
+        openNotificationAdmin(RULES_TAB);
+        Grid<Object> grid = gridWithId("admin-rules-grid");
+
+        assertEquals(3, GridKt._size(grid));
+        assertEquals("Cargadas de classpath:notification-rules.yml", LocatorJ._get(Span.class, spec -> spec.withId("admin-rules-source")).getText());
+        assertEquals("Variables: large-burst-threshold = 50 · maintenance-service-account = svc",
+                LocatorJ._get(Span.class, spec -> spec.withId("admin-rules-variables")).getText());
+        LocatorJ._get(Span.class, spec -> spec.withText("3 reglas"));
+        assertEquals(List.of("maintenance-order-urgent", "maintenance.order.created, maintenance.order.status-changed", "payload.type == 'URGENT'",
+                "Critica", "PROFILE:mto-maintenance-manager, USER:#{payload.assignedUser}", "inbox, email", "Orden urgente #{payload.code}",
+                "/mantenimiento/ordenes/#{event.subject.id}", "Uno cada 30 min por #{payload.code}"), GridKt._getFormattedRow(grid, 0));
+        assertEquals(List.of("", "La del evento"), GridKt._getFormattedRow(grid, 1).subList(2, 4));
+        assertEquals("Uno cada 1 d 2 h", GridKt._getFormattedRow(grid, 1).get(8));
+        assertEquals("Desconocido", GridKt._getFormattedRow(grid, 2).get(3));
+        assertEquals("Uno cada 30m", GridKt._getFormattedRow(grid, 2).get(8), "una ventana que no se sabe leer, tal cual");
+        assertTrue(LocatorJ._find(Button.class).stream().noneMatch(button -> List.of("Nuevo", "Modificar", "Borrar").contains(button.getText())));
+
+        TextField filter = LocatorJ._get(TextField.class, spec -> spec.withId("admin-rules-filter"));
+        LocatorJ._setValue(filter, "WAREHOUSE");
+        assertEquals(1, GridKt._size(grid));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 de 3 reglas"));
+        LocatorJ._setValue(filter, "email");
+        assertEquals(1, GridKt._size(grid));
+        LocatorJ._setValue(filter, "");
+        assertEquals(3, GridKt._size(grid));
+        verify(notificationClient, times(1)).adminRules();
+    }
+
+    /**
+     * El correo de prueba exige lo evidente antes de llamar (una direccion con forma de email), pone el
+     * error del servicio en su campo con el dialogo abierto y, al enviarse, relee las entregas si esa
+     * pestana ya se abrio.
+     */
+    @Test
+    void aTestEmailChecksTheAddressShowsTheErrorOfTheServiceOnItsFieldAndRereadsTheDeliveries() {
+        stubNotificationAdmin();
+        AdminNotificationDto created = new AdminNotificationDto(NOTIFICATION1, "test-email", ActivityCategory.SYSTEM, ActivitySeverity.INFO,
+                "Correo de prueba de mto-notification", "…", "/notificaciones", List.of("USER:notificaciones.responsable"), NOTIFIED_AT,
+                "notificaciones.responsable");
+        when(notificationClient.sendTestEmail(new TestEmailRequest("ops@mto.local"))).thenReturn(created);
+        when(notificationClient.sendTestEmail(new TestEmailRequest("bad@mto.local"))).thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST,
+                new ApiProblem(null, "BAD_REQUEST", 400, "Validation failed", null, "REQ-VALIDATION", null, null, null, false,
+                        List.of(new ApiFieldError("to", null, "must be a well-formed email address")), null),
+                "corr-a3", null, "POST /api/notifications/admin/test-email"));
+
+        openNotificationAdmin(DELIVERIES_TAB);
+        GridKt._size(gridWithId("admin-deliveries-grid"));
+        selectTab(BROADCASTS_TAB);
+        verify(notificationClient, never()).sendTestEmail(any());
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("admin-test-email")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        TextField to = LocatorJ._get(dialog, TextField.class, spec -> spec.withId("test-email-to"));
+        Button send = LocatorJ._get(dialog, Button.class, spec -> spec.withId("test-email-send"));
+        assertEquals("Correo de prueba", dialog.getHeaderTitle());
+
+        LocatorJ._click(send);
+        assertEquals("La direccion es obligatoria", to.getErrorMessage());
+        LocatorJ._setValue(to, "no-es-un-correo");
+        LocatorJ._click(send);
+        assertEquals("No tiene forma de email", to.getErrorMessage());
+        LocatorJ._setValue(to, "a".repeat(320) + "@mto.local");
+        LocatorJ._click(send);
+        assertEquals("Como mucho 320 caracteres", to.getErrorMessage());
+        verify(notificationClient, never()).sendTestEmail(any());
+
+        LocatorJ._setValue(to, "bad@mto.local");
+        LocatorJ._click(send);
+        assertTrue(to.isInvalid());
+        assertEquals("must be a well-formed email address", to.getErrorMessage());
+        assertTrue(dialog.isOpened(), "el dialogo sigue abierto con lo escrito");
+
+        clearInvocations(notificationClient);
+        LocatorJ._setValue(to, " ops@mto.local ");
+        LocatorJ._click(send);
+        verify(notificationClient).sendTestEmail(new TestEmailRequest("ops@mto.local"));
+        assertFalse(dialog.isOpened());
+        NotificationsKt.expectNotifications("Correo de prueba en cola para ops@mto.local: como le va se ve en Entregas");
+        assertEquals("Ultimo enviado: «Correo de prueba de mto-notification», el " + Formats.dateTime(NOTIFIED_AT) + ", a USER:notificaciones.responsable",
+                LocatorJ._get(Span.class, spec -> spec.withId("admin-broadcasts-last")).getText());
+        selectTab(DELIVERIES_TAB);
+        GridKt._size(gridWithId("admin-deliveries-grid"));
+        verify(notificationClient, atLeastOnce()).adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    /**
+     * El aviso general ofrece solo lo que el servicio acepta, comprueba lo evidente antes de llamar y
+     * pide confirmacion diciendo a quien va y por donde: llega a personas de verdad. Lo vacio no
+     * viaja; las audiencias, una por linea y sin repetir.
+     */
+    @Test
+    void aBroadcastIsCheckedBeforeCallingConfirmedSayingWhoGetsItAndSentWithoutWhatIsEmpty() {
+        stubNotificationAdmin();
+        when(notificationClient.broadcast(any())).thenAnswer(call -> {
+            BroadcastRequest request = call.getArgument(0);
+            return new AdminNotificationDto(NOTIFICATION1, "manual-broadcast", ActivityCategory.SYSTEM, request.severity(), request.title(), request.body(),
+                    request.link(), request.audiences(), NOTIFIED_AT, "notificaciones.responsable");
+        });
+
+        openNotificationAdmin(BROADCASTS_TAB);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("admin-broadcast")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        TextField title = LocatorJ._get(dialog, TextField.class, spec -> spec.withId("broadcast-title"));
+        TextArea body = LocatorJ._get(dialog, TextArea.class, spec -> spec.withId("broadcast-body"));
+        TextField link = LocatorJ._get(dialog, TextField.class, spec -> spec.withId("broadcast-link"));
+        Select<ActivitySeverity> severity = LocatorJ._get(dialog, Select.class, spec -> spec.withId("broadcast-severity"));
+        TextArea audiences = LocatorJ._get(dialog, TextArea.class, spec -> spec.withId("broadcast-audiences"));
+        MultiSelectComboBox<BroadcastChannel> channels = LocatorJ._get(dialog, MultiSelectComboBox.class, spec -> spec.withId("broadcast-channels"));
+        Button send = LocatorJ._get(dialog, Button.class, spec -> spec.withId("broadcast-send"));
+
+        assertEquals("Aviso general", dialog.getHeaderTitle());
+        assertEquals(ActivitySeverity.INFO, severity.getValue(), "sin decir otra cosa, informacion");
+        assertEquals(List.of(ActivitySeverity.INFO, ActivitySeverity.WARNING, ActivitySeverity.CRITICAL), severity.getListDataView().getItems().toList());
+        assertEquals(Set.of(BroadcastChannel.INBOX), channels.getValue(), "y por la bandeja");
+        assertEquals(List.of(BroadcastChannel.INBOX, BroadcastChannel.EMAIL), channels.getListDataView().getItems().toList());
+
+        LocatorJ._click(send);
+        assertEquals("El titulo es obligatorio", title.getErrorMessage());
+        assertEquals("Al menos una audiencia", audiences.getErrorMessage());
+        LocatorJ._setValue(title, "Parada programada del sabado");
+        LocatorJ._setValue(audiences, "PROFILE:mto-ops\nTEAM:a");
+        LocatorJ._setValue(link, "notificaciones");
+        channels.setValue(Set.of());
+        LocatorJ._click(send);
+        assertEquals("«TEAM:a»: la clase es USER, USER_ID, PROFILE o CLIENT_ROLE", audiences.getErrorMessage());
+        assertEquals("Una ruta de la aplicacion (/notificaciones) o una direccion http(s)", link.getErrorMessage());
+        assertEquals("Al menos un canal", channels.getErrorMessage());
+        LocatorJ._setValue(audiences, "CLIENT_ROLE:stock-read");
+        LocatorJ._click(send);
+        assertEquals("«CLIENT_ROLE:stock-read»: un rol de cliente es CLIENT_ROLE:cliente:rol", audiences.getErrorMessage());
+        LocatorJ._setValue(title, "x".repeat(256));
+        LocatorJ._setValue(body, "y".repeat(4001));
+        LocatorJ._click(send);
+        assertEquals("Como mucho 255 caracteres", title.getErrorMessage());
+        assertEquals("Como mucho 4000 caracteres", body.getErrorMessage());
+        assertTrue(LocatorJ._find(ConfirmDialog.class).isEmpty(), "sin lo evidente no se llega ni a confirmar");
+        verify(notificationClient, never()).broadcast(any());
+
+        LocatorJ._setValue(title, " Parada programada del sabado ");
+        LocatorJ._setValue(body, "");
+        LocatorJ._setValue(link, "");
+        LocatorJ._setValue(severity, ActivitySeverity.WARNING);
+        LocatorJ._setValue(audiences, " PROFILE:mto-ops \n\nCLIENT_ROLE:mto-notification-api:notification-inbox\nPROFILE:mto-ops\n");
+        channels.setValue(Set.of(BroadcastChannel.EMAIL, BroadcastChannel.INBOX));
+        LocatorJ._click(send);
+        ConfirmDialog confirm = LocatorJ._get(ConfirmDialog.class);
+        assertEquals("Enviar el aviso general", confirm.getElement().getProperty("header"));
+        assertEquals("«Parada programada del sabado» se envia a 2 audiencias (PROFILE:mto-ops, CLIENT_ROLE:mto-notification-api:notification-inbox)"
+                + " por Bandeja y Correo. Llega a personas de verdad y no se puede retirar. ¿Enviar?", confirm.getElement().getProperty("message"));
+        verify(notificationClient, never()).broadcast(any());
+
+        ConfirmDialogKt._fireConfirm(confirm);
+        verify(notificationClient).broadcast(new BroadcastRequest("Parada programada del sabado", null, null, ActivitySeverity.WARNING,
+                List.of("PROFILE:mto-ops", "CLIENT_ROLE:mto-notification-api:notification-inbox"), List.of("inbox", "email")));
+        assertFalse(dialog.isOpened());
+        NotificationsKt.expectNotifications("Aviso enviado a 2 audiencias");
+        assertTrue(LocatorJ._get(Span.class, spec -> spec.withId("admin-broadcasts-last")).getText().startsWith("Ultimo enviado: «Parada programada del sabado»"));
+    }
+
+    /** Lo que el servicio rechaza de un aviso se dice con el dialogo abierto: en su campo si lo trae, y el 422 con su detalle. */
+    @Test
+    void aBroadcastTheServiceRejectsKeepsTheDialogOpenWithTheErrorOnItsField() {
+        stubNotificationAdmin();
+        when(notificationClient.broadcast(any())).thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST,
+                        new ApiProblem(null, "BAD_REQUEST", 400, "Validation failed", null, "REQ-VALIDATION", null, null, null, false,
+                                List.of(new ApiFieldError("title", null, "size must be between 0 and 255"),
+                                        new ApiFieldError("audiences[0]", null, "must not be blank")), null),
+                        "corr-a4", null, "POST /api/notifications/admin/broadcasts"))
+                .thenThrow(adminError(422, "NTF-422", "Audience 'PROFILE:x' is not <KIND>:<key> with a known kind"));
+
+        openNotificationAdmin(BROADCASTS_TAB);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("admin-broadcast")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        TextField title = LocatorJ._get(dialog, TextField.class, spec -> spec.withId("broadcast-title"));
+        TextArea audiences = LocatorJ._get(dialog, TextArea.class, spec -> spec.withId("broadcast-audiences"));
+        LocatorJ._setValue(title, "Aviso");
+        LocatorJ._setValue(audiences, "PROFILE:x");
+
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("broadcast-send")));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        assertEquals("size must be between 0 and 255", title.getErrorMessage());
+        assertEquals("must not be blank", audiences.getErrorMessage(), "el error de un elemento de la lista cae en su campo");
+        assertTrue(dialog.isOpened());
+
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("broadcast-send")));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        expectAdminError("El aviso nombra una audiencia o un canal que el servicio no conoce. Audience 'PROFILE:x' is not <KIND>:<key> with a known kind");
+        assertTrue(dialog.isOpened(), "y el 422, con el dialogo abierto");
+        verify(notificationClient, times(2)).broadcast(any());
     }
 }

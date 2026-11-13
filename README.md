@@ -387,6 +387,47 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   fuera del ámbito de la persona es el 403 `SCP-403`, que se dice con el detalle del servicio («Queda
   fuera de tu ámbito»), no como «no tienes permiso».
 
+- **Historial de los maestros y de los catálogos** (fase 6). Cada fila de cada maestro de
+  Infraestructura y de cada catálogo ofrece, a quien tiene `config-audit` **y** `config-read` (los
+  perfiles `mto-auditor` y `mto-admin`), el botón **Historial**: las revisiones que guarda
+  `mto-configuration` (`GET /api/configuration/{recurso}/{id}/revisions`), en el mismo diálogo que
+  almacén y mantenimiento, paginadas en el servicio y la más reciente primero, con quién, cuándo, la
+  operación, el origen (`HTTP`, o `SYSTEM` para un trabajo o una importación), la correlación y una
+  línea que dice cómo quedó la fila, con los nombres de su vía, su estación, su paquete y sus
+  catálogos (los de hoy: cada revisión guarda a qué apuntaba, no cómo se llamaba). Una fila sembrada
+  por una migración no tiene revisiones: el servicio responde 404 y se dice «sin historial todavía».
+  El borrado de una entrada de catálogo es físico y su revisión solo guarda el id: se dice «Borrada
+  del catálogo», y sus datos están en la revisión anterior.
+
+- **Plantillas de inspección** (fase 6), en `mantenimiento/plantillas`. Una plantilla está versionada por
+  tipo de activo y como mucho una versión está activa en cada tipo: es la que copia una inspección al
+  crearse. La pantalla enseña los cuatro tipos de activo con su versión activa (también el que no tiene
+  ninguna), todas las versiones —la activa y las anteriores, con quién creó cada una y cuándo— y los
+  puntos de la elegida. Con `maintenance-supervise` y `maintenance-write` juntos se mantienen desde ahí,
+  sobre lo que `mto-maintenance` deja escribir: **«Nueva version»** de un tipo (su nombre y la lista entera
+  de puntos en orden, partiendo de la activa, de otra versión o de nada; nace activa y la activa pasa a
+  anterior), y de una versión que existe, **renombrarla** y **activarla o desactivarla**, con una
+  confirmación que dice el efecto (desactivar la activa deja las inspecciones nuevas de ese tipo sin
+  checklist). Los puntos de una versión no se cambian y nada se borra: las inspecciones hechas guardan los
+  suyos. Si otra persona escribió antes (409 `CON-001`), el diálogo sigue abierto y se pide recargar. Ante
+  un `mto-maintenance` anterior, que no manda `lockVersion`, la pantalla se queda en solo lectura.
+
+- **Administración de notificaciones** (fase 6), en `notificaciones/administracion`, con
+  `notification-admin` y colgando de «Notificaciones» en el menú. Son cinco pestañas que piden sus datos
+  al abrirse, sobre la API de administración de `mto-notification` (`/api/notifications/admin/**`):
+  **Fuentes** (los mensajes del inbox por fuente y estado, hasta dónde ha leído el lector de Keycloak y
+  quién lo tiene arrendado, las ráfagas abiertas y las entregas por estado, con «Actualizar»);
+  **Mensajes muertos (DLQ)** (lo que guarda la cola de mensajes muertos de cada fuente; donde hay
+  mensajes, «Mirar» enseña los primeros 20 sin sacarlos —sus metadatos, por qué los apartó el broker, por
+  qué no llegarían al inbox y lo que el inbox guarda de ellos, nunca el cuerpo— y «Reprocesar» los pasa
+  otra vez por el consumidor de la fuente, de 1 a 100 de una vez, y dice en el mismo diálogo qué fue de
+  cada uno; con RabbitMQ apagado en el despliegue se dice y no hay acciones); **Entregas** (los correos,
+  paginados, filtrados por estado, canal y notificación y ordenados en el servicio, con «Reintentar» en
+  las fallidas y las omitidas); **Reglas** (las cargadas, de solo lectura, con filtro local) y **Avisos
+  manuales**: el **correo de prueba** y el **aviso general**, que se confirma antes de enviarse porque
+  llega a personas de verdad. Sus errores se dicen por lo que son (`SRC-404`, `SRC-409`, `SRC-503`,
+  `DLV-404`, `DLV-409`, `NTF-422`), con el diálogo abierto.
+
 | Acción sobre un trabajo | Roles de cliente de `mto-configuration-api` |
 |---|---|
 | Exportar perfiles, consultar, descargar | `config-read` |
@@ -398,6 +439,7 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
 | Ver la lista y buscar | `config-read` |
 | Nuevo, modificar | `config-write` |
 | Borrar (lógico) | `config-delete` |
+| Historial de una fila | `config-audit` + `config-read` |
 
 Los botones siguen los permisos que aplica el servicio a cada catálogo:
 
@@ -406,6 +448,7 @@ Los botones siguen los permisos que aplica el servicio a cada catálogo:
 | Ver el catálogo | `config-read` |
 | Nuevo, modificar | `config-write` + `lov-manage` |
 | Borrar | `config-delete` + `lov-manage` |
+| Historial de una entrada | `config-audit` + `config-read` |
 | Alta múltiple, activar/desactivar seleccionados | `config-import` + `lov-manage` |
 
 Las pantallas de usuarios (fase 5) siguen los permisos de `mto-users-api`, y ninguno implica otro:
@@ -462,6 +505,7 @@ Las pantallas de mantenimiento (fase 8) siguen los permisos de `mto-maintenance-
 | Desactivar un activo (también uno sincronizado), quitar una línea de material | `maintenance-delete` |
 | Cancelar una orden, completarla con `force`; resolver, cerrar o descartar un defecto | `maintenance-write` **y** `maintenance-supervise` |
 | Cambiar el equipo que exige un tipo de tarea | `maintenance-write` **y** `maintenance-supervise` |
+| Crear una versión de una plantilla de inspección, renombrarla, activarla o desactivarla | `maintenance-write` **y** `maintenance-supervise` |
 
 Los tres perfiles de mantenimiento del realm llevan `config-read`, `stock-read` y `resources-read`,
 así que quien los tiene ve también Infraestructura, Catálogos, Trabajos, Almacén y Recursos, en
@@ -488,6 +532,7 @@ permiso lo decide el recurso y ninguno implica otro:
 | La campana y la bandeja: ver, abrir y marcar como leídas | `notification-inbox` (lo llevan todos los perfiles del dominio) |
 | El registro de actividad y el detalle de cada línea (también desde la bandeja) | `notification-activity-read` |
 | Los accesos, con usuario e IP | `notification-access-read` (no viene con el registro) |
+| La administración del servicio (`notificaciones/administracion`): fuentes, colas de mensajes muertos (mirar y reprocesar), entregas (y reintentar), reglas, correo de prueba y aviso general | `notification-admin` (los perfiles `mto-notification-admin` y `mto-ops`) |
 
 Esconder un botón es cortesía: la guarda real es `@RolesAllowed` en la vista y el 403 del servicio.
 Con los usuarios de desarrollo, `config.responsable` (`mto-admin`) lo ve todo; `config.editor`
@@ -531,7 +576,7 @@ El módulo de mantenimiento necesita `mto-maintenance` y `mto-stock` levantados 
 | `recursos.responsable` | `mto-resources-admin` | el módulo Recursos entero (fase 10) |
 | `notificacion.lector` | `mto-notification-viewer` | la bandeja y el registro de actividad; nada más |
 | `notificacion.auditor` | `mto-notification-auditor` | además, los accesos |
-| `notificacion.responsable` | `mto-notification-admin` | todo lo de notificaciones (la administración del servicio no tiene pantalla todavía) |
+| `notificacion.responsable` | `mto-notification-admin` | todo lo de notificaciones, también la administración del servicio (`notificaciones/administracion`) |
 
 Todos los perfiles del dominio llevan `notification-inbox`, así que cualquier usuario de desarrollo
 ve la campana y su bandeja. El registro lo ven los responsables de cada módulo
@@ -578,8 +623,8 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
   `stock-write`, `stock-delete`, `stock-adjust`) para el de almacén, `mto-maintenance-api`
   (`maintenance-read`, `maintenance-write`, `maintenance-delete`, `maintenance-supervise`) para el
   de mantenimiento, `mto-notification-api` (`notification-inbox`, `notification-activity-read`,
-  `notification-access-read`, `notification-admin`) para la campana, la bandeja, el registro y los
-  accesos, y `mto-resources-api` (`resources-read`, `resources-write`, `resources-fleet-write`,
+  `notification-access-read`, `notification-admin`) para la campana, la bandeja, el registro, los
+  accesos y la administración del servicio, y `mto-resources-api` (`resources-read`, `resources-write`, `resources-fleet-write`,
   `resources-location-write`, `resources-delete`) para el personal, el organigrama y la flota.
   Llegan como `ROLE_CONFIG_READ`, `ROLE_USERS_READ`, `ROLE_STOCK_READ`,
   `ROLE_MAINTENANCE_READ`, `ROLE_NOTIFICATION_INBOX`, `ROLE_RESOURCES_READ`... y se comprueban con `@RolesAllowed` en cada vista; cada

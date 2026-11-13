@@ -1,8 +1,11 @@
 package com.alejandro.mtobackoffice.client.configuration;
 
 import com.alejandro.mtobackoffice.client.dto.LovDto;
+import com.alejandro.mtobackoffice.client.dto.PageResponse;
+import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.service.annotation.DeleteExchange;
 import org.springframework.web.service.annotation.GetExchange;
 import org.springframework.web.service.annotation.HttpExchange;
@@ -49,6 +52,16 @@ public interface LovClient {
 
     @DeleteExchange("/{resource}/{id}")
     void delete(@PathVariable("resource") String resource, @PathVariable("id") Long id);
+
+    /**
+     * El historial de una entrada (Envers en mto-configuration), la revision mas reciente primero. Pide
+     * {@code config-audit} <b>y</b> {@code config-read}; sin ninguna revision (una entrada sembrada por
+     * una migracion) es un 404 {@code NOT-001}. El borrado de una entrada es fisico: su revision
+     * {@code DELETED} solo trae el id.
+     */
+    @GetExchange("/{resource}/{id}/revisions")
+    PageResponse<RevisionDto<LovDto>> revisions(@PathVariable("resource") String resource, @PathVariable("id") Long id,
+                                                @RequestParam("page") int page, @RequestParam("size") int size);
 
     default List<LovDto> findAll(LovResource resource) {
         return findAll(resource.path());

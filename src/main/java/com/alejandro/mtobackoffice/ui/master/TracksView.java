@@ -110,6 +110,11 @@ public class TracksView extends MasterView<TrackDto> {
     }
 
     @Override
+    protected String describe(TrackDto dto) {
+        return MasterHistory.track(dto, catalog);
+    }
+
+    @Override
     protected String labelOf(TrackDto dto) {
         return dto.getName() == null ? super.labelOf(dto) : dto.getName();
     }

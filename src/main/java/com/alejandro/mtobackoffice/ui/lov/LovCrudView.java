@@ -6,6 +6,8 @@ import com.alejandro.mtobackoffice.client.dto.LovDto;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.configuration.security.SecurityRoles;
 import com.alejandro.mtobackoffice.ui.MainLayout;
+import com.alejandro.mtobackoffice.ui.support.RevisionsDialog;
+import com.alejandro.mtobackoffice.ui.support.RowActions;
 import com.alejandro.mtobackoffice.ui.support.TextMatching;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
 import com.vaadin.flow.component.Component;
@@ -39,6 +41,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Los 17 catalogos con una sola pantalla: el recurso va en la ruta ({@code catalogos/pole-types}) y
@@ -48,7 +52,8 @@ import java.util.Set;
  *
  * <p>Los botones siguen los permisos del servicio: crear y modificar piden {@code config-write} y
  * {@code lov-manage}; borrar, {@code config-delete} y {@code lov-manage}; los lotes,
- * {@code config-import} y {@code lov-manage}. Esconderlos es cortesia: la guarda real esta en el
+ * {@code config-import} y {@code lov-manage}; el historial de una entrada, {@code config-audit} y
+ * {@code config-read}. Esconderlos es cortesia: la guarda real esta en el
  * servicio, que responde 403 si se fuerza la llamada.</p>
  */
 @Route(value = LovCrudView.ROUTE_PREFIX + "/:" + LovCrudView.RESOURCE_PARAMETER, layout = MainLayout.class)
@@ -58,6 +63,8 @@ public class LovCrudView extends VerticalLayout implements BeforeEnterObserver, 
     public static final String ROUTE_PREFIX = "catalogos";
     public static final String RESOURCE_PARAMETER = "resource";
     static final String ACTIONS_COLUMN = "actions";
+    static final String NO_ENTITY = "Sin datos de la entrada en esta revision";
+    static final String DELETED_ENTRY = "Borrada del catalogo: sus datos estan en la revision anterior";
 
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", Locale.ROOT);
 
@@ -65,6 +72,7 @@ public class LovCrudView extends VerticalLayout implements BeforeEnterObserver, 
     private final boolean canWrite;
     private final boolean canDelete;
     private final boolean canBulk;
+    private final boolean canAudit;
 
     private final H2 title = new H2("Catalogos");
     private final TextField filter = new TextField();
@@ -89,6 +97,7 @@ public class LovCrudView extends VerticalLayout implements BeforeEnterObserver, 
         this.canWrite = authenticationContext.hasAllRoles(SecurityRoles.CONFIG_WRITE, SecurityRoles.LOV_MANAGE);
         this.canDelete = authenticationContext.hasAllRoles(SecurityRoles.CONFIG_DELETE, SecurityRoles.LOV_MANAGE);
         this.canBulk = authenticationContext.hasAllRoles(SecurityRoles.CONFIG_IMPORT, SecurityRoles.LOV_MANAGE);
+        this.canAudit = authenticationContext.hasAllRoles(SecurityRoles.CONFIG_AUDIT, SecurityRoles.CONFIG_READ);
         setSizeFull();
         add(title, toolbar(), buildGrid());
         expand(grid);
@@ -159,7 +168,7 @@ public class LovCrudView extends VerticalLayout implements BeforeEnterObserver, 
         grid.addColumn(dto -> dto.versionDate() == null ? "" : DATE_TIME.format(dto.versionDate()))
                 .setHeader("Modificado").setKey("versionDate").setAutoWidth(true);
         grid.addColumn(dto -> dto.versionUser() == null ? "" : dto.versionUser()).setHeader("Por").setKey("versionUser").setAutoWidth(true);
-        if (canWrite || canDelete) {
+        if (canWrite || canDelete || canAudit) {
             grid.addColumn(new ComponentRenderer<>(this::rowActions)).setHeader("").setKey(ACTIONS_COLUMN).setAutoWidth(true).setFlexGrow(0);
         }
         grid.setSelectionMode(canBulk ? Grid.SelectionMode.MULTI : Grid.SelectionMode.SINGLE);
@@ -185,6 +194,9 @@ public class LovCrudView extends VerticalLayout implements BeforeEnterObserver, 
             edit.setId("edit-" + dto.id());
             actions.add(edit);
         }
+        if (canAudit) {
+            actions.add(RowActions.button("history-" + dto.id(), VaadinIcon.CLOCK, "Historial", click -> history(dto).open()));
+        }
         if (canDelete) {
             Button delete = new Button(VaadinIcon.TRASH.create(), click -> confirmDelete(dto));
             delete.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
@@ -193,6 +205,31 @@ public class LovCrudView extends VerticalLayout implements BeforeEnterObserver, 
             actions.add(delete);
         }
         return actions;
+    }
+
+    /**
+     * El historial de una entrada, en el dialogo de almacen y de mantenimiento: sus revisiones
+     * paginadas en el servicio, la mas reciente primero. Una entrada sembrada por una migracion no
+     * tiene ninguna (404), y el dialogo dice «sin historial todavia».
+     */
+    private RevisionsDialog<LovDto> history(LovDto dto) {
+        LovResource catalogueOfTheRow = resource;
+        return new RevisionsDialog<>(dto.code(), (page, size) -> client.revisions(catalogueOfTheRow.path(), dto.id(), page, size),
+                entry -> describe(catalogueOfTheRow, entry), NO_ENTITY);
+    }
+
+    /**
+     * Como quedo una entrada en una revision: su codigo, su descripcion, su tipo en los tres catalogos
+     * que lo tienen y si estaba activa. El borrado de una entrada es fisico y su revision solo guarda
+     * el id: se dice asi, en vez de pintarla como una entrada vacia e inactiva.
+     */
+    static String describe(LovResource resource, LovDto entry) {
+        if (entry.code() == null && entry.description() == null) {
+            return DELETED_ENTRY;
+        }
+        String parent = resource.parent().flatMap(type -> entry.parent(type.field())).map(LovDto::code).map(code -> "tipo " + code).orElse(null);
+        return Stream.of(entry.code(), entry.description(), parent, entry.isEnabled() ? "activo" : "inactivo")
+                .filter(part -> part != null && !part.isBlank()).collect(Collectors.joining(" · "));
     }
 
     void load() {

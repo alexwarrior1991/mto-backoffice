@@ -1,6 +1,7 @@
 package com.alejandro.mtobackoffice.client.configuration;
 
 import com.alejandro.mtobackoffice.client.dto.PageResponse;
+import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.dto.master.MasterDto;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -26,7 +27,8 @@ import java.util.Map;
  * completas. Los filtros que no vienen no filtran, incluidos los booleanos.</p>
  *
  * <p>Permisos del servicio: leer, {@code config-read}; crear y modificar, {@code config-write};
- * borrar (logico), {@code config-delete}.</p>
+ * borrar (logico), {@code config-delete}; el historial de una fila, {@code config-audit} y
+ * {@code config-read} juntos.</p>
  */
 public interface MasterClient<D extends MasterDto> {
 
@@ -45,6 +47,16 @@ public interface MasterClient<D extends MasterDto> {
 
     @DeleteExchange("/{id}")
     void delete(@PathVariable("id") Long id);
+
+    /**
+     * El historial de una fila (Envers en mto-configuration), la revision mas reciente primero, con la
+     * forma de mto-stock y mto-maintenance. Pide {@code config-audit} <b>y</b> {@code config-read}; una
+     * fila sin ninguna revision es un 404 {@code NOT-001}, no una pagina vacia. La {@code entity} de
+     * cada revision es la fila de una lista (paquetes, estaciones y vias, sin hijos), con
+     * {@code versionNumber} siempre a {@code null}: no es un cuerpo para un {@code PUT}.
+     */
+    @GetExchange("/{id}/revisions")
+    PageResponse<RevisionDto<D>> revisions(@PathVariable("id") Long id, @RequestParam("page") int page, @RequestParam("size") int size);
 
     /** Guarda segun tenga id o no: alta con {@code POST}, modificacion con {@code PUT /{id}}. */
     default D save(D dto) {
