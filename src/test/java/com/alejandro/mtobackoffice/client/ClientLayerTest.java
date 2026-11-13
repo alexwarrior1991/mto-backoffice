@@ -306,6 +306,9 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.AssetRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.AssetUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.FunctionalGroup;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateItemRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.SectionInsulatorInstallation;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskUnit;
@@ -4641,6 +4644,102 @@ class ClientLayerTest {
         assertEquals(Set.of("EARTHING", "SAFETY_HARNESS"), earthing.requiredEquipment());
         assertEquals(Set.of(), none.requiredEquipment());
         assertEquals("CON-001", stale.getProblem().code());
+        server.verify();
+    }
+
+    /**
+     * Las plantillas de inspeccion se escriben: la lista trae de cada version su {@code lockVersion} (el
+     * bloqueo) y su {@code audit} (una de un servicio anterior, sin ellas, se lee y no se escribe); la
+     * version siguiente es un POST con la lista entera en orden, sin {@code version}, sin {@code orderIndex}
+     * y sin lo vacio, con {@code replacesVersion} solo si el tipo tenia activa; renombrar, activar y
+     * desactivar son un merge-patch con {@code lockVersion}, nunca {@code version}. CON-001, TPL-404 y los
+     * errores por campo con la ruta de su fila llegan tipados.
+     */
+    @Test
+    void inspectionTemplatesAreVersionedAndPatchedWithTheirLockVersionNeverTheirVersionNumber() {
+        org.springframework.test.json.JsonCompareMode strict = org.springframework.test.json.JsonCompareMode.STRICT;
+        String id = "0195a000-0000-7000-8000-00000000a002";
+        String items = "\"items\":[{\"id\":\"2b3c4d5e-0000-4000-8000-000000000031\",\"code\":\"CONTACTS\",\"label\":\"Main contacts\","
+                + "\"unit\":null,\"minValue\":null,\"maxValue\":null,\"requiresMeasure\":false,\"orderIndex\":1}]";
+        String audit = "\"audit\":{\"createdAt\":\"2026-11-13T08:40:00Z\",\"updatedAt\":\"2026-11-13T09:00:00Z\","
+                + "\"createdBy\":\"config.responsable\",\"updatedBy\":\"system\"}";
+        String active = "{\"id\":\"" + id + "\",\"assetType\":\"DISCONNECTOR\",\"version\":2,\"name\":\"Disconnector inspection\","
+                + "\"active\":true," + items + ",\"lockVersion\":4," + audit + "}";
+        String before = "{\"id\":\"0195a000-0000-7000-8000-00000000a001\",\"assetType\":\"SWITCH_HEATER\",\"version\":1,\"name\":\"Old\","
+                + "\"active\":false,\"items\":[]}";
+        String url = MAINTENANCE + "/inspection-templates";
+        server.expect(requestTo(url)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[" + active + "," + before + "]", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(url)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(content().json("{\"assetType\":\"DISCONNECTOR\",\"name\":\"Disconnector inspection\",\"replacesVersion\":2,"
+                        + "\"items\":[{\"code\":\"CONTACTS\",\"label\":\"Main contacts\",\"requiresMeasure\":false},"
+                        + "{\"code\":\"CONTINUITY\",\"label\":\"Continuity\",\"unit\":\"uOhm\",\"minValue\":-0.5,\"maxValue\":100,"
+                        + "\"requiresMeasure\":true}]}", strict))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                        .body(active.replace("\"version\":2", "\"version\":3").replace("\"lockVersion\":4", "\"lockVersion\":0")));
+        server.expect(requestTo(url)).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"assetType\":\"TRACK_SECTION\",\"name\":\"Tramo\","
+                        + "\"items\":[{\"code\":\"T-1\",\"label\":\"Estado\",\"requiresMeasure\":false}]}", strict))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":409,\"error\":\"CONFLICT\",\"message\":\"The active template of TRACK_SECTION changed\","
+                                + "\"errorCode\":\"CON-001\",\"correlationId\":\"corr-tpl\",\"validationErrors\":[]}"));
+        server.expect(requestTo(url)).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":400,\"error\":\"BAD_REQUEST\",\"message\":\"Validation failed\",\"errorCode\":\"REQ-VALIDATION\","
+                                + "\"validationErrors\":[{\"field\":\"items[1].code\",\"message\":\"must match\"},"
+                                + "{\"field\":\"items\",\"message\":\"size must be between 1 and 100\"}]}"));
+        server.expect(requestTo(url + "/" + id)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().contentTypeCompatibleWith(MergePatch.MEDIA_TYPE))
+                .andExpect(content().json("{\"name\":\"Seccionadores\",\"lockVersion\":4}", strict))
+                .andRespond(withSuccess(active.replace("\"lockVersion\":4", "\"lockVersion\":5"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(url + "/" + id)).andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"active\":false,\"lockVersion\":5}", strict))
+                .andRespond(withSuccess(active.replace("\"active\":true", "\"active\":false"), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(url + "/" + id)).andExpect(method(HttpMethod.PATCH))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":404,\"error\":\"NOT_FOUND\",\"message\":\"Inspection template not found\","
+                                + "\"errorCode\":\"TPL-404\",\"validationErrors\":[]}"));
+
+        List<InspectionTemplateDto> templates = asUser(() -> maintenanceCatalogClient.inspectionTemplates());
+        InspectionTemplateItemRequest contacts = new InspectionTemplateItemRequest("CONTACTS", "Main contacts", null, null, null, false);
+        InspectionTemplateDto created = asUser(() -> maintenanceCatalogClient.createInspectionTemplate(new InspectionTemplateRequest(
+                CatenaryAssetType.DISCONNECTOR, "Disconnector inspection", List.of(contacts, new InspectionTemplateItemRequest("CONTINUITY",
+                "Continuity", "uOhm", new BigDecimal("-0.5"), new BigDecimal("100"), true)), 2)));
+        InspectionTemplateRequest first = new InspectionTemplateRequest(CatenaryAssetType.TRACK_SECTION, "Tramo",
+                List.of(new InspectionTemplateItemRequest("T-1", "Estado", null, null, null, false)), null);
+        ConflictApiException crossed = assertThrows(ConflictApiException.class,
+                () -> asUser(() -> maintenanceCatalogClient.createInspectionTemplate(first)));
+        ValidationApiException invalid = assertThrows(ValidationApiException.class,
+                () -> asUser(() -> maintenanceCatalogClient.createInspectionTemplate(first)));
+        UUID templateId = UUID.fromString(id);
+        InspectionTemplateDto renamed = asUser(() -> maintenanceCatalogClient.updateInspectionTemplate(templateId,
+                MergePatch.of(new InspectionTemplateUpdateRequest("Seccionadores", null, 4L), null)));
+        InspectionTemplateDto deactivated = asUser(() -> maintenanceCatalogClient.updateInspectionTemplate(templateId,
+                MergePatch.of(new InspectionTemplateUpdateRequest(null, false, 5L), null)));
+        NotFoundApiException missing = assertThrows(NotFoundApiException.class, () -> asUser(() -> maintenanceCatalogClient
+                .updateInspectionTemplate(templateId, MergePatch.of(new InspectionTemplateUpdateRequest(null, true, 5L), null))));
+
+        InspectionTemplateDto read = templates.getFirst();
+        assertEquals(2, read.version(), "el numero de la version");
+        assertEquals(4L, read.lockVersion(), "el bloqueo, que es otra clave");
+        assertEquals("config.responsable", read.audit().createdBy());
+        assertEquals(Instant.parse("2026-11-13T08:40:00Z"), read.audit().createdAt());
+        assertTrue(read.activeNow());
+        assertTrue(read.writable());
+        InspectionTemplateDto old = templates.get(1);
+        assertNull(old.lockVersion(), "una de un servicio anterior llega sin bloqueo");
+        assertNull(old.audit());
+        assertEquals(CatenaryAssetType.UNKNOWN, old.assetType(), "un tipo de activo nuevo no rompe la lista");
+        assertFalse(old.writable(), "sin bloqueo, o de un tipo desconocido, no se escribe");
+        assertEquals(3, created.version());
+        assertEquals(0L, created.lockVersion());
+        assertEquals("CON-001", crossed.getProblem().code());
+        assertEquals(List.of("items[1].code", "items"), invalid.getProblem().errors().stream().map(ApiFieldError::field).toList());
+        assertEquals(5L, renamed.lockVersion());
+        assertFalse(deactivated.activeNow());
+        assertEquals("TPL-404", missing.getProblem().code());
+        assertTrue(new InspectionTemplateUpdateRequest(null, null, 5L).changesNothing(), "el bloqueo solo no es un cambio");
         server.verify();
     }
 

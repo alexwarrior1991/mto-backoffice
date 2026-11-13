@@ -133,6 +133,10 @@ public final class UiErrors {
                     "Ese vehiculo aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.";
             case NotFoundApiException instrument when "MSI-404".equals(instrument.getProblem().code()) ->
                     "Ese instrumento aun no ha llegado a mantenimiento desde mto-resources: intentalo en un momento.";
+            // mto-maintenance: una version de una plantilla de inspeccion que el servicio no conoce. Nada se
+            // borra alli, asi que es un id de otro entorno o una lista leida de otro despliegue: releerla.
+            case NotFoundApiException template when "TPL-404".equals(template.getProblem().code()) ->
+                    "Esa version de la plantilla de inspeccion no existe: recarga la lista.";
             // mto-resources: lo que ya no existe (otra persona lo quito entre medias) de las cualificaciones,
             // los documentos y los instrumentos. Se dice que es, sin el detalle del servicio, que nombra ids.
             case NotFoundApiException missing when missing.getProblem().code() != null

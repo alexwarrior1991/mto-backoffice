@@ -399,6 +399,19 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   El borrado de una entrada de catálogo es físico y su revisión solo guarda el id: se dice «Borrada
   del catálogo», y sus datos están en la revisión anterior.
 
+- **Plantillas de inspección** (fase 6), en `mantenimiento/plantillas`. Una plantilla está versionada por
+  tipo de activo y como mucho una versión está activa en cada tipo: es la que copia una inspección al
+  crearse. La pantalla enseña los cuatro tipos de activo con su versión activa (también el que no tiene
+  ninguna), todas las versiones —la activa y las anteriores, con quién creó cada una y cuándo— y los
+  puntos de la elegida. Con `maintenance-supervise` y `maintenance-write` juntos se mantienen desde ahí,
+  sobre lo que `mto-maintenance` deja escribir: **«Nueva version»** de un tipo (su nombre y la lista entera
+  de puntos en orden, partiendo de la activa, de otra versión o de nada; nace activa y la activa pasa a
+  anterior), y de una versión que existe, **renombrarla** y **activarla o desactivarla**, con una
+  confirmación que dice el efecto (desactivar la activa deja las inspecciones nuevas de ese tipo sin
+  checklist). Los puntos de una versión no se cambian y nada se borra: las inspecciones hechas guardan los
+  suyos. Si otra persona escribió antes (409 `CON-001`), el diálogo sigue abierto y se pide recargar. Ante
+  un `mto-maintenance` anterior, que no manda `lockVersion`, la pantalla se queda en solo lectura.
+
 - **Administración de notificaciones** (fase 6), en `notificaciones/administracion`, con
   `notification-admin` y colgando de «Notificaciones» en el menú. Son cinco pestañas que piden sus datos
   al abrirse, sobre la API de administración de `mto-notification` (`/api/notifications/admin/**`):
@@ -492,6 +505,7 @@ Las pantallas de mantenimiento (fase 8) siguen los permisos de `mto-maintenance-
 | Desactivar un activo (también uno sincronizado), quitar una línea de material | `maintenance-delete` |
 | Cancelar una orden, completarla con `force`; resolver, cerrar o descartar un defecto | `maintenance-write` **y** `maintenance-supervise` |
 | Cambiar el equipo que exige un tipo de tarea | `maintenance-write` **y** `maintenance-supervise` |
+| Crear una versión de una plantilla de inspección, renombrarla, activarla o desactivarla | `maintenance-write` **y** `maintenance-supervise` |
 
 Los tres perfiles de mantenimiento del realm llevan `config-read`, `stock-read` y `resources-read`,
 así que quien los tiene ve también Infraestructura, Catálogos, Trabajos, Almacén y Recursos, en

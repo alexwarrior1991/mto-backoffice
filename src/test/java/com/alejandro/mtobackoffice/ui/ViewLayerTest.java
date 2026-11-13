@@ -410,6 +410,9 @@ import com.alejandro.mtobackoffice.client.dto.maintenance.AssetUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.FunctionalGroup;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateItemDto;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateItemRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateRequest;
+import com.alejandro.mtobackoffice.client.dto.maintenance.InspectionTemplateUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskTypeUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.TaskUnit;
@@ -538,6 +541,9 @@ import com.alejandro.mtobackoffice.client.dto.resources.VehicleRepairRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleRepairUpdateRequest;
 import com.alejandro.mtobackoffice.client.resources.ResourcesReportClient;
 import com.alejandro.mtobackoffice.ui.maintenance.TaskTypeEquipmentDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.InspectionTemplateRenameDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.InspectionTemplateVersionDialog;
+import com.alejandro.mtobackoffice.ui.maintenance.InspectionTemplatesView;
 import com.alejandro.mtobackoffice.ui.master.SchematicDrawing;
 import com.alejandro.mtobackoffice.ui.master.TrackSchematicDialog;
 import com.alejandro.mtobackoffice.ui.resources.PersonAbsenceDialog;
@@ -11697,6 +11703,364 @@ class ViewLayerTest {
         click(TaskTypeEquipmentDialog.SAVE_ID);
         verify(maintenanceCatalogClient).updateTaskType(eq("RG-05"), argThat(patch -> patch.values().requiredEquipment() == null
                 && patch.cleared().equals(Set.of("requiredEquipment")) && patch.version() == 1L));
+    }
+
+    // --- Las plantillas de inspeccion, que mantiene quien supervisa ------------------------------------
+
+    private static final UUID TPL_PROFILE_V1 = UUID.fromString("0195a000-0000-7000-8000-00000000b001");
+    private static final UUID TPL_PROFILE_V2 = UUID.fromString("0195a000-0000-7000-8000-00000000b002");
+    private static final UUID TPL_PROFILE_V3 = UUID.fromString("0195a000-0000-7000-8000-00000000b003");
+    private static final UUID TPL_DISCONNECTOR_V1 = UUID.fromString("0195a000-0000-7000-8000-00000000c001");
+    private static final UUID TPL_TRACK_V1 = UUID.fromString("0195a000-0000-7000-8000-00000000d001");
+    private static final InspectionTemplateItemDto TPL_HEIGHT = new InspectionTemplateItemDto(UUID.randomUUID(), "P-01", "Altura del hilo", "mm",
+            new BigDecimal("5300"), new BigDecimal("5700"), true, 1);
+    private static final InspectionTemplateItemDto TPL_STATE = new InspectionTemplateItemDto(UUID.randomUUID(), "P-02", "Estado de la mensula", null,
+            null, null, false, 2);
+
+    private static InspectionTemplateDto template(UUID id, CatenaryAssetType type, int version, String name, boolean active, Long lockVersion,
+                                                  InspectionTemplateItemDto... items) {
+        return new InspectionTemplateDto(id, type, version, name, active, List.of(items), lockVersion,
+                new AuditDto(Instant.parse("2026-11-13T08:40:00Z"), Instant.parse("2026-11-13T08:40:00Z"), "config.responsable", "config.responsable"));
+    }
+
+    /** Un seccionador con una version anterior y sin activa, y un perfil con la 2 activa y la 1 anterior. */
+    private static List<InspectionTemplateDto> threeTemplates() {
+        return List.of(template(TPL_DISCONNECTOR_V1, CatenaryAssetType.DISCONNECTOR, 1, "Seccionador", false, 1L, TPL_STATE),
+                template(TPL_PROFILE_V2, CatenaryAssetType.PROFILE, 2, "Perfil", true, 0L, TPL_HEIGHT, TPL_STATE),
+                template(TPL_PROFILE_V1, CatenaryAssetType.PROFILE, 1, "Perfil antiguo", false, 3L, TPL_STATE));
+    }
+
+    private static List<String> templateActions(String gridId, int row) {
+        return LocatorJ._find(GridKt._getCellComponent(gridWithId(gridId), row, InspectionTemplatesView.ACTIONS_COLUMN), Button.class).stream()
+                .map(button -> button.getId().orElse("").replaceAll("-0195a000.*$", "")).toList();
+    }
+
+    private static void clickTemplateAction(String gridId, int row, String id) {
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(gridWithId(gridId), row, InspectionTemplatesView.ACTIONS_COLUMN), Button.class,
+                spec -> spec.withId(id)));
+    }
+
+    private static TextField templateText(String id) {
+        return LocatorJ._get(TextField.class, spec -> spec.withId(id));
+    }
+
+    private static BigDecimalField templateNumber(String id) {
+        return LocatorJ._get(BigDecimalField.class, spec -> spec.withId(id));
+    }
+
+    private void openTemplates() {
+        UI.getCurrent().navigate(HomeView.class);
+        UI.getCurrent().navigate(MaintenanceRoutes.TEMPLATES);
+    }
+
+    /**
+     * La lista dice, para los cuatro tipos de activo (tambien el que no tiene ninguna version), cual es su
+     * plantilla activa, y de cada version si es la activa o una anterior y quien la creo. Mantenerlas pide
+     * maintenance-supervise y maintenance-write juntos, y que el servicio las deje escribir: con una version
+     * sin lockVersion (un servicio anterior) no se ofrece nada, y una de un tipo desconocido solo se lee.
+     */
+    @Test
+    void theTemplatesShowTheActiveVersionOfEveryAssetTypeAndOnlySuperviseWithWriteMaintainsThem() {
+        loginAs("mantenimiento.tecnico", MAINTENANCE_TECHNICIAN);
+        when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(threeTemplates());
+
+        UI.getCurrent().navigate(MaintenanceRoutes.TEMPLATES);
+        Grid<Object> types = gridWithId("template-types-grid");
+        assertEquals(4, GridKt._size(types));
+        assertEquals(List.of("Tramo de via", "Sin plantilla activa", "0"), GridKt._getFormattedRow(types, 0).subList(0, 3));
+        assertEquals(List.of("Perfil", "Version 2 · Perfil", "2"), GridKt._getFormattedRow(types, 1).subList(0, 3));
+        assertEquals(List.of("Seccionador", "Sin plantilla activa", "1"), GridKt._getFormattedRow(types, 2).subList(0, 3));
+        assertEquals(List.of("Aislador de seccion", "Sin plantilla activa", "0"), GridKt._getFormattedRow(types, 3).subList(0, 3));
+        Grid<Object> versions = gridWithId("templates-grid");
+        assertEquals(List.of("Seccionador", "1", "Seccionador", "Anterior", "1", "config.responsable · 13/11/2026 08:40"),
+                GridKt._getFormattedRow(versions, 0).subList(0, 6));
+        assertEquals(List.of("Perfil", "2", "Perfil", "Activa", "2"), GridKt._getFormattedRow(versions, 1).subList(0, 5));
+        assertEquals(List.of("Perfil", "1", "Perfil antiguo", "Anterior", "1"), GridKt._getFormattedRow(versions, 2).subList(0, 5));
+        LocatorJ._get(H3.class, spec -> spec.withText("Puntos de Perfil (version 2)"));
+        assertEquals(List.of(), templateActions("template-types-grid", 0), "sin maintenance-supervise no se crea");
+        assertEquals(List.of(), templateActions("templates-grid", 1), "sin maintenance-supervise no se cambia");
+
+        loginAs("supervisor.sin.escritura", "ROLE_MAINTENANCE_READ", "ROLE_MAINTENANCE_SUPERVISE");
+        openTemplates();
+        assertEquals(List.of(), templateActions("template-types-grid", 1), "supervise sin write tampoco");
+        assertEquals(List.of(), templateActions("templates-grid", 1));
+
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        openTemplates();
+        assertEquals(List.of("template-new-TRACK_SECTION"), templateActions("template-types-grid", 0));
+        assertEquals(List.of("template-new-PROFILE"), templateActions("template-types-grid", 1));
+        assertEquals(List.of("template-copy", "template-rename", "template-activate"), templateActions("templates-grid", 0));
+        assertEquals(List.of("template-copy", "template-rename", "template-deactivate"), templateActions("templates-grid", 1));
+        assertEquals(List.of("template-copy", "template-rename", "template-activate"), templateActions("templates-grid", 2));
+        assertEquals("Nueva version de Tramo de via", LocatorJ._get(GridKt._getCellComponent(gridWithId("template-types-grid"), 0,
+                InspectionTemplatesView.ACTIONS_COLUMN), Button.class).getTooltip().getText());
+        assertEquals("Desactivar la version 2 de Perfil", LocatorJ._get(GridKt._getCellComponent(gridWithId("templates-grid"), 1,
+                InspectionTemplatesView.ACTIONS_COLUMN), Button.class, spec -> spec.withId("template-deactivate-" + TPL_PROFILE_V2)).getTooltip().getText());
+
+        // Un servicio anterior no manda lockVersion ni audit: se lee como siempre y no se ofrece escribir nada.
+        when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(List.of(
+                new InspectionTemplateDto(TPL_PROFILE_V2, CatenaryAssetType.PROFILE, 2, "Perfil", true, List.of(TPL_HEIGHT)),
+                template(TPL_DISCONNECTOR_V1, CatenaryAssetType.DISCONNECTOR, 1, "Seccionador", true, 1L)));
+        openTemplates();
+        assertEquals(List.of(), templateActions("template-types-grid", 0), "con una version sin bloqueo no se crea ninguna");
+        assertEquals(List.of(), templateActions("templates-grid", 0));
+        assertEquals(List.of(), templateActions("templates-grid", 1));
+        assertEquals("", GridKt._getFormattedRow(gridWithId("templates-grid"), 1).get(5), "sin auditoria, nada");
+
+        // Un tipo de activo que esta aplicacion no conoce se lee, y no abre nada.
+        when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(List.of(
+                template(UUID.randomUUID(), CatenaryAssetType.UNKNOWN, 1, "Calefactor", true, 0L)));
+        openTemplates();
+        assertEquals(4, GridKt._size(gridWithId("template-types-grid")), "los cuatro conocidos");
+        assertEquals(List.of("Desconocido", "1", "Calefactor", "Activa"), GridKt._getFormattedRow(gridWithId("templates-grid"), 0).subList(0, 4));
+        assertEquals(List.of(), templateActions("templates-grid", 0));
+        assertEquals(List.of("template-new-PROFILE"), templateActions("template-types-grid", 1));
+        verify(maintenanceCatalogClient, never()).createInspectionTemplate(any());
+        verify(maintenanceCatalogClient, never()).updateInspectionTemplate(any(), any());
+    }
+
+    /**
+     * «Nueva version» de un tipo parte de los puntos de su activa, en su orden: se anaden, se quitan y se
+     * suben o bajan, lo evidente se comprueba antes de llamar, y viaja la lista entera con replacesVersion,
+     * el numero de la activa leida. La nueva nace activa: la lista se relee entera y queda elegida.
+     */
+    @Test
+    void aNewTemplateVersionStartsFromTheActiveOneAndTravelsWholeWithTheVersionItReplaces() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        InspectionTemplateDto created = template(TPL_PROFILE_V3, CatenaryAssetType.PROFILE, 3, "Perfil 2027", true, 0L, TPL_STATE, TPL_HEIGHT);
+        when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(threeTemplates()).thenReturn(List.of(
+                threeTemplates().getFirst(), created, template(TPL_PROFILE_V2, CatenaryAssetType.PROFILE, 2, "Perfil", false, 1L, TPL_HEIGHT, TPL_STATE),
+                threeTemplates().get(2)));
+        when(maintenanceCatalogClient.createInspectionTemplate(any())).thenReturn(created);
+
+        UI.getCurrent().navigate(MaintenanceRoutes.TEMPLATES);
+        clickTemplateAction("template-types-grid", 1, "template-new-PROFILE");
+        assertEquals("Nueva version de la plantilla de Perfil", LocatorJ._get(InspectionTemplateVersionDialog.class).getHeaderTitle());
+        assertEquals("Parte de los puntos de la version 2. La nueva version nace activa y la version 2, la activa ahora, pasa a anterior. "
+                        + "Los puntos de una version no se cambian despues. Las inspecciones ya creadas no cambian.",
+                LocatorJ._get(Paragraph.class, spec -> spec.withId(InspectionTemplateVersionDialog.NOTICE_ID)).getText());
+        assertEquals("Perfil", templateText(InspectionTemplateVersionDialog.NAME_ID).getValue());
+        assertEquals("P-01", templateText("template-item-code-0").getValue());
+        assertEquals("Altura del hilo", templateText("template-item-label-0").getValue());
+        assertEquals("mm", templateText("template-item-unit-0").getValue());
+        assertEquals(new BigDecimal("5300"), templateNumber("template-item-min-0").getValue());
+        assertTrue(LocatorJ._get(Checkbox.class, spec -> spec.withId("template-item-measure-0")).getValue());
+        assertEquals("P-02", templateText("template-item-code-1").getValue());
+        assertFalse(LocatorJ._get(Button.class, spec -> spec.withId("template-item-up-0")).isEnabled(), "el primero no sube");
+        assertFalse(LocatorJ._get(Button.class, spec -> spec.withId("template-item-down-1")).isEnabled(), "el ultimo no baja");
+
+        // Lo evidente, antes de llamar: el nombre, y de cada punto su codigo, su texto y su rango.
+        LocatorJ._setValue(templateText(InspectionTemplateVersionDialog.NAME_ID), "  ");
+        click(InspectionTemplateVersionDialog.ADD_ID);
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        assertEquals("El nombre es obligatorio", templateText(InspectionTemplateVersionDialog.NAME_ID).getErrorMessage());
+        assertEquals("El codigo es obligatorio", templateText("template-item-code-2").getErrorMessage());
+        assertEquals("El texto es obligatorio", templateText("template-item-label-2").getErrorMessage());
+        assertFalse(templateText("template-item-code-0").isInvalid());
+        LocatorJ._setValue(templateText("template-item-code-2"), "p 03");
+        LocatorJ._setValue(templateText("template-item-label-2"), "Tension");
+        LocatorJ._setValue(templateNumber("template-item-min-2"), new BigDecimal("10"));
+        LocatorJ._setValue(templateNumber("template-item-max-2"), new BigDecimal("5"));
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        assertEquals("Mayusculas sin tildes, cifras, '_', '.' y '-', sin espacios y empezando por letra o cifra",
+                templateText("template-item-code-2").getErrorMessage());
+        assertEquals("El minimo no puede ser mayor que el maximo", templateNumber("template-item-min-2").getErrorMessage());
+        LocatorJ._setValue(templateText("template-item-code-2"), "P-01");
+        LocatorJ._setValue(templateNumber("template-item-min-2"), new BigDecimal("1.2345"));
+        LocatorJ._setValue(templateNumber("template-item-max-2"), new BigDecimal("1234567890"));
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        assertEquals("Codigo repetido en la plantilla", templateText("template-item-code-2").getErrorMessage());
+        assertFalse(templateText("template-item-code-0").isInvalid(), "se marca el repetido, no el primero");
+        assertEquals("Como mucho 3 decimales", templateNumber("template-item-min-2").getErrorMessage());
+        assertEquals("Como mucho 9 cifras enteras", templateNumber("template-item-max-2").getErrorMessage());
+        verify(maintenanceCatalogClient, never()).createInspectionTemplate(any());
+
+        // Se quita el punto nuevo, se baja el primero y viaja la lista entera, en el orden de la pantalla.
+        click("template-item-remove-2");
+        assertTrue(LocatorJ._find(TextField.class, spec -> spec.withId("template-item-code-2")).isEmpty());
+        click("template-item-down-0");
+        assertEquals("P-02", templateText("template-item-code-0").getValue());
+        assertEquals("P-01", templateText("template-item-code-1").getValue());
+        LocatorJ._setValue(templateText(InspectionTemplateVersionDialog.NAME_ID), " Perfil 2027 ");
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        verify(maintenanceCatalogClient).createInspectionTemplate(new InspectionTemplateRequest(CatenaryAssetType.PROFILE, "Perfil 2027", List.of(
+                new InspectionTemplateItemRequest("P-02", "Estado de la mensula", null, null, null, false),
+                new InspectionTemplateItemRequest("P-01", "Altura del hilo", "mm", new BigDecimal("5300"), new BigDecimal("5700"), true)), 2));
+        assertTrue(LocatorJ._find(InspectionTemplateVersionDialog.class).isEmpty());
+        NotificationsKt.expectNotifications("Creada la version 3 de la plantilla de Perfil, ya activa");
+        verify(maintenanceCatalogClient, times(2)).inspectionTemplates();
+        assertEquals(List.of("Perfil", "Version 3 · Perfil 2027", "3"), GridKt._getFormattedRow(gridWithId("template-types-grid"), 1).subList(0, 3));
+        assertEquals(List.of("Perfil", "2", "Perfil", "Anterior"), GridKt._getFormattedRow(gridWithId("templates-grid"), 2).subList(0, 4));
+        LocatorJ._get(H3.class, spec -> spec.withText("Puntos de Perfil 2027 (version 3)"));
+    }
+
+    /**
+     * Una version nueva tambien parte de una anterior (replacesVersion sigue siendo la activa del tipo) y de
+     * nada: la primera de un tipo sin versiones empieza vacia, exige al menos un punto y viaja sin
+     * replacesVersion. Los errores del servicio caen en el nombre, en el campo de su fila o bajo la lista, y
+     * lo demas se notifica con su ruta; un CON-001 pide recargar. El dialogo sigue abierto en todos.
+     */
+    @Test
+    void aTemplateVersionFromAPreviousOneOrFromNothingAndTheServiceErrorsLandOnTheirRow() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        InspectionTemplateDto first = template(TPL_TRACK_V1, CatenaryAssetType.TRACK_SECTION, 1, "Tramo", true, 0L);
+        when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(threeTemplates());
+        ApiProblem invalid = new ApiProblem(null, "BAD_REQUEST", 400, "Validation failed", null, "REQ-VALIDATION", null, "corr-tpl", null, false,
+                List.of(new ApiFieldError("name", null, "size must be between 0 and 120"),
+                        new ApiFieldError("items[1].code", null, "must match the pattern"),
+                        new ApiFieldError("items[0].maxValue", null, "numeric value out of bounds"),
+                        new ApiFieldError("items", null, "size must be between 1 and 100"),
+                        new ApiFieldError("items[1]", null, "must not be null"),
+                        new ApiFieldError("replacesVersion", null, "must be greater than or equal to 1")), null);
+        when(maintenanceCatalogClient.createInspectionTemplate(any()))
+                .thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST, invalid, "corr-tpl", null, "POST /api/maintenance/inspection-templates"))
+                .thenThrow(maintenanceError(400, "VAL-001", "items[1].code: 'T-1' is repeated in the template"))
+                .thenThrow(maintenanceError(409, "CON-001", "The active template of TRACK_SECTION changed"))
+                .thenReturn(first);
+
+        UI.getCurrent().navigate(MaintenanceRoutes.TEMPLATES);
+        // Desde la version 1 de Perfil, anterior: sus puntos, y la que sustituye es la 2, la activa.
+        clickTemplateAction("templates-grid", 2, "template-copy-" + TPL_PROFILE_V1);
+        assertEquals("Parte de los puntos de la version 1. La nueva version nace activa y la version 2, la activa ahora, pasa a anterior. "
+                        + "Los puntos de una version no se cambian despues. Las inspecciones ya creadas no cambian.",
+                LocatorJ._get(Paragraph.class, spec -> spec.withId(InspectionTemplateVersionDialog.NOTICE_ID)).getText());
+        assertEquals("Perfil antiguo", templateText(InspectionTemplateVersionDialog.NAME_ID).getValue());
+        assertEquals("P-02", templateText("template-item-code-0").getValue());
+        assertTrue(LocatorJ._find(TextField.class, spec -> spec.withId("template-item-code-1")).isEmpty());
+        LocatorJ._get(InspectionTemplateVersionDialog.class).close();
+
+        // La primera de Tramo de via: vacia, sin nada que sustituir.
+        clickTemplateAction("template-types-grid", 0, "template-new-TRACK_SECTION");
+        assertEquals("Es la primera version de Tramo de via. La nueva version nace activa. Los puntos de una version no se cambian despues. "
+                        + "Las inspecciones ya creadas no cambian.",
+                LocatorJ._get(Paragraph.class, spec -> spec.withId(InspectionTemplateVersionDialog.NOTICE_ID)).getText());
+        assertEquals("", templateText(InspectionTemplateVersionDialog.NAME_ID).getValue());
+        assertTrue(LocatorJ._find(TextField.class, spec -> spec.withId("template-item-code-0")).isEmpty());
+        LocatorJ._setValue(templateText(InspectionTemplateVersionDialog.NAME_ID), "Tramo");
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        Paragraph listError = LocatorJ._get(Paragraph.class, spec -> spec.withId(InspectionTemplateVersionDialog.ITEMS_ERROR_ID));
+        assertEquals("Una plantilla lleva al menos un punto", listError.getText());
+        verify(maintenanceCatalogClient, never()).createInspectionTemplate(any());
+        click(InspectionTemplateVersionDialog.ADD_ID);
+        click(InspectionTemplateVersionDialog.ADD_ID);
+        assertFalse(listError.isVisible(), "tocar la lista borra su error");
+        LocatorJ._setValue(templateText("template-item-code-0"), "T-1");
+        LocatorJ._setValue(templateText("template-item-label-0"), " Estado del tramo ");
+        LocatorJ._setValue(templateText("template-item-code-1"), "T-2");
+        LocatorJ._setValue(templateText("template-item-label-1"), "Gálibo");
+        LocatorJ._setValue(templateText("template-item-unit-1"), " ");
+
+        // Los errores por campo del servicio, cada uno en su sitio.
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        assertEquals("size must be between 0 and 120", templateText(InspectionTemplateVersionDialog.NAME_ID).getErrorMessage());
+        assertEquals("must match the pattern", templateText("template-item-code-1").getErrorMessage());
+        assertEquals("numeric value out of bounds", templateNumber("template-item-max-0").getErrorMessage());
+        assertFalse(templateText("template-item-code-0").isInvalid());
+        assertEquals("size must be between 1 and 100. Fila 2: must not be null", listError.getText());
+        NotificationsKt.expectNotifications("replacesVersion: must be greater than or equal to 1");
+        LocatorJ._get(InspectionTemplateVersionDialog.class);
+
+        // Un 400 sin lista de campos (VAL-001) y el CON-001: notificados, con el dialogo abierto.
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("La peticion no es valida. items[1].code: 'T-1' is repeated in the template"));
+        NotificationsKt.clearNotifications();
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Conflicto con otro cambio: recarga y vuelve a intentarlo."));
+        NotificationsKt.clearNotifications();
+        LocatorJ._get(InspectionTemplateVersionDialog.class);
+        verify(maintenanceCatalogClient, times(1)).inspectionTemplates();
+
+        click(InspectionTemplateVersionDialog.SAVE_ID);
+        verify(maintenanceCatalogClient, times(4)).createInspectionTemplate(new InspectionTemplateRequest(CatenaryAssetType.TRACK_SECTION, "Tramo",
+                List.of(new InspectionTemplateItemRequest("T-1", "Estado del tramo", null, null, null, false),
+                        new InspectionTemplateItemRequest("T-2", "Gálibo", null, null, null, false)), null));
+        assertTrue(LocatorJ._find(InspectionTemplateVersionDialog.class).isEmpty());
+        verify(maintenanceCatalogClient, times(2)).inspectionTemplates();
+    }
+
+    /**
+     * De una version que existe solo cambian el nombre y si es la activa: un merge-patch con el lockVersion
+     * leido y solo lo cambiado (nunca version). Renombrar sin cambios no llama; activar y desactivar se
+     * confirman diciendo su efecto. Tras escribir se relee la lista entera, tambien si el servicio dice que
+     * no; el CON-001 de un renombrado deja su dialogo abierto, y el TPL-404 se dice por lo que es.
+     */
+    @Test
+    void aTemplateVersionIsRenamedActivatedAndDeactivatedWithItsLockVersionAndTheListIsReadAgain() {
+        loginAs("mantenimiento.responsable", MAINTENANCE_MANAGER);
+        when(maintenanceCatalogClient.inspectionTemplates()).thenReturn(threeTemplates());
+        when(maintenanceCatalogClient.updateInspectionTemplate(eq(TPL_PROFILE_V2), any()))
+                .thenThrow(maintenanceError(409, "CON-001", "Inspection template was changed by someone else"))
+                .thenReturn(threeTemplates().get(1));
+        when(maintenanceCatalogClient.updateInspectionTemplate(eq(TPL_PROFILE_V1), any())).thenReturn(threeTemplates().get(2));
+        when(maintenanceCatalogClient.updateInspectionTemplate(eq(TPL_DISCONNECTOR_V1), any()))
+                .thenThrow(maintenanceError(404, "TPL-404", "Inspection template not found"));
+        assertEquals("Esa version de la plantilla de inspeccion no existe: recarga la lista.",
+                UiErrors.message(maintenanceError(404, "TPL-404", "Inspection template not found")));
+
+        UI.getCurrent().navigate(MaintenanceRoutes.TEMPLATES);
+        clickTemplateAction("templates-grid", 1, "template-rename-" + TPL_PROFILE_V2);
+        assertEquals("Renombrar la version 2 de Perfil", LocatorJ._get(InspectionTemplateRenameDialog.class).getHeaderTitle());
+        TextField name = templateText(InspectionTemplateRenameDialog.NAME_ID);
+        assertEquals("Perfil", name.getValue());
+        LocatorJ._setValue(name, " ");
+        click(InspectionTemplateRenameDialog.SAVE_ID);
+        assertEquals("El nombre es obligatorio", name.getErrorMessage());
+        LocatorJ._setValue(name, " Perfil ");
+        click(InspectionTemplateRenameDialog.SAVE_ID);
+        verify(maintenanceCatalogClient, never()).updateInspectionTemplate(any(), any());
+        assertTrue(LocatorJ._find(InspectionTemplateRenameDialog.class).isEmpty(), "sin cambios no se llama");
+
+        clickTemplateAction("templates-grid", 1, "template-rename-" + TPL_PROFILE_V2);
+        LocatorJ._setValue(templateText(InspectionTemplateRenameDialog.NAME_ID), "Perfil de catenaria");
+        click(InspectionTemplateRenameDialog.SAVE_ID);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Conflicto con otro cambio: recarga y vuelve a intentarlo."));
+        NotificationsKt.clearNotifications();
+        LocatorJ._get(InspectionTemplateRenameDialog.class);
+        verify(maintenanceCatalogClient, times(1)).inspectionTemplates();
+        click(InspectionTemplateRenameDialog.SAVE_ID);
+        MergePatch<InspectionTemplateUpdateRequest> renamed = MergePatch.of(new InspectionTemplateUpdateRequest("Perfil de catenaria", null, 0L), null);
+        verify(maintenanceCatalogClient, times(2)).updateInspectionTemplate(TPL_PROFILE_V2, renamed);
+        assertEquals(Map.of("name", "Perfil de catenaria", "lockVersion", 0L), renamed.body(), "ni version ni active");
+        assertTrue(LocatorJ._find(InspectionTemplateRenameDialog.class).isEmpty());
+        NotificationsKt.expectNotifications("Renombrada la version 2 de Perfil");
+        verify(maintenanceCatalogClient, times(2)).inspectionTemplates();
+
+        // Activar una anterior: la activa de ahora pasa a anterior, y se dice antes.
+        clickTemplateAction("templates-grid", 2, "template-activate-" + TPL_PROFILE_V1);
+        ConfirmDialog confirm = LocatorJ._get(ConfirmDialog.class);
+        assertEquals("La version 2, la activa ahora, pasa a anterior. Las inspecciones nuevas de Perfil copiaran los puntos de la version 1; "
+                + "las ya creadas no cambian.", confirm.getElement().getProperty("message"));
+        verify(maintenanceCatalogClient, never()).updateInspectionTemplate(eq(TPL_PROFILE_V1), any());
+        ConfirmDialogKt._fireConfirm(confirm);
+        MergePatch<InspectionTemplateUpdateRequest> activated = MergePatch.of(new InspectionTemplateUpdateRequest(null, true, 3L), null);
+        verify(maintenanceCatalogClient).updateInspectionTemplate(TPL_PROFILE_V1, activated);
+        assertEquals(Map.of("active", true, "lockVersion", 3L), activated.body());
+        NotificationsKt.expectNotifications("Activada la version 1 de Perfil");
+        verify(maintenanceCatalogClient, times(3)).inspectionTemplates();
+
+        // Desactivar la activa: el tipo se queda sin plantilla.
+        clickTemplateAction("templates-grid", 1, "template-deactivate-" + TPL_PROFILE_V2);
+        confirm = LocatorJ._get(ConfirmDialog.class);
+        assertEquals("Perfil se queda sin plantilla activa: las inspecciones nuevas de ese tipo no tendran checklist hasta que se active una "
+                + "version. Las ya creadas no cambian.", confirm.getElement().getProperty("message"));
+        ConfirmDialogKt._fireConfirm(confirm);
+        verify(maintenanceCatalogClient).updateInspectionTemplate(TPL_PROFILE_V2,
+                MergePatch.of(new InspectionTemplateUpdateRequest(null, false, 0L), null));
+        NotificationsKt.expectNotifications("Desactivada la version 2 de Perfil");
+        verify(maintenanceCatalogClient, times(4)).inspectionTemplates();
+
+        // Activar la de un tipo sin activa no nombra ninguna anterior; si el servicio dice que no, se avisa y se relee igual.
+        clickTemplateAction("templates-grid", 0, "template-activate-" + TPL_DISCONNECTOR_V1);
+        confirm = LocatorJ._get(ConfirmDialog.class);
+        assertEquals("Las inspecciones nuevas de Seccionador copiaran los puntos de la version 1; las ya creadas no cambian.",
+                confirm.getElement().getProperty("message"));
+        ConfirmDialogKt._fireConfirm(confirm);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class,
+                spec -> spec.withText("Esa version de la plantilla de inspeccion no existe: recarga la lista."));
+        verify(maintenanceCatalogClient, times(5)).inspectionTemplates();
     }
 
     private static PositionDiscrepancyReportDto discrepancies() {

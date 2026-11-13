@@ -104,7 +104,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `mto-maintenance` bajo `/api/maintenance`: `OrderClient` —órdenes, sus transiciones, su historial
   de estados, sus tareas, que solo existen dentro de una orden o de un turno, y sus líneas de
   material—, `AssetClient`, `MaintenanceCatalogClient` —equipos, tipos de tarea (con el equipo que
-  exigen, que se cambia con un `PATCH` merge-patch por su código), plantillas de inspección—, `ShiftClient` —turnos, sus tareas y perfiles, asignar una tarea y sacarla—, `InspectionClient`,
+  exigen, que se cambia con un `PATCH` merge-patch por su código), plantillas de inspección (la lista entera, la versión siguiente de un tipo con un `POST` y el `PATCH` merge-patch de una versión con su `lockVersion`)—, `ShiftClient` —turnos, sus tareas y perfiles, asignar una tarea y sacarla—, `InspectionClient`,
   `DefectClient` y `ReportClient` —cada informe en JSON y como fichero `ResponseEntity<byte[]>`—,
   todos con `revisions` salvo los catálogos y los informes, y `OperationClient`, las operaciones de
   fondo (`GET /operations/{id}`) que deja un `Prefer: respond-async`; DTO como records en
@@ -228,7 +228,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `InspectionDetailView` (`InspectionOutcomeDialogs`: el defecto y la orden correctiva que genera),
   `DefectsView` y `DefectDetailView` (`DefectTransitionDialogs`); `ReportsView` en
   `mantenimiento/informes`; `TeamsView`, `TaskTypesView` (con `TaskTypeEquipmentDialog`, el equipo que
-  exige un tipo) e `InspectionTemplatesView`, los catálogos; un `*EditorDialog` con `Binder` sobre un `*Form` mutable por recurso, cuyas
+  exige un tipo) e `InspectionTemplatesView` (con `InspectionTemplateVersionDialog`, la versión siguiente de un tipo, e `InspectionTemplateRenameDialog`), los catálogos; un `*EditorDialog` con `Binder` sobre un `*Form` mutable por recurso, cuyas
   propiedades se llaman como los campos de la petición para `ServerValidation`;
   `MaintenanceHistory`, el botón «Historial» y la línea de cada recurso en `RevisionsDialog`;
   `MaintenancePickers`, `MaintenanceCatalogs` y `MaintenanceFormats`, lo compartido), `ui/notification` (`NotificationRoutes`: `notificaciones`, `notificaciones/administracion`, `actividad` y
@@ -999,6 +999,37 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   con la versión leída: el conjunto se compara sin orden, lo desconocido leído se conserva, quitarlos
   todos viaja a `null` y sin cambios no se llama; un 409 `CON-001` deja el diálogo abierto. Qué turno
   lleva ese equipo lo decide mantenimiento (409 `SHF-001`).
+- **Las plantillas de inspección las mantiene quien supervisa, y una versión no cambia sus puntos.**
+  `InspectionTemplatesView` enseña arriba los cuatro tipos de activo con su versión activa (también el que
+  no tiene ninguna: «Sin plantilla activa») y debajo todas las versiones, «Activa» o «Anterior», con quién
+  creó cada una y cuándo (`audit`), y los puntos de la elegida. Quien solo lee ve eso. Con
+  `maintenance-supervise` **y** `maintenance-write` (`hasAllRoles`), y solo si el servicio las deja
+  escribir, se mantienen desde ahí:
+  - **«Nueva version»** de un tipo (`InspectionTemplateVersionDialog`, `POST /inspection-templates`): el
+    nombre y la lista ENTERA de puntos en orden (añadir, quitar, subir y bajar), partiendo de la activa del
+    tipo (sin activa, de la última; sin ninguna, vacía) o, desde la fila de una versión, de esa. Nace
+    activa y la activa pasa a anterior, y el diálogo lo dice antes. `replacesVersion` es el número de la
+    activa del tipo tal como se leyó, y no viaja si no había. Ni `orderIndex` ni `id` viajan: el orden es
+    la posición.
+  - De una versión que existe solo cambian **el nombre y si es la activa** (`PATCH` merge-patch): renombrar
+    (`InspectionTemplateRenameDialog`; sin cambios no se llama) y activar o desactivar, que se confirman
+    diciendo su efecto (la activa de ahora pasa a anterior; desactivar la activa deja las inspecciones
+    nuevas del tipo sin checklist). No se ofrece editar los puntos de una versión ni borrarla: el servicio
+    no lo hace.
+  - **`version` es el número de la versión, no el bloqueo, y no se manda nunca.** El bloqueo optimista es
+    `lockVersion`, que viaja dentro de `InspectionTemplateUpdateRequest`, con la `version` del `MergePatch`
+    a `null` (el servicio rechaza esa clave en el parche).
+  - Lo evidente se comprueba antes de llamar con las reglas del servicio (nombre obligatorio, de 1 a 100
+    puntos, el código con su patrón y sin repetir, el texto obligatorio, mínimo y máximo con signo, 9
+    enteros y 3 decimales, `Numbers.measure`, y mínimo ≤ máximo). Los errores por campo del servicio caen
+    en el nombre, en el campo de su fila (`items[1].code`) o bajo la lista (`items`, `items[1]`); lo demás
+    se notifica con su ruta, y un 400 `VAL-001` sin campos, con su detalle. Un 409 `CON-001` deja el
+    diálogo abierto y pide recargar; el 404 `TPL-404` se dice por lo que es.
+  - Tras cualquier escritura **se relee la lista entera** (cambió otra fila del tipo), y también si activar
+    o desactivar falla: un rechazo es que lo leído ya no vale.
+  - Un servicio anterior no manda `lockVersion` ni `audit` y no tiene esas rutas: con una sola versión
+    leída sin `lockVersion` no se ofrece escribir nada (`InspectionTemplateDto.writable`). Una versión de
+    un tipo de activo desconocido se lee y no abre nada.
 - **Puestos y perfiles es un informe de `mto-resources`, y se lee.** `PositionDiscrepanciesView`
   (`recursos/discrepancias`, con `resources-read`) pide `GET /reports/position-discrepancies` al entrar y
   con «Actualizar»: cuándo se calculó, cuántas personas y cuántos usuarios con perfil de puesto, y cuatro
@@ -1259,6 +1290,6 @@ tras un token renovado; en `ViewLayerTest`, los mensajes de `USR-SVC-403` y `USR
 ficha de una cuenta de servicio (nada que escriba, en la cabecera y en cada pestaña), la fila y la ficha
 propias (sin desactivar, borrar ni «sacar a la persona», perfiles y roles leídos con su línea, y lo demás
 como siempre; activarse sí, estando desactivado), el alta con el prefijo reservado rechazada en su campo
-sin llamar, y un `USR-SVC-403` que aun así llega, dicho con su mensaje y el diálogo abierto. Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
+sin llamar, y un `USR-SVC-403` que aun así llega, dicho con su mensaje y el diálogo abierto. Las plantillas de inspección también: en `ClientLayerTest`, la lista con `lockVersion` y `audit` (una versión de un servicio anterior sin ellas, y un tipo de activo nuevo, que no se escriben), el `POST` con la lista entera sin `version` ni lo vacío y `replacesVersion` solo si había activa, el `PATCH` con `lockVersion` y nunca `version`, y `CON-001`, `TPL-404` y los errores por campo con la ruta de su fila; en `ViewLayerTest`, los cuatro tipos con su activa y las versiones con quién las creó, las acciones solo con supervise y write (ni con uno solo, ni ante un servicio anterior, ni en un tipo desconocido), la versión nueva desde la activa (lo que se comprueba antes de llamar, quitar y bajar puntos, la lista entera con la versión que sustituye, la lista releída con la nueva elegida), desde una anterior y desde nada (los errores del servicio en su campo, en su fila o bajo la lista, el `VAL-001` y el `CON-001` con el diálogo abierto), y renombrar, activar y desactivar con su `lockVersion`, sus confirmaciones y la lista releída, también cuando el servicio dice que no. Todo corre en la JVM sin Docker. En un navegador, contra la plataforma entera, lo prueba el job `e2e` del
 CI: `mto-platform/scripts/e2e.sh` construye la imagen de este commit, usa la publicada de cada
 hermano y corre el e2e de Playwright de mto-frontend, que recorre las dos aplicaciones.
