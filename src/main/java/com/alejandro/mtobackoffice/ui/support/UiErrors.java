@@ -113,6 +113,12 @@ public final class UiErrors {
                     "Esa notificacion ya no existe o no va dirigida a ti.";
             case NotFoundApiException line when "ACT-404".equals(line.getProblem().code()) ->
                     "Esa linea del registro ya no existe.";
+            // La administracion de mto-notification: una entrega que ya se purgo, o una fuente de RabbitMQ
+            // que el servicio no tiene configurada.
+            case NotFoundApiException delivery when "DLV-404".equals(delivery.getProblem().code()) ->
+                    "Esa entrega ya no existe.";
+            case NotFoundApiException source when "SRC-404".equals(source.getProblem().code()) ->
+                    "Esa fuente no existe en mto-notification.";
             // mto-users: cerrar una sesion o quitar una credencial que ya no esta, o que es de otra persona
             // (el servicio lo comprueba antes). Sin su detalle, que nombra ids.
             case NotFoundApiException session when "SES-404".equals(session.getProblem().code()) ->
@@ -141,6 +147,10 @@ public final class UiErrors {
             // o un almacen retirado...). La linea queda rechazada, con el motivo que viene en el detalle.
             case ValidationApiException stock when "STK-422".equals(stock.getProblem().code()) ->
                     "El almacen ha rechazado la operacion." + detail(exception);
+            // mto-notification: un aviso manual que nombra una clase de audiencia o un canal que el servicio
+            // no conoce. Su detalle dice cual y cuales valen.
+            case ValidationApiException broadcast when "NTF-422".equals(broadcast.getProblem().code()) ->
+                    "El aviso nombra una audiencia o un canal que el servicio no conoce." + detail(exception);
             // mto-users: Keycloak no admite lo pedido (la politica de contrasenas del realm, un atributo que
             // el perfil de usuario exige...). Su detalle, que es el texto de Keycloak, es lo que lo explica.
             case ValidationApiException keycloak when "KC-400".equals(keycloak.getProblem().code()) && !keycloak.getProblem().hasFieldErrors() ->
@@ -155,6 +165,13 @@ public final class UiErrors {
                     : "La peticion no es valida." + detail(exception);
             case ConflictApiException stock when "STK-001".equals(stock.getProblem().code()) -> "No hay stock disponible suficiente."
                     + detail(exception);
+            // La administracion de mto-notification: ninguno es de concurrencia, y recargar no los arregla.
+            // Una entrega solo se reintenta fallida u omitida; una cola de mensajes muertos solo se mira o
+            // se reprocesa con RabbitMQ encendido en el despliegue y con la cola declarada en el broker.
+            case ConflictApiException delivery when "DLV-409".equals(delivery.getProblem().code()) ->
+                    "La entrega ya no admite el reintento: solo se reintenta una fallida o una omitida.";
+            case ConflictApiException source when "SRC-409".equals(source.getProblem().code()) ->
+                    "RabbitMQ esta apagado en este despliegue, o esa cola de mensajes muertos no existe en el broker." + detail(exception);
             // mto-configuration: el versionNumber que se mando ya no es el guardado. Lo que hay que
             // hacer es exactamente eso, y el detalle del servicio ("intentelo de nuevo") no aporta nada.
             case ConflictApiException concurrent when "CON-001".equals(concurrent.getProblem().code()) ->
@@ -215,6 +232,9 @@ public final class UiErrors {
             case ServiceUnavailableApiException stock when "STK-503".equals(stock.getProblem().code()) ->
                     "El almacen no responde: la linea de material se queda como estaba. Intentalo mas tarde." + detail(exception);
             // mto-resources no ha podido leer Keycloak para el informe de puestos y perfiles: es transitorio.
+            // mto-notification no ha podido hablar con RabbitMQ: las colas de mensajes muertos siguen como estaban.
+            case ServiceUnavailableApiException broker when "SRC-503".equals(broker.getProblem().code()) ->
+                    "RabbitMQ no responde ahora: la cola se queda como estaba. Intentalo mas tarde.";
             case ServiceUnavailableApiException keycloak when "KCK-503".equals(keycloak.getProblem().code()) ->
                     "Keycloak no responde ahora: el informe no se puede calcular. Intentalo mas tarde.";
             // Un 502 no es transitorio (mto-users sin SMTP, por ejemplo): su detalle es lo unico que lo explica.

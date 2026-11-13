@@ -114,8 +114,13 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   enumerados tolerantes —ver las reglas—); `client/notification/NotificationClient` (la API de
   `mto-notification` bajo `/api/notifications`: mi bandeja paginada con sus filtros, el contador
   acotado, marcar una o todas, el registro con sus filtros y el detalle de una línea, y los
-  accesos; DTO como records en `client/dto/notification`, con `payload` como `Map` y los
-  enumerados tolerantes `ActivityCategory`, `ActivitySeverity`, `ActorKind` y `AccessOutcome`);
+  accesos; y la administración, `/admin/**`: las reglas, el estado de las fuentes, las entregas
+  paginadas con sus filtros y su reintento, las colas de mensajes muertos —contarlas, mirar y
+  reprocesar con `max`—, el correo de prueba y el aviso general; DTO como records en
+  `client/dto/notification`, con `payload` como `Map` y los enumerados tolerantes `ActivityCategory`,
+  `ActivitySeverity`, `ActorKind` y `AccessOutcome`, y los de la administración: `DeliveryStatus` (con
+  `canRetry`), `DeliveryScope`, `InboxMessageStatus`, `SourceCursorKind`, `ReprocessOutcome` y
+  `ReprocessStop`; `AudienceKind` y `BroadcastChannel` solo viajan en peticiones);
   `client/resources` (la API de `mto-resources` bajo `/api/resources`: `PersonClient` —con sus
   cualificaciones, `/people/{id}/qualifications`, y sus ausencias, `/people/{id}/absences`, cada una la
   lista entera, alta, `PATCH` y `DELETE`—,
@@ -158,7 +163,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `UnreachableApiException`, la llamada sin respuesta).
 - `ui` — `MainLayout` (AppLayout, con «Abrir en mto-frontend» en la barra; el menú lo dan las vistas anotadas con `@Menu`, filtradas por
   `AccessAnnotationChecker`; las rutas con prefijo conocido (`infraestructura/*`, `usuarios/*`,
-  `almacen/*`, `mantenimiento/*`, `recursos/*`) se agrupan por prefijo (`MainLayout.GROUPS`), una entrada cuya ruta es el propio prefijo es el
+  `almacen/*`, `mantenimiento/*`, `recursos/*`, `notificaciones/*`, `actividad/*`) se agrupan por prefijo (`MainLayout.GROUPS`), una entrada cuya ruta es el propio prefijo es el
   nodo del grupo, y los catálogos se listan a mano porque su vista lleva el recurso en la ruta),
   `ui/views/HomeView`,
   `ui/lov` (`LovCrudView` en `catalogos/:resource`, `LovEditorDialog` con `Binder` sobre el modelo
@@ -226,7 +231,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   exige un tipo) e `InspectionTemplatesView`, los catálogos; un `*EditorDialog` con `Binder` sobre un `*Form` mutable por recurso, cuyas
   propiedades se llaman como los campos de la petición para `ServerValidation`;
   `MaintenanceHistory`, el botón «Historial» y la línea de cada recurso en `RevisionsDialog`;
-  `MaintenancePickers`, `MaintenanceCatalogs` y `MaintenanceFormats`, lo compartido), `ui/notification` (`NotificationRoutes`: `notificaciones`, `actividad` y
+  `MaintenancePickers`, `MaintenanceCatalogs` y `MaintenanceFormats`, lo compartido), `ui/notification` (`NotificationRoutes`: `notificaciones`, `notificaciones/administracion`, `actividad` y
   `actividad/accesos`; `InboxBell`, la campana de la barra, que `MainLayout` pone solo con
   `notification-inbox` y que pide el contador al entrar y cada 30 s desde `SharedPolling` con
   `CurrentPrincipal.callAs` + `UI.access()`; `NotificationsView`, la bandeja paginada en el
@@ -234,7 +239,10 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (una ruta de esta aplicación con sus parámetros, o una pestaña nueva si es absoluto);
   `ActivityView`, el registro con los filtros del servicio y los de la URL (`BeforeEnterObserver`);
   `AccessView`, los accesos con su permiso aparte; `EventDetailDialog`, una línea entera con su
-  `payload` clave a clave), `ui/resources` (`ResourcesRoutes`, las rutas bajo `recursos`;
+  `payload` clave a clave; `NotificationAdminView`, la administración del servicio, con sus cinco
+  pestañas `LazyPanel`: `AdminSourcesPanel`, `AdminDeadLettersPanel` (con `DeadLetterPeekDialog` y
+  `DeadLetterReprocessDialog`), `AdminDeliveriesPanel`, `AdminRulesPanel` y `AdminBroadcastsPanel` (con
+  `TestEmailDialog` sobre `TestEmailForm` y `BroadcastDialog` sobre `BroadcastForm`)), `ui/resources` (`ResourcesRoutes`, las rutas bajo `recursos`;
   `ResourcesClients`; `ResourcesNames`, los nombres de `mto-configuration` como en mantenimiento;
   `ResourcesPickers`, las personas, los vehículos y los instrumentos buscados en el servidor, que usan
   también los turnos de mantenimiento; `PeopleView` con `PersonEditorDialog`, y `PersonDetailView` en
@@ -672,6 +680,40 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   de administración de Keycloak que ya cuenta el de `mto-users` del mismo cambio) solo viaja como
   `includeSuperseded=true` cuando se pide. Una línea se enseña entera en `EventDetailDialog`, con
   su `payload` tal cual lo dejó la lista blanca del servicio: aquí no se interpreta nada.
+- **La administración de notificaciones es la de `mto-notification`, y lo que admite cada cosa lo dice
+  el servicio.** `NotificationAdminView` (`notificaciones/administracion`, con `notification-admin`, que
+  llevan `mto-notification-admin` y `mto-ops`; en el menú cuelga de la bandeja, el nodo del grupo
+  «Notificaciones») tiene cinco pestañas `LazyPanel`: cada una pide sus datos la primera vez que se abre
+  y con su «Actualizar», sin sondeo.
+  - **Fuentes** (`GET /admin/sources`): el inbox por fuente y estado, el lector de Keycloak (hasta dónde
+    leyó, quién lo tiene arrendado, su último error), las ráfagas abiertas y las entregas por estado. Las
+    cifras son del servicio; un estado de entrega nuevo se enseña con su clave.
+  - **Mensajes muertos (DLQ)** (`GET /admin/dead-letters`): `messages: null` es «Sin cola en el broker»,
+    y `enabled: false`, RabbitMQ apagado en el despliegue, que se dice sin tabla ni acciones. «Mirar» y
+    «Reprocesar» se ofrecen solo donde hay mensajes (`QueueDto.hasMessages`): sin cola sería el 409
+    `SRC-409`. «Mirar» pide los primeros 20 (`GET /dead-letters/{source}?max=20`) y enseña lo que hay,
+    nunca el cuerpo; si falla, se avisa y no se abre nada. «Reprocesar»
+    (`POST /dead-letters/{source}/reprocess?max=`) dice en su diálogo qué va a pasar, pide de 1 a 100 (20
+    de partida; fuera de rango no se llama), enseña en el mismo diálogo el resultado (pedidos, sacados,
+    procesados, duplicados, fallidos, cuántos quedan, por qué paró y qué fue de cada mensaje) y relee las
+    colas; un error se dice con el diálogo abierto. Nada lo repite solo.
+  - **Entregas** (`GET /admin/deliveries`): paginadas, filtradas (estado, canal escrito entero y
+    notificación por su id, que a medias no pide nada) y ordenadas en el servicio, con `createdAt,desc`
+    de partida y de desempate (el servicio no ordena por el id). «Reintentar» solo en una fallida o una
+    omitida (`DeliveryStatus.canRetry`, copiado del servicio; lo demás sería su 409 `DLV-409`), sin
+    confirmación, y la lista se relee salga bien o no.
+  - **Reglas** (`GET /admin/rules`): de solo lectura (se cambian en el YAML del servicio), enteras, con
+    filtro local sin mayúsculas ni tildes.
+  - **Avisos manuales**: el correo de prueba (`POST /admin/test-email {to}`, 202) exige una dirección
+    con forma de email; el aviso general (`POST /admin/broadcasts`, 201) ofrece solo lo que el servicio
+    acepta (las cuatro clases de audiencia de `AudienceKind`, una por línea como `CLASE:clave`; los dos
+    canales de `BroadcastChannel`; las tres gravedades), comprueba lo evidente antes de llamar (título,
+    al menos una audiencia bien formada, al menos un canal, un enlace que la bandeja sepa seguir) y **se
+    confirma antes de enviarse**, diciendo a quién va y por dónde: llega a personas de verdad. Lo vacío
+    no viaja. Los errores del servicio van a su campo (`ServerValidation`), con el diálogo abierto; tras
+    enviar, las entregas se releen si su pestaña ya se abrió.
+  - Sus códigos se dicen por lo que son, sin pedir recargar: `DLV-404`, `DLV-409`, `SRC-404`, `SRC-409`
+    (con el detalle del servicio), `SRC-503` y `NTF-422` (con su detalle).
 - **Una lista paginada en el servidor pide una vez cada página** (`LazyPages`). Vaadin pide por
   separado el recuento y la página (`setItems(fetch, count)`), y los servicios devuelven las dos
   cosas en la misma respuesta: el recuento pide la primera página con el tamaño y el orden del Grid
@@ -1197,7 +1239,20 @@ entonces, la vía sin hijos, `versionNumber` a `null`, una revisión sin fila, u
 403); en `ViewLayerTest`, el botón solo con `config-audit` y `config-read` (un rol de realm no lo da),
 el historial de una vía paginado en el servicio con sus nombres, la línea de cada uno de los siete
 maestros, la fila sin revisiones dicha sin aviso y el 403 avisado, y el de una entrada de catálogo con
-su tipo, su borrado y la sembrada sin historial. Las cuentas de servicio y uno mismo en Usuarios también: en `ClientLayerTest`, el
+su tipo, su borrado y la sembrada sin historial. Y la administración de notificaciones: en
+`ClientLayerTest`, las reglas y el estado de las fuentes con lo que estrene el servicio, las entregas
+con sus filtros, su desempate y su reintento (`DLV-404`, `DLV-409`, y qué estados se reintentan), las
+colas de mensajes muertos contadas, miradas y reprocesadas con sus tres errores tipados, el correo de
+prueba y el aviso general con sus cuerpos y sus rechazos, y la regla de una audiencia; en
+`ViewLayerTest`, los mensajes de sus códigos, el menú (cuelga de la bandeja, solo con el rol de
+cliente), cada pestaña pidiendo lo suyo solo al abrirse, las fuentes con «Actualizar» y su fallo, las
+colas con sus acciones solo donde hay mensajes y el broker apagado, mirar (y el fallo que no abre
+nada), reprocesar (el máximo fuera de rango sin llamar, el resultado en el diálogo, las colas releídas,
+el error con el diálogo abierto), las entregas filtradas y ordenadas en el servicio con el reintento
+solo donde cabe y la lista releída también si el servicio dice que no, las reglas con su filtro local,
+el correo de prueba (lo evidente, el error en su campo, las entregas releídas) y el aviso general (lo
+que ofrece, lo que comprueba, la confirmación con a quién va, lo vacío sin viajar, y el rechazo del
+servicio con el diálogo abierto). Las cuentas de servicio y uno mismo en Usuarios también: en `ClientLayerTest`, el
 usuario con `serviceAccount` y sin la clave (y el prefijo reservado) y los dos 403 tipados con su código;
 en `SecurityLayerTest`, el `sub` de la sesión (`CurrentPrincipal.subject`), que no es el nombre y sigue
 tras un token renovado; en `ViewLayerTest`, los mensajes de `USR-SVC-403` y `USR-SELF-403`, la fila y la

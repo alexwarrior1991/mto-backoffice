@@ -1,5 +1,24 @@
 package com.alejandro.mtobackoffice.client;
 
+import com.alejandro.mtobackoffice.client.dto.notification.AdminNotificationDto;
+import com.alejandro.mtobackoffice.client.dto.notification.AudienceKind;
+import com.alejandro.mtobackoffice.client.dto.notification.BroadcastChannel;
+import com.alejandro.mtobackoffice.client.dto.notification.BroadcastRequest;
+import com.alejandro.mtobackoffice.client.dto.notification.DeadLetterPeekDto;
+import com.alejandro.mtobackoffice.client.dto.notification.DeadLetterQueuesDto;
+import com.alejandro.mtobackoffice.client.dto.notification.DeadLetterReprocessDto;
+import com.alejandro.mtobackoffice.client.dto.notification.DeliveryDto;
+import com.alejandro.mtobackoffice.client.dto.notification.DeliveryFilter;
+import com.alejandro.mtobackoffice.client.dto.notification.DeliveryScope;
+import com.alejandro.mtobackoffice.client.dto.notification.DeliveryStatus;
+import com.alejandro.mtobackoffice.client.dto.notification.InboxMessageStatus;
+import com.alejandro.mtobackoffice.client.dto.notification.ReprocessOutcome;
+import com.alejandro.mtobackoffice.client.dto.notification.ReprocessStop;
+import com.alejandro.mtobackoffice.client.dto.notification.RuleDto;
+import com.alejandro.mtobackoffice.client.dto.notification.RulesDto;
+import com.alejandro.mtobackoffice.client.dto.notification.SourceCursorKind;
+import com.alejandro.mtobackoffice.client.dto.notification.SourceStatusDto;
+import com.alejandro.mtobackoffice.client.dto.notification.TestEmailRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationSelection;
 import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationOutcome;
 import com.alejandro.mtobackoffice.client.dto.maintenance.DisconnectorDrive;
@@ -4730,5 +4749,293 @@ class ClientLayerTest {
         assertEquals("NOT-001", none.getProblem().code());
         assertEquals(403, denied.getStatus().value());
         server.verify();
+    }
+
+    // --- La administracion de mto-notification (notification-admin) ------------------------------------
+
+    private static String notificationError(int status, String code, String message) {
+        return "{\"timestamp\":\"2026-11-13T08:00:00Z\",\"status\":" + status + ",\"error\":\"X\",\"message\":\"" + message + "\","
+                + "\"path\":\"/api/v1/notifications/admin\",\"method\":\"POST\",\"errorCode\":\"" + code + "\",\"correlationId\":\"corr-a1\","
+                + "\"validationErrors\":[]}";
+    }
+
+    /** Las reglas tal como estan en el YAML del servicio, y el estado de las fuentes con lo que estrene. */
+    @Test
+    void theLoadedRulesAndTheStateOfTheSourcesAreReadAsTheServiceGivesThem() {
+        server.expect(requestTo(NOTIFICATIONS + "/admin/rules")).andExpect(method(HttpMethod.GET))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer token-for-" + PRINCIPAL))
+                .andRespond(withSuccess("""
+                        {"source":"classpath:notification-rules.yml","variables":{"large-burst-threshold":50,"maintenance-service-account":"svc"},
+                         "rules":[
+                          {"key":"maintenance-order-urgent","events":["maintenance.order.created"],"when":"payload.type == 'URGENT'",
+                           "severity":"CRITICAL","audiences":["PROFILE:mto-maintenance-manager","USER:#{payload.assignedUser}"],
+                           "channels":["inbox","email"],"title":"Orden urgente #{payload.code}","body":"Cuerpo","link":"/mantenimiento/ordenes/#{event.subject.id}",
+                           "throttleWindow":"PT30M","throttleKey":"#{payload.code}","unknownTomorrow":1},
+                          {"key":"stock-below-minimum","events":["stock.material.*"],"when":null,"severity":"GRAVE","audiences":["PROFILE:mto-warehouse-manager"],
+                           "channels":null,"title":"Bajo minimo","body":null,"link":null,"throttleWindow":null,"throttleKey":null}]}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/sources")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"cursors":[
+                          {"kind":"KEYCLOAK_LOGIN","lastEventTime":"2026-11-13T07:59:00Z","leaseOwner":"pod-1","leaseUntil":"2026-11-13T08:01:00Z",
+                           "lastPollAt":"2026-11-13T08:00:00Z","lastSuccessAt":"2026-11-13T08:00:00Z","lastError":null},
+                          {"kind":"KEYCLOAK_TOMORROW","lastEventTime":null,"leaseOwner":null,"leaseUntil":null,"lastPollAt":null,"lastSuccessAt":null,
+                           "lastError":"Keycloak did not answer"}],
+                         "inbox":[{"sourceService":"mto-maintenance","status":"PROCESSED","total":1204},
+                                  {"sourceService":"mto-stock","status":"PARKED","total":2}],
+                         "openBursts":3,
+                         "deliveries":{"PENDING":1,"IN_PROGRESS":0,"SENT":40,"FAILED":2,"SKIPPED":5,"DEFERRED":7}}
+                        """, MediaType.APPLICATION_JSON));
+
+        RulesDto rules = asUser(() -> notificationClient.adminRules());
+        SourceStatusDto sources = asUser(() -> notificationClient.adminSources());
+
+        assertEquals("classpath:notification-rules.yml", rules.source());
+        assertEquals(50, rules.variables().get("large-burst-threshold"));
+        RuleDto urgent = rules.rules().getFirst();
+        assertEquals("maintenance-order-urgent", urgent.key());
+        assertEquals(List.of("maintenance.order.created"), urgent.events());
+        assertEquals(ActivitySeverity.CRITICAL, urgent.severity());
+        assertEquals(List.of("inbox", "email"), urgent.channels());
+        assertEquals("PT30M", urgent.throttleWindow(), "la ventana del freno, como duracion ISO-8601");
+        RuleDto second = rules.rules().get(1);
+        assertEquals(ActivitySeverity.UNKNOWN, second.severity(), "una gravedad nueva no rompe la lista");
+        assertEquals(List.of(), second.channels(), "sin canales, una lista vacia");
+        assertNull(second.when());
+
+        assertEquals(SourceCursorKind.KEYCLOAK_LOGIN, sources.cursors().getFirst().kind());
+        assertEquals("pod-1", sources.cursors().getFirst().leaseOwner());
+        assertEquals(Instant.parse("2026-11-13T07:59:00Z"), sources.cursors().getFirst().lastEventTime());
+        assertEquals(SourceCursorKind.UNKNOWN, sources.cursors().get(1).kind());
+        assertEquals("Keycloak did not answer", sources.cursors().get(1).lastError());
+        assertEquals(InboxMessageStatus.PROCESSED, sources.inbox().getFirst().status());
+        assertEquals(1204, sources.inbox().getFirst().total());
+        assertEquals(InboxMessageStatus.UNKNOWN, sources.inbox().get(1).status());
+        assertEquals(3L, sources.openBursts());
+        assertEquals(7L, sources.deliveries().get("DEFERRED"), "un estado de entrega nuevo llega con su clave, sin romper el mapa");
+        assertEquals(40L, sources.deliveries().get("SENT"));
+        server.verify();
+    }
+
+    /**
+     * Las entregas, con los filtros del servicio (lo que no viene no viaja) y el desempate por la fecha
+     * de creacion, porque no deja ordenar por el id. Reintentar es un POST sin cuerpo: 404
+     * {@code DLV-404} si ya no existe y 409 {@code DLV-409} si su estado no lo admite.
+     */
+    @Test
+    void theDeliveriesAreFilteredAndSortedInTheServiceAndOnlyAFailedOrSkippedOneIsRetried() {
+        String delivery = "\"notificationId\":\"" + NOTIFICATION_ID + "\",\"channel\":\"email\",\"scope\":\"RECIPIENT\",\"audienceKey\":null,"
+                + "\"recipient\":\"ana@mto.local\",\"recipientUsername\":\"ana\",\"attempts\":5,\"maxAttempts\":5,\"nextAttemptAt\":null,"
+                + "\"sentAt\":null,\"lastError\":\"Mail server connection failed\",\"createdAt\":\"2026-11-13T07:00:00Z\"";
+        server.expect(requestTo(NOTIFICATIONS + "/admin/deliveries?status=FAILED&channel=email&notificationId=" + NOTIFICATION_ID
+                        + "&page=0&size=50&sort=status%2Casc&sort=createdAt%2Cdesc")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("{\"id\":\"" + EVENT_ID + "\"," + delivery + ",\"status\":\"FAILED\"},"
+                        + "{\"id\":\"" + NOTIFICATION_ID_2 + "\"," + delivery + ",\"status\":\"BOUNCED\",\"scope\":\"TEAM\"}", 0, 50, 2), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/deliveries?page=2&size=50&sort=createdAt%2Cdesc")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(stockPage("", 2, 50, 0), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/deliveries/" + EVENT_ID + "/retry")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(""))
+                .andRespond(withSuccess("{\"id\":\"" + EVENT_ID + "\"," + delivery + ",\"status\":\"PENDING\"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/deliveries/" + NOTIFICATION_ID_2 + "/retry")).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body(notificationError(409, "DLV-409", "Delivery is SENT and only FAILED or SKIPPED deliveries can be retried")));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/deliveries/" + NOTIFICATION_ID + "/retry")).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
+                        .body(notificationError(404, "DLV-404", "Delivery was not found")));
+
+        PageResponse<DeliveryDto> failed = asUser(() -> notificationClient.adminDeliveries(
+                new DeliveryFilter(DeliveryStatus.FAILED, "email", UUID.fromString(NOTIFICATION_ID)), 0, 50, List.of("status,asc")));
+        asUser(() -> notificationClient.adminDeliveries(DeliveryFilter.NONE, 2, 50, List.of("createdAt,desc")));
+        DeliveryDto retried = asUser(() -> notificationClient.retryDelivery(UUID.fromString(EVENT_ID)));
+        ConflictApiException sent = assertThrows(ConflictApiException.class,
+                () -> asUser(() -> notificationClient.retryDelivery(UUID.fromString(NOTIFICATION_ID_2))));
+        NotFoundApiException gone = assertThrows(NotFoundApiException.class,
+                () -> asUser(() -> notificationClient.retryDelivery(UUID.fromString(NOTIFICATION_ID))));
+
+        DeliveryDto first = failed.content().getFirst();
+        assertEquals(DeliveryStatus.FAILED, first.status());
+        assertTrue(first.status().canRetry());
+        assertEquals(DeliveryScope.RECIPIENT, first.scope());
+        assertEquals("ana@mto.local", first.recipient());
+        assertEquals(5, first.attempts());
+        assertEquals("Mail server connection failed", first.lastError());
+        DeliveryDto unknown = failed.content().get(1);
+        assertEquals(DeliveryStatus.UNKNOWN, unknown.status(), "un estado nuevo se lee como desconocido");
+        assertFalse(unknown.status().canRetry(), "y lo desconocido no se reintenta");
+        assertEquals(DeliveryScope.UNKNOWN, unknown.scope());
+        assertTrue(DeliveryStatus.SKIPPED.canRetry());
+        assertFalse(DeliveryStatus.SENT.canRetry());
+        assertFalse(DeliveryStatus.PENDING.canRetry());
+        assertFalse(DeliveryStatus.IN_PROGRESS.canRetry());
+        assertFalse(DeliveryStatus.selectable().contains(DeliveryStatus.UNKNOWN));
+        assertEquals(DeliveryStatus.PENDING, retried.status());
+        assertEquals("DLV-409", sent.getProblem().code());
+        assertEquals("DLV-404", gone.getProblem().code());
+        server.verify();
+    }
+
+    /**
+     * Las colas de mensajes muertos: cuanto guarda cada una ({@code messages: null} sin cola en el
+     * broker, {@code enabled: false} con el broker apagado), mirar sin sacar (nunca el cuerpo) y
+     * reprocesar, con lo que fue de cada mensaje. Sus tres errores llegan tipados con su codigo.
+     */
+    @Test
+    void theDeadLetterQueuesAreCountedPeekedAndReprocessedAndTheirErrorsAreTyped() {
+        server.expect(requestTo(NOTIFICATIONS + "/admin/dead-letters")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"enabled":true,"queues":[
+                          {"source":"maintenance","queue":"mto.notification.maintenance.queue","deadLetterQueue":"mto.notification.maintenance.queue.dlq","messages":3},
+                          {"source":"stock","queue":"mto.notification.stock.queue","deadLetterQueue":"mto.notification.stock.queue.dlq","messages":0},
+                          {"source":"field","queue":"mto.notification.field.queue","deadLetterQueue":"mto.notification.field.queue.dlq","messages":null}]}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/dead-letters")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"enabled\":false,\"queues\":[]}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/dead-letters/maintenance?max=5")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"source":"maintenance","deadLetterQueue":"mto.notification.maintenance.queue.dlq","messages":3,"peeked":[
+                          {"message":{"messageId":"m-1","sourceService":"mto-maintenance","eventType":"MAINTENANCE_ORDER_CREATED","aggregateType":"order",
+                                      "aggregateId":"o-1","exchange":"mto.maintenance.exchange","routingKey":"mto.maintenance.order.created",
+                                      "deathReason":"rejected","deathCount":2,"deadLetteredAt":"2026-11-13T07:00:00Z","payloadBytes":812,"problem":null},
+                           "inbox":{"status":"FAILED","attempts":3,"failedAt":"2026-11-13T06:59:00Z","failureReason":"No rule engine"}},
+                          {"message":{"messageId":null,"sourceService":null,"eventType":null,"aggregateType":null,"aggregateId":null,"exchange":null,
+                                      "routingKey":null,"deathReason":"delivery_limit","deathCount":1,"deadLetteredAt":null,"payloadBytes":12,
+                                      "problem":"The body is not an envelope"},
+                           "inbox":null}]}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/dead-letters/maintenance/reprocess?max=10")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(""))
+                .andRespond(withSuccess("""
+                        {"source":"maintenance","deadLetterQueue":"mto.notification.maintenance.queue.dlq","requested":10,"fetched":3,"processed":1,
+                         "duplicates":1,"failed":1,"remaining":1,"stoppedBy":"EMPTY","results":[
+                          {"messageId":"m-1","eventType":"MAINTENANCE_ORDER_CREATED","routingKey":"mto.maintenance.order.created","outcome":"PROCESSED","reason":null},
+                          {"messageId":"m-2","eventType":"MAINTENANCE_ORDER_CREATED","routingKey":"mto.maintenance.order.created","outcome":"FAILED",
+                           "reason":"Source message was rejected because its signature does not match"},
+                          {"messageId":"m-3","eventType":"MAINTENANCE_ORDER_CREATED","routingKey":"mto.maintenance.order.created","outcome":"REQUEUED","reason":null}]}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/dead-letters/stock/reprocess?max=100")).andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"source\":\"stock\",\"deadLetterQueue\":\"q.dlq\",\"requested\":100,\"fetched\":100,\"processed\":100,"
+                        + "\"duplicates\":0,\"failed\":0,\"remaining\":null,\"stoppedBy\":\"PAUSED\",\"results\":null}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/dead-letters/nope?max=20")).andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
+                        .body(notificationError(404, "SRC-404", "Source nope was not found")));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/dead-letters/field/reprocess?max=20")).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body(notificationError(409, "SRC-409", "The dead letter queue does not exist in the broker")));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/dead-letters")).andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE).contentType(MediaType.APPLICATION_JSON)
+                        .body(notificationError(503, "SRC-503", "RabbitMQ did not answer")));
+
+        DeadLetterQueuesDto queues = asUser(() -> notificationClient.deadLetterQueues());
+        DeadLetterQueuesDto off = asUser(() -> notificationClient.deadLetterQueues());
+        DeadLetterPeekDto peek = asUser(() -> notificationClient.peekDeadLetters("maintenance", 5));
+        DeadLetterReprocessDto pass = asUser(() -> notificationClient.reprocessDeadLetters("maintenance", 10));
+        DeadLetterReprocessDto paused = asUser(() -> notificationClient.reprocessDeadLetters("stock", 100));
+        NotFoundApiException noSource = assertThrows(NotFoundApiException.class, () -> asUser(() -> notificationClient.peekDeadLetters("nope", 20)));
+        ConflictApiException noQueue = assertThrows(ConflictApiException.class, () -> asUser(() -> notificationClient.reprocessDeadLetters("field", 20)));
+        ServiceUnavailableApiException down = assertThrows(ServiceUnavailableApiException.class, () -> asUser(() -> notificationClient.deadLetterQueues()));
+
+        assertTrue(queues.enabled());
+        assertEquals(3L, queues.queues().getFirst().messages());
+        assertTrue(queues.queues().getFirst().hasMessages());
+        assertFalse(queues.queues().get(1).hasMessages(), "una cola vacia no tiene nada que mirar");
+        assertNull(queues.queues().get(2).messages(), "el broker no tiene esa cola");
+        assertFalse(queues.queues().get(2).hasMessages());
+        assertFalse(off.enabled());
+        assertEquals(List.of(), off.queues());
+
+        assertEquals(3L, peek.messages());
+        DeadLetterPeekDto.PeekedDto known = peek.peeked().getFirst();
+        assertEquals("m-1", known.message().messageId());
+        assertEquals("rejected", known.message().deathReason());
+        assertEquals(2L, known.message().deathCount());
+        assertEquals(812, known.message().payloadBytes());
+        assertEquals(InboxMessageStatus.FAILED, known.inbox().status());
+        assertEquals("No rule engine", known.inbox().failureReason());
+        assertNull(peek.peeked().get(1).inbox(), "nunca llego al inbox");
+        assertEquals("The body is not an envelope", peek.peeked().get(1).message().problem());
+
+        assertEquals(10, pass.requested());
+        assertEquals(3, pass.fetched());
+        assertEquals(1L, pass.processed());
+        assertEquals(1L, pass.duplicates());
+        assertEquals(1L, pass.failed());
+        assertEquals(1L, pass.remaining());
+        assertEquals(ReprocessStop.EMPTY, pass.stoppedBy());
+        assertEquals(ReprocessOutcome.PROCESSED, pass.results().getFirst().outcome());
+        assertEquals(ReprocessOutcome.FAILED, pass.results().get(1).outcome());
+        assertTrue(pass.results().get(1).reason().contains("signature"));
+        assertEquals(ReprocessOutcome.UNKNOWN, pass.results().get(2).outcome(), "un resultado nuevo se lee como desconocido");
+        assertEquals(ReprocessStop.UNKNOWN, paused.stoppedBy(), "y un motivo de parada nuevo tambien");
+        assertEquals(List.of(), paused.results());
+        assertNull(paused.remaining());
+
+        assertEquals("SRC-404", noSource.getProblem().code());
+        assertEquals("SRC-409", noQueue.getProblem().code());
+        assertEquals("SRC-503", down.getProblem().code());
+        server.verify();
+    }
+
+    /**
+     * Los avisos manuales: el correo de prueba (202) y el aviso general (201), con lo vacio sin viajar.
+     * Un 400 trae sus errores por campo; una audiencia o un canal que el servicio no conoce es el 422
+     * {@code NTF-422}.
+     */
+    @Test
+    void aTestEmailAndABroadcastAreSentWithTheirBodiesAndTheirRejectionsAreTyped() {
+        String created = "{\"id\":\"" + NOTIFICATION_ID + "\",\"ruleKey\":\"manual-broadcast\",\"category\":\"SYSTEM\",\"severity\":\"WARNING\","
+                + "\"title\":\"Parada programada\",\"body\":null,\"link\":null,\"subjectType\":\"broadcast\",\"subjectId\":\"t-1\",\"activityEventId\":\""
+                + EVENT_ID + "\",\"audiences\":[\"CLIENT_ROLE:mto-notification-api:notification-inbox\",\"PROFILE:mto-ops\"],"
+                + "\"createdAt\":\"2026-11-13T08:00:00Z\",\"createdBy\":\"config.responsable\"}";
+        server.expect(requestTo(NOTIFICATIONS + "/admin/test-email")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"to\":\"ops@mto.local\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.ACCEPTED).contentType(MediaType.APPLICATION_JSON).body(created.replace("manual-broadcast", "test-email")));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/broadcasts")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("""
+                        {"title":"Parada programada","severity":"WARNING","audiences":["PROFILE:mto-ops","CLIENT_ROLE:mto-notification-api:notification-inbox"],
+                         "channels":["inbox","email"]}
+                        """, org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                        .header(HttpHeaders.LOCATION, "http://mto-notification:8080/api/v1/notifications/admin/broadcasts/" + NOTIFICATION_ID).body(created));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/test-email")).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"status\":400,\"error\":\"BAD_REQUEST\",\"message\":\"Validation failed\",\"errorCode\":\"REQ-VALIDATION\","
+                                + "\"correlationId\":\"corr-a2\",\"validationErrors\":[{\"field\":\"to\",\"message\":\"must be a well-formed email address\"}]}"));
+        server.expect(requestTo(NOTIFICATIONS + "/admin/broadcasts")).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY).contentType(MediaType.APPLICATION_JSON)
+                        .body(notificationError(422, "NTF-422", "Audience 'TEAM:a' is not <KIND>:<key> with a known kind")));
+
+        AdminNotificationDto test = asUser(() -> notificationClient.sendTestEmail(new TestEmailRequest("ops@mto.local")));
+        AdminNotificationDto broadcast = asUser(() -> notificationClient.broadcast(new BroadcastRequest("Parada programada", null, null,
+                ActivitySeverity.WARNING, List.of("PROFILE:mto-ops", "CLIENT_ROLE:mto-notification-api:notification-inbox"), List.of("inbox", "email"))));
+        ValidationApiException badEmail = assertThrows(ValidationApiException.class,
+                () -> asUser(() -> notificationClient.sendTestEmail(new TestEmailRequest("nope"))));
+        ValidationApiException badAudience = assertThrows(ValidationApiException.class, () -> asUser(() -> notificationClient.broadcast(
+                new BroadcastRequest("x", null, null, null, List.of("TEAM:a"), null))));
+
+        assertEquals("test-email", test.ruleKey());
+        assertEquals(UUID.fromString(NOTIFICATION_ID), broadcast.id());
+        assertEquals(ActivitySeverity.WARNING, broadcast.severity());
+        assertEquals(List.of("CLIENT_ROLE:mto-notification-api:notification-inbox", "PROFILE:mto-ops"), broadcast.audiences());
+        assertEquals("to", badEmail.getProblem().errors().getFirst().field());
+        assertEquals("must be a well-formed email address", badEmail.getProblem().errors().getFirst().message());
+        assertEquals("NTF-422", badAudience.getProblem().code());
+        assertFalse(badAudience.getProblem().hasFieldErrors());
+        server.verify();
+    }
+
+    /** Lo que el servicio aceptaria de una audiencia escrita, con su misma regla: {@code CLASE:clave}. */
+    @Test
+    void anAudienceIsCheckedWithTheRuleOfTheServiceBeforeItTravels() {
+        assertNull(AudienceKind.problemOf("USER:ana.perez"));
+        assertNull(AudienceKind.problemOf("USER_ID:0b9d6a51-0000-4000-8000-000000000001"));
+        assertNull(AudienceKind.problemOf(" profile:mto-admin "), "la clase no distingue mayusculas, como en el servicio");
+        assertNull(AudienceKind.problemOf("client-role:mto-stock-api:stock-read"));
+        assertEquals("«mto-admin» no es CLASE:clave", AudienceKind.problemOf("mto-admin"));
+        assertEquals("«PROFILE:» no es CLASE:clave", AudienceKind.problemOf("PROFILE: "));
+        assertEquals("«:x» no es CLASE:clave", AudienceKind.problemOf(":x"));
+        assertEquals("«TEAM:a»: la clase es USER, USER_ID, PROFILE o CLIENT_ROLE", AudienceKind.problemOf("TEAM:a"));
+        assertEquals("«CLIENT_ROLE:stock-read»: un rol de cliente es CLIENT_ROLE:cliente:rol", AudienceKind.problemOf("CLIENT_ROLE:stock-read"));
+        assertEquals("Una audiencia tiene como mucho 300 caracteres", AudienceKind.problemOf("USER:" + "a".repeat(300)));
+        assertEquals(List.of("inbox", "email"), Arrays.stream(BroadcastChannel.values()).map(BroadcastChannel::wire).toList());
     }
 }

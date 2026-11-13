@@ -168,7 +168,7 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
 
     /**
      * Prefijo de ruta (primer segmento) → grupo. La lista de usuarios, la de existencias, la de
-     * ordenes y el registro de actividad son a la vez el nodo de su grupo.
+     * ordenes, la bandeja y el registro de actividad son a la vez el nodo de su grupo.
      */
     private static final Map<String, MenuGroup> GROUPS = Map.of(
             MasterView.ROUTE_PREFIX, new MenuGroup("Infraestructura", "train"),
@@ -176,6 +176,7 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
             StockRoutes.PREFIX, new MenuGroup("Almacen", "storage"),
             MaintenanceRoutes.PREFIX, new MenuGroup("Mantenimiento", "wrench"),
             ResourcesRoutes.PREFIX, new MenuGroup("Recursos", "group"),
+            NotificationRoutes.INBOX, new MenuGroup("Notificaciones", "bell"),
             NotificationRoutes.ACTIVITY, new MenuGroup("Actividad", "records"));
 
     private Component menu() {

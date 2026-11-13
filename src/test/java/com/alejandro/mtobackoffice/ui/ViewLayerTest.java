@@ -1,5 +1,23 @@
 package com.alejandro.mtobackoffice.ui;
 
+import com.alejandro.mtobackoffice.client.dto.notification.AdminNotificationDto;
+import com.alejandro.mtobackoffice.client.dto.notification.BroadcastChannel;
+import com.alejandro.mtobackoffice.client.dto.notification.BroadcastRequest;
+import com.alejandro.mtobackoffice.client.dto.notification.DeadLetterPeekDto;
+import com.alejandro.mtobackoffice.client.dto.notification.DeadLetterQueuesDto;
+import com.alejandro.mtobackoffice.client.dto.notification.DeadLetterReprocessDto;
+import com.alejandro.mtobackoffice.client.dto.notification.DeliveryDto;
+import com.alejandro.mtobackoffice.client.dto.notification.DeliveryFilter;
+import com.alejandro.mtobackoffice.client.dto.notification.DeliveryScope;
+import com.alejandro.mtobackoffice.client.dto.notification.DeliveryStatus;
+import com.alejandro.mtobackoffice.client.dto.notification.InboxMessageStatus;
+import com.alejandro.mtobackoffice.client.dto.notification.ReprocessOutcome;
+import com.alejandro.mtobackoffice.client.dto.notification.ReprocessStop;
+import com.alejandro.mtobackoffice.client.dto.notification.RuleDto;
+import com.alejandro.mtobackoffice.client.dto.notification.RulesDto;
+import com.alejandro.mtobackoffice.client.dto.notification.SourceCursorKind;
+import com.alejandro.mtobackoffice.client.dto.notification.SourceStatusDto;
+import com.alejandro.mtobackoffice.client.dto.notification.TestEmailRequest;
 import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationOutcome;
 import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationPreviewLineDto;
 import com.alejandro.mtobackoffice.client.dto.maintenance.GenerationSelection;
@@ -12002,5 +12020,613 @@ class ViewLayerTest {
         LocatorJ._click(rowAction(anyGrid(), 1, "history-6"));
         LocatorJ._get(LocatorJ._get(Dialog.class), Span.class, spec -> spec.withId("revisions-empty"));
         assertTrue(NotificationsKt.getNotifications().isEmpty());
+    }
+
+    // --- Fase 6: la administracion de notificaciones (notification-admin) -------------------------------
+
+    private static final String[] NOTIFICATION_ADMIN = {"ROLE_NOTIFICATION_INBOX", "ROLE_NOTIFICATION_ADMIN"};
+    private static final int SOURCES_TAB = 0;
+    private static final int DEAD_LETTERS_TAB = 1;
+    private static final int DELIVERIES_TAB = 2;
+    private static final int RULES_TAB = 3;
+    private static final int BROADCASTS_TAB = 4;
+    private static final UUID DELIVERY_FAILED = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000601");
+    private static final UUID DELIVERY_SENT = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000602");
+    private static final UUID DELIVERY_SKIPPED = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000603");
+    private static final UUID DELIVERY_UNKNOWN = UUID.fromString("5e6f7a8b-0000-4000-8000-000000000604");
+
+    private static BackofficeApiException adminError(int status, String code, String message) {
+        ApiProblem problem = new ApiProblem(null, HttpStatus.valueOf(status).name(), status, message, null, code, null, null, null, false, null, null);
+        return BackofficeApiException.of(HttpStatusCode.valueOf(status), problem, "corr-a9", null, "POST /api/notifications/admin");
+    }
+
+    /** El aviso de error que hay en pantalla dice ese texto, con su referencia. */
+    private static void expectAdminError(String text) {
+        List<Notification> notifications = NotificationsKt.getNotifications();
+        assertEquals(1, notifications.size(), "un solo aviso");
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText(text));
+        LocatorJ._get(notifications.getFirst(), Span.class, spec -> spec.withText("Referencia: corr-a9"));
+    }
+
+    private void stubNotificationAdmin() {
+        when(notificationClient.adminSources()).thenReturn(new SourceStatusDto(List.of(), List.of(), 0L, Map.of()));
+        when(notificationClient.deadLetterQueues()).thenReturn(new DeadLetterQueuesDto(true, List.of()));
+        when(notificationClient.adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.<DeliveryDto>of(), 0, 50));
+        when(notificationClient.adminRules()).thenReturn(new RulesDto("classpath:notification-rules.yml", Map.of(), List.of()));
+    }
+
+    private void openNotificationAdmin(int tab) {
+        loginAs("notificaciones.responsable", NOTIFICATION_ADMIN);
+        UI.getCurrent().navigate(NotificationRoutes.ADMIN);
+        if (tab != SOURCES_TAB) {
+            selectTab(tab);
+        }
+    }
+
+    private static DeliveryDto delivery(UUID id, DeliveryStatus status, String recipient, String username, String error) {
+        return new DeliveryDto(id, NOTIFICATION1, "email", DeliveryScope.RECIPIENT, null, recipient, username, status, 5, 5, null,
+                status == DeliveryStatus.SENT ? NOTIFIED_AT.plusSeconds(60) : null, error, NOTIFIED_AT);
+    }
+
+    private static DeadLetterQueuesDto.QueueDto queue(String source, Long messages) {
+        return new DeadLetterQueuesDto.QueueDto(source, "mto.notification." + source + ".queue", "mto.notification." + source + ".queue.dlq", messages);
+    }
+
+    /** Sus codigos no son «conflicto, recarga» ni «no se ha encontrado»: cada uno dice lo que pasa. */
+    @Test
+    void theErrorsOfTheNotificationAdministrationSayWhatHappened() {
+        assertEquals("Esa entrega ya no existe.", UiErrors.message(adminError(404, "DLV-404", "Delivery x was not found")));
+        assertEquals("La entrega ya no admite el reintento: solo se reintenta una fallida o una omitida.",
+                UiErrors.message(adminError(409, "DLV-409", "Delivery x is SENT and only FAILED or SKIPPED deliveries can be retried")));
+        assertEquals("Esa fuente no existe en mto-notification.", UiErrors.message(adminError(404, "SRC-404", "Source nope was not found")));
+        assertEquals("RabbitMQ esta apagado en este despliegue, o esa cola de mensajes muertos no existe en el broker."
+                        + " The dead letter queue q.dlq does not exist in the broker",
+                UiErrors.message(adminError(409, "SRC-409", "The dead letter queue q.dlq does not exist in the broker")));
+        assertEquals("RabbitMQ no responde ahora: la cola se queda como estaba. Intentalo mas tarde.",
+                UiErrors.message(adminError(503, "SRC-503", "RabbitMQ did not answer")));
+        assertEquals("El aviso nombra una audiencia o un canal que el servicio no conoce. Channel 'sms' is unknown; known channels are [inbox, email]",
+                UiErrors.message(adminError(422, "NTF-422", "Channel 'sms' is unknown; known channels are [inbox, email]")));
+    }
+
+    /**
+     * La administracion cuelga de la bandeja en el menu, y solo la ve quien tiene el rol de cliente
+     * {@code notification-admin}: con la bandeja sola no esta, y un rol de realm que se llame igual no la abre.
+     */
+    @Test
+    void theAdministrationOfNotificationsHangsFromTheInboxInTheMenuOnlyWithItsRole() {
+        stubNotificationAdmin();
+        loginAs("notificaciones.responsable", NOTIFICATION_ADMIN);
+        UI.getCurrent().navigate(HomeView.class);
+        List<String> labels = menuLabels();
+        assertTrue(labels.contains("Notificaciones") && labels.contains("Administracion"), labels.toString());
+        SideNavItem inbox = LocatorJ._find(SideNavItem.class).stream().filter(item -> "Notificaciones".equals(item.getLabel())).findFirst().orElseThrow();
+        assertEquals(List.of("Administracion"), inbox.getItems().stream().map(SideNavItem::getLabel).toList(), "cuelga de la bandeja");
+        assertEquals(NotificationRoutes.INBOX, inbox.getPath(), "y la bandeja sigue siendo una pantalla");
+
+        UI.getCurrent().navigate(NotificationRoutes.ADMIN);
+        LocatorJ._get(H2.class, spec -> spec.withText("Administracion de notificaciones"));
+        assertEquals("notificaciones/administracion", NotificationRoutes.ADMIN);
+
+        loginAs("mantenimiento.tecnico", "ROLE_NOTIFICATION_INBOX", "ROLE_NOTIFICATION_ACTIVITY_READ", "ROLE_REALM_NOTIFICATION_ADMIN");
+        UI.getCurrent().navigate(HomeView.class);
+        assertFalse(menuLabels().contains("Administracion"), menuLabels().toString());
+        clearInvocations(notificationClient);
+        assertThrows(Throwable.class, () -> UI.getCurrent().navigate(NotificationRoutes.ADMIN));
+        verify(notificationClient, never()).adminSources();
+    }
+
+    /** Cada pestana pide sus datos la primera vez que se abre, y no al volver a ella: entrar son los de la primera. */
+    @Test
+    void theAdministrationOnlyAsksForTheTabThatIsOpened() {
+        stubNotificationAdmin();
+        openNotificationAdmin(SOURCES_TAB);
+
+        assertEquals(List.of("Fuentes", "Mensajes muertos (DLQ)", "Entregas", "Reglas", "Avisos manuales"),
+                LocatorJ._find(com.vaadin.flow.component.tabs.Tab.class).stream().map(com.vaadin.flow.component.tabs.Tab::getLabel).toList());
+        verify(notificationClient, times(1)).adminSources();
+        verify(notificationClient, never()).deadLetterQueues();
+        verify(notificationClient, never()).adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList());
+        verify(notificationClient, never()).adminRules();
+
+        selectTab(DEAD_LETTERS_TAB);
+        verify(notificationClient, times(1)).deadLetterQueues();
+        selectTab(RULES_TAB);
+        verify(notificationClient, times(1)).adminRules();
+        selectTab(BROADCASTS_TAB);
+        selectTab(SOURCES_TAB);
+        selectTab(DEAD_LETTERS_TAB);
+        verify(notificationClient, times(1)).adminSources();
+        verify(notificationClient, times(1)).deadLetterQueues();
+        verify(notificationClient, never()).adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList());
+
+        selectTab(DELIVERIES_TAB);
+        assertEquals(0, GridKt._size(gridWithId("admin-deliveries-grid")));
+        verify(notificationClient, atLeastOnce()).adminDeliveries(eq(DeliveryFilter.NONE), eq(0), anyInt(), eq(List.of("createdAt,desc")));
+    }
+
+    /** Las cifras son las del servicio: el inbox por fuente y estado, el lector de Keycloak, las rafagas y las entregas. */
+    @Test
+    void theSourcesShowWhatTheServiceCountsAndAreAskedAgainOnDemand() {
+        stubNotificationAdmin();
+        Map<String, Long> deliveries = new java.util.LinkedHashMap<>();
+        deliveries.put("SENT", 40L);
+        deliveries.put("DEFERRED", 7L);
+        deliveries.put("PENDING", 1L);
+        deliveries.put("FAILED", 2L);
+        when(notificationClient.adminSources()).thenReturn(new SourceStatusDto(
+                List.of(new SourceStatusDto.CursorDto(SourceCursorKind.KEYCLOAK_LOGIN, NOTIFIED_AT, "pod-1", NOTIFIED_AT.plusSeconds(60), NOTIFIED_AT,
+                                NOTIFIED_AT, null),
+                        new SourceStatusDto.CursorDto(SourceCursorKind.UNKNOWN, null, null, null, null, null, "Keycloak did not answer")),
+                List.of(new SourceStatusDto.InboxCountDto("mto-maintenance", InboxMessageStatus.PROCESSED, 1204),
+                        new SourceStatusDto.InboxCountDto("mto-stock", InboxMessageStatus.FAILED, 2),
+                        new SourceStatusDto.InboxCountDto("mto-field", InboxMessageStatus.UNKNOWN, 1)),
+                3L, deliveries));
+
+        openNotificationAdmin(SOURCES_TAB);
+
+        Grid<Object> inbox = gridWithId("admin-inbox-grid");
+        assertEquals(3, GridKt._size(inbox));
+        assertEquals(List.of("mto-maintenance", "Procesado", "1204"), GridKt._getFormattedRow(inbox, 0));
+        assertEquals(List.of("mto-stock", "Fallido", "2"), GridKt._getFormattedRow(inbox, 1));
+        assertEquals(List.of("mto-field", "Desconocido", "1"), GridKt._getFormattedRow(inbox, 2));
+        Grid<Object> cursors = gridWithId("admin-cursors-grid");
+        assertEquals(List.of("Accesos de Keycloak", Formats.dateTime(NOTIFIED_AT), Formats.dateTime(NOTIFIED_AT), Formats.dateTime(NOTIFIED_AT),
+                "pod-1 hasta " + Formats.dateTime(NOTIFIED_AT.plusSeconds(60)), ""), GridKt._getFormattedRow(cursors, 0));
+        assertEquals(List.of("Desconocido", "", "", "", "", "Keycloak did not answer"), GridKt._getFormattedRow(cursors, 1));
+        assertEquals("Rafagas abiertas: 3 · Entregas: Pendiente 1 · Enviada 40 · Fallida 2 · DEFERRED 7",
+                LocatorJ._get(Span.class, spec -> spec.withId("admin-sources-summary")).getText(),
+                "los estados conocidos en su orden; uno nuevo, con su clave");
+
+        when(notificationClient.adminSources()).thenThrow(BackofficeApiException.of(HttpStatus.SERVICE_UNAVAILABLE, ApiProblem.empty(), "corr-a1",
+                null, "GET /api/notifications/admin/sources"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("admin-sources-refresh")));
+        verify(notificationClient, times(2)).adminSources();
+        assertEquals(0, GridKt._size(inbox));
+        assertEquals(1, NotificationsKt.getNotifications().size(), "el fallo se avisa");
+    }
+
+    /**
+     * Mirar y reprocesar se ofrecen solo donde hay mensajes: una cola que el broker no tiene seria el
+     * 409 {@code SRC-409}, y una vacia no tiene nada. Con el broker apagado se dice y no hay tabla.
+     */
+    @Test
+    void theDeadLetterQueuesOfferPeekAndReprocessOnlyWhereThereAreMessages() {
+        stubNotificationAdmin();
+        when(notificationClient.deadLetterQueues()).thenReturn(new DeadLetterQueuesDto(true,
+                List.of(queue("maintenance", 3L), queue("stock", 0L), queue("field", null))));
+
+        openNotificationAdmin(DEAD_LETTERS_TAB);
+
+        Grid<Object> grid = gridWithId("admin-dlq-grid");
+        assertEquals(3, GridKt._size(grid));
+        assertEquals(List.of("maintenance", "mto.notification.maintenance.queue", "mto.notification.maintenance.queue.dlq", "3"),
+                GridKt._getFormattedRow(grid, 0).subList(0, 4));
+        assertEquals("0", GridKt._getFormattedRow(grid, 1).get(3));
+        assertEquals("Sin cola en el broker", GridKt._getFormattedRow(grid, 2).get(3));
+        assertEquals(List.of("peek-maintenance", "reprocess-maintenance"), actionIds(grid, 0));
+        assertEquals(List.of(), actionIds(grid, 1));
+        assertEquals(List.of(), actionIds(grid, 2));
+        assertTrue(LocatorJ._find(Span.class, spec -> spec.withId("admin-dlq-disabled")).isEmpty(), "con broker no se dice nada");
+
+        when(notificationClient.deadLetterQueues()).thenReturn(new DeadLetterQueuesDto(false, List.of()));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("admin-dlq-refresh")));
+        assertEquals("RabbitMQ esta apagado en este despliegue: no hay colas de mensajes muertos que mirar ni reprocesar.",
+                LocatorJ._get(Span.class, spec -> spec.withId("admin-dlq-disabled")).getText());
+        assertTrue(LocatorJ._find(Grid.class, spec -> spec.withId("admin-dlq-grid")).isEmpty(), "sin broker no hay tabla ni acciones");
+
+        when(notificationClient.deadLetterQueues()).thenThrow(adminError(503, "SRC-503", "RabbitMQ did not answer"));
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("admin-dlq-refresh")));
+        expectAdminError("RabbitMQ no responde ahora: la cola se queda como estaba. Intentalo mas tarde.");
+        assertEquals(0, GridKt._size(gridWithId("admin-dlq-grid")));
+    }
+
+    /** Mirar no saca nada de la cola y nunca ensena el cuerpo: metadatos, el motivo del broker, el problema y lo que guarda el inbox. */
+    @Test
+    void peekingADeadLetterQueueShowsItsMessagesAndAFailureOpensNothing() {
+        stubNotificationAdmin();
+        when(notificationClient.deadLetterQueues()).thenReturn(new DeadLetterQueuesDto(true, List.of(queue("maintenance", 3L), queue("users", 1L))));
+        when(notificationClient.peekDeadLetters("maintenance", 20)).thenReturn(new DeadLetterPeekDto("maintenance",
+                "mto.notification.maintenance.queue.dlq", 3L, List.of(
+                new DeadLetterPeekDto.PeekedDto(new DeadLetterPeekDto.MessageDto("m-1", "mto-maintenance", "MAINTENANCE_ORDER_CREATED", "order", "o-1",
+                        "mto.maintenance.exchange", "mto.maintenance.order.created", "rejected", 2L, NOTIFIED_AT, 812, null),
+                        new DeadLetterPeekDto.InboxRecordDto(InboxMessageStatus.FAILED, 3, NOTIFIED_AT, "No rule engine")),
+                new DeadLetterPeekDto.PeekedDto(new DeadLetterPeekDto.MessageDto(null, null, null, null, null, null, null, "delivery_limit", 1L, null, 12,
+                        "The body is not an envelope"), null))));
+        when(notificationClient.peekDeadLetters("users", 20)).thenThrow(adminError(404, "SRC-404", "Source users was not found"));
+
+        openNotificationAdmin(DEAD_LETTERS_TAB);
+        LocatorJ._click(rowAction(gridWithId("admin-dlq-grid"), 0, "peek-maintenance"));
+
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        assertEquals("Mensajes muertos de maintenance", dialog.getHeaderTitle());
+        assertEquals("mto.notification.maintenance.queue.dlq: 3 en la cola; se ensenan los primeros 2, que siguen en ella."
+                + " El cuerpo de un mensaje no se ensena nunca.", LocatorJ._get(dialog, Span.class, spec -> spec.withId("peek-summary")).getText());
+        Grid<Object> peeked = gridWithId("peek-grid");
+        assertEquals(2, GridKt._size(peeked));
+        assertEquals(List.of("m-1", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", "mto.maintenance.exchange", "mto-maintenance",
+                        "order o-1", "rejected x2", Formats.dateTime(NOTIFIED_AT), "812 B", "",
+                        "Fallido · 3 intentos · fallo el " + Formats.dateTime(NOTIFIED_AT) + " · No rule engine"),
+                GridKt._getFormattedRow(peeked, 0));
+        assertEquals(List.of("", "", "", "", "", "", "delivery_limit", "", "12 B", "The body is not an envelope", "Sin registro en el inbox"),
+                GridKt._getFormattedRow(peeked, 1));
+        verify(notificationClient, never()).reprocessDeadLetters(any(), anyInt());
+        dialog.close();
+        MockVaadin.clientRoundtrip();
+
+        LocatorJ._click(rowAction(gridWithId("admin-dlq-grid"), 1, "peek-users"));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "si no se puede mirar, no se abre nada");
+        expectAdminError("Esa fuente no existe en mto-notification.");
+    }
+
+    /**
+     * Reprocesar dice que va a pasar, pide cuantos como mucho (de 1 a 100, 20 de partida) y, al
+     * terminar, ensena en el mismo dialogo que fue de cada mensaje y relee las colas. Un maximo fuera
+     * de rango no llama, y un error del servicio se dice con el dialogo abierto.
+     */
+    @Test
+    void reprocessingADeadLetterQueueAsksHowManyShowsWhatBecameOfEachAndRereadsTheQueues() {
+        stubNotificationAdmin();
+        when(notificationClient.deadLetterQueues()).thenReturn(new DeadLetterQueuesDto(true, List.of(queue("maintenance", 3L))));
+        when(notificationClient.reprocessDeadLetters("maintenance", 20)).thenReturn(new DeadLetterReprocessDto("maintenance",
+                "mto.notification.maintenance.queue.dlq", 20, 3, 1L, 1L, 1L, 1L, ReprocessStop.EMPTY, List.of(
+                new DeadLetterReprocessDto.ResultDto("m-1", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", ReprocessOutcome.PROCESSED, null),
+                new DeadLetterReprocessDto.ResultDto("m-2", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", ReprocessOutcome.FAILED,
+                        "its signature does not match"),
+                new DeadLetterReprocessDto.ResultDto("m-3", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", ReprocessOutcome.DUPLICATE, null))));
+        when(notificationClient.reprocessDeadLetters("maintenance", 5)).thenReturn(new DeadLetterReprocessDto("maintenance", "q.dlq", 5, 5, 5L, 0L, 0L,
+                null, ReprocessStop.UNKNOWN, List.of(new DeadLetterReprocessDto.ResultDto("m-9", "X", "k", ReprocessOutcome.UNKNOWN, null))));
+        when(notificationClient.reprocessDeadLetters("maintenance", 100)).thenThrow(adminError(409, "SRC-409", "The queue does not exist"));
+
+        openNotificationAdmin(DEAD_LETTERS_TAB);
+        LocatorJ._click(rowAction(gridWithId("admin-dlq-grid"), 0, "reprocess-maintenance"));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        IntegerField max = LocatorJ._get(dialog, IntegerField.class, spec -> spec.withId("reprocess-max"));
+        Button run = LocatorJ._get(dialog, Button.class, spec -> spec.withId("reprocess-run"));
+
+        assertEquals("Reprocesar los mensajes muertos de maintenance", dialog.getHeaderTitle());
+        assertEquals("Pasa los primeros mensajes de mto.notification.maintenance.queue.dlq otra vez por el consumidor de maintenance, cada uno una"
+                        + " vez. Los que se aplican, y los que ya estaban aplicados, salen de la cola; los que vuelven a fallar se quedan en ella, con su"
+                        + " motivo. No se republica nada, y lo que se aplique puede generar avisos, como cualquier evento.",
+                LocatorJ._get(dialog, Paragraph.class, spec -> spec.withId("reprocess-explanation")).getText());
+        assertEquals(20, max.getValue(), "20 de partida, el lote del servicio");
+        assertTrue(LocatorJ._find(dialog, Grid.class).isEmpty(), "sin resultado todavia");
+
+        for (Integer outOfRange : Arrays.asList(0, 101, null)) {
+            max.setValue(outOfRange);
+            LocatorJ._click(run);
+            assertTrue(max.isInvalid(), "fuera de rango: " + outOfRange);
+            assertEquals("Entre 1 y 100 mensajes", max.getErrorMessage());
+        }
+        verify(notificationClient, never()).reprocessDeadLetters(any(), anyInt());
+
+        clearInvocations(notificationClient);
+        max.setValue(20);
+        LocatorJ._click(run);
+        assertFalse(max.isInvalid());
+        assertEquals("Pedidos 20 · sacados 3 · procesados 1 · duplicados 1 · fallidos 1 · quedan 1 en la cola · paro porque la cola se quedo sin mensajes",
+                LocatorJ._get(dialog, Span.class, spec -> spec.withId("reprocess-summary")).getText());
+        Grid<Object> results = gridWithId("reprocess-results");
+        assertEquals(3, GridKt._size(results));
+        assertEquals(List.of("m-1", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", "Procesado", ""), GridKt._getFormattedRow(results, 0));
+        assertEquals(List.of("m-2", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", "Fallido", "its signature does not match"),
+                GridKt._getFormattedRow(results, 1));
+        assertEquals("Duplicado", GridKt._getFormattedRow(results, 2).get(3));
+        verify(notificationClient, times(1)).deadLetterQueues();
+        assertTrue(dialog.isOpened(), "el resultado se lee en el mismo dialogo");
+
+        max.setValue(5);
+        LocatorJ._click(run);
+        assertEquals("Pedidos 5 · sacados 5 · procesados 5 · duplicados 0 · fallidos 0 · paro por un motivo que esta version no conoce",
+                LocatorJ._get(dialog, Span.class, spec -> spec.withId("reprocess-summary")).getText());
+        assertEquals("Desconocido", GridKt._getFormattedRow(results, 0).get(3));
+
+        clearInvocations(notificationClient);
+        NotificationsKt.clearNotifications();
+        max.setValue(100);
+        LocatorJ._click(run);
+        expectAdminError("RabbitMQ esta apagado en este despliegue, o esa cola de mensajes muertos no existe en el broker. The queue does not exist");
+        assertTrue(dialog.isOpened(), "el error se dice con el dialogo abierto");
+        verify(notificationClient, never()).deadLetterQueues();
+    }
+
+    /**
+     * Las entregas se piden paginadas, filtradas y ordenadas al servicio. «Reintentar» solo en las que
+     * el servicio reintenta (fallidas y omitidas); una desconocida no ofrece nada. Un id de
+     * notificacion a medias no pide nada.
+     */
+    @Test
+    void theDeliveriesAreFilteredAndSortedInTheServiceAndOnlyAFailedOrSkippedOneOffersRetry() {
+        stubNotificationAdmin();
+        List<DeliveryDto> all = List.of(
+                delivery(DELIVERY_FAILED, DeliveryStatus.FAILED, "ana@mto.local", "ana", "Mail server connection failed"),
+                delivery(DELIVERY_SENT, DeliveryStatus.SENT, "luis@mto.local", null, null),
+                new DeliveryDto(DELIVERY_SKIPPED, NOTIFICATION1, "email", DeliveryScope.AUDIENCE, "PROFILE:mto-ops", null, null, DeliveryStatus.SKIPPED, 0, 5,
+                        null, null, "No address", NOTIFIED_AT),
+                delivery(DELIVERY_UNKNOWN, DeliveryStatus.UNKNOWN, "eva@mto.local", "eva", null));
+        when(notificationClient.adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList())).thenAnswer(call -> {
+            DeliveryFilter filter = call.getArgument(0);
+            return page(all.stream().filter(row -> filter.status() == null || filter.status() == row.status()).toList(), call.getArgument(1),
+                    call.getArgument(2));
+        });
+
+        openNotificationAdmin(DELIVERIES_TAB);
+        Grid<Object> grid = gridWithId("admin-deliveries-grid");
+
+        assertEquals(4, GridKt._size(grid));
+        LocatorJ._get(Span.class, spec -> spec.withText("4 entregas"));
+        assertEquals(List.of(Formats.dateTime(NOTIFIED_AT), "email", "Destinatario", "ana@mto.local (ana)", "Fallida", "5/5", "", "",
+                "Mail server connection failed", NOTIFICATION1.toString()), GridKt._getFormattedRow(grid, 0).subList(0, 10));
+        assertEquals("luis@mto.local", GridKt._getFormattedRow(grid, 1).get(3));
+        assertEquals(Formats.dateTime(NOTIFIED_AT.plusSeconds(60)), GridKt._getFormattedRow(grid, 1).get(7));
+        assertEquals(List.of("Audiencia", "PROFILE:mto-ops", "Omitida", "0/5"), GridKt._getFormattedRow(grid, 2).subList(2, 6));
+        assertEquals("Desconocido", GridKt._getFormattedRow(grid, 3).get(4));
+        assertEquals(List.of("retry-" + DELIVERY_FAILED), actionIds(grid, 0));
+        assertEquals(List.of(), actionIds(grid, 1), "una enviada no se reintenta");
+        assertEquals(List.of("retry-" + DELIVERY_SKIPPED), actionIds(grid, 2));
+        assertEquals(List.of(), actionIds(grid, 3), "lo desconocido no abre nada");
+        ComboBox<DeliveryStatus> status = LocatorJ._get(ComboBox.class, spec -> spec.withId("admin-deliveries-status"));
+        assertFalse(status.getListDataView().getItems().toList().contains(DeliveryStatus.UNKNOWN));
+
+        LocatorJ._setValue(status, DeliveryStatus.FAILED);
+        assertEquals(1, GridKt._size(grid));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 entrega"));
+        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("admin-deliveries-channel")), " email ");
+        GridKt._size(grid);
+        verify(notificationClient, atLeastOnce()).adminDeliveries(eq(new DeliveryFilter(DeliveryStatus.FAILED, "email", null)), eq(0), anyInt(),
+                eq(List.of("createdAt,desc")));
+
+        TextField notification = LocatorJ._get(TextField.class, spec -> spec.withId("admin-deliveries-notification"));
+        clearInvocations(notificationClient);
+        LocatorJ._setValue(notification, "5e6f7a8b-0000");
+        GridKt._size(grid);
+        assertTrue(notification.isInvalid(), "un id a medias no se pide");
+        assertEquals("El id entero de una notificacion (un UUID)", notification.getErrorMessage());
+        verify(notificationClient, never()).adminDeliveries(argThat(filter -> filter.notificationId() != null), anyInt(), anyInt(), anyList());
+        LocatorJ._setValue(notification, NOTIFICATION1.toString());
+        GridKt._size(grid);
+        assertFalse(notification.isInvalid());
+        verify(notificationClient, atLeastOnce()).adminDeliveries(eq(new DeliveryFilter(DeliveryStatus.FAILED, "email", NOTIFICATION1)), eq(0), anyInt(),
+                anyList());
+
+        grid.sort(List.of(new GridSortOrder<>(grid.getColumnByKey("status"), SortDirection.ASCENDING)));
+        GridKt._get(grid, 0);
+        verify(notificationClient, atLeastOnce()).adminDeliveries(any(DeliveryFilter.class), eq(0), anyInt(), eq(List.of("status,asc")));
+    }
+
+    /** Reintentar devuelve la entrega a la cola y relee la lista; si su estado ya no lo admite, se dice y se relee igual. */
+    @Test
+    void retryingADeliveryQueuesItAgainAndRereadsTheListAlsoWhenTheServiceRefuses() {
+        stubNotificationAdmin();
+        when(notificationClient.adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList())).thenReturn(page(List.of(
+                delivery(DELIVERY_FAILED, DeliveryStatus.FAILED, "ana@mto.local", "ana", "boom"),
+                delivery(DELIVERY_SKIPPED, DeliveryStatus.SKIPPED, "luis@mto.local", null, "No address")), 0, 50));
+        when(notificationClient.retryDelivery(DELIVERY_FAILED)).thenReturn(delivery(DELIVERY_FAILED, DeliveryStatus.PENDING, "ana@mto.local", "ana", null));
+        when(notificationClient.retryDelivery(DELIVERY_SKIPPED)).thenThrow(adminError(409, "DLV-409", "Delivery is SENT"));
+
+        openNotificationAdmin(DELIVERIES_TAB);
+        Grid<Object> grid = gridWithId("admin-deliveries-grid");
+        assertEquals(2, GridKt._size(grid));
+        MockVaadin.clientRoundtrip();
+
+        clearInvocations(notificationClient);
+        LocatorJ._click(rowAction(grid, 0, "retry-" + DELIVERY_FAILED));
+        verify(notificationClient).retryDelivery(DELIVERY_FAILED);
+        NotificationsKt.expectNotifications("Entrega en cola otra vez");
+        GridKt._size(grid);
+        verify(notificationClient, atLeastOnce()).adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList());
+        MockVaadin.clientRoundtrip();
+
+        clearInvocations(notificationClient);
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(rowAction(grid, 1, "retry-" + DELIVERY_SKIPPED));
+        expectAdminError("La entrega ya no admite el reintento: solo se reintenta una fallida o una omitida.");
+        GridKt._size(grid);
+        verify(notificationClient, atLeastOnce()).adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    /** Las reglas son de solo lectura: se cambian en el YAML del servicio. Llegan enteras y el filtro es local. */
+    @Test
+    void theLoadedRulesAreReadOnlyAndFilteredLocally() {
+        stubNotificationAdmin();
+        Map<String, Object> variables = new java.util.LinkedHashMap<>();
+        variables.put("maintenance-service-account", "svc");
+        variables.put("large-burst-threshold", 50);
+        when(notificationClient.adminRules()).thenReturn(new RulesDto("classpath:notification-rules.yml", variables, List.of(
+                new RuleDto("maintenance-order-urgent", List.of("maintenance.order.created", "maintenance.order.status-changed"), "payload.type == 'URGENT'",
+                        ActivitySeverity.CRITICAL, List.of("PROFILE:mto-maintenance-manager", "USER:#{payload.assignedUser}"), List.of("inbox", "email"),
+                        "Orden urgente #{payload.code}", "Cuerpo", "/mantenimiento/ordenes/#{event.subject.id}", "PT30M", "#{payload.code}"),
+                new RuleDto("stock-below-minimum", List.of("stock.material.below-minimum"), null, null, List.of("PROFILE:mto-warehouse-manager"),
+                        List.of("inbox"), "Material bajo minimo", null, null, "P1DT2H", null),
+                new RuleDto("access-streak", List.of("access.*"), null, ActivitySeverity.UNKNOWN, List.of(), List.of(), "Racha", null, null, "30m", null))));
+
+        openNotificationAdmin(RULES_TAB);
+        Grid<Object> grid = gridWithId("admin-rules-grid");
+
+        assertEquals(3, GridKt._size(grid));
+        assertEquals("Cargadas de classpath:notification-rules.yml", LocatorJ._get(Span.class, spec -> spec.withId("admin-rules-source")).getText());
+        assertEquals("Variables: large-burst-threshold = 50 · maintenance-service-account = svc",
+                LocatorJ._get(Span.class, spec -> spec.withId("admin-rules-variables")).getText());
+        LocatorJ._get(Span.class, spec -> spec.withText("3 reglas"));
+        assertEquals(List.of("maintenance-order-urgent", "maintenance.order.created, maintenance.order.status-changed", "payload.type == 'URGENT'",
+                "Critica", "PROFILE:mto-maintenance-manager, USER:#{payload.assignedUser}", "inbox, email", "Orden urgente #{payload.code}",
+                "/mantenimiento/ordenes/#{event.subject.id}", "Uno cada 30 min por #{payload.code}"), GridKt._getFormattedRow(grid, 0));
+        assertEquals(List.of("", "La del evento"), GridKt._getFormattedRow(grid, 1).subList(2, 4));
+        assertEquals("Uno cada 1 d 2 h", GridKt._getFormattedRow(grid, 1).get(8));
+        assertEquals("Desconocido", GridKt._getFormattedRow(grid, 2).get(3));
+        assertEquals("Uno cada 30m", GridKt._getFormattedRow(grid, 2).get(8), "una ventana que no se sabe leer, tal cual");
+        assertTrue(LocatorJ._find(Button.class).stream().noneMatch(button -> List.of("Nuevo", "Modificar", "Borrar").contains(button.getText())));
+
+        TextField filter = LocatorJ._get(TextField.class, spec -> spec.withId("admin-rules-filter"));
+        LocatorJ._setValue(filter, "WAREHOUSE");
+        assertEquals(1, GridKt._size(grid));
+        LocatorJ._get(Span.class, spec -> spec.withText("1 de 3 reglas"));
+        LocatorJ._setValue(filter, "email");
+        assertEquals(1, GridKt._size(grid));
+        LocatorJ._setValue(filter, "");
+        assertEquals(3, GridKt._size(grid));
+        verify(notificationClient, times(1)).adminRules();
+    }
+
+    /**
+     * El correo de prueba exige lo evidente antes de llamar (una direccion con forma de email), pone el
+     * error del servicio en su campo con el dialogo abierto y, al enviarse, relee las entregas si esa
+     * pestana ya se abrio.
+     */
+    @Test
+    void aTestEmailChecksTheAddressShowsTheErrorOfTheServiceOnItsFieldAndRereadsTheDeliveries() {
+        stubNotificationAdmin();
+        AdminNotificationDto created = new AdminNotificationDto(NOTIFICATION1, "test-email", ActivityCategory.SYSTEM, ActivitySeverity.INFO,
+                "Correo de prueba de mto-notification", "…", "/notificaciones", List.of("USER:notificaciones.responsable"), NOTIFIED_AT,
+                "notificaciones.responsable");
+        when(notificationClient.sendTestEmail(new TestEmailRequest("ops@mto.local"))).thenReturn(created);
+        when(notificationClient.sendTestEmail(new TestEmailRequest("bad@mto.local"))).thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST,
+                new ApiProblem(null, "BAD_REQUEST", 400, "Validation failed", null, "REQ-VALIDATION", null, null, null, false,
+                        List.of(new ApiFieldError("to", null, "must be a well-formed email address")), null),
+                "corr-a3", null, "POST /api/notifications/admin/test-email"));
+
+        openNotificationAdmin(DELIVERIES_TAB);
+        GridKt._size(gridWithId("admin-deliveries-grid"));
+        selectTab(BROADCASTS_TAB);
+        verify(notificationClient, never()).sendTestEmail(any());
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("admin-test-email")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        TextField to = LocatorJ._get(dialog, TextField.class, spec -> spec.withId("test-email-to"));
+        Button send = LocatorJ._get(dialog, Button.class, spec -> spec.withId("test-email-send"));
+        assertEquals("Correo de prueba", dialog.getHeaderTitle());
+
+        LocatorJ._click(send);
+        assertEquals("La direccion es obligatoria", to.getErrorMessage());
+        LocatorJ._setValue(to, "no-es-un-correo");
+        LocatorJ._click(send);
+        assertEquals("No tiene forma de email", to.getErrorMessage());
+        LocatorJ._setValue(to, "a".repeat(320) + "@mto.local");
+        LocatorJ._click(send);
+        assertEquals("Como mucho 320 caracteres", to.getErrorMessage());
+        verify(notificationClient, never()).sendTestEmail(any());
+
+        LocatorJ._setValue(to, "bad@mto.local");
+        LocatorJ._click(send);
+        assertTrue(to.isInvalid());
+        assertEquals("must be a well-formed email address", to.getErrorMessage());
+        assertTrue(dialog.isOpened(), "el dialogo sigue abierto con lo escrito");
+
+        clearInvocations(notificationClient);
+        LocatorJ._setValue(to, " ops@mto.local ");
+        LocatorJ._click(send);
+        verify(notificationClient).sendTestEmail(new TestEmailRequest("ops@mto.local"));
+        assertFalse(dialog.isOpened());
+        NotificationsKt.expectNotifications("Correo de prueba en cola para ops@mto.local: como le va se ve en Entregas");
+        assertEquals("Ultimo enviado: «Correo de prueba de mto-notification», el " + Formats.dateTime(NOTIFIED_AT) + ", a USER:notificaciones.responsable",
+                LocatorJ._get(Span.class, spec -> spec.withId("admin-broadcasts-last")).getText());
+        selectTab(DELIVERIES_TAB);
+        GridKt._size(gridWithId("admin-deliveries-grid"));
+        verify(notificationClient, atLeastOnce()).adminDeliveries(any(DeliveryFilter.class), anyInt(), anyInt(), anyList());
+    }
+
+    /**
+     * El aviso general ofrece solo lo que el servicio acepta, comprueba lo evidente antes de llamar y
+     * pide confirmacion diciendo a quien va y por donde: llega a personas de verdad. Lo vacio no
+     * viaja; las audiencias, una por linea y sin repetir.
+     */
+    @Test
+    void aBroadcastIsCheckedBeforeCallingConfirmedSayingWhoGetsItAndSentWithoutWhatIsEmpty() {
+        stubNotificationAdmin();
+        when(notificationClient.broadcast(any())).thenAnswer(call -> {
+            BroadcastRequest request = call.getArgument(0);
+            return new AdminNotificationDto(NOTIFICATION1, "manual-broadcast", ActivityCategory.SYSTEM, request.severity(), request.title(), request.body(),
+                    request.link(), request.audiences(), NOTIFIED_AT, "notificaciones.responsable");
+        });
+
+        openNotificationAdmin(BROADCASTS_TAB);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("admin-broadcast")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        TextField title = LocatorJ._get(dialog, TextField.class, spec -> spec.withId("broadcast-title"));
+        TextArea body = LocatorJ._get(dialog, TextArea.class, spec -> spec.withId("broadcast-body"));
+        TextField link = LocatorJ._get(dialog, TextField.class, spec -> spec.withId("broadcast-link"));
+        Select<ActivitySeverity> severity = LocatorJ._get(dialog, Select.class, spec -> spec.withId("broadcast-severity"));
+        TextArea audiences = LocatorJ._get(dialog, TextArea.class, spec -> spec.withId("broadcast-audiences"));
+        MultiSelectComboBox<BroadcastChannel> channels = LocatorJ._get(dialog, MultiSelectComboBox.class, spec -> spec.withId("broadcast-channels"));
+        Button send = LocatorJ._get(dialog, Button.class, spec -> spec.withId("broadcast-send"));
+
+        assertEquals("Aviso general", dialog.getHeaderTitle());
+        assertEquals(ActivitySeverity.INFO, severity.getValue(), "sin decir otra cosa, informacion");
+        assertEquals(List.of(ActivitySeverity.INFO, ActivitySeverity.WARNING, ActivitySeverity.CRITICAL), severity.getListDataView().getItems().toList());
+        assertEquals(Set.of(BroadcastChannel.INBOX), channels.getValue(), "y por la bandeja");
+        assertEquals(List.of(BroadcastChannel.INBOX, BroadcastChannel.EMAIL), channels.getListDataView().getItems().toList());
+
+        LocatorJ._click(send);
+        assertEquals("El titulo es obligatorio", title.getErrorMessage());
+        assertEquals("Al menos una audiencia", audiences.getErrorMessage());
+        LocatorJ._setValue(title, "Parada programada del sabado");
+        LocatorJ._setValue(audiences, "PROFILE:mto-ops\nTEAM:a");
+        LocatorJ._setValue(link, "notificaciones");
+        channels.setValue(Set.of());
+        LocatorJ._click(send);
+        assertEquals("«TEAM:a»: la clase es USER, USER_ID, PROFILE o CLIENT_ROLE", audiences.getErrorMessage());
+        assertEquals("Una ruta de la aplicacion (/notificaciones) o una direccion http(s)", link.getErrorMessage());
+        assertEquals("Al menos un canal", channels.getErrorMessage());
+        LocatorJ._setValue(audiences, "CLIENT_ROLE:stock-read");
+        LocatorJ._click(send);
+        assertEquals("«CLIENT_ROLE:stock-read»: un rol de cliente es CLIENT_ROLE:cliente:rol", audiences.getErrorMessage());
+        LocatorJ._setValue(title, "x".repeat(256));
+        LocatorJ._setValue(body, "y".repeat(4001));
+        LocatorJ._click(send);
+        assertEquals("Como mucho 255 caracteres", title.getErrorMessage());
+        assertEquals("Como mucho 4000 caracteres", body.getErrorMessage());
+        assertTrue(LocatorJ._find(ConfirmDialog.class).isEmpty(), "sin lo evidente no se llega ni a confirmar");
+        verify(notificationClient, never()).broadcast(any());
+
+        LocatorJ._setValue(title, " Parada programada del sabado ");
+        LocatorJ._setValue(body, "");
+        LocatorJ._setValue(link, "");
+        LocatorJ._setValue(severity, ActivitySeverity.WARNING);
+        LocatorJ._setValue(audiences, " PROFILE:mto-ops \n\nCLIENT_ROLE:mto-notification-api:notification-inbox\nPROFILE:mto-ops\n");
+        channels.setValue(Set.of(BroadcastChannel.EMAIL, BroadcastChannel.INBOX));
+        LocatorJ._click(send);
+        ConfirmDialog confirm = LocatorJ._get(ConfirmDialog.class);
+        assertEquals("Enviar el aviso general", confirm.getElement().getProperty("header"));
+        assertEquals("«Parada programada del sabado» se envia a 2 audiencias (PROFILE:mto-ops, CLIENT_ROLE:mto-notification-api:notification-inbox)"
+                + " por Bandeja y Correo. Llega a personas de verdad y no se puede retirar. ¿Enviar?", confirm.getElement().getProperty("message"));
+        verify(notificationClient, never()).broadcast(any());
+
+        ConfirmDialogKt._fireConfirm(confirm);
+        verify(notificationClient).broadcast(new BroadcastRequest("Parada programada del sabado", null, null, ActivitySeverity.WARNING,
+                List.of("PROFILE:mto-ops", "CLIENT_ROLE:mto-notification-api:notification-inbox"), List.of("inbox", "email")));
+        assertFalse(dialog.isOpened());
+        NotificationsKt.expectNotifications("Aviso enviado a 2 audiencias");
+        assertTrue(LocatorJ._get(Span.class, spec -> spec.withId("admin-broadcasts-last")).getText().startsWith("Ultimo enviado: «Parada programada del sabado»"));
+    }
+
+    /** Lo que el servicio rechaza de un aviso se dice con el dialogo abierto: en su campo si lo trae, y el 422 con su detalle. */
+    @Test
+    void aBroadcastTheServiceRejectsKeepsTheDialogOpenWithTheErrorOnItsField() {
+        stubNotificationAdmin();
+        when(notificationClient.broadcast(any())).thenThrow(BackofficeApiException.of(HttpStatus.BAD_REQUEST,
+                        new ApiProblem(null, "BAD_REQUEST", 400, "Validation failed", null, "REQ-VALIDATION", null, null, null, false,
+                                List.of(new ApiFieldError("title", null, "size must be between 0 and 255"),
+                                        new ApiFieldError("audiences[0]", null, "must not be blank")), null),
+                        "corr-a4", null, "POST /api/notifications/admin/broadcasts"))
+                .thenThrow(adminError(422, "NTF-422", "Audience 'PROFILE:x' is not <KIND>:<key> with a known kind"));
+
+        openNotificationAdmin(BROADCASTS_TAB);
+        LocatorJ._click(LocatorJ._get(Button.class, spec -> spec.withId("admin-broadcast")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        TextField title = LocatorJ._get(dialog, TextField.class, spec -> spec.withId("broadcast-title"));
+        TextArea audiences = LocatorJ._get(dialog, TextArea.class, spec -> spec.withId("broadcast-audiences"));
+        LocatorJ._setValue(title, "Aviso");
+        LocatorJ._setValue(audiences, "PROFILE:x");
+
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("broadcast-send")));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        assertEquals("size must be between 0 and 255", title.getErrorMessage());
+        assertEquals("must not be blank", audiences.getErrorMessage(), "el error de un elemento de la lista cae en su campo");
+        assertTrue(dialog.isOpened());
+
+        NotificationsKt.clearNotifications();
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId("broadcast-send")));
+        ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
+        expectAdminError("El aviso nombra una audiencia o un canal que el servicio no conoce. Audience 'PROFILE:x' is not <KIND>:<key> with a known kind");
+        assertTrue(dialog.isOpened(), "y el 422, con el dialogo abierto");
+        verify(notificationClient, times(2)).broadcast(any());
     }
 }
