@@ -82,7 +82,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   catálogos con su ruta y su título), `MasterClient<D>` (lo que comparten los maestros de
   `CRUDController`: `POST /filter` paginado, `GET/POST/PUT/DELETE`) con siete subinterfaces vacías (salvo `TrackClient`, que añade `schematic`: el esquema de la vía en una llamada)
   que solo ponen la ruta y el tipo (`StationClient`, `TrackClient`, `TrackAccessPointClient`...; Spring
-  resuelve el genérico contra la subinterfaz), `BusinessEntityClient` (solo lectura), `MasterFilters` (cuerpo y orden
+  resuelve el genérico contra la subinterfaz; y `revisions`, el historial de una fila, como el de `LovClient` para una entrada), `BusinessEntityClient` (solo lectura), `MasterFilters` (cuerpo y orden
   del `/filter`) y `JobsClient` (los trabajos en segundo plano: importaciones multipart con
   `@RequestPart Resource`, exportación, republicado, la lista de todas las familias (`GET /jobs`,
   paginada y filtrable por tipo y estado), estado y fichero por familia, `JobFamily`);
@@ -166,6 +166,7 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   la lista paginada en el servidor con `LazyPages` (una petición por página) sobre `POST /filter`;
   `MasterEditorDialog<D>`, el `Binder` sobre el DTO leído; una vista y un editor por maestro, también
   `TrackAccessPointsView` en `infraestructura/accesos` con `TrackAccessPointEditor`;
+  `MasterHistory`, la línea de cada maestro en el historial de una fila;
   `ReferenceCatalog` y `LovCatalog`, los nombres y las entradas de catálogo cargados una vez por
   pantalla; `Pickers`, desplegables y conversores; `EnabledFilter`, el filtro de tres estados;
   `ChildrenEditor<C>`, la tabla de hijos dentro del editor del padre, con `CantileverDialog` y
@@ -444,6 +445,22 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (y de cada fila de activos), y `MaintenanceHistory` pone la línea de cada recurso. No es la
   pestaña «Estados» de una orden o un defecto: esa es `/history`, las transiciones con su
   comentario, que el servicio guarda aparte.
+- **El historial de un maestro y de un catálogo es el de `mto-configuration`, y pide dos permisos.**
+  `GET /{recurso}/{id}/revisions` (los siete maestros y los 17 catálogos; `MasterClient.revisions`,
+  `LovClient.revisions`), en el mismo `RevisionsDialog`, paginado en el servicio y la más reciente
+  primero. El botón «Historial» de cada fila (`history-<id>`, entre las acciones propias y borrar) se
+  ofrece solo con `config-audit` **y** `config-read` (`hasAllRoles`): con uno solo el servicio responde
+  403. En un catálogo, la columna de acciones existe si hay algo que ofrecer (escribir, borrar o
+  auditar). La línea «Como quedo» la pone `MasterHistory` por maestro (y `LovCrudView.describe` para
+  una entrada): sus campos principales y los nombres de sus referencias como en su lista
+  (`ReferenceCatalog`; `#id` lo que ya no está), sin separadores sueltos por lo que falta. Los nombres
+  son los de hoy, también para el servicio. Una fila sin revisiones (sembrada por una migración) es el
+  404 `NOT-001`: «sin historial todavía», sin aviso. Una revisión sin fila (`entity: null`) dice «Sin
+  datos de la fila en esta revision», y el borrado de una entrada de catálogo, que es físico y solo
+  guarda el id, «Borrada del catalogo: sus datos estan en la revision anterior». `source` es la cadena
+  leída (`HTTP` o `SYSTEM`); `userId`, `requestMethod` y `requestUri` no se leen. La `entity` de una
+  revisión no es un cuerpo para un `PUT` (`versionNumber` llega a `null`): desde el historial no se
+  edita nada.
 - **En mantenimiento, una transición solo se ofrece en su estado de origen, y la decide el
   servicio.** Los estados de cada recurso (`MaintenanceOrderStatus.canPlan`/`canAssign`/`canStart`/
   `canComplete`, `ShiftStatus.canStart`/`canClose`, `DefectStatus.isPending`...) están copiados de
@@ -1173,7 +1190,14 @@ abierta con lo que se comprueba antes de llamar y el `VEH-001`; modificar con la
 según el estado; solo lectura), el campo GPS (su forma, vaciarlo, la ficha y el origen «GPS»), el
 diálogo del equipo solo con supervise y write, con lo desconocido y su `CON-001`, y Puestos y perfiles
 (sus secciones, el enlace a la persona, el `KCK-503` en su sitio con «Reintentar» y el menú solo con
-`resources-read`). Las cuentas de servicio y uno mismo en Usuarios también: en `ClientLayerTest`, el
+`resources-read`). El historial de los maestros y de los catálogos (fase 6) también: en
+`ClientLayerTest`, el de un perfil y el de una vía tipados contra su subinterfaz (las ménsulas de
+entonces, la vía sin hijos, `versionNumber` a `null`, una revisión sin fila, una operación nueva como
+`UNKNOWN`) y el de una entrada de catálogo (su tipo, el borrado solo con el id, el 404 `NOT-001` y el
+403); en `ViewLayerTest`, el botón solo con `config-audit` y `config-read` (un rol de realm no lo da),
+el historial de una vía paginado en el servicio con sus nombres, la línea de cada uno de los siete
+maestros, la fila sin revisiones dicha sin aviso y el 403 avisado, y el de una entrada de catálogo con
+su tipo, su borrado y la sembrada sin historial. Las cuentas de servicio y uno mismo en Usuarios también: en `ClientLayerTest`, el
 usuario con `serviceAccount` y sin la clave (y el prefijo reservado) y los dos 403 tipados con su código;
 en `SecurityLayerTest`, el `sub` de la sesión (`CurrentPrincipal.subject`), que no es el nombre y sigue
 tras un token renovado; en `ViewLayerTest`, los mensajes de `USR-SVC-403` y `USR-SELF-403`, la fila y la
