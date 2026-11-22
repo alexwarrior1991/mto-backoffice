@@ -23,13 +23,22 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.ui.support.UiErrors;
+import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.icon.VaadinIcon;
+import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 
 /**
  * Las vias: nombre, paquete y las estaciones que atraviesa. Sus perfiles (cientos por via) no
  * viajan en la lista ni se tocan al guardar. Cada fila ofrece ademas, a quien solo lee tambien, el
  * esquema de la via ({@link TrackSchematicDialog}): una llamada a {@code GET /tracks/{id}/schematic}.
+ *
+ * <p>«Borrar» no borra una via de la que cuelga algo (409 {@code BUS-002}, con que y cuanto). Para eso
+ * esta, con el mismo permiso ({@code config-delete}), «Borrar la via entera»
+ * ({@code delete-whole-<id>}), que se la lleva con todo lo suyo y tiene su propia confirmacion
+ * ({@link TrackWholeDeleteDialog}).</p>
  */
 @Route(value = MasterView.ROUTE_PREFIX + "/vias", layout = MainLayout.class)
 @PageTitle("Vias")
@@ -84,6 +93,31 @@ public class TracksView extends MasterView<TrackDto> {
         actions.add(rowButton("schematic-" + row.getId(), VaadinIcon.SPLINE_CHART, "Esquema", click -> openSchematic(row)));
     }
 
+    @Override
+    protected void addDeleteActions(TrackDto row, HorizontalLayout actions) {
+        Button whole = rowButton("delete-whole-" + row.getId(), VaadinIcon.ERASER, "Borrar la via entera",
+                click -> new TrackWholeDeleteDialog(labelOf(row), () -> deleteWhole(row)).open());
+        whole.addThemeVariants(ButtonVariant.LUMO_ERROR);
+        actions.add(whole);
+    }
+
+    /**
+     * La via con todo lo suyo, en una llamada que puede tardar. Si algo de otra via la usa, el servicio
+     * no borra nada y su 409 lo dice. La lista se relee salga bien o no: de una respuesta que no llego
+     * (el gateway corta a los 15 s) no se sabe si el servicio termino.
+     */
+    private void deleteWhole(TrackDto row) {
+        try {
+            tracks.deleteWhole(row.getId());
+            Notification.show("Borrada la via entera " + labelOf(row), 3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+        } catch (BackofficeApiException failure) {
+            UiErrors.show(failure);
+        }
+        catalog.invalidate();
+        refresh();
+    }
+
     /** Una llamada, y el servicio decide: la proyeccion ya viene ordenada y cacheada alli. */
     private void openSchematic(TrackDto row) {
         try {
@@ -112,6 +146,11 @@ public class TracksView extends MasterView<TrackDto> {
     @Override
     protected String describe(TrackDto dto) {
         return MasterHistory.track(dto, catalog);
+    }
+
+    @Override
+    protected String deleteConsequences() {
+        return " Si tiene perfiles, seccionadores, aisladores o accesos a via, el servicio no la borra: para borrarla con todo lo suyo esta «Borrar la via entera».";
     }
 
     @Override

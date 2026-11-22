@@ -61,6 +61,11 @@ public class StationsView extends MasterView<StationDto> {
     }
 
     @Override
+    protected String deleteConsequences() {
+        return " Si tiene vias enlazadas, seccionadores, aisladores o accesos a via, el servicio no la borra.";
+    }
+
+    @Override
     protected String labelOf(StationDto dto) {
         return dto.getName() == null ? super.labelOf(dto) : dto.getName();
     }

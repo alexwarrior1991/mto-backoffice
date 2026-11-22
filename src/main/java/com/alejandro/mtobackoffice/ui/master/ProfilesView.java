@@ -102,6 +102,11 @@ public class ProfilesView extends MasterView<ProfileDto> {
     }
 
     @Override
+    protected String deleteConsequences() {
+        return " Se borran con el sus mensulas y los brazos de ellas. Si tiene seccionadores en su poste, el servicio no lo borra.";
+    }
+
+    @Override
     protected String labelOf(ProfileDto dto) {
         return dto.getProfileId() == null ? super.labelOf(dto) : dto.getProfileId() + " (kp " + dto.getKp() + ")";
     }

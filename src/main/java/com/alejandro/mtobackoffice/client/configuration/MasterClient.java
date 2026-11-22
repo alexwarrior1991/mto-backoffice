@@ -27,7 +27,7 @@ import java.util.Map;
  * completas. Los filtros que no vienen no filtran, incluidos los booleanos.</p>
  *
  * <p>Permisos del servicio: leer, {@code config-read}; crear y modificar, {@code config-write};
- * borrar (logico), {@code config-delete}; el historial de una fila, {@code config-audit} y
+ * borrar (logico; con algo vivo colgando, 409 {@code BUS-002} con que cuelga y cuanto), {@code config-delete}; el historial de una fila, {@code config-audit} y
  * {@code config-read} juntos.</p>
  */
 public interface MasterClient<D extends MasterDto> {

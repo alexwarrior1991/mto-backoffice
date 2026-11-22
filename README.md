@@ -439,7 +439,13 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
 | Ver la lista y buscar | `config-read` |
 | Nuevo, modificar | `config-write` |
 | Borrar (lógico) | `config-delete` |
+| Borrar la vía entera (solo en Vías) | `config-delete` |
 | Historial de una fila | `config-audit` + `config-read` |
+
+Un maestro del que cuelga algo no se borra: el servicio responde 409 `BUS-002` y la notificación dice
+qué cuelga y cuánto. Un perfil se lleva sus ménsulas y sus brazos, y un aislador, sus agujas. «Borrar
+la vía entera» se lleva la vía con sus perfiles, seccionadores, aisladores y accesos tras escribir su
+nombre para confirmar, y no se deshace.
 
 Los botones siguen los permisos que aplica el servicio a cada catálogo:
 
@@ -700,7 +706,8 @@ Con `dev` el secreto del cliente ya viene puesto (`mto-backoffice-secret`, el qu
 - Errores: `ApiErrorDecoder` entiende el `application/problem+json` de `mto-configuration` (`code`,
   `traceId`, `retryable`, `errors[{field,code,message}]`; sus dos 409 son `CON-001`, un
   `versionNumber` que ya no es el guardado y que se arregla recargando, y `BUS-002`, un valor único
-  repetido o una entrada en uso, que no), el de `mto-users` (`errorCode`,
+  repetido o una entrada en uso, que no; con `dependents`, un maestro del que cuelga algo, que se dice
+  con el detalle del servicio), el de `mto-users` (`errorCode`,
   `correlationId`, `validationErrors[{field,message}]`, `Retry-After` en su 503; sus 403 `USR-SVC-403`
   y `USR-SELF-403` no son falta de permiso y se dicen aparte), el JSON de error
   de `mto-stock` (no es `problem+json`: `error`, `message`, `errorCode`, `correlationId`,
