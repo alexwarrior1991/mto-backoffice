@@ -11,7 +11,8 @@ import java.util.List;
  * <ul>
  *   <li>mto-configuration: los campos RFC 9457 mas {@code code} (no {@code errorCode}),
  *       {@code traceId} (no {@code correlationId}), {@code retryable}, {@code timestamp} y
- *       {@code errors} de tres campos;</li>
+ *       {@code errors} de tres campos; y, en el 409 de borrar un maestro del que cuelga algo vivo,
+ *       {@code dependents} ({@code [{type, count}]}): que cuelga y cuanto;</li>
  *   <li>el gateway en 401/403: solo {@code correlationId}, sin {@code code};</li>
  *   <li>el fallback del gateway (503): {@code service} y {@code correlationId};</li>
  *   <li>mto-users: los campos RFC 9457 mas {@code errorCode} (que aqui cae en {@code code}),
@@ -37,15 +38,28 @@ public record ApiProblem(
         Instant timestamp,
         Boolean retryable,
         @JsonAlias("validationErrors") List<ApiFieldError> errors,
-        String service
+        String service,
+        List<ApiDependent> dependents
 ) {
 
     public ApiProblem {
         errors = errors == null ? List.of() : List.copyOf(errors);
+        dependents = dependents == null ? List.of() : List.copyOf(dependents);
+    }
+
+    /** Un problema sin {@code dependents}, que es como llegan todos menos el borrado de un maestro con algo colgando. */
+    public ApiProblem(String type, String title, Integer status, String detail, String instance, String code, String traceId,
+                      String correlationId, Instant timestamp, Boolean retryable, List<ApiFieldError> errors, String service) {
+        this(type, title, status, detail, instance, code, traceId, correlationId, timestamp, retryable, errors, service, List.of());
     }
 
     public static ApiProblem empty() {
         return new ApiProblem(null, null, null, null, null, null, null, null, null, null, List.of(), null);
+    }
+
+    /** Si el servicio dice que de lo que se borra cuelga algo vivo. */
+    public boolean hasDependents() {
+        return !dependents.isEmpty();
     }
 
     /** Lo que se le puede pedir a alguien que cite: el traceId del servicio o el correlationId del gateway. */

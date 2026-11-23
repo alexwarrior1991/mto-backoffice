@@ -279,6 +279,7 @@ import com.vaadin.flow.component.combobox.MultiSelectComboBox;
 import com.vaadin.flow.component.textfield.PasswordField;
 import com.vaadin.flow.component.textfield.TextArea;
 import java.util.Set;
+import com.alejandro.mtobackoffice.client.error.ApiDependent;
 import com.alejandro.mtobackoffice.client.error.ApiFieldError;
 import com.alejandro.mtobackoffice.client.error.ApiProblem;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
@@ -546,6 +547,7 @@ import com.alejandro.mtobackoffice.ui.maintenance.InspectionTemplateVersionDialo
 import com.alejandro.mtobackoffice.ui.maintenance.InspectionTemplatesView;
 import com.alejandro.mtobackoffice.ui.master.SchematicDrawing;
 import com.alejandro.mtobackoffice.ui.master.TrackSchematicDialog;
+import com.alejandro.mtobackoffice.ui.master.TrackWholeDeleteDialog;
 import com.alejandro.mtobackoffice.ui.resources.PersonAbsenceDialog;
 import com.alejandro.mtobackoffice.ui.resources.VehicleRepairDialog;
 import java.util.Objects;
@@ -1896,9 +1898,148 @@ class ViewLayerTest {
         LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(trackGrid(), 0, "actions"), Button.class, spec -> spec.withId("delete-3")));
 
         verify(trackClient, never()).delete(any());
+        ConfirmDialog confirm = LocatorJ._get(ConfirmDialog.class);
+        assertEquals("Desaparece de las listas (borrado logico en el servicio). Si tiene perfiles, seccionadores, aisladores o accesos a via, "
+                + "el servicio no la borra: para borrarla con todo lo suyo esta «Borrar la via entera». ¿Seguro?",
+                confirm.getElement().getProperty("message"));
+        ConfirmDialogKt._fireConfirm(confirm);
+
+        verify(trackClient).delete(3L);
+        verify(trackClient, never()).deleteWhole(any());
+    }
+
+    /** La confirmacion dice la verdad de cada maestro: un perfil se lleva sus mensulas y brazos, y un aislador, sus agujas. */
+    @Test
+    void theDeleteConfirmationOfAMasterSaysWhatGoesWithItAndWhatStopsIt() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_DELETE");
+        stubTracks(threeTracks());
+        when(profileClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(profileWithOneCantilever()), 0, 50));
+        SectionInsulatorDto insulator = new SectionInsulatorDto();
+        insulator.setId(31L);
+        insulator.setName("AS-1");
+        when(sectionInsulatorClient.filter(anyInt(), anyInt(), anyList(), anyMap())).thenReturn(page(List.of(insulator), 0, 50));
+
+        UI.getCurrent().navigate(PROFILES_ROUTE);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(anyGrid(), 0, "actions"), Button.class, spec -> spec.withId("delete-7")));
+        ConfirmDialog profile = LocatorJ._get(ConfirmDialog.class);
+        assertEquals("Desaparece de las listas (borrado logico en el servicio). Se borran con el sus mensulas y los brazos de ellas. "
+                + "Si tiene seccionadores en su poste, el servicio no lo borra. ¿Seguro?", profile.getElement().getProperty("message"));
+        assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("delete-whole-7")).isEmpty(), "solo una via se borra entera");
+        ConfirmDialogKt._fireCancel(profile);
+
+        UI.getCurrent().navigate(SECTION_INSULATORS_ROUTE);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(anyGrid(), 0, "actions"), Button.class, spec -> spec.withId("delete-31")));
+        assertEquals("Desaparece de las listas (borrado logico en el servicio). Se borran con el sus agujas. ¿Seguro?",
+                LocatorJ._get(ConfirmDialog.class).getElement().getProperty("message"));
+        verify(profileClient, never()).delete(any());
+        verify(sectionInsulatorClient, never()).delete(any());
+    }
+
+    private static BackofficeApiException hangingConflict(String detail, ApiDependent... dependents) {
+        ApiProblem problem = new ApiProblem("https://api.mto-configuration/errors/bus-002", "Regla de negocio incumplida", 409, detail, null,
+                "BUS-002", "t-hang", null, null, false, null, null, List.of(dependents));
+        return BackofficeApiException.of(HttpStatus.CONFLICT, problem, "corr-hang", null, "DELETE /api/configuration/tracks/3");
+    }
+
+    /**
+     * Un maestro del que cuelga algo no se borra: el 409 BUS-002 trae dependents, y se dice con el detalle
+     * del servicio (que cuelga y cuanto), sin pedir recargar. Sin dependents, BUS-002 sigue siendo el
+     * valor repetido o la entrada en uso de siempre.
+     */
+    @Test
+    void aMasterWithSomethingHangingIsNotDeletedAndTheServiceDetailSaysWhatHangs() {
+        String detail = "No se puede borrar la vía: tiene 412 perfiles, 3 seccionadores y 1 aislador. Bórralos antes, o borra la vía entera "
+                + "con todo lo suyo: DELETE /tracks/{id}?cascade=true.";
+        assertEquals(detail, UiErrors.message(hangingConflict(detail, new ApiDependent("profiles", 412L))));
+        assertEquals("No se puede borrar: tiene cosas colgando. Borralas o muevelas antes.",
+                UiErrors.message(hangingConflict(null, new ApiDependent("profiles", 412L))));
+        assertEquals("Ya existe otro registro con ese valor (un codigo que no se puede repetir), o la entrada esta en uso.",
+                UiErrors.message(hangingConflict("El valor del campo 'name' está repetido")), "sin dependents, el texto de siempre");
+
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_DELETE");
+        stubTracks(threeTracks());
+        doThrow(hangingConflict(detail, new ApiDependent("profiles", 412L), new ApiDependent("disconnectors", 3L),
+                new ApiDependent("sectionInsulators", 1L))).when(trackClient).delete(3L);
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(trackGrid(), 0, "actions"), Button.class, spec -> spec.withId("delete-3")));
         ConfirmDialogKt._fireConfirm(LocatorJ._get(ConfirmDialog.class));
 
         verify(trackClient).delete(3L);
+        Notification notification = NotificationsKt.getNotifications().getLast();
+        LocatorJ._get(notification, Span.class, spec -> spec.withText(detail));
+        assertTrue(LocatorJ._find(notification, Span.class).stream().noneMatch(span -> span.getText().contains("recarga")));
+        assertEquals("VIA 1", GridKt._get(trackGrid(), 0).getName(), "la via sigue en la lista");
+    }
+
+    /**
+     * «Borrar la via entera»: solo con config-delete, detras de «Borrar». Su confirmacion dice que se
+     * lleva, no deja confirmar hasta escribir el nombre de la via, llama con cascade y relee la lista.
+     */
+    @Test
+    void deletingAWholeTrackAsksForItsNameThenCallsTheCascadeAndReloadsTheList() {
+        loginAs("config.gestor", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_REALM_CONFIG_DELETE");
+        stubTracks(threeTracks());
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        assertEquals(List.of("edit-3", "schematic-3"), actionIds(anyGrid(), 0), "sin config-delete (un rol de realm no lo da) no se ofrece");
+
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_DELETE");
+        UI.getCurrent().navigate(HomeView.class);
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        assertEquals(List.of("schematic-3", "delete-3", "delete-whole-3"), actionIds(anyGrid(), 0));
+        clearInvocations(trackClient);
+        NotificationsKt.clearNotifications();
+
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(trackGrid(), 0, "actions"), Button.class, spec -> spec.withId("delete-whole-3")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        assertEquals("Borrar la via entera VIA 1", dialog.getHeaderTitle());
+        assertEquals(List.of(TrackWholeDeleteDialog.WHAT, TrackWholeDeleteDialog.HOW),
+                LocatorJ._find(dialog, Paragraph.class).stream().map(Paragraph::getText).toList());
+        assertTrue(TrackWholeDeleteDialog.WHAT.contains("sus perfiles con sus mensulas y sus brazos, sus seccionadores, "
+                + "sus aisladores con sus agujas y sus accesos a via") && TrackWholeDeleteDialog.WHAT.contains("No se puede deshacer"));
+        assertTrue(TrackWholeDeleteDialog.HOW.contains("puede tardar varios segundos"));
+        Button confirm = LocatorJ._get(dialog, Button.class, spec -> spec.withId(TrackWholeDeleteDialog.CONFIRM_ID));
+        TextField name = LocatorJ._get(dialog, TextField.class, spec -> spec.withId(TrackWholeDeleteDialog.NAME_ID));
+        assertFalse(confirm.isEnabled(), "sin el nombre de la via no se confirma");
+        assertTrue(confirm.isDisableOnClick(), "mientras corre no se pulsa dos veces");
+        LocatorJ._setValue(name, "VIA 2");
+        assertFalse(confirm.isEnabled());
+        LocatorJ._setValue(name, "VIA 1");
+        assertTrue(confirm.isEnabled());
+        verify(trackClient, never()).deleteWhole(any());
+
+        LocatorJ._click(confirm);
+
+        verify(trackClient).deleteWhole(3L);
+        verify(trackClient, never()).delete(any());
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "la confirmacion se cierra");
+        NotificationsKt.expectNotifications("Borrada la via entera VIA 1");
+        MockVaadin.clientRoundtrip();
+        verify(trackClient, atLeastOnce()).filter(anyInt(), anyInt(), anyList(), anyMap());
+    }
+
+    /** Si algo de otra via la usa, el servicio no borra nada: su detalle se notifica, la confirmacion se cierra y la lista se relee. */
+    @Test
+    void aWholeTrackThatAnotherTrackUsesIsNotDeletedAndTheServiceDetailIsShown() {
+        loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_DELETE");
+        stubTracks(threeTracks());
+        String detail = "No se puede borrar la vía entera: desde otras vías la usan 2 seccionadores. Cambia antes esas referencias o bórralos: "
+                + "lo que no es de la vía no se toca.";
+        doThrow(hangingConflict(detail, new ApiDependent("disconnectors", 2L))).when(trackClient).deleteWhole(3L);
+
+        UI.getCurrent().navigate(TRACKS_ROUTE);
+        LocatorJ._click(LocatorJ._get(GridKt._getCellComponent(trackGrid(), 0, "actions"), Button.class, spec -> spec.withId("delete-whole-3")));
+        Dialog dialog = LocatorJ._get(Dialog.class);
+        LocatorJ._setValue(LocatorJ._get(dialog, TextField.class, spec -> spec.withId(TrackWholeDeleteDialog.NAME_ID)), "VIA 1");
+        clearInvocations(trackClient);
+        LocatorJ._click(LocatorJ._get(dialog, Button.class, spec -> spec.withId(TrackWholeDeleteDialog.CONFIRM_ID)));
+
+        verify(trackClient).deleteWhole(3L);
+        LocatorJ._get(NotificationsKt.getNotifications().getLast(), Span.class, spec -> spec.withText(detail));
+        assertTrue(LocatorJ._find(Dialog.class).isEmpty(), "como un borrado rechazado: la confirmacion se cierra");
+        MockVaadin.clientRoundtrip();
+        verify(trackClient, atLeastOnce()).filter(anyInt(), anyInt(), anyList(), anyMap());
+        assertEquals("VIA 1", GridKt._get(trackGrid(), 0).getName(), "la via sigue en la lista");
     }
 
     @Test
@@ -12194,7 +12335,7 @@ class ViewLayerTest {
 
         loginAs("config.responsable", "ROLE_CONFIG_READ", "ROLE_CONFIG_WRITE", "ROLE_CONFIG_DELETE", "ROLE_LOV_MANAGE", "ROLE_CONFIG_AUDIT");
         UI.getCurrent().navigate(TRACKS_ROUTE);
-        assertEquals(List.of("edit-3", "schematic-3", "history-3", "delete-3"), actionIds(anyGrid(), 0));
+        assertEquals(List.of("edit-3", "schematic-3", "history-3", "delete-3", "delete-whole-3"), actionIds(anyGrid(), 0));
         UI.getCurrent().navigate(CATALOGUE_ROUTE);
         assertEquals(List.of("edit-3", "history-3", "delete-3"), actionIds(anyGrid(), 0));
         verify(trackClient, never()).revisions(any(), anyInt(), anyInt());

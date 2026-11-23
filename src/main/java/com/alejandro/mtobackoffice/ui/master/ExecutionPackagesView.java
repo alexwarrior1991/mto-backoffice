@@ -84,6 +84,11 @@ public class ExecutionPackagesView extends MasterView<ExecutionPackageDto> {
     }
 
     @Override
+    protected String deleteConsequences() {
+        return " Si tiene vias o estaciones, el servicio no lo borra.";
+    }
+
+    @Override
     protected String labelOf(ExecutionPackageDto dto) {
         return dto.getName() == null ? super.labelOf(dto) : dto.getName();
     }

@@ -49,7 +49,8 @@ import com.vaadin.flow.component.ComponentEventListener;
  *
  * <p>Los botones siguen los permisos del servicio: crear y modificar piden {@code config-write};
  * borrar (logico), {@code config-delete}; el historial de una fila, {@code config-audit} y
- * {@code config-read} juntos. Esconderlos es cortesia: la guarda real esta en el
+ * {@code config-read} juntos. Un borrado que el servicio rechaza porque de la fila cuelga algo vivo
+ * (409 {@code BUS-002}) se notifica con su detalle, que dice que cuelga y cuanto. Esconderlos es cortesia: la guarda real esta en el
  * servicio. La columna de acciones existe siempre, tambien para quien solo lee, porque un maestro
  * puede ofrecer acciones de lectura ({@link #addRowActions}: el esquema de una via).</p>
  */
@@ -167,8 +168,24 @@ public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
             Button delete = rowButton("delete-" + dto.getId(), VaadinIcon.TRASH, "Borrar", click -> confirmDelete(dto));
             delete.addThemeVariants(ButtonVariant.LUMO_ERROR);
             actions.add(delete);
+            addDeleteActions(dto, actions);
         }
         return actions;
+    }
+
+    /**
+     * Otras formas de borrar de un maestro, detras de «Borrar» y solo con {@code config-delete}; por
+     * defecto ninguna (borrar una via entera).
+     */
+    protected void addDeleteActions(D row, HorizontalLayout actions) {
+    }
+
+    /**
+     * Lo que la confirmacion de borrar anade para este maestro: lo que se borra con el y lo que,
+     * mientras cuelgue de el, hace que el servicio no lo borre. Por defecto nada.
+     */
+    protected String deleteConsequences() {
+        return "";
     }
 
     /**
@@ -242,7 +259,7 @@ public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
 
     private void confirmDelete(D dto) {
         ConfirmDialog dialog = new ConfirmDialog("Borrar " + resource.singular().toLowerCase(Locale.ROOT) + " " + labelOf(dto),
-                "Desaparece de las listas (borrado logico en el servicio). ¿Seguro?",
+                "Desaparece de las listas (borrado logico en el servicio)." + deleteConsequences() + " ¿Seguro?",
                 "Borrar", confirm -> delete(dto), "Cancelar", cancel -> { });
         dialog.setConfirmButtonTheme("error primary");
         dialog.open();
@@ -253,6 +270,10 @@ public abstract class MasterView<D extends MasterDto> extends VerticalLayout {
         return "#" + dto.getId();
     }
 
+    /**
+     * Si de la fila cuelga algo vivo el servicio no borra nada (409 {@code BUS-002}): se notifica su
+     * detalle, que dice que cuelga y cuanto, y la lista sigue como estaba.
+     */
     private void delete(D dto) {
         try {
             client.delete(dto.getId());

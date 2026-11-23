@@ -180,6 +180,11 @@ public final class UiErrors {
             // hacer es exactamente eso, y el detalle del servicio ("intentelo de nuevo") no aporta nada.
             case ConflictApiException concurrent when "CON-001".equals(concurrent.getProblem().code()) ->
                     "Conflicto con otro cambio: recarga y vuelve a intentarlo.";
+            // mto-configuration: borrar un maestro (o quitar un hijo de su padre) del que cuelga algo vivo.
+            // El servicio no borra nada y lo dice con dependents; su detalle dice que cuelga y cuanto, y
+            // es lo que se ensena. Recargar no lo arregla.
+            case ConflictApiException hanging when "BUS-002".equals(hanging.getProblem().code()) && hanging.getProblem().hasDependents() ->
+                    detail(exception).isEmpty() ? "No se puede borrar: tiene cosas colgando. Borralas o muevelas antes." : detail(exception).strip();
             // mto-configuration: un valor unico repetido (el codigo de un catalogo) o una entrada en
             // uso. Recargar no lo arregla, asi que no se pide recargar.
             case ConflictApiException duplicated when "BUS-002".equals(duplicated.getProblem().code()) ->

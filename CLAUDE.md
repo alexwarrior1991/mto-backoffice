@@ -363,6 +363,9 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   (`UiErrors` los dice así, no como «conflicto» ni «petición no válida»). Los dos 409 de
   `mto-configuration` tampoco se dicen igual: `CON-001` es una versión vieja («recarga y vuelve a
   intentarlo») y `BUS-002`, un valor único repetido o una entrada en uso, que recargar no arregla.
+  Un `BUS-002` con `dependents` (`ApiProblem.hasDependents`, `[{type, count}]`) es otra cosa: un maestro
+  (o un hijo quitado de su padre) del que cuelga algo vivo y que el servicio no borra; se dice con el
+  detalle del servicio, tal cual, que dice qué cuelga y cuánto, y tampoco pide recargar.
   Los de estado de `mto-maintenance` no piden recargar: `TRN-001` (el estado no admite la transición), `SHF-001` (el
   turno no admite ese trabajo), `MAT-001` (la línea de material), `AST-001` (activo desactivado, o
   un dato que manda `mto-configuration`) y `AST-409`/`TEA-409` (código repetido); `INS-001` es un
@@ -809,6 +812,23 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   `disconnector` es la lista de uno (`ProfileDto.disconnectorsOnThePole`). Vaciar una referencia opcional a catálogo de un
   perfil viaja como `{}` (`ProfileEditor.CLEARED`), porque `null` es «no la toques»; la que nadie
   tocó vuelve como se leyó.
+- **Borrar un maestro dice lo que pasa, y una vía se puede borrar entera.** Borrar es lógico. La
+  confirmación de cada maestro (`MasterView.deleteConsequences`, por vista) dice lo que el servicio va
+  a hacer: un perfil se lleva sus ménsulas y los brazos de ellas, y un aislador, sus agujas; y un
+  maestro del que cuelga algo vivo (un paquete con vías o estaciones, una estación con vías enlazadas,
+  seccionadores, aisladores o accesos, una vía con perfiles, seccionadores, aisladores o accesos, un
+  perfil con seccionadores en su poste) no se borra: el servicio responde 409 `BUS-002` con
+  `dependents` sin escribir nada, y se notifica su detalle (qué cuelga y cuánto), con la lista como
+  estaba. Para eso una vía tiene **«Borrar la via entera»** (`TracksView`, `delete-whole-<id>`, detrás
+  de «Borrar» y con su mismo permiso, `config-delete`; `MasterView.addDeleteActions`):
+  `TrackClient.deleteWhole`, `DELETE /tracks/{id}?cascade=true`, sin cambiar el borrado normal. Su
+  confirmación (`TrackWholeDeleteDialog`) dice qué se lleva (la vía, sus perfiles con sus ménsulas y
+  sus brazos, sus seccionadores, sus aisladores con sus agujas y sus accesos a vía), que no se deshace
+  y que puede tardar, y su botón no se activa hasta escribir el nombre de la vía y se deshabilita al
+  pulsarlo. Al acabar bien se avisa («Borrada la via entera …»); si algo de otra vía la usa, el
+  servicio no borra nada y su 409 `BUS-002` lo dice con su detalle. Salga bien o no, la confirmación se
+  cierra y la lista se relee: de una respuesta que no llegó (el gateway corta a los 15 s) no se sabe si
+  el servicio terminó. Como en mto-frontend.
 - **Las listas de maestros se paginan en el servidor.** `MasterView` pide cada página a
   `POST /{recurso}/filter` con `page`, `size`, `sort=campo,asc` y `searchText`; sin orden elegido
   `sort` no viaja y ordena el servicio (por eso es opcional en `MasterClient.filter`); el recuento es
@@ -1047,7 +1067,8 @@ Una clase por capa; se añaden métodos, no clases: `ClientLayerTest` (interface
 de página, `problem+json` de configuration, 401/403 y 503 del gateway, cuerpo no JSON, un fallo de
 transporte tipado con el id de correlación que se mandó; los
 catálogos: el `versionNumber` leído en el `PUT` y en el lote, y los dos 409 de configuration
-(`CON-001` y `BUS-002`) distinguidos por su código; los maestros: resolución del genérico,
+(`CON-001` y `BUS-002`) distinguidos por su código; los maestros: resolución del genérico, la vía
+borrada entera con `cascade=true` y el 409 de lo que cuelga con su detalle y sus `dependents`,
 parámetros de página y orden del `/filter` (sin orden no viaja `sort`, como en el recuento), `extras` e hijos a
 `null` en un `PUT`, referencias a catálogo como `{id, code}`, las ménsulas tipadas con su brazo y
 los seccionadores del perfil (varios en un poste, y el `disconnector` de siempre) de vuelta en un `PUT`, el seccionador con su estado normal, su accionamiento y sin poste,
@@ -1105,7 +1126,9 @@ configuration dichos distinto, borrado con confirmación, lote sobre la selecci�
 de cada fila, parser del alta múltiple, notificación de error, diagnóstico de audiencias; los
 maestros: lista paginada, ordenada y filtrada contra el cliente simulado, nombres de referencias en las columnas,
 edición sobre una copia que vuelve con `extras` e hijos a `null`, errores del servicio sobre un
-desplegable, borrado confirmado, alta de un perfil con sus referencias, KP no válido, las
+desplegable, borrado confirmado con lo que dice de cada maestro, el maestro con algo colgando que no
+se borra y su detalle, la vía borrada entera (solo con `config-delete`, su nombre escrito, la llamada
+con cascade, la lista releída, y el 409 de otra vía con su detalle), alta de un perfil con sus referencias, KP no válido, las
 ménsulas a `null` sin tocar y enteras al tocarlas, los seccionadores del perfil de solo lectura y de
 vuelta como se leyeron (y el `disconnector` solo de un servicio anterior), las agujas en su diálogo y enteras al guardar,
 el perfil legible en la lista de seccionadores, el seccionador guardado sin poste y con su estado

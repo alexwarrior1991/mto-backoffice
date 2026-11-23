@@ -90,6 +90,11 @@ public class SectionInsulatorsView extends MasterView<SectionInsulatorDto> {
     }
 
     @Override
+    protected String deleteConsequences() {
+        return " Se borran con el sus agujas.";
+    }
+
+    @Override
     protected String labelOf(SectionInsulatorDto dto) {
         return dto.getName() == null ? super.labelOf(dto) : dto.getName();
     }

@@ -119,7 +119,9 @@ import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleTypeUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.VehicleUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.resources.WorkDiscipline;
+import com.alejandro.mtobackoffice.client.error.ApiDependent;
 import com.alejandro.mtobackoffice.client.error.ApiErrorDecoder;
+import com.alejandro.mtobackoffice.client.error.ApiProblem;
 import com.alejandro.mtobackoffice.client.error.ApiFieldError;
 import com.alejandro.mtobackoffice.client.error.BackofficeApiException;
 import com.alejandro.mtobackoffice.client.error.ForbiddenApiException;
@@ -953,6 +955,53 @@ class ClientLayerTest {
         TrackDto saved = asUser(() -> trackClient.save(track));
 
         assertEquals(8, saved.getVersionNumber());
+        server.verify();
+    }
+
+    /**
+     * README_API §1 del servicio: una via se borra entera con {@code cascade=true}, y el borrado normal no
+     * cambia. De un maestro del que cuelga algo vivo no se borra nada: 409 BUS-002, con que cuelga y cuanto
+     * en el detalle y en {@code dependents}, que se lee tolerando lo que estrene el servicio.
+     */
+    @Test
+    void aTrackIsDeletedWholeWithCascadeAndADeleteWithDependentsSaysWhatHangs() {
+        String refused = """
+                {"type":"https://api.mto-configuration/errors/bus-002","title":"Regla de negocio incumplida","status":409,
+                 "detail":"No se puede borrar la vía: tiene 412 perfiles y 3 seccionadores. Bórralos antes, o borra la vía entera con todo lo suyo: DELETE /tracks/{id}?cascade=true.",
+                 "instance":"/api/v1/configuration/tracks/4","code":"BUS-002","traceId":"t-hang","retryable":false,
+                 "dependents":[{"type":"profiles","count":412},{"type":"disconnectors","count":3},{"type":"deManana","count":1,"extra":true}]}
+                """;
+        server.expect(requestTo(GATEWAY + "/api/configuration/tracks/3?cascade=true"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        server.expect(requestTo(GATEWAY + "/api/configuration/tracks/4"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(refused));
+        server.expect(requestTo(GATEWAY + "/api/configuration/tracks/4?cascade=true"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(refused));
+
+        asUser(() -> {
+            trackClient.deleteWhole(3L);
+            return null;
+        });
+        ConflictApiException plain = assertThrows(ConflictApiException.class, () -> asUser(() -> {
+            trackClient.delete(4L);
+            return null;
+        }));
+        ConflictApiException whole = assertThrows(ConflictApiException.class, () -> asUser(() -> {
+            trackClient.deleteWhole(4L);
+            return null;
+        }));
+
+        assertEquals("BUS-002", plain.getProblem().code());
+        assertEquals("t-hang", plain.getReference());
+        assertTrue(plain.getProblem().detail().startsWith("No se puede borrar la vía: tiene 412 perfiles y 3 seccionadores."));
+        assertTrue(plain.getProblem().hasDependents());
+        assertEquals(List.of(new ApiDependent("profiles", 412L), new ApiDependent("disconnectors", 3L), new ApiDependent("deManana", 1L)),
+                plain.getProblem().dependents());
+        assertTrue(whole.getProblem().hasDependents());
+        assertFalse(ApiProblem.empty().hasDependents(), "todos los demas errores llegan sin dependents");
         server.verify();
     }
 
