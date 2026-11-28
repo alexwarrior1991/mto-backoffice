@@ -259,6 +259,7 @@ import com.alejandro.mtobackoffice.client.dto.stock.ReservationUpdateRequest;
 import com.alejandro.mtobackoffice.client.dto.RevisionDto;
 import com.alejandro.mtobackoffice.client.dto.RevisionMetadataDto;
 import com.alejandro.mtobackoffice.client.dto.RevisionOperation;
+import com.alejandro.mtobackoffice.ui.stock.MovementsView;
 import com.alejandro.mtobackoffice.ui.stock.ReservationsView;
 import com.alejandro.mtobackoffice.ui.stock.StockCatalogueView;
 import com.alejandro.mtobackoffice.ui.stock.StockFormats;
@@ -5352,11 +5353,15 @@ class ViewLayerTest {
         LocatorJ._setValue(ViewLayerTest.<WarehouseSummaryDto>combo("movements-warehouse"), CENTRAL);
         LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("movements-from")), LocalDate.of(2026, 9, 1));
         LocatorJ._setValue(LocatorJ._get(DatePicker.class, spec -> spec.withId("movements-to")), LocalDate.of(2026, 9, 30));
-        LocatorJ._setValue(LocatorJ._get(TextField.class, spec -> spec.withId("movements-user")), "ana");
+        // El usuario se escribe entero y exacto: se compara en el servicio, y aqui solo se recorta.
+        TextField registeredBy = LocatorJ._get(TextField.class, spec -> spec.withId("movements-user"));
+        assertEquals(MovementsView.USER_HELP, registeredBy.getHelperText());
+        assertEquals("El nombre de usuario entero y exacto, con sus mayusculas", MovementsView.USER_HELP);
+        LocatorJ._setValue(registeredBy, " Almacen.Operario ");
         GridKt._get(grid, 0);
 
         verify(movementClient, atLeastOnce()).search(eq(MovementType.ENTRY), eq(WH1), isNull(), isNull(),
-                eq(StockFormats.startOfDay(LocalDate.of(2026, 9, 1))), eq(StockFormats.endOfDay(LocalDate.of(2026, 9, 30))), eq("ana"),
+                eq(StockFormats.startOfDay(LocalDate.of(2026, 9, 1))), eq(StockFormats.endOfDay(LocalDate.of(2026, 9, 30))), eq("Almacen.Operario"),
                 eq(0), anyInt(), anyList());
         assertTrue(LocatorJ._find(Button.class, spec -> spec.withId("operation-output")).isEmpty());
     }

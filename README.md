@@ -198,7 +198,7 @@ quien ya entró en una no vuelve a escribir la contraseña en la otra. `--profil
   reservado, disponible, mínimo y si está bajo mínimo), el libro de ese material y los materiales
   bajo mínimo; y los **movimientos** (`almacen/movimientos`): el libro entero paginado en el
   servidor con sus filtros (tipo, almacén, material, proyecto, fechas inclusivas, quién lo
-  registró) y las cuatro operaciones en un diálogo: entrada (proveedor opcional), salida
+  registró, con su nombre de usuario entero y exacto, que compara el servicio) y las cuatro operaciones en un diálogo: entrada (proveedor opcional), salida
   (proyecto opcional), transferencia (dos almacenes distintos; el servicio devuelve dos apuntes) y
   ajuste (positivo o negativo; solo con `stock-adjust`). Nada se calcula aquí: si no hay
   disponible, el servicio responde 409 `STK-001` y la notificación lo dice. S3 trae las

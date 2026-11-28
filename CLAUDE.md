@@ -429,6 +429,13 @@ Paquetes bajo `com.alejandro.mtobackoffice`:
   se registra y el servicio decide: sin disponible es 409 `STK-001`, un material o almacén
   retirado es 400/422, y la notificación lo dice. Lo único que el diálogo exige es lo evidente
   (material, almacén, cantidad positiva, destino distinto del origen).
+- **El usuario del libro se escribe entero y exacto, y se compara en el servicio.** «Registrado por»
+  (`MovementsView`; el libro de un material en `StockView` no lo ofrece) es el parámetro `user` de
+  `mto-stock`: el nombre de usuario de `audit.createdBy` (`almacen.operario`,
+  `service-account-mto-maintenance-svc`, `system`), comparado entero y distinguiendo mayúsculas. Un
+  trozo u otras mayúsculas dan una página vacía, no un error, y la ayuda del campo lo dice
+  (`MovementsView.USER_HELP`). Aquí no se comprueba contra nada: viaja recortado (en blanco no viaja)
+  tras la pausa al escribir (`ValueChangeMode.LAZY`), como en mto-frontend.
 - **Solo una reserva activa cambia, y lo decide el servicio.** Modificar (`PUT`, sin el material),
   liberar y consumir (`POST` sin cuerpo) y cancelar (`DELETE`, que devuelve la reserva cancelada y
   pide `stock-delete`) son llamadas distintas y no se funden: la pantalla solo las ofrece en las
