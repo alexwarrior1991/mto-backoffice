@@ -41,6 +41,11 @@ import java.util.UUID;
  * El libro de movimientos entero, paginado en el servidor con sus filtros (tipo, almacen,
  * material, proyecto, fechas inclusivas y quien lo registro), y los botones de operar. Solo se
  * anade y se lee: un apunte equivocado se corrige con un ajuste.
+ *
+ * <p>«Registrado por» es el nombre de usuario entero y exacto, con sus mayusculas, como sale en la
+ * columna del usuario de cada apunte ({@code audit.createdBy}): mto-stock lo compara tal cual, y un
+ * trozo o con otras mayusculas no encuentra nada. Aqui no se comprueba contra nada: viaja recortado
+ * tras la pausa al escribir, como los tipos y los origenes del registro de actividad.</p>
  */
 @Route(value = StockRoutes.MOVEMENTS, layout = MainLayout.class)
 @PageTitle("Movimientos")
@@ -49,6 +54,7 @@ import java.util.UUID;
 public class MovementsView extends VerticalLayout {
 
     static final int PAGE_SIZE = 50;
+    public static final String USER_HELP = "El nombre de usuario entero y exacto, con sus mayusculas";
     private static final List<String> DEFAULT_SORT = List.of("occurredAt,desc");
 
     private final StockClients clients;
@@ -81,6 +87,8 @@ public class MovementsView extends VerticalLayout {
         to.setId("movements-to");
         user.setId("movements-user");
         user.setClearButtonVisible(true);
+        user.setPlaceholder("almacen.operario");
+        user.setHelperText(USER_HELP);
         user.setValueChangeMode(ValueChangeMode.LAZY);
         for (Component filter : List.of(type, warehouse, material, project, from, to, user)) {
             ((com.vaadin.flow.component.HasValue<?, ?>) filter).addValueChangeListener(change -> refresh());
